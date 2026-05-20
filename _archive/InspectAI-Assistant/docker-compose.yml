@@ -1,0 +1,38 @@
+services:
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai-service/Dockerfile
+    environment:
+      DEMO_MODE: "true"
+      AI_PROVIDER: "mock"
+      AI_SERVICE_ADDR: "0.0.0.0"
+      AI_SERVICE_PORT: "9100"
+    ports:
+      - "9100:9100"
+
+  go-backend:
+    build:
+      context: .
+      dockerfile: go-backend/Dockerfile
+    environment:
+      BACKEND_ADDR: ":8080"
+      AI_SERVICE_URL: "http://ai-service:9100"
+      FRONTEND_DIR: "/app/frontend"
+      STORAGE_DIR: "/app/storage"
+      GOTELEMETRY: "off"
+    volumes:
+      - ./storage:/app/storage
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ai-service
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8088:80"
+    depends_on:
+      - go-backend

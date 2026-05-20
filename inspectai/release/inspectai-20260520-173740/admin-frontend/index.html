@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JADEAST 智巡后台</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css?v=20260520-fix5e" />
+</head>
+<body>
+  <div class="monitor-frame">
+    <div class="admin-shell">
+      <aside class="sidebar">
+        <div class="brand">JADEAST <span>智巡后台</span></div>
+        <nav class="nav" aria-label="后台导航">
+          <button data-page="dashboard">首页</button>
+          <span>巡检管理</span>
+          <button data-page="plan">巡检计划</button>
+          <button data-page="task">巡检任务</button>
+          <button data-page="record">巡检记录</button>
+          <button data-page="ledger">资产台账</button>
+          <button data-page="device">设备管理</button>
+          <span>异常管理</span>
+          <button data-page="exception">异常复核</button>
+          <button data-page="approval">修改审批</button>
+          <span>数据中心</span>
+          <button data-page="data">数据看板</button>
+          <button data-page="report">统计报表</button>
+          <button data-page="system">系统管理</button>
+        </nav>
+      </aside>
+
+      <header class="topbar">
+        <label class="company-select" aria-label="项目筛选">
+          <select id="projectSelect"></select>
+        </label>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="refreshBtn" title="刷新">↻<em id="pendingBadge">0</em></button>
+          <button class="icon-btn" id="systemConfigBtn" title="系统配置">?</button>
+          <div class="admin-user"><b>张</b><span>张管理员</span></div>
+        </div>
+      </header>
+
+      <main class="content" id="pageMain"></main>
+      <aside class="detail-panel" id="pageAside"></aside>
+    </div>
+  </div>
+
+  <div class="drawer-mask" id="drawerMask" hidden></div>
+  <aside class="drawer" id="drawer" hidden>
+    <button class="drawer-close" id="drawerClose" aria-label="关闭">×</button>
+    <div id="drawerBody"></div>
+  </aside>
+
+  <div class="toast" id="toast"></div>
+  <script src="./app.js?v=20260520-fix5e"></script>
+</body>
+</html>

@@ -1,0 +1,537 @@
+<!doctype html>
+<!--
+  企业微信汇报样式参考稿（mockup）
+  给 codex 当 inspectai/frontend/styles.css 的视觉重构参考
+  用浏览器直接打开本文件可看完整效果
+  关键设计：
+    - 配色：白底 + 企微蓝 (#576B95) + 系统灰阶
+    - 排版：表单行（label + input 垂直排列），不用卡片
+    - 按钮：底部 sticky 大蓝按钮
+    - 顶部：极简标题栏 + 右上发送按钮
+    - 字段：紧凑排列，必填红星
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>巡检填报 — 紫涵能耗抄表</title>
+  <style>
+    :root {
+      --wx-blue: #576B95;
+      --wx-blue-dark: #3F5470;
+      --wx-bg: #EDEDED;
+      --wx-bg-card: #FFFFFF;
+      --wx-text: #191919;
+      --wx-text-2: #888888;
+      --wx-text-3: #B2B2B2;
+      --wx-line: #E5E5E5;
+      --wx-line-soft: #F2F2F2;
+      --wx-red: #FA5151;
+      --wx-green: #07C160;
+      --wx-orange: #FA9D3B;
+      --wx-radius: 8px;
+      --safe-bottom: env(safe-area-inset-bottom, 0);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      color: var(--wx-text);
+      background: var(--wx-bg);
+      line-height: 1.5;
+    }
+    .app {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: var(--wx-bg);
+      padding-bottom: calc(64px + var(--safe-bottom));
+      position: relative;
+    }
+
+    /* 顶部标题栏 */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 44px; padding: 0 16px;
+      background: #F7F7F7;
+      border-bottom: 1px solid var(--wx-line);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .topbar .back { color: var(--wx-text); font-size: 16px; width: 24px; }
+    .topbar .title { font-size: 17px; font-weight: 500; }
+    .topbar .action { color: var(--wx-blue); font-size: 15px; }
+
+    /* 进度条（不要 stepper） */
+    .progress {
+      height: 3px; background: var(--wx-line);
+      position: relative;
+    }
+    .progress::after {
+      content: ""; position: absolute; left: 0; top: 0; height: 100%;
+      width: 60%; background: var(--wx-blue);
+      transition: width 0.3s;
+    }
+
+    /* 上下文条（资产名 + 巡检员） */
+    .context {
+      background: var(--wx-bg-card);
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid var(--wx-line);
+    }
+    .context .avatar {
+      width: 36px; height: 36px; border-radius: 4px;
+      background: var(--wx-blue); color: #fff;
+      display: grid; place-items: center;
+      font-size: 14px; font-weight: 500;
+    }
+    .context .meta { flex: 1; }
+    .context .meta .row1 { font-size: 15px; font-weight: 500; }
+    .context .meta .row2 { font-size: 12px; color: var(--wx-text-2); margin-top: 2px; }
+    .context .badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      background: rgba(7,193,96,0.1); color: var(--wx-green);
+    }
+    .context .badge.warn { background: rgba(250,157,59,0.1); color: var(--wx-orange); }
+
+    /* 字段分组 */
+    .group {
+      background: var(--wx-bg-card);
+      margin-top: 8px;
+    }
+    .group-title {
+      font-size: 13px; color: var(--wx-text-2);
+      padding: 12px 16px 6px;
+    }
+
+    /* 字段行（关键样式：表单行） */
+    .field {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--wx-line-soft);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .field:last-child { border-bottom: none; }
+    .field .label {
+      flex: 0 0 100px;
+      font-size: 14px; color: var(--wx-text);
+    }
+    .field .label .req { color: var(--wx-red); margin-left: 2px; }
+    .field .value {
+      flex: 1;
+      text-align: right;
+    }
+    .field .value input,
+    .field .value select {
+      width: 100%; max-width: 200px;
+      border: none; outline: none; background: transparent;
+      font-size: 15px; color: var(--wx-text);
+      text-align: right;
+      padding: 4px 0;
+    }
+    .field .value input::placeholder { color: var(--wx-text-3); }
+    .field .ai-pill {
+      display: inline-block;
+      font-size: 11px; padding: 1px 6px; margin-right: 6px;
+      border-radius: 3px;
+      background: rgba(87,107,149,0.1); color: var(--wx-blue);
+      vertical-align: middle;
+    }
+    .field .ai-pill.confirmed { background: rgba(7,193,96,0.1); color: var(--wx-green); }
+    .field .ai-pill.warn { background: rgba(250,157,59,0.1); color: var(--wx-orange); }
+
+    /* 长文本字段（独占一行） */
+    .field.block { flex-direction: column; align-items: stretch; gap: 6px; }
+    .field.block .label { flex: none; }
+    .field.block textarea {
+      width: 100%; border: 1px solid var(--wx-line); border-radius: 6px;
+      padding: 8px 10px; font-size: 14px; min-height: 60px;
+      font-family: inherit; outline: none;
+      resize: vertical;
+    }
+
+    /* 拍照入口（首屏全屏） */
+    .camera-hero {
+      background: #000;
+      height: 70vh;
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding-bottom: 40px;
+      position: relative;
+      color: #fff;
+    }
+    .camera-hero::before {
+      content: "";
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, #1a2330 0%, #0a0e15 100%);
+      opacity: 0.95;
+    }
+    .camera-hero .hint {
+      position: relative;
+      text-align: center;
+      font-size: 14px; color: rgba(255,255,255,0.65);
+      margin-bottom: 24px;
+    }
+    .camera-hero .shutter {
+      position: relative;
+      align-self: center;
+      width: 72px; height: 72px; border-radius: 50%;
+      background: #fff;
+      border: 4px solid rgba(255,255,255,0.4);
+      cursor: pointer;
+    }
+    .camera-hero .secondary {
+      position: relative;
+      text-align: center;
+      margin-top: 18px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.65);
+    }
+    .camera-hero .secondary a { color: var(--wx-blue); text-decoration: none; }
+
+    /* 识别中提示 */
+    .ai-status {
+      background: var(--wx-bg-card);
+      padding: 16px;
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid var(--wx-line);
+    }
+    .ai-status .spinner {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid var(--wx-line); border-top-color: var(--wx-blue);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ai-status .msg { font-size: 14px; color: var(--wx-text-2); flex: 1; }
+
+    /* AI 总结卡片（事实陈述） */
+    .summary-card {
+      background: var(--wx-bg-card);
+      margin-top: 8px;
+      padding: 16px;
+      border-left: 3px solid var(--wx-blue);
+    }
+    .summary-card .head {
+      font-size: 13px; color: var(--wx-blue);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .summary-card .body {
+      font-size: 14px; line-height: 1.65;
+      color: var(--wx-text);
+    }
+
+    /* AI 建议卡片（行动项） */
+    .recos-card {
+      background: var(--wx-bg-card);
+      margin-top: 8px;
+      padding: 16px 16px 8px;
+      border-left: 3px solid var(--wx-orange);
+    }
+    .recos-card .head {
+      font-size: 13px; color: var(--wx-orange);
+      margin-bottom: 10px;
+      font-weight: 500;
+    }
+    .reco {
+      display: flex; gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid var(--wx-line-soft);
+    }
+    .reco:first-of-type { border-top: none; }
+    .reco .pri {
+      flex: 0 0 32px;
+      font-size: 11px; font-weight: 500; text-align: center;
+      padding: 2px 0; height: 20px;
+      border-radius: 3px;
+      align-self: flex-start;
+    }
+    .reco .pri.high { background: rgba(250,81,81,0.12); color: var(--wx-red); }
+    .reco .pri.medium { background: rgba(250,157,59,0.12); color: var(--wx-orange); }
+    .reco .pri.low { background: rgba(136,136,136,0.10); color: var(--wx-text-2); }
+    .reco .body { flex: 1; }
+    .reco .body .text { font-size: 14px; line-height: 1.55; color: var(--wx-text); }
+    .reco .body .meta { font-size: 12px; color: var(--wx-text-2); margin-top: 4px; }
+    .reco .body .meta .cat {
+      display: inline-block; padding: 0 6px; border-radius: 3px;
+      background: var(--wx-line-soft); color: var(--wx-text-2);
+      margin-right: 6px;
+    }
+    .recos-card .empty {
+      padding: 20px 0 12px;
+      text-align: center;
+      font-size: 13px; color: var(--wx-text-3);
+    }
+
+    /* 底部固定主按钮 */
+    .footer {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      max-width: 480px; margin: 0 auto;
+      padding: 8px 16px calc(8px + var(--safe-bottom));
+      background: var(--wx-bg-card);
+      border-top: 1px solid var(--wx-line);
+      z-index: 20;
+    }
+    .btn-primary {
+      width: 100%; height: 44px;
+      background: var(--wx-blue); color: #fff;
+      border: none; border-radius: var(--wx-radius);
+      font-size: 16px; font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-primary:active { background: var(--wx-blue-dark); }
+    .btn-primary:disabled { background: var(--wx-text-3); }
+
+    /* 失败弹窗 */
+    .modal-mask {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      display: grid; place-items: center; z-index: 100;
+    }
+    .modal {
+      width: 80%; max-width: 320px;
+      background: var(--wx-bg-card);
+      border-radius: 10px;
+      padding: 24px 20px 8px;
+      text-align: center;
+    }
+    .modal .title { font-size: 17px; font-weight: 500; margin-bottom: 10px; }
+    .modal .desc { font-size: 14px; color: var(--wx-text-2); margin-bottom: 8px; }
+    .modal .attempt { font-size: 12px; color: var(--wx-text-3); margin-bottom: 20px; }
+    .modal .actions { margin: 0 -20px; border-top: 1px solid var(--wx-line); display: flex; }
+    .modal .actions button {
+      flex: 1; height: 48px;
+      border: none; background: transparent;
+      font-size: 16px; color: var(--wx-text); cursor: pointer;
+    }
+    .modal .actions button.primary { color: var(--wx-blue); font-weight: 500; }
+    .modal .actions button + button { border-left: 1px solid var(--wx-line); }
+
+    /* 章节切换 */
+    .scenes { display: none; }
+    .scenes.active { display: block; }
+    .nav-tabs {
+      display: flex; gap: 4px;
+      padding: 8px 16px;
+      background: var(--wx-bg-card);
+      border-bottom: 1px solid var(--wx-line);
+      overflow-x: auto;
+    }
+    .nav-tab {
+      padding: 6px 12px; font-size: 13px;
+      border: 1px solid var(--wx-line); border-radius: 999px;
+      background: var(--wx-bg-card); color: var(--wx-text-2);
+      white-space: nowrap; cursor: pointer;
+    }
+    .nav-tab.active { background: var(--wx-blue); color: #fff; border-color: var(--wx-blue); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- 顶部标题栏 -->
+  <div class="topbar">
+    <div class="back">‹</div>
+    <div class="title">巡检填报</div>
+    <div class="action">草稿</div>
+  </div>
+
+  <!-- 章节切换（开发期用，方便对比 4 个场景） -->
+  <div class="nav-tabs">
+    <div class="nav-tab" onclick="show('scene-camera')">场景1：相机</div>
+    <div class="nav-tab" onclick="show('scene-classify')">场景2：识别中</div>
+    <div class="nav-tab active" onclick="show('scene-form')">场景3：日报表单</div>
+    <div class="nav-tab" onclick="show('scene-modal')">场景4：失败弹窗</div>
+    <div class="nav-tab" onclick="show('scene-summary')">场景5：AI总结</div>
+  </div>
+
+  <!-- ==== 场景 1：打开 app 第一屏（相机） ==== -->
+  <div id="scene-camera" class="scenes">
+    <div class="camera-hero">
+      <div class="hint">对准巡检设备拍照<br>AI 会自动识别场景</div>
+      <div class="shutter"></div>
+      <div class="secondary">或 <a href="#" onclick="show('scene-form')">手动选择模板</a></div>
+    </div>
+  </div>
+
+  <!-- ==== 场景 2：识别中 ==== -->
+  <div id="scene-classify" class="scenes">
+    <div class="ai-status">
+      <div class="spinner"></div>
+      <div class="msg">AI 正在识别场景…</div>
+    </div>
+    <div class="ai-status" style="background:#F7F7F7;">
+      <div style="font-size:13px;color:var(--wx-text-2);">已上传 3 张图，正在调用千问视觉模型</div>
+    </div>
+  </div>
+
+  <!-- ==== 场景 3：日报表单（核心 UI） ==== -->
+  <div id="scene-form" class="scenes active">
+    <div class="progress"></div>
+
+    <div class="context">
+      <div class="avatar">紫</div>
+      <div class="meta">
+        <div class="row1">紫涵雅集 · 能耗抄表</div>
+        <div class="row2">巡检员 周新宇 · 2026-05-11 09:30</div>
+      </div>
+      <div class="badge">已识别</div>
+    </div>
+
+    <div class="group-title">基本信息</div>
+    <div class="group">
+      <div class="field">
+        <div class="label">巡检地点</div>
+        <div class="value">
+          <input value="紫涵雅集" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">位置</div>
+        <div class="value">
+          <input placeholder="自动获取 GPS" />
+        </div>
+      </div>
+    </div>
+
+    <div class="group-title">能耗读数</div>
+    <div class="group">
+      <div class="field">
+        <div class="label">Z1 能耗表 <span class="req">*</span></div>
+        <div class="value">
+          <span class="ai-pill confirmed">AI 95%</span>
+          <input value="1756.3304" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">Z2 能耗表 <span class="req">*</span></div>
+        <div class="value">
+          <span class="ai-pill confirmed">AI 92%</span>
+          <input value="5053.4644" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">Z3 能耗表 <span class="req">*</span></div>
+        <div class="value">
+          <span class="ai-pill warn">待复核</span>
+          <input value="2891.0156" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">Z4 能耗表 <span class="req">*</span></div>
+        <div class="value">
+          <span class="ai-pill">未识别</span>
+          <input placeholder="请手动输入" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">生活水表 <span class="req">*</span></div>
+        <div class="value">
+          <span class="ai-pill confirmed">AI 88%</span>
+          <input value="305" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">消防水表 <span class="req">*</span></div>
+        <div class="value">
+          <span class="ai-pill confirmed">AI 88%</span>
+          <input value="118" />
+        </div>
+      </div>
+    </div>
+
+    <div class="group-title">备注</div>
+    <div class="group">
+      <div class="field block">
+        <div class="label">评论</div>
+        <textarea placeholder="补充说明（可选）"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==== 场景 5：AI 总结 + 建议 ==== -->
+  <div id="scene-summary" class="scenes">
+    <div class="context">
+      <div class="avatar">紫</div>
+      <div class="meta">
+        <div class="row1">紫涵雅集 · 能耗抄表</div>
+        <div class="row2">巡检员 周新宇 · 2026-05-11 09:30</div>
+      </div>
+      <div class="badge">待提交</div>
+    </div>
+
+    <div class="group-title">日报字段</div>
+    <div class="group">
+      <div class="field"><div class="label">Z1</div><div class="value">1756.3304 kWh</div></div>
+      <div class="field"><div class="label">Z2</div><div class="value">5053.4644 kWh</div></div>
+      <div class="field"><div class="label">生活水</div><div class="value">305 m³</div></div>
+    </div>
+
+    <!-- AI 总结：客观事实陈述 -->
+    <div class="summary-card">
+      <div class="head">★ AI 总结（基于人工确认字段生成）</div>
+      <div class="body">5月11日上午9:30，紫涵雅集能耗抄表点位由周新宇完成日常巡检。本次共采集6项读数：Z1能耗表1756.3304kWh、Z2能耗表5053.4644kWh、Z3能耗表2891.0156kWh、生活水表305m³、消防水表118m³。所有读数已现场确认录入，未发现表计异常。本次巡检完成。</div>
+    </div>
+
+    <!-- AI 建议：基于事实的行动项 -->
+    <div class="recos-card">
+      <div class="head">▲ AI 行动建议（与总结分开，可独立采纳）</div>
+      <div class="reco">
+        <div class="pri high">高</div>
+        <div class="body">
+          <div class="text">当日内复核 UPS-1 号机蓄电池组健康度，重点测量单体电压和内阻，必要时联系厂商。</div>
+          <div class="meta"><span class="cat">异常处理</span>依据：电池电压 486V，低于常规 540V 约 10%</div>
+        </div>
+      </div>
+      <div class="reco">
+        <div class="pri medium">中</div>
+        <div class="body">
+          <div class="text">Z1 较昨日增加 29.91 度，单日能耗高于近期均值，可记录此波动用于月度对比。</div>
+          <div class="meta"><span class="cat">趋势预警</span>依据：Z1=1756.3304 vs 昨日 1726.4180</div>
+        </div>
+      </div>
+      <div class="reco">
+        <div class="pri low">低</div>
+        <div class="body">
+          <div class="text">下次巡检需补拍蓄电池组单体电压表盘特写，便于趋势比对。</div>
+          <div class="meta"><span class="cat">下次巡检关注</span>依据：本次照片以全景为主</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==== 场景 4：失败弹窗 ==== -->
+  <div id="scene-modal" class="scenes">
+    <div style="padding:32px 16px;text-align:center;color:var(--wx-text-2);font-size:14px;">
+      （切到这一屏看下面的弹窗效果）
+    </div>
+    <div class="modal-mask">
+      <div class="modal">
+        <div class="title">需要重新拍照</div>
+        <div class="desc">图片质量不足，请重新拍摄</div>
+        <div class="attempt">已尝试 2 / 3 次</div>
+        <div class="actions">
+          <button>转人工填写</button>
+          <button class="primary">重新拍照</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部主按钮（场景 3、5 共用） -->
+  <div class="footer">
+    <button class="btn-primary">提交记录</button>
+  </div>
+
+</div>
+
+<script>
+  function show(id) {
+    document.querySelectorAll('.scenes').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    event && event.currentTarget && event.currentTarget.classList && event.currentTarget.classList.add('active');
+  }
+</script>
+
+</body>
+</html>

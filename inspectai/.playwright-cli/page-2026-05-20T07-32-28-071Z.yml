@@ -1,0 +1,521 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [active] [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]:
+        - option "全部项目" [selected]
+        - option "紫涵雅集"
+        - option "会议中心"
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e550]:
+      - generic [ref=e551]:
+        - text: 巡检管理
+        - heading "巡检记录" [level=1] [ref=e552]
+        - paragraph [ref=e553]: 照片、识别字段、AI 总结、人工确认和提交结果全部可追溯。
+      - button "导出记录" [ref=e554] [cursor=pointer]
+    - generic [ref=e555]:
+      - generic [ref=e556]:
+        - heading "巡检记录列表" [level=2] [ref=e557]
+        - generic [ref=e558]:
+          - generic [ref=e559]: 全部项目
+          - generic [ref=e560]: 全部模板
+          - generic [ref=e561]: 全部状态
+          - generic [ref=e562]: 搜索巡检人 / 点位
+      - generic [ref=e563]:
+        - article [ref=e564]:
+          - time [ref=e565]: 05-19 14:05
+          - generic [ref=e566]:
+            - generic [ref=e567]: 能耗抄表点位
+            - generic [ref=e568]: "-"
+          - emphasis [ref=e569]: 待复核
+        - article [ref=e570]:
+          - time [ref=e571]: 05-19 14:04
+          - generic [ref=e572]:
+            - generic [ref=e573]: UPS 机房
+            - generic [ref=e574]: 日期+时间=2026-05-19 14:04
+          - emphasis [ref=e575]: 待复核
+        - article [ref=e576]:
+          - time [ref=e577]: 05-19 13:43
+          - generic [ref=e578]:
+            - generic [ref=e579]: 能耗抄表点位
+            - generic [ref=e580]: "-"
+          - emphasis [ref=e581]: 待复核
+        - article [ref=e582]:
+          - time [ref=e583]: 05-15 15:41
+          - generic [ref=e584]:
+            - generic [ref=e585]: 能耗抄表点位
+            - generic [ref=e586]: "-"
+          - emphasis [ref=e587]: 待复核
+        - article [ref=e588]:
+          - time [ref=e589]: 05-15 15:41
+          - generic [ref=e590]:
+            - generic [ref=e591]: 无机房电梯
+            - generic [ref=e592]: 检查时间=2026-05-15 15:41
+          - emphasis [ref=e593]: 待复核
+        - article [ref=e594]:
+          - time [ref=e595]: 05-15 15:41
+          - generic [ref=e596]:
+            - generic [ref=e597]: 扶梯
+            - generic [ref=e598]: 检查时间=2026-05-15 15:41
+          - emphasis [ref=e599]: 待复核
+        - article [ref=e600]:
+          - time [ref=e601]: 05-15 15:40
+          - generic [ref=e602]:
+            - generic [ref=e603]: 能耗抄表点位
+            - generic [ref=e604]: "-"
+          - emphasis [ref=e605]: 待复核
+        - article [ref=e606]:
+          - time [ref=e607]: 05-15 15:40
+          - generic [ref=e608]:
+            - generic [ref=e609]: 热水机房
+            - generic [ref=e610]: 日期+时间=2026-05-15 15:40
+          - emphasis [ref=e611]: 待复核
+        - article [ref=e612]:
+          - time [ref=e613]: 05-14 17:10
+          - generic [ref=e614]:
+            - generic [ref=e615]: 能耗抄表点位
+            - generic [ref=e616]: 巡检地点=紫涵雅集
+          - emphasis [ref=e617]: 待复核
+        - article [ref=e618]:
+          - time [ref=e619]: 05-14 17:07
+          - generic [ref=e620]:
+            - generic [ref=e621]: 综合巡检点位
+            - generic [ref=e622]: 巡检地点=紫涵雅集
+          - emphasis [ref=e623]: 异常
+        - article [ref=e624]:
+          - time [ref=e625]: 05-14 17:04
+          - generic [ref=e626]:
+            - generic [ref=e627]: 能耗抄表点位
+            - generic [ref=e628]: 巡检地点=紫涵雅集
+          - emphasis [ref=e629]: 异常
+        - article [ref=e630]:
+          - time [ref=e631]: 05-14 16:06
+          - generic [ref=e632]:
+            - generic [ref=e633]: 能耗抄表点位
+            - generic [ref=e634]: 巡检地点=紫涵雅集
+          - emphasis [ref=e635]: 异常
+        - article [ref=e636]:
+          - time [ref=e637]: 05-14 15:52
+          - generic [ref=e638]:
+            - generic [ref=e639]: 综合巡检点位
+            - generic [ref=e640]: 巡检地点=紫涵雅集
+          - emphasis [ref=e641]: 异常
+        - article [ref=e642]:
+          - time [ref=e643]: 05-14 15:45
+          - generic [ref=e644]:
+            - generic [ref=e645]: 能耗抄表点位
+            - generic [ref=e646]: 巡检地点=紫涵雅集
+          - emphasis [ref=e647]: 异常
+        - article [ref=e648]:
+          - time [ref=e649]: 05-14 15:43
+          - generic [ref=e650]:
+            - generic [ref=e651]: 能耗抄表点位
+            - generic [ref=e652]: 巡检地点=紫涵雅集
+          - emphasis [ref=e653]: 已识别
+        - article [ref=e654]:
+          - time [ref=e655]: 05-14 15:40
+          - generic [ref=e656]:
+            - generic [ref=e657]: 能耗抄表点位
+            - generic [ref=e658]: "-"
+          - emphasis [ref=e659]: 待复核
+        - article [ref=e660]:
+          - time [ref=e661]: 05-14 15:37
+          - generic [ref=e662]:
+            - generic [ref=e663]: 能耗抄表点位
+            - generic [ref=e664]: 巡检地点=紫涵雅集
+          - emphasis [ref=e665]: 异常
+        - article [ref=e666]:
+          - time [ref=e667]: 05-14 15:35
+          - generic [ref=e668]:
+            - generic [ref=e669]: 能耗抄表点位
+            - generic [ref=e670]: 巡检地点=紫涵雅集
+          - emphasis [ref=e671]: 异常
+        - article [ref=e672]:
+          - time [ref=e673]: 05-14 15:34
+          - generic [ref=e674]:
+            - generic [ref=e675]: 综合巡检点位
+            - generic [ref=e676]: 巡检地点=紫涵雅集
+          - emphasis [ref=e677]: 异常
+        - article [ref=e678]:
+          - time [ref=e679]: 05-14 15:32
+          - generic [ref=e680]:
+            - generic [ref=e681]: 综合巡检点位
+            - generic [ref=e682]: 巡检地点=紫涵雅集
+          - emphasis [ref=e683]: 异常
+        - article [ref=e684]:
+          - time [ref=e685]: 05-14 15:31
+          - generic [ref=e686]:
+            - generic [ref=e687]: 综合巡检点位
+            - generic [ref=e688]: 巡检地点=紫涵雅集
+          - emphasis [ref=e689]: 待复核
+        - article [ref=e690]:
+          - time [ref=e691]: 05-14 15:28
+          - generic [ref=e692]:
+            - generic [ref=e693]: 能耗抄表点位
+            - generic [ref=e694]: 巡检地点=紫涵雅集
+          - emphasis [ref=e695]: 已识别
+        - article [ref=e696]:
+          - time [ref=e697]: 05-14 15:27
+          - generic [ref=e698]:
+            - generic [ref=e699]: 综合巡检点位
+            - generic [ref=e700]: 巡检地点=紫涵雅集
+          - emphasis [ref=e701]: 异常
+        - article [ref=e702]:
+          - time [ref=e703]: 05-14 15:23
+          - generic [ref=e704]:
+            - generic [ref=e705]: 能耗抄表点位
+            - generic [ref=e706]: 巡检地点=紫涵雅集
+          - emphasis [ref=e707]: 已识别
+        - article [ref=e708]:
+          - time [ref=e709]: 05-14 15:18
+          - generic [ref=e710]:
+            - generic [ref=e711]: 能耗抄表点位
+            - generic [ref=e712]: 巡检地点=紫涵雅集
+          - emphasis [ref=e713]: 已提交
+        - article [ref=e714]:
+          - time [ref=e715]: 05-14 15:16
+          - generic [ref=e716]:
+            - generic [ref=e717]: 综合巡检点位
+            - generic [ref=e718]: 温度℃=17
+          - emphasis [ref=e719]: 异常
+        - article [ref=e720]:
+          - time [ref=e721]: 05-14 15:14
+          - generic [ref=e722]:
+            - generic [ref=e723]: 能耗抄表点位
+            - generic [ref=e724]: 巡检地点=紫涵雅集
+          - emphasis [ref=e725]: 已识别
+        - article [ref=e726]:
+          - time [ref=e727]: 05-14 15:11
+          - generic [ref=e728]:
+            - generic [ref=e729]: 综合巡检点位
+            - generic [ref=e730]: 巡检地点=紫涵雅集
+          - emphasis [ref=e731]: 异常
+        - article [ref=e732]:
+          - time [ref=e733]: 05-14 15:10
+          - generic [ref=e734]:
+            - generic [ref=e735]: 综合巡检点位
+            - generic [ref=e736]: 巡检地点=紫涵雅集
+          - emphasis [ref=e737]: 异常
+        - article [ref=e738]:
+          - time [ref=e739]: 05-14 14:58
+          - generic [ref=e740]:
+            - generic [ref=e741]: 综合巡检点位
+            - generic [ref=e742]: 巡检地点=紫涵雅集
+          - emphasis [ref=e743]: 异常
+        - article [ref=e744]:
+          - time [ref=e745]: 05-14 14:53
+          - generic [ref=e746]:
+            - generic [ref=e747]: 能耗抄表点位
+            - generic [ref=e748]: 巡检地点=紫涵雅集
+          - emphasis [ref=e749]: 已识别
+        - article [ref=e750]:
+          - time [ref=e751]: 05-14 14:47
+          - generic [ref=e752]:
+            - generic [ref=e753]: 能耗抄表点位
+            - generic [ref=e754]: 巡检地点=紫涵雅集
+          - emphasis [ref=e755]: 待复核
+        - article [ref=e756]:
+          - time [ref=e757]: 05-14 14:36
+          - generic [ref=e758]:
+            - generic [ref=e759]: 能耗抄表点位
+            - generic [ref=e760]: 巡检地点=紫涵雅集
+          - emphasis [ref=e761]: 待复核
+        - article [ref=e762]:
+          - time [ref=e763]: 05-14 14:36
+          - generic [ref=e764]:
+            - generic [ref=e765]: 综合巡检点位
+            - generic [ref=e766]: 巡检地点=紫涵雅集
+          - emphasis [ref=e767]: 待复核
+        - article [ref=e768]:
+          - time [ref=e769]: 05-14 14:35
+          - generic [ref=e770]:
+            - generic [ref=e771]: 综合巡检点位
+            - generic [ref=e772]: 巡检地点=紫涵雅集
+          - emphasis [ref=e773]: 待复核
+        - article [ref=e774]:
+          - time [ref=e775]: 05-14 14:33
+          - generic [ref=e776]:
+            - generic [ref=e777]: 综合巡检点位
+            - generic [ref=e778]: 巡检地点=紫涵雅集
+          - emphasis [ref=e779]: 异常
+        - article [ref=e780]:
+          - time [ref=e781]: 05-14 14:27
+          - generic [ref=e782]:
+            - generic [ref=e783]: 综合巡检点位
+            - generic [ref=e784]: 巡检地点=紫涵雅集
+          - emphasis [ref=e785]: 异常
+        - article [ref=e786]:
+          - time [ref=e787]: 05-14 14:26
+          - generic [ref=e788]:
+            - generic [ref=e789]: 能耗抄表点位
+            - generic [ref=e790]: 巡检地点=紫涵雅集
+          - emphasis [ref=e791]: 待复核
+        - article [ref=e792]:
+          - time [ref=e793]: 05-14 14:22
+          - generic [ref=e794]:
+            - generic [ref=e795]: 综合巡检点位
+            - generic [ref=e796]: 巡检地点=紫涵雅集
+          - emphasis [ref=e797]: 待复核
+        - article [ref=e798]:
+          - time [ref=e799]: 05-14 14:13
+          - generic [ref=e800]:
+            - generic [ref=e801]: 能耗抄表点位
+            - generic [ref=e802]: 巡检地点=紫涵雅集
+          - emphasis [ref=e803]: 待复核
+        - article [ref=e804]:
+          - time [ref=e805]: 05-14 14:07
+          - generic [ref=e806]:
+            - generic [ref=e807]: 能耗抄表点位
+            - generic [ref=e808]: 巡检地点=紫涵雅集
+          - emphasis [ref=e809]: 待复核
+        - article [ref=e810]:
+          - time [ref=e811]: 05-14 14:03
+          - generic [ref=e812]:
+            - generic [ref=e813]: 能耗抄表点位
+            - generic [ref=e814]: 巡检地点=紫涵雅集
+          - emphasis [ref=e815]: 待复核
+        - article [ref=e816]:
+          - time [ref=e817]: 05-14 13:58
+          - generic [ref=e818]:
+            - generic [ref=e819]: 能耗抄表点位
+            - generic [ref=e820]: 巡检地点=紫涵雅集
+          - emphasis [ref=e821]: 待复核
+        - article [ref=e822]:
+          - time [ref=e823]: 05-14 13:51
+          - generic [ref=e824]:
+            - generic [ref=e825]: 能耗抄表点位
+            - generic [ref=e826]: 巡检地点=紫涵雅集
+          - emphasis [ref=e827]: 待复核
+        - article [ref=e828]:
+          - time [ref=e829]: 05-14 11:31
+          - generic [ref=e830]:
+            - generic [ref=e831]: 综合巡检点位
+            - generic [ref=e832]: 巡检地点=紫涵雅集
+          - emphasis [ref=e833]: 待复核
+        - article [ref=e834]:
+          - time [ref=e835]: 05-14 11:19
+          - generic [ref=e836]:
+            - generic [ref=e837]: 能耗抄表点位
+            - generic [ref=e838]: 巡检地点=紫涵雅集
+          - emphasis [ref=e839]: 待复核
+        - article [ref=e840]:
+          - time [ref=e841]: 05-14 11:14
+          - generic [ref=e842]:
+            - generic [ref=e843]: 能耗抄表点位
+            - generic [ref=e844]: 巡检地点=紫涵雅集
+          - emphasis [ref=e845]: 待复核
+        - article [ref=e846]:
+          - time [ref=e847]: 05-14 10:02
+          - generic [ref=e848]:
+            - generic [ref=e849]: 能耗抄表点位
+            - generic [ref=e850]: 巡检地点=紫涵雅集
+          - emphasis [ref=e851]: 待复核
+        - article [ref=e852]:
+          - time [ref=e853]: 05-13 16:40
+          - generic [ref=e854]:
+            - generic [ref=e855]: 能耗抄表点位
+            - generic [ref=e856]: 巡检地点=紫涵雅集
+          - emphasis [ref=e857]: 待复核
+        - article [ref=e858]:
+          - time [ref=e859]: 05-13 16:27
+          - generic [ref=e860]:
+            - generic [ref=e861]: 能耗抄表点位
+            - generic [ref=e862]: 巡检地点=紫涵雅集
+          - emphasis [ref=e863]: 待复核
+        - article [ref=e864]:
+          - time [ref=e865]: 05-13 16:16
+          - generic [ref=e866]:
+            - generic [ref=e867]: 能耗抄表点位
+            - generic [ref=e868]: 巡检地点=紫涵雅集
+          - emphasis [ref=e869]: 异常
+        - article [ref=e870]:
+          - time [ref=e871]: 05-13 13:26
+          - generic [ref=e872]:
+            - generic [ref=e873]: 能耗抄表点位
+            - generic [ref=e874]: 巡检地点=紫涵雅集
+          - emphasis [ref=e875]: 待复核
+        - article [ref=e876]:
+          - time [ref=e877]: 05-13 10:42
+          - generic [ref=e878]:
+            - generic [ref=e879]: 能耗抄表点位
+            - generic [ref=e880]: 巡检地点=紫涵雅集
+          - emphasis [ref=e881]: 异常
+        - article [ref=e882]:
+          - time [ref=e883]: 05-13 10:38
+          - generic [ref=e884]:
+            - generic [ref=e885]: 能耗抄表点位
+            - generic [ref=e886]: 巡检地点=紫涵雅集
+          - emphasis [ref=e887]: 待复核
+        - article [ref=e888]:
+          - time [ref=e889]: 05-12 15:58
+          - generic [ref=e890]:
+            - generic [ref=e891]: 能耗抄表点位
+            - generic [ref=e892]: 巡检地点=紫涵雅集
+          - emphasis [ref=e893]: 待复核
+        - article [ref=e894]:
+          - time [ref=e895]: 05-12 15:30
+          - generic [ref=e896]:
+            - generic [ref=e897]: 能耗抄表点位
+            - generic [ref=e898]: 巡检地点=紫涵雅集
+          - emphasis [ref=e899]: 待复核
+        - article [ref=e900]:
+          - time [ref=e901]: 05-12 15:29
+          - generic [ref=e902]:
+            - generic [ref=e903]: 能耗抄表点位
+            - generic [ref=e904]: 巡检地点=紫涵雅集
+          - emphasis [ref=e905]: 待复核
+        - article [ref=e906]:
+          - time [ref=e907]: 05-12 14:48
+          - generic [ref=e908]:
+            - generic [ref=e909]: 综合巡检点位
+            - generic [ref=e910]: 巡检地点=紫涵雅集
+          - emphasis [ref=e911]: 待复核
+        - article [ref=e912]:
+          - time [ref=e913]: 05-12 14:48
+          - generic [ref=e914]:
+            - generic [ref=e915]: 综合巡检点位
+            - generic [ref=e916]: 巡检地点=紫涵雅集
+          - emphasis [ref=e917]: 待复核
+        - article [ref=e918]:
+          - time [ref=e919]: 05-12 14:47
+          - generic [ref=e920]:
+            - generic [ref=e921]: 综合巡检点位
+            - generic [ref=e922]: 巡检地点=紫涵雅集
+          - emphasis [ref=e923]: 异常
+        - article [ref=e924]:
+          - time [ref=e925]: 05-12 13:12
+          - generic [ref=e926]:
+            - generic [ref=e927]: 能耗抄表点位
+            - generic [ref=e928]: 巡检地点=紫涵雅集
+          - emphasis [ref=e929]: 待复核
+        - article [ref=e930]:
+          - time [ref=e931]: 05-12 11:45
+          - generic [ref=e932]:
+            - generic [ref=e933]: 综合巡检点位
+            - generic [ref=e934]: 巡检地点=紫涵雅集
+          - emphasis [ref=e935]: 待复核
+        - article [ref=e936]:
+          - time [ref=e937]: 05-12 11:36
+          - generic [ref=e938]:
+            - generic [ref=e939]: 能耗抄表点位
+            - generic [ref=e940]: 巡检地点=紫涵雅集
+          - emphasis [ref=e941]: 待复核
+        - article [ref=e942]:
+          - time [ref=e943]: 05-12 10:49
+          - generic [ref=e944]:
+            - generic [ref=e945]: 能耗抄表点位
+            - generic [ref=e946]: 巡检地点=紫涵雅集
+          - emphasis [ref=e947]: 待复核
+        - article [ref=e948]:
+          - time [ref=e949]: 05-12 10:48
+          - generic [ref=e950]:
+            - generic [ref=e951]: 能耗抄表点位
+            - generic [ref=e952]: 巡检地点=紫涵雅集
+          - emphasis [ref=e953]: 待复核
+        - article [ref=e954]:
+          - time [ref=e955]: 05-12 10:47
+          - generic [ref=e956]:
+            - generic [ref=e957]: 能耗抄表点位
+            - generic [ref=e958]: 巡检地点=紫涵雅集
+          - emphasis [ref=e959]: 待复核
+        - article [ref=e960]:
+          - time [ref=e961]: 05-12 10:33
+          - generic [ref=e962]:
+            - generic [ref=e963]: 能耗抄表点位
+            - generic [ref=e964]: 巡检地点=紫涵雅集
+          - emphasis [ref=e965]: 未开始
+        - article [ref=e966]:
+          - time [ref=e967]: 05-12 10:13
+          - generic [ref=e968]:
+            - generic [ref=e969]: 能耗抄表点位
+            - generic [ref=e970]: 巡检地点=紫涵雅集
+          - emphasis [ref=e971]: 异常
+        - article [ref=e972]:
+          - time [ref=e973]: 05-11 18:09
+          - generic [ref=e974]:
+            - generic [ref=e975]: 能耗抄表点位
+            - generic [ref=e976]: 巡检地点=紫涵雅集
+          - emphasis [ref=e977]: 已提交
+        - article [ref=e978]:
+          - time [ref=e979]: 05-11 18:09
+          - generic [ref=e980]:
+            - generic [ref=e981]: 能耗抄表点位
+            - generic [ref=e982]: 巡检地点=紫涵雅集
+          - emphasis [ref=e983]: 待复核
+        - article [ref=e984]:
+          - time [ref=e985]: 05-11 18:07
+          - generic [ref=e986]:
+            - generic [ref=e987]: 能耗抄表点位
+            - generic [ref=e988]: 巡检地点=紫涵雅集
+          - emphasis [ref=e989]: 待复核
+        - article [ref=e990]:
+          - time [ref=e991]: 05-11 18:05
+          - generic [ref=e992]:
+            - generic [ref=e993]: 能耗抄表点位
+            - generic [ref=e994]: 巡检地点=紫涵雅集
+          - emphasis [ref=e995]: 待复核
+  - complementary [ref=e261]:
+    - heading "记录详情" [level=2] [ref=e997]
+    - generic [ref=e998]:
+      - generic [ref=e999]:
+        - generic [ref=e1000]: AI 总结
+        - generic [ref=e1001]: 暂无总结
+      - table [ref=e1002]:
+        - rowgroup [ref=e1003]:
+          - row "字段 值 置信度" [ref=e1004]:
+            - columnheader "字段" [ref=e1005]
+            - columnheader "值" [ref=e1006]
+            - columnheader "置信度" [ref=e1007]
+        - rowgroup [ref=e1008]:
+          - row "巡检地点 - 0%" [ref=e1009]:
+            - cell "巡检地点" [ref=e1010]
+            - cell "-" [ref=e1011]
+            - cell "0%" [ref=e1012]
+          - row "Z1 能耗表读数 - 0%" [ref=e1013]:
+            - cell "Z1 能耗表读数" [ref=e1014]
+            - cell "-" [ref=e1015]
+            - cell "0%" [ref=e1016]
+          - row "Z2 能耗表读数 - 0%" [ref=e1017]:
+            - cell "Z2 能耗表读数" [ref=e1018]
+            - cell "-" [ref=e1019]
+            - cell "0%" [ref=e1020]
+          - row "Z3 能耗表读数 - 0%" [ref=e1021]:
+            - cell "Z3 能耗表读数" [ref=e1022]
+            - cell "-" [ref=e1023]
+            - cell "0%" [ref=e1024]
+          - row "Z4 能耗表读数 - 0%" [ref=e1025]:
+            - cell "Z4 能耗表读数" [ref=e1026]
+            - cell "-" [ref=e1027]
+            - cell "0%" [ref=e1028]
+          - row "生活水表读数 - 0%" [ref=e1029]:
+            - cell "生活水表读数" [ref=e1030]
+            - cell "-" [ref=e1031]
+            - cell "0%" [ref=e1032]
+          - row "备注 - 0%" [ref=e1033]:
+            - cell "备注" [ref=e1034]
+            - cell "-" [ref=e1035]
+            - cell "0%" [ref=e1036]

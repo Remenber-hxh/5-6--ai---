@@ -1,0 +1,62 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - button "返回" [ref=e4] [cursor=pointer]: ‹
+    - heading "确认日报字段" [level=1] [ref=e5]
+    - button "台账" [ref=e6] [cursor=pointer]
+  - main [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]: 紫
+        - generic [ref=e13]:
+          - generic [ref=e14]: 紫涵雅集 · 每日综合巡检
+          - generic [ref=e15]: 紫涵雅集每日综合巡检 · 巡检员
+        - generic [ref=e16]: 人工填写
+      - generic [ref=e17]:
+        - generic [ref=e18]: 日报字段
+        - generic [ref=e19]:
+          - generic [ref=e20]:
+            - generic [ref=e21]: 巡检地点*
+            - textbox "请输入" [ref=e23]
+          - generic [ref=e24]:
+            - generic [ref=e25]: 温度℃
+            - generic [ref=e26]:
+              - generic [ref=e27]: AI 识别
+              - spinbutton [ref=e28]
+          - generic [ref=e29]:
+            - generic [ref=e30]: 湿度%
+            - generic [ref=e31]:
+              - generic [ref=e32]: AI 识别
+              - spinbutton [ref=e33]
+          - generic [ref=e34]:
+            - generic [ref=e35]: 强电井室内情况*
+            - generic [ref=e36]:
+              - generic [ref=e37]: AI 识别
+              - combobox [ref=e38]:
+                - option "请选择" [selected]
+                - option "正常"
+                - option "异常"
+          - generic [ref=e39]:
+            - generic [ref=e40]: 配电箱情况*
+            - generic [ref=e41]:
+              - generic [ref=e42]: AI 识别
+              - combobox [ref=e43]:
+                - option "请选择" [selected]
+                - option "正常"
+                - option "异常"
+          - generic [ref=e44]:
+            - generic [ref=e45]: 弱电机房情况*
+            - generic [ref=e46]:
+              - generic [ref=e47]: AI 识别
+              - combobox [ref=e48]:
+                - option "请选择" [selected]
+                - option "正常"
+                - option "异常"
+          - generic [ref=e49]:
+            - generic [ref=e50]: 备注
+            - textbox "可选填写" [ref=e51]
+      - generic [ref=e52]:
+        - strong [ref=e53]: 已切换为人工填写
+        - paragraph [ref=e54]: AI 多次未能稳定识别，请逐项填写后提交。
+  - contentinfo [ref=e55]:
+    - button "保存并预览日报" [ref=e56] [cursor=pointer]
+  - status

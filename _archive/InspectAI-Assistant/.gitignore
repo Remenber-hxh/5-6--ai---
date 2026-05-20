@@ -1,0 +1,11 @@
+storage/
+.env
+.gocache*/
+.gotelemetry*/
+go-backend/server.exe
+go-backend/server
+__pycache__/
+*.pyc
+*.pid
+*.log
+go-backend/cmd/server/main.go.*

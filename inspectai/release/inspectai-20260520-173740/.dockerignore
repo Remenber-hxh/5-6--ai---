@@ -1,0 +1,17 @@
+.env
+.env.secure
+.env.prod
+.gocache
+.gotelemetry
+storage
+release
+__pycache__
+*.pyc
+*.pid
+*.log
+go-backend/server.exe
+go-backend/server
+go-backend/*.exe
+go-backend/*.exe~
+go-backend/server_clean.exe
+go-backend/cmd/server/*.go.*

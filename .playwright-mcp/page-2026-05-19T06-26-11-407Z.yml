@@ -1,0 +1,165 @@
+- generic [ref=e2]:
+  - main [ref=e3]:
+    - generic "JADEAST 智巡流程演示看板" [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8]:
+            - generic [ref=e9]:
+              - generic [ref=e10]: JADEAST
+              - generic [ref=e11]: 智巡
+            - paragraph [ref=e12]: AI 驱动的设备巡检与资产管理平台
+          - generic "核心流程" [ref=e13]:
+            - generic [ref=e14]: 拍照识别
+            - generic [ref=e15]: 字段确认
+            - generic [ref=e16]: 资产台账
+            - generic [ref=e17]: 异常复核
+            - generic [ref=e18]: 巡检闭环
+        - generic [ref=e19]:
+          - generic [ref=e20] [cursor=pointer]: 上传照片识别
+          - button "手动选择模板" [ref=e22] [cursor=pointer]
+      - generic [ref=e23]:
+        - article [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]: "1"
+            - strong [ref=e27]: 拍照识别
+            - generic [ref=e28]: AI 自动识别设备与表计
+          - generic [ref=e29]:
+            - generic [ref=e30]:
+              - generic [ref=e31]: 9:41
+              - img "水表巡检照片" [ref=e32]
+              - generic [ref=e35] [cursor=pointer]: 拍照
+            - generic [ref=e37]:
+              - img "AI 识别框选结果" [ref=e38]
+              - generic [ref=e40]:
+                - strong [ref=e41]: AI 识别结果
+                - generic [ref=e42]: 置信度 95%
+                - paragraph [ref=e43]: 识别场景：能耗抄表
+                - paragraph [ref=e44]: 生活水表读数：722
+                - generic [ref=e45] [cursor=pointer]: 确认并填写
+        - article [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e48]: "2"
+            - strong [ref=e49]: AI 识别中
+            - generic [ref=e50]: 多模态识别与数据提取
+          - generic [ref=e51]:
+            - generic [ref=e52]: AI
+            - list [ref=e53]:
+              - listitem [ref=e54]: 图像预处理
+              - listitem [ref=e55]: 设备类型识别
+              - listitem [ref=e56]:
+                - text: 表计读数识别
+                - emphasis [ref=e57]: 62%
+              - listitem [ref=e58]: 字段信息提取
+              - listitem [ref=e59]: 异常风险评估
+        - article [ref=e60]:
+          - generic [ref=e61]:
+            - generic [ref=e62]: "3"
+            - strong [ref=e63]: 字段确认
+            - generic [ref=e64]: 确认或修正识别结果
+          - generic [ref=e65]:
+            - generic [ref=e66]:
+              - img "水表缩略图" [ref=e67]
+              - img "电表缩略图" [ref=e68]
+            - generic [ref=e69]:
+              - paragraph [ref=e70]:
+                - generic [ref=e71]: 巡检地点
+                - generic [ref=e72]: 紫涵雅集
+              - paragraph [ref=e73]:
+                - generic [ref=e74]: Z1 能耗表读数
+                - generic [ref=e75]: "150527.77"
+              - paragraph [ref=e76]:
+                - generic [ref=e77]: Z2 能耗表读数
+                - generic [ref=e78]: "98231.40"
+              - paragraph [ref=e79]:
+                - generic [ref=e80]: 生活水表读数
+                - generic [ref=e81]: "722"
+              - paragraph [ref=e82]:
+                - generic [ref=e83]: 备注
+                - generic [ref=e84]: 读数正常
+            - generic [ref=e85]:
+              - button "保存草稿" [ref=e86] [cursor=pointer]
+              - button "提交日报" [ref=e87] [cursor=pointer]
+        - article [ref=e88]:
+          - generic [ref=e89]:
+            - generic [ref=e90]: "4"
+            - strong [ref=e91]: 资产台账
+            - generic [ref=e92]: 设备资产全生命周期管理
+          - generic [ref=e93]:
+            - complementary [ref=e94]:
+              - strong [ref=e95]: 智巡
+              - generic [ref=e96]: 首页
+              - generic [ref=e97]: 巡检记录
+              - generic [ref=e98]: 资产台账
+              - generic [ref=e99]: 异常复核
+            - main [ref=e100]:
+              - generic [ref=e101]:
+                - paragraph [ref=e102]:
+                  - generic [ref=e103]: "8"
+                  - text: 资产总数
+                - paragraph [ref=e104]:
+                  - generic [ref=e105]: "6"
+                  - text: 正常
+                - paragraph [ref=e106]:
+                  - generic [ref=e107]: "2"
+                  - text: 待复核
+                - paragraph [ref=e108]:
+                  - generic [ref=e109]: "8"
+                  - text: 今日巡检
+              - table [ref=e110]:
+                - rowgroup [ref=e111]:
+                  - row "资产编号 资产名称 项目 状态 最近巡检" [ref=e112]:
+                    - columnheader "资产编号" [ref=e113]
+                    - columnheader "资产名称" [ref=e114]
+                    - columnheader "项目" [ref=e115]
+                    - columnheader "状态" [ref=e116]
+                    - columnheader "最近巡检" [ref=e117]
+                - rowgroup [ref=e118]:
+                  - row "ENG-Z1 Z1 能耗表 紫涵雅集 正常 10:24" [ref=e119]:
+                    - cell "ENG-Z1" [ref=e120]
+                    - cell "Z1 能耗表" [ref=e121]
+                    - cell "紫涵雅集" [ref=e122]
+                    - cell "正常" [ref=e123]
+                    - cell "10:24" [ref=e124]
+                  - row "ENG-Z2 Z2 能耗表 紫涵雅集 正常 10:21" [ref=e125]:
+                    - cell "ENG-Z2" [ref=e126]
+                    - cell "Z2 能耗表" [ref=e127]
+                    - cell "紫涵雅集" [ref=e128]
+                    - cell "正常" [ref=e129]
+                    - cell "10:21" [ref=e130]
+                  - row "WTR-01 生活水表 紫涵雅集 待复核 09:58" [ref=e131]:
+                    - cell "WTR-01" [ref=e132]
+                    - cell "生活水表" [ref=e133]
+                    - cell "紫涵雅集" [ref=e134]
+                    - cell "待复核" [ref=e135]
+                    - cell "09:58" [ref=e136]
+                  - row "PWR-01 强电井 紫涵雅集 正常 09:41" [ref=e137]:
+                    - cell "PWR-01" [ref=e138]
+                    - cell "强电井" [ref=e139]
+                    - cell "紫涵雅集" [ref=e140]
+                    - cell "正常" [ref=e141]
+                    - cell "09:41" [ref=e142]
+        - article [ref=e143]:
+          - generic [ref=e144]:
+            - generic [ref=e145]: "5"
+            - strong [ref=e146]: 异常复核
+            - generic [ref=e147]: 异常处理与工单闭环
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - heading "异常详情" [level=4] [ref=e150]
+              - paragraph [ref=e151]: 读数疑似异常
+              - generic [ref=e152]: 资产编号 WTR-01
+              - generic [ref=e153]: AI 提示：读数较上期偏高，超阈值
+              - img "异常设备照片" [ref=e154]
+            - generic [ref=e155]:
+              - heading "工单处理" [level=4] [ref=e156]
+              - paragraph [ref=e157]: 处理中
+              - generic [ref=e158]: 派单：工程维修
+              - generic [ref=e159]: 复核：现场读数确认
+              - button "提交复核" [ref=e160] [cursor=pointer]
+      - generic [ref=e161]:
+        - generic [ref=e162]: AI 识别赋能
+        - generic [ref=e163]: 移动化协同
+        - generic [ref=e164]: 数据可视化
+        - generic [ref=e165]: 流程闭环管理
+        - generic [ref=e166]: 安全合规可追溯
+  - status

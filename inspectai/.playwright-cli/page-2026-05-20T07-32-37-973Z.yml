@@ -1,0 +1,157 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [active] [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]:
+        - option "全部项目" [selected]
+        - option "紫涵雅集"
+        - option "会议中心"
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e1397]:
+      - generic [ref=e1398]:
+        - text: 异常管理
+        - heading "异常复核" [level=1] [ref=e1399]
+        - paragraph [ref=e1400]: 对 AI 识别异常、字段缺失、低置信度读数进行人工复核，并形成工单闭环。
+      - button "批量处理" [ref=e1401] [cursor=pointer]
+    - generic [ref=e1402]:
+      - article [ref=e1403]:
+        - generic [ref=e1404]: 消防泵房
+        - text: fire_pump_room · 05-14 17:08
+        - paragraph [ref=e1405]: 消防泵房本次未填写状态，需人工复核。
+        - button "标记正常" [ref=e1406] [cursor=pointer]
+        - button "查看证据" [ref=e1407] [cursor=pointer]
+      - article [ref=e1408]:
+        - generic [ref=e1409]: 弱电机房
+        - text: weak_room · 05-14 17:08
+        - paragraph [ref=e1410]: 弱电机房本次未填写状态，需人工复核。
+        - button "标记正常" [ref=e1411] [cursor=pointer]
+        - button "查看证据" [ref=e1412] [cursor=pointer]
+      - article [ref=e1413]:
+        - generic [ref=e1414]: 配电箱内部
+        - text: distribution_box_inside · 05-14 17:08
+        - paragraph [ref=e1415]: 配电箱内部本次未填写状态，需人工复核。
+        - button "标记正常" [ref=e1416] [cursor=pointer]
+        - button "查看证据" [ref=e1417] [cursor=pointer]
+      - article [ref=e1418]:
+        - generic [ref=e1419]: 消防水表
+        - text: fire_water_meter · 05-14 17:04
+        - paragraph [ref=e1420]: 消防水表本次未取得有效读数，需人工补录或复核。
+        - button "标记正常" [ref=e1421] [cursor=pointer]
+        - button "查看证据" [ref=e1422] [cursor=pointer]
+      - article [ref=e1423]:
+        - generic [ref=e1424]: 配电箱
+        - text: distribution_box · 05-14 17:08
+        - paragraph [ref=e1425]: 配电箱本次状态：正常。AI 提示：图2和图3中配电箱外观无明显异常，图4中配电箱指示灯状态正常
+        - button "标记正常" [ref=e1426] [cursor=pointer]
+        - button "查看证据" [ref=e1427] [cursor=pointer]
+      - article [ref=e1428]:
+        - generic [ref=e1429]: 生活水表
+        - text: living_water_meter · 05-14 17:04
+        - paragraph [ref=e1430]: 生活水表本次读数：722。
+        - button "标记正常" [ref=e1431] [cursor=pointer]
+        - button "查看证据" [ref=e1432] [cursor=pointer]
+  - complementary [ref=e261]:
+    - heading "资产详情" [level=2] [ref=e1434]
+    - generic [ref=e1435]:
+      - generic [ref=e1437]:
+        - heading "消防泵房" [level=3] [ref=e1438]
+        - generic [ref=e1439]: 待复核
+      - generic [ref=e1440]:
+        - generic [ref=e1441]:
+          - generic [ref=e1442]: 设备编号
+          - generic [ref=e1443]: fire_pump_room
+        - generic [ref=e1444]:
+          - generic [ref=e1445]: 设备类型
+          - generic [ref=e1446]: 综合巡检对象
+        - generic [ref=e1447]:
+          - generic [ref=e1448]: 安装位置
+          - generic [ref=e1449]: p_zihan_daily
+        - generic [ref=e1450]:
+          - generic [ref=e1451]: 最近巡检
+          - generic [ref=e1452]: 05-14 17:08
+      - generic [ref=e1453]:
+        - generic [ref=e1454]: 台账摘要
+        - generic [ref=e1455]: 消防泵房本次未填写状态，需人工复核。
+      - generic [ref=e1456]:
+        - button "巡检记录" [ref=e1457] [cursor=pointer]
+        - button "字段历史" [ref=e1458] [cursor=pointer]
+        - button "异常记录" [ref=e1459] [cursor=pointer]
+        - button "关联文件" [ref=e1460] [cursor=pointer]
+      - table [ref=e1461]:
+        - rowgroup [ref=e1462]:
+          - row "巡检时间 巡检人 识别结果 状态" [ref=e1463]:
+            - columnheader "巡检时间" [ref=e1464]
+            - columnheader "巡检人" [ref=e1465]
+            - columnheader "识别结果" [ref=e1466]
+            - columnheader "状态" [ref=e1467]
+        - rowgroup [ref=e1468]:
+          - row "05-14 17:07 巡检员 巡检地点=紫涵雅集 异常" [ref=e1469]:
+            - cell "05-14 17:07" [ref=e1470]
+            - cell "巡检员" [ref=e1471]
+            - cell "巡检地点=紫涵雅集" [ref=e1472]
+            - cell "异常" [ref=e1473]:
+              - generic [ref=e1474]: 异常
+          - row "05-14 15:52 巡检员 巡检地点=紫涵雅集 异常" [ref=e1475]:
+            - cell "05-14 15:52" [ref=e1476]
+            - cell "巡检员" [ref=e1477]
+            - cell "巡检地点=紫涵雅集" [ref=e1478]
+            - cell "异常" [ref=e1479]:
+              - generic [ref=e1480]: 异常
+          - row "05-14 15:34 巡检员 巡检地点=紫涵雅集 异常" [ref=e1481]:
+            - cell "05-14 15:34" [ref=e1482]
+            - cell "巡检员" [ref=e1483]
+            - cell "巡检地点=紫涵雅集" [ref=e1484]
+            - cell "异常" [ref=e1485]:
+              - generic [ref=e1486]: 异常
+          - row "05-14 15:32 巡检员 巡检地点=紫涵雅集 异常" [ref=e1487]:
+            - cell "05-14 15:32" [ref=e1488]
+            - cell "巡检员" [ref=e1489]
+            - cell "巡检地点=紫涵雅集" [ref=e1490]
+            - cell "异常" [ref=e1491]:
+              - generic [ref=e1492]: 异常
+          - row "05-14 15:31 巡检员 巡检地点=紫涵雅集 待复核" [ref=e1493]:
+            - cell "05-14 15:31" [ref=e1494]
+            - cell "巡检员" [ref=e1495]
+            - cell "巡检地点=紫涵雅集" [ref=e1496]
+            - cell "待复核" [ref=e1497]:
+              - generic [ref=e1498]: 待复核
+      - heading "巡检照片 共 55 张" [level=3] [ref=e1500]
+      - generic [ref=e1502]:
+        - generic [ref=e1503]:
+          - text: 资产名称
+          - textbox "资产名称" [ref=e1504]: 消防泵房
+        - generic [ref=e1505]:
+          - text: 资产状态
+          - combobox "资产状态" [ref=e1506]:
+            - option "正常"
+            - option "异常"
+            - option "待复核" [selected]
+            - option "待维修"
+        - generic [ref=e1507]:
+          - text: 管理摘要
+          - textbox "管理摘要" [ref=e1508]: 消防泵房本次未填写状态，需人工复核。
+        - button "保存台账修改" [ref=e1509] [cursor=pointer]

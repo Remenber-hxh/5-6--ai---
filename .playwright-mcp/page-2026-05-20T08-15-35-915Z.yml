@@ -1,0 +1,101 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]:
+        - option "全部项目" [selected]
+        - option "紫涵雅集"
+        - option "会议中心"
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - text: 巡检管理
+        - heading "巡检任务" [level=1] [ref=e34]
+        - paragraph [ref=e35]: 展示待执行、进行中、已完成和逾期任务，主管可按点位追踪执行状态。
+      - button "派发任务" [ref=e36] [cursor=pointer]
+    - generic [ref=e37]:
+      - article [ref=e38]:
+        - heading "待执行" [level=2] [ref=e39]
+        - generic [ref=e40]:
+          - generic [ref=e41]: 能耗抄表点位
+          - generic [ref=e42]: 紫涵雅集 · 园区水电表点位 · 今日待执行
+          - emphasis [ref=e43]: 待执行
+        - generic [ref=e44]:
+          - generic [ref=e45]: 综合巡检点位
+          - generic [ref=e46]: 紫涵雅集 · 园区 · 今日待执行
+          - emphasis [ref=e47]: 待执行
+      - article [ref=e48]:
+        - heading "进行中" [level=2] [ref=e49]
+        - generic [ref=e50]:
+          - generic [ref=e51]: 能耗抄表
+          - generic [ref=e52]: 能耗抄表点位 · 05-20 16:07 · 已识别
+          - emphasis [ref=e53]: 已识别
+        - generic [ref=e54]:
+          - generic [ref=e55]: 能耗抄表
+          - generic [ref=e56]: 能耗抄表点位 · 05-19 14:05 · 人工填写
+          - emphasis [ref=e57]: 人工填写
+        - generic [ref=e58]:
+          - generic [ref=e59]: UPS 机房巡检
+          - generic [ref=e60]: UPS 机房 · 05-19 14:04 · 人工填写
+          - emphasis [ref=e61]: 人工填写
+        - generic [ref=e62]:
+          - generic [ref=e63]: 能耗抄表
+          - generic [ref=e64]: 能耗抄表点位 · 05-19 13:43 · 人工填写
+          - emphasis [ref=e65]: 人工填写
+      - article [ref=e66]:
+        - heading "已完成" [level=2] [ref=e67]
+        - generic [ref=e68]:
+          - generic [ref=e69]: 综合巡检
+          - generic [ref=e70]: 综合巡检点位 · 05-14 17:07 · 已识别
+          - emphasis [ref=e71]: 完成
+        - generic [ref=e72]:
+          - generic [ref=e73]: 能耗抄表
+          - generic [ref=e74]: 能耗抄表点位 · 05-14 17:04 · 已识别
+          - emphasis [ref=e75]: 完成
+        - generic [ref=e76]:
+          - generic [ref=e77]: 能耗抄表
+          - generic [ref=e78]: 能耗抄表点位 · 05-14 16:06 · 已识别
+          - emphasis [ref=e79]: 完成
+        - generic [ref=e80]:
+          - generic [ref=e81]: 综合巡检
+          - generic [ref=e82]: 综合巡检点位 · 05-14 15:52 · 已识别
+          - emphasis [ref=e83]: 完成
+      - article [ref=e84]:
+        - heading "逾期" [level=2] [ref=e85]
+        - generic [ref=e86]: 暂无逾期任务
+  - complementary [ref=e87]:
+    - heading "任务跟踪" [level=2] [ref=e89]
+    - generic [ref=e90]:
+      - generic [ref=e91]:
+        - generic [ref=e92]: 当前重点
+        - generic [ref=e93]: 能耗抄表
+      - generic [ref=e94]:
+        - generic [ref=e95]: 字段状态
+        - generic [ref=e96]: 识别后进入人工确认，确认后写入巡检记录与资产台账。
+      - generic [ref=e97]:
+        - generic [ref=e98]: 异常规则
+        - generic [ref=e99]: 缺字段、低置信度、人工修改都会进入复核或审批链路。

@@ -1,0 +1,22 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - heading "智巡" [level=1] [ref=e4]
+    - button "台账" [ref=e5] [cursor=pointer]
+  - main [ref=e6]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - paragraph [ref=e10]: JADEAST · 智巡
+        - heading "对准设备，AI 自动识别巡检字段" [level=2] [ref=e11]
+        - paragraph [ref=e12]: 支持仪表读数、设备状态、异常风险与日报模板匹配
+      - generic:
+        - generic: 取景区
+      - generic [ref=e13] [cursor=pointer]:
+        - generic "拍照" [ref=e14]
+        - generic [ref=e15]: 拍照识别
+      - generic [ref=e16]:
+        - generic [ref=e17] [cursor=pointer]:
+          - text: 从相册上传
+          - button "Choose File" [ref=e18]
+        - text: ·
+        - button "手动选择模板" [ref=e19] [cursor=pointer]
+  - status

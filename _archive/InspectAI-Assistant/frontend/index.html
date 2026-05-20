@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>AI巡检填报助手</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="hero">
+        <div class="brand-row">
+          <span class="brand-mark">巡</span>
+          <div>
+            <p>企业微信入口 · 本地联调版</p>
+            <h1>AI巡检填报助手</h1>
+          </div>
+        </div>
+        <div class="health">
+          <span id="healthDot"></span>
+          <strong id="healthStatus">检查服务中</strong>
+        </div>
+      </header>
+
+      <nav class="stepper" aria-label="操作流程">
+        <button class="step active" data-stage="setup">点位</button>
+        <button class="step" data-stage="photo">拍照</button>
+        <button class="step" data-stage="review">复核</button>
+        <button class="step" data-stage="submit">提交</button>
+        <button class="step" data-stage="ledger">台账</button>
+      </nav>
+
+      <main class="layout">
+        <section class="phone-panel">
+          <section class="stage active" id="stage-setup">
+            <div class="section-title">
+              <span>01</span>
+              <div>
+                <h2>选择巡检点位</h2>
+                <p>按历史企业微信日报模板创建记录，后续照片、识别字段、人工修正和AI总结都归入同一条记录。</p>
+              </div>
+            </div>
+
+            <label class="input-line">
+              巡检人员
+              <input id="inspector" value="巡检员" autocomplete="name" />
+            </label>
+
+            <div class="point-list" id="pointList"></div>
+            <button class="primary-action" id="createRecordBtn">创建巡检记录</button>
+          </section>
+
+          <section class="stage" id="stage-photo">
+            <div class="section-title">
+              <span>02</span>
+              <div>
+                <h2>拍照并发起识别</h2>
+                <p>第一版最多保留3次识别机会。识别不稳定会弹窗提示重新拍照，超过3次后进入人工填写。</p>
+              </div>
+            </div>
+
+            <div class="record-card" id="recordCard"></div>
+
+            <label class="camera-box" for="imageInput">
+              <input id="imageInput" type="file" accept="image/*" capture="environment" multiple />
+              <strong>拍摄或选择现场照片</strong>
+              <span>支持 JPG / PNG / WEBP，单张不超过10MB</span>
+            </label>
+
+            <div class="preview-grid" id="previewGrid"></div>
+            <div class="image-list" id="imageList"></div>
+
+            <button class="primary-action" id="uploadAnalyzeBtn">上传并识别</button>
+            <button class="ghost-action" id="manualBtn" type="button">无法拍清，转人工填写</button>
+          </section>
+
+          <section class="stage" id="stage-review">
+            <div class="section-title">
+              <span>03</span>
+              <div>
+                <h2>确认日报字段</h2>
+                <p>AI只负责预填和提示风险，最终字段以人工确认结果为准。人工修改不会被AI总结覆盖。</p>
+              </div>
+            </div>
+
+            <div class="analysis-card" id="analysisCard"></div>
+            <div class="field-list" id="fieldList"></div>
+            <button class="primary-action" id="saveAllBtn">保存并确认全部字段</button>
+          </section>
+
+          <section class="stage" id="stage-submit">
+            <div class="section-title">
+              <span>04</span>
+              <div>
+                <h2>日报预览与提交</h2>
+                <p>提交时生成单独AI总结，并同步形成资产台账。AI总结只追加，不改动人工确认字段。</p>
+              </div>
+            </div>
+
+            <textarea id="reportText" readonly placeholder="字段确认后生成日报预览"></textarea>
+            <div class="summary-card" id="summaryCard"></div>
+            <button class="primary-action" id="submitBtn">提交记录并生成台账</button>
+          </section>
+
+          <section class="stage" id="stage-ledger">
+            <div class="section-title">
+              <span>05</span>
+              <div>
+                <h2>资产台账</h2>
+                <p>已提交记录会按设备编号或点位自动归档，形成后续追踪的基础台账。</p>
+              </div>
+            </div>
+
+            <div class="asset-list" id="assetList"></div>
+          </section>
+        </section>
+
+        <aside class="ops-panel">
+          <h2>当前进度</h2>
+          <dl id="metaList">
+            <dt>记录</dt>
+            <dd>-</dd>
+            <dt>模板</dt>
+            <dd>-</dd>
+            <dt>识别状态</dt>
+            <dd>-</dd>
+            <dt>拍照次数</dt>
+            <dd>-</dd>
+          </dl>
+          <div class="timeline" id="timeline"></div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="modal" id="retakeModal" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="retakeTitle">
+        <span class="modal-kicker">识别未通过</span>
+        <h2 id="retakeTitle">需要重新拍照</h2>
+        <p id="retakeReason">图片无法稳定识别，请重新拍摄。</p>
+        <p class="attempt-line" id="attemptLine">已尝试 0 / 3 次</p>
+        <div class="modal-actions">
+          <button class="primary-action" id="retakeBtn">重新拍照</button>
+          <button class="ghost-action" id="modalManualBtn">进入人工填写</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

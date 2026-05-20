@@ -1,0 +1,48 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - text: 巡检管理
+        - heading "巡检记录" [level=1] [ref=e34]
+        - paragraph [ref=e35]: 照片、识别字段、AI 总结、人工确认和提交结果全部可追溯。
+      - button "导出记录" [ref=e36] [cursor=pointer]
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - heading "巡检记录列表" [level=2] [ref=e39]
+        - generic [ref=e40]:
+          - generic [ref=e41]: 全部项目
+          - generic [ref=e42]: 全部模板
+          - generic [ref=e43]: 全部状态
+          - generic [ref=e44]: 搜索巡检人 / 点位
+      - generic [ref=e46]: 暂无巡检记录
+  - complementary [ref=e47]:
+    - heading "记录详情" [level=2] [ref=e49]
+    - generic [ref=e50]: 暂无巡检记录

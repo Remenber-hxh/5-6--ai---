@@ -1,0 +1,6 @@
+[  173727ms] TypeError: rec.fields.map is not a function
+    at renderForm (http://127.0.0.1:18080/app.js?v=20260519o:569:20)
+    at eval (eval at <anonymous> (eval at evaluate (:302:30)), <anonymous>:8:5)
+    at eval (eval at evaluate (:302:30), <anonymous>:4:50)
+    at UtilityScript.evaluate (<anonymous>:304:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)

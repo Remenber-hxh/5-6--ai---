@@ -1,0 +1,51 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - text: 资产管理
+        - heading "设备管理" [level=1] [ref=e34]
+        - paragraph [ref=e35]: 维护设备档案、绑定点位、巡检模板、二维码和启停状态。
+      - button "新增设备" [ref=e36] [cursor=pointer]
+    - generic [ref=e38]: 暂无设备档案
+  - complementary [ref=e39]:
+    - heading "设备配置" [level=2] [ref=e41]
+    - generic [ref=e42]:
+      - generic [ref=e43]:
+        - generic [ref=e44]: 字段模板绑定
+        - generic [ref=e45]: 设备可绑定多个巡检字段，AI 识别结果按字段写入巡检记录，再沉淀到资产台账。
+      - generic [ref=e46]:
+        - generic [ref=e47]: 维护口径
+        - generic [ref=e48]: 设备档案负责长期属性，巡检记录负责单次事实，资产台账负责当前状态。
+    - generic [ref=e49]:
+      - generic [ref=e50]: 设备建档
+      - generic [ref=e51]: 点位绑定
+      - generic [ref=e52]: 模板绑定
+      - generic [ref=e53]: 启用巡检

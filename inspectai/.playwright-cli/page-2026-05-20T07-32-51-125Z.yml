@@ -1,0 +1,92 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [active] [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]:
+        - option "全部项目" [selected]
+        - option "紫涵雅集"
+        - option "会议中心"
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e1665]:
+      - generic [ref=e1666]:
+        - text: 数据中心
+        - heading "系统管理" [level=1] [ref=e1667]
+        - paragraph [ref=e1668]: 展示 API、AI 服务、MySQL、文件存储、企业微信入口等运行状态与部署配置。
+      - button "保存配置" [ref=e1669] [cursor=pointer]
+    - generic [ref=e1670]:
+      - article [ref=e1671]:
+        - generic [ref=e1672]: Go API 服务
+        - emphasis [ref=e1673]: 运行中
+        - paragraph [ref=e1674]: http://127.0.0.1:18080
+      - article [ref=e1675]:
+        - generic [ref=e1676]: AI 视觉服务
+        - emphasis [ref=e1677]: 独立服务
+        - paragraph [ref=e1678]: http://127.0.0.1:19100
+      - article [ref=e1679]:
+        - generic [ref=e1680]: 数据库
+        - emphasis [ref=e1681]: MySQL 已启用
+        - paragraph [ref=e1682]: mysql
+      - article [ref=e1683]:
+        - generic [ref=e1684]: 文件存储
+        - emphasis [ref=e1685]: 本地存储
+        - paragraph [ref=e1686]: storage/uploads
+    - generic [ref=e1687]:
+      - generic [ref=e1688]:
+        - heading "部署配置" [level=2] [ref=e1689]
+        - generic [ref=e1690]: 云服务器迁移前检查项
+      - table [ref=e1692]:
+        - rowgroup [ref=e1693]:
+          - row "公网域名 api.your-domain.com 待配置证书" [ref=e1694]:
+            - cell "公网域名" [ref=e1695]
+            - cell "api.your-domain.com" [ref=e1696]
+            - cell "待配置证书" [ref=e1697]:
+              - generic [ref=e1698]: 待配置证书
+          - row "企业微信回调 /wework/callback 预留" [ref=e1699]:
+            - cell "企业微信回调" [ref=e1700]
+            - cell "/wework/callback" [ref=e1701]
+            - cell "预留" [ref=e1702]:
+              - generic [ref=e1703]: 预留
+          - row "对象存储 MinIO / OSS 可替换" [ref=e1704]:
+            - cell "对象存储" [ref=e1705]
+            - cell "MinIO / OSS" [ref=e1706]
+            - cell "可替换" [ref=e1707]:
+              - generic [ref=e1708]: 可替换
+  - complementary [ref=e261]:
+    - heading "运行摘要" [level=2] [ref=e1710]
+    - generic [ref=e1711]:
+      - generic [ref=e1712]:
+        - generic [ref=e1713]: 当前架构
+        - generic [ref=e1714]: 移动端 18080，后台管理端 18081，AI 服务 19100，数据通过 Go API 落库。
+      - generic [ref=e1715]:
+        - generic [ref=e1716]:
+          - text: 后端 API 地址
+          - textbox "后端 API 地址" [ref=e1717]: http://127.0.0.1:18080
+        - generic [ref=e1718]:
+          - text: 访问令牌
+          - textbox "访问令牌" [ref=e1719]:
+            - /placeholder: 本地无令牌可留空
+        - button "保存配置" [ref=e1720] [cursor=pointer]

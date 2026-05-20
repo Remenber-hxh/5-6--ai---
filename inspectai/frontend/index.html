@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#07131f" />
+  <title>智巡</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css?v=20260520twofix" />
+</head>
+<body>
+<div id="app" data-scene="camera">
+
+  <!-- ========= 顶部标题栏 ========= -->
+  <header class="topbar" id="topbar">
+    <button class="back" id="backBtn" aria-label="返回">‹</button>
+    <h1 class="title" id="pageTitle">智巡</h1>
+    <button class="action" id="topApprovals" hidden>审批</button>
+    <button class="action" id="topAction" hidden>台账</button>
+  </header>
+  <button class="user-window" id="userWindowBtn" type="button">巡检员</button>
+
+  <!-- ========= 进度条 ========= -->
+  <div class="progress" id="progress" hidden>
+    <div class="bar" id="progressBar"></div>
+  </div>
+
+  <main class="main">
+
+    <!-- ========= 屏 1：相机入口（默认） ========= -->
+    <section class="scene scene-camera active" id="sceneCamera">
+      <div class="camera-hero">
+        <div class="hero-text">
+          <p class="hero-tagline" aria-label="JADEAST 智巡">
+            <span class="brand-emblem">J</span>
+            <span class="brand-word">JADEAST</span>
+            <span class="brand-divider"></span>
+            <span class="brand-cn">智巡</span>
+          </p>
+          <h2>对准巡检设备拍照</h2>
+          <p class="hero-hint">AI 会自动识别场景，调出对应的日报模板</p>
+        </div>
+        <div class="viewfinder" aria-hidden="true">
+          <span class="vf-corner vf-tl"></span>
+          <span class="vf-corner vf-tr"></span>
+          <span class="vf-corner vf-bl"></span>
+          <span class="vf-corner vf-br"></span>
+          <span class="vf-scan"></span>
+        </div>
+        <label class="shutter-wrap" for="cameraInput">
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple hidden />
+          <span class="shutter" aria-label="拍照"></span>
+          <span class="shutter-label">拍照识别</span>
+        </label>
+        <div class="hero-secondary">
+          <span class="link-btn upload-wrap">
+            从相册上传
+            <input id="uploadInput" type="file" accept="image/*" multiple class="upload-input" />
+          </span>
+          <span class="link-sep">·</span>
+          <button class="link-btn" id="manualPickBtn" type="button">手动选择模板</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========= 屏 2：识别中 ========= -->
+    <section class="scene scene-loading" id="sceneLoading">
+      <div class="loading-box">
+        <div class="loading-orbit">
+          <span class="orbit-core"></span>
+          <span class="orbit-ring"></span>
+          <span class="orbit-ring orbit-ring-2"></span>
+        </div>
+        <p class="loading-msg" id="loadingMsg">AI 正在识别场景…</p>
+        <p class="loading-sub" id="loadingSub"></p>
+        <ol class="loading-steps" id="loadingSteps">
+          <li class="step step-1"><span class="step-dot"></span><span class="step-text">识别巡检场景</span></li>
+          <li class="step step-2"><span class="step-dot"></span><span class="step-text">提取设备状态 / 表计读数</span></li>
+          <li class="step step-3"><span class="step-dot"></span><span class="step-text">匹配日报模板</span></li>
+        </ol>
+        <div class="loading-tags" aria-hidden="true">
+          <span>设备状态</span>
+          <span>仪表读数</span>
+          <span>异常风险</span>
+          <span>日报模板</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========= 屏 3：模板确认 ========= -->
+    <section class="scene scene-classify" id="sceneClassify">
+      <div class="classify-result" id="classifyResult"></div>
+      <div class="template-list" id="templateList"></div>
+    </section>
+
+    <!-- ========= 屏 4：字段确认 ========= -->
+    <section class="scene scene-form" id="sceneForm">
+      <div class="context" id="formContext"></div>
+      <div id="formGroups"></div>
+      <div class="manual-hint" id="manualHint" hidden>
+        <strong>已切换为人工填写</strong>
+        <p>AI 多次未能稳定识别，请逐项填写后提交。</p>
+      </div>
+    </section>
+
+    <!-- ========= 屏 5：日报预览 + AI 总结/建议 ========= -->
+    <section class="scene scene-preview" id="scenePreview">
+      <div class="context" id="previewContext"></div>
+      <div class="group-title">日报字段</div>
+      <div class="group" id="previewFields"></div>
+
+      <div class="summary-card" id="summaryCard" hidden>
+        <div class="head">★ AI 总结（仅基于已确认字段）</div>
+        <div class="body" id="summaryBody"></div>
+      </div>
+
+      <div class="recos-card" id="recosCard" hidden>
+        <div class="head">▲ AI 行动建议（与总结分开，可独立采纳）</div>
+        <div id="recosList"></div>
+      </div>
+
+      <div class="error-banner" id="aiErrorBanner" hidden></div>
+    </section>
+
+    <!-- ========= 屏 6：资产台账列表 ========= -->
+    <section class="scene scene-ledger" id="sceneLedger">
+      <div class="ledger-overview" id="ledgerOverview">
+        <div class="lo-card"><div class="lo-num" id="loTotal">—</div><div class="lo-label">资产总数</div></div>
+        <div class="lo-card"><div class="lo-num lo-ok" id="loNormal">—</div><div class="lo-label">正常</div></div>
+        <div class="lo-card"><div class="lo-num lo-warn" id="loRisk">—</div><div class="lo-label">异常 / 待复核</div></div>
+        <div class="lo-card"><div class="lo-num lo-blue" id="loToday">—</div><div class="lo-label">今日新增巡检</div></div>
+      </div>
+      <div class="ledger-groups" id="ledgerGroups"></div>
+      <div class="group-title">资产台账</div>
+      <div id="assetList" class="asset-list"></div>
+    </section>
+
+    <!-- ========= 屏 7：资产详情（只读） ========= -->
+    <section class="scene scene-asset" id="sceneAsset">
+      <div id="assetDetailBody"></div>
+    </section>
+
+    <!-- ========= 屏 8：待审批（主管 / PC） ========= -->
+    <section class="scene scene-approvals" id="sceneApprovals">
+      <div class="group-title">数据修改审批</div>
+      <div id="approvalsBody"></div>
+    </section>
+
+  </main>
+
+  <!-- ========= 底部主按钮 ========= -->
+  <footer class="footer" id="footer" hidden>
+    <button class="btn-primary" id="primaryBtn"></button>
+    <button class="btn-ghost" id="secondaryBtn" hidden></button>
+  </footer>
+
+  <!-- ========= 失败弹窗 ========= -->
+  <div class="modal-mask" id="retakeModal" hidden>
+    <div class="modal">
+      <div class="modal-title" id="retakeTitle">需要重新拍照</div>
+      <div class="modal-desc" id="retakeDesc">图片质量不足，请重新拍摄</div>
+      <div class="modal-attempt" id="retakeAttempt">已尝试 0 / 3 次</div>
+      <div class="modal-actions">
+        <button id="retakeManualBtn">转人工填写</button>
+        <button class="primary" id="retakeAgainBtn">重新拍照</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= 修改申请弹层 ========= -->
+  <div class="sheet-mask" id="changeReqSheet" hidden>
+    <div class="sheet">
+      <div class="sheet-header">
+        <span class="sheet-title">申请修改</span>
+        <button class="sheet-close" id="changeReqClose" aria-label="关闭">×</button>
+      </div>
+      <div class="sheet-body">
+        <div class="form-row">
+          <label>修改对象</label>
+          <select id="changeReqTarget"></select>
+        </div>
+        <div id="changeReqFields"></div>
+        <div class="form-row">
+          <label>修改理由（必填）</label>
+          <textarea id="changeReqReason" placeholder="例如：现场温度计读数被遮挡，AI 识别错误"></textarea>
+        </div>
+      </div>
+      <div class="sheet-footer">
+        <button class="btn-ghost" id="changeReqCancel">取消</button>
+        <button class="btn-primary" id="changeReqSubmit">提交申请</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= 图片大图预览（lightbox） ========= -->
+  <div class="lightbox" id="imageLightbox" hidden>
+    <button class="lightbox-close" id="lightboxClose" aria-label="关闭预览">×</button>
+    <button class="lightbox-nav lightbox-prev" id="lightboxPrev" aria-label="上一张" hidden>‹</button>
+    <button class="lightbox-nav lightbox-next" id="lightboxNext" aria-label="下一张" hidden>›</button>
+    <div class="lightbox-stage" id="lightboxStage">
+      <img id="lightboxImg" alt="" />
+    </div>
+  </div>
+
+  <!-- ========= toast ========= -->
+  <div class="toast" id="toast" role="status"></div>
+
+</div>
+
+  <script src="/app.js?v=20260519o"></script>
+</body>
+</html>

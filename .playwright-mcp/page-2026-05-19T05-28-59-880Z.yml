@@ -1,0 +1,60 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - button "返回" [ref=e4] [cursor=pointer]: ‹
+    - heading "确认日报字段" [level=1] [ref=e5]
+    - button "台账" [ref=e6] [cursor=pointer]
+  - main [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]: 紫
+        - generic [ref=e13]:
+          - generic [ref=e14]: 紫涵雅集 · 能耗抄表点位
+          - generic [ref=e15]: 能耗抄表 · 巡检员
+        - generic [ref=e16]: 人工填写
+      - generic [ref=e17]:
+        - generic [ref=e18]: 日报字段
+        - generic [ref=e19]:
+          - generic [ref=e20]:
+            - generic [ref=e21]:
+              - text: 巡检地点
+              - generic [ref=e22]: "*"
+            - textbox "请输入" [ref=e24]
+          - generic [ref=e25]:
+            - generic [ref=e26]: Z1 能耗表读数
+            - generic [ref=e27]:
+              - generic [ref=e28]: AI 识别
+              - spinbutton [ref=e29]
+          - generic [ref=e30]:
+            - generic [ref=e31]: Z2 能耗表读数
+            - generic [ref=e32]:
+              - generic [ref=e33]: AI 识别
+              - spinbutton [ref=e34]
+          - generic [ref=e35]:
+            - generic [ref=e36]: Z3 能耗表读数
+            - generic [ref=e37]:
+              - generic [ref=e38]: AI 识别
+              - spinbutton [ref=e39]
+          - generic [ref=e40]:
+            - generic [ref=e41]: Z4 能耗表读数
+            - generic [ref=e42]:
+              - generic [ref=e43]: AI 识别
+              - spinbutton [ref=e44]
+          - generic [ref=e45]:
+            - generic [ref=e46]: 生活水表读数
+            - generic [ref=e47]:
+              - generic [ref=e48]: AI 识别
+              - spinbutton [ref=e49]
+          - generic [ref=e50]:
+            - generic [ref=e51]: 消防水表读数
+            - generic [ref=e52]:
+              - generic [ref=e53]: AI 识别
+              - spinbutton [ref=e54]
+          - generic [ref=e55]:
+            - generic [ref=e56]: 备注
+            - textbox "可选填写" [ref=e57]
+      - generic [ref=e58]:
+        - strong [ref=e59]: 已切换为人工填写
+        - paragraph [ref=e60]: AI 多次未能稳定识别，请逐项填写后提交。
+  - contentinfo:
+    - button "保存并预览日报"
+  - status

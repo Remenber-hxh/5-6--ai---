@@ -1,0 +1,44 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - heading "智巡" [level=1] [ref=e4]
+      - button "台账" [ref=e5] [cursor=pointer]
+    - main [ref=e6]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - paragraph [ref=e10]: JADEAST · 智巡
+          - heading "对准设备，AI 自动识别巡检字段" [level=2] [ref=e11]
+          - paragraph [ref=e12]: 支持仪表读数、设备状态、异常风险与日报模板匹配
+        - generic:
+          - generic: 取景区
+        - generic [ref=e13] [cursor=pointer]:
+          - generic "拍照" [ref=e14]
+          - generic [ref=e15]: 拍照识别
+        - generic [ref=e16]:
+          - generic [ref=e17] [cursor=pointer]:
+            - text: 从相册上传
+            - button "Choose File" [ref=e18]
+          - text: ·
+          - button "手动选择模板" [ref=e19] [cursor=pointer]
+    - status
+  - complementary [ref=e20]:
+    - generic [ref=e21]: JADEAST · 智巡
+    - generic [ref=e22]: AI 智能巡检助手
+    - generic [ref=e23]: 让现场拍照即填报，让填报自动沉淀台账
+    - list [ref=e24]:
+      - listitem [ref=e25]:
+        - generic [ref=e26]: "01"
+        - generic [ref=e27]:
+          - generic [ref=e28]: 拍照即填报
+          - paragraph [ref=e29]: 现场对准设备拍照，AI 自动识别表计、状态与风险，一键生成日报模板。
+      - listitem [ref=e30]:
+        - generic [ref=e31]: "02"
+        - generic [ref=e32]:
+          - generic [ref=e33]: 人工确认留痕
+          - paragraph [ref=e34]: 识别结果由巡检人逐项确认，每条修改可溯源，可审计。
+      - listitem [ref=e35]:
+        - generic [ref=e36]: "03"
+        - generic [ref=e37]:
+          - generic [ref=e38]: 自动沉淀台账
+          - paragraph [ref=e39]: 每次巡检自动归档到资产档案，历史可追溯，修改走审批。
+    - generic [ref=e40]: 演示版本 · 璟邑科技

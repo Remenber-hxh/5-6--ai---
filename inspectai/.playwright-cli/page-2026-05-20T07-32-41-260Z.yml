@@ -1,0 +1,75 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [active] [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]:
+        - option "全部项目" [selected]
+        - option "紫涵雅集"
+        - option "会议中心"
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e1510]:
+      - generic [ref=e1511]:
+        - text: 异常管理
+        - heading "修改审批" [level=1] [ref=e1512]
+        - paragraph [ref=e1513]: 人工修正必须留痕，审批通过后更新最终字段，但保留 AI 原始识别。
+      - button "审批设置" [ref=e1514] [cursor=pointer]
+    - generic [ref=e1515]:
+      - article [ref=e1516]:
+        - generic [ref=e1517]:
+          - text: 申请人：巡检员 · 05-14 17:13 巡检记录数据修改
+          - paragraph [ref=e1518]: ceshi
+        - generic [ref=e1519]:
+          - emphasis [ref=e1520]: 已拒绝
+          - strong [ref=e1521]: rec_1778749668530788500_ef498c2ec919
+        - button "查看" [ref=e1523] [cursor=pointer]
+      - article [ref=e1524]:
+        - generic [ref=e1525]:
+          - text: 申请人：巡检员 · 05-14 14:51 资产数据修改
+          - paragraph [ref=e1526]: 正常
+        - generic [ref=e1527]:
+          - emphasis [ref=e1528]: 已通过
+          - strong [ref=e1529]: 紫涵雅集::zihan_energy::z3_energy_meter
+        - button "查看" [ref=e1531] [cursor=pointer]
+      - article [ref=e1532]:
+        - generic [ref=e1533]:
+          - text: 申请人：巡检员 · 05-13 17:25 巡检记录数据修改
+          - paragraph [ref=e1534]: 测试
+        - generic [ref=e1535]:
+          - emphasis [ref=e1536]: 已通过
+          - strong [ref=e1537]: rec_1778571011943080300_2f14464ac53d
+        - button "查看" [ref=e1539] [cursor=pointer]
+  - complementary [ref=e261]:
+    - heading "审批流" [level=2] [ref=e1541]
+    - generic [ref=e1542]:
+      - generic [ref=e1543]:
+        - generic [ref=e1544]: 巡检员提交
+        - generic [ref=e1545]: 字段对比
+        - generic [ref=e1546]: 主管审批
+        - generic [ref=e1547]: 更新台账
+      - generic [ref=e1548]:
+        - generic [ref=e1549]: 规则
+        - generic [ref=e1550]: 人工修改不直接覆盖 AI 识别，审批后写入最终字段，并保留变更前后值。

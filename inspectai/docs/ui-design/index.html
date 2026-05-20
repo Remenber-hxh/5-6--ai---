@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JADEAST 智巡前端设计图</title>
+  <link rel="stylesheet" href="./ui-design.css" />
+</head>
+<body>
+  <main class="design-board">
+    <section class="board-hero">
+      <div>
+        <p class="eyebrow">JADEAST · 智巡</p>
+        <h1>前端高保真设计图总览</h1>
+        <p class="intro">围绕“拍照采集、AI 识别、人工确认、异常复核、资产台账”形成完整产品闭环，覆盖移动端用户入口与后台管理端。</p>
+      </div>
+      <div class="hero-flow">
+        <span>拍照识别</span>
+        <i></i>
+        <span>字段确认</span>
+        <i></i>
+        <span>日报提交</span>
+        <i></i>
+        <span>资产入账</span>
+      </div>
+    </section>
+
+    <section class="section-head">
+      <span>01</span>
+      <div>
+        <h2>移动端用户流程</h2>
+        <p>面向企业微信内的一线巡检人员，所有页面以单手操作、现场弱网、拍照优先为前提。</p>
+      </div>
+    </section>
+
+    <section class="mobile-grid">
+      <article class="phone">
+        <div class="phone-top"><b>智巡</b><span>巡检员</span></div>
+        <div class="camera-home">
+          <div class="brand-pill">JADEAST · 智巡</div>
+          <h3>对准巡检设备拍照</h3>
+          <p>AI 会自动识别场景，调出对应的日报模板</p>
+          <div class="view-box"><em></em><strong>取景区</strong></div>
+          <button class="shutter"></button>
+          <small>拍照识别</small>
+          <div class="inline-links">从相册上传 · 手动选择模板</div>
+        </div>
+      </article>
+
+      <article class="phone">
+        <div class="phone-top"><b>拍照识别</b><span>1/3</span></div>
+        <div class="photo-capture">
+          <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt="水表现场照片" />
+          <div class="scan-card">
+            <b>AI 识别结果</b>
+            <span>能耗抄表 · 置信度 95%</span>
+            <p>检测到机械水表字轮，建议进入字段确认。</p>
+            <button>确认并填写</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="phone dark">
+        <div class="phone-top"><b>AI 识别中</b><span>安全通道</span></div>
+        <div class="ai-loading">
+          <div class="ai-core">AI</div>
+          <h3>正在识别表计读数与设备状态</h3>
+          <ul>
+            <li class="done">图像质量检测</li>
+            <li class="done">设备类型识别</li>
+            <li class="active">字段信息提取</li>
+            <li>生成复核建议</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="phone">
+        <div class="phone-top"><b>确认日报字段</b><span>保存</span></div>
+        <div class="field-page">
+          <div class="thumbs">
+            <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt="水表" />
+            <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749668530788500_ef498c2ec919/img_1778749654533284500_f47fdb348dc4_微信图片_20260514141056_3_7.jpg" alt="配电箱" />
+          </div>
+          <div class="form-list">
+            <div><span>巡检地点</span><b>1栋-地库-给水管井</b></div>
+            <div><span>Z1 能耗表读数</span><b>1125155.3</b><em>AI 95%</em></div>
+            <div><span>Z2 能耗表读数</span><b>55967.844</b><em>AI 94%</em></div>
+            <div><span>Z3 能耗表读数</span><b>42170.484</b><em>AI 92%</em></div>
+            <div><span>Z4 能耗表读数</span><b>150527.77</b><em>AI 95%</em></div>
+            <div><span>生活水表读数</span><b>722</b><em>人工确认</em></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="phone">
+        <div class="phone-top"><b>日报预览</b><span>提交</span></div>
+        <div class="report-page">
+          <div class="report-title">
+            <b>紫涵雅集能耗抄表</b>
+            <span>2026-05-19 14:05</span>
+          </div>
+          <p>本次完成 Z1-Z4 能耗表及生活水表读数确认，字段已由人工复核。</p>
+          <div class="summary">
+            <b>AI 总结</b>
+            <span>能耗表读数连续性正常，生活水表读数与现场照片一致。消防水表缺少有效读数，进入待复核。</span>
+          </div>
+          <button>提交日报并入账</button>
+        </div>
+      </article>
+
+      <article class="phone">
+        <div class="phone-top"><b>资产台账</b><span>筛选</span></div>
+        <div class="mobile-ledger">
+          <div class="mini-kpis">
+            <span><b>12</b>资产</span>
+            <span><b>6</b>正常</span>
+            <span><b>6</b>待复核</span>
+          </div>
+          <div class="asset-item warn"><b>消防泵房</b><span>综合巡检对象 · 待复核</span></div>
+          <div class="asset-item ok"><b>Z4 能耗表</b><span>150527.77 · 正常</span></div>
+          <div class="asset-item ok"><b>Z1 能耗表</b><span>1125155.3 · 正常</span></div>
+          <div class="asset-item warn"><b>消防水表</b><span>缺少有效读数 · 待复核</span></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="section-head">
+      <span>02</span>
+      <div>
+        <h2>后台管理端</h2>
+        <p>面向主管和管理人员，重点处理资产台账、异常复核、修改审批和巡检追溯。</p>
+      </div>
+    </section>
+
+    <section class="desktop-grid">
+      <article class="desktop desktop-home">
+        <aside>
+          <b>JADEAST 智巡后台</b>
+          <span class="active">首页</span>
+          <span>资产台账</span>
+          <span>异常复核</span>
+          <span>修改审批</span>
+          <span>统计报表</span>
+        </aside>
+        <div class="desk-main">
+          <div class="desk-top"><b>全部项目</b><span>张管理员</span></div>
+          <div class="ops-banner"><b>后台工作台</b><strong>全部项目</strong><span>存在待处理项</span><em>05-19 14:05 最近巡检</em></div>
+          <div class="kpi-row">
+            <div><b>12</b><span>资产总数</span></div>
+            <div><b>6</b><span>在线设备</span></div>
+            <div><b>6</b><span>异常设备</span></div>
+            <div><b>3</b><span>今日巡检</span></div>
+          </div>
+          <div class="dash-panels">
+            <div class="chart-card"><h4>状态趋势</h4><svg viewBox="0 0 420 130"><polyline points="15,105 95,32 175,86 255,106 335,106 405,84" fill="none" stroke="#10b981" stroke-width="5"/><polyline points="15,114 95,58 175,92 255,108 335,108 405,96" fill="none" stroke="#f59e0b" stroke-width="5"/></svg></div>
+            <div class="queue-card"><h4>异常复核队列</h4><p>消防泵房待复核</p><p>弱电机房待复核</p><p>消防水表缺少读数</p></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="desktop desktop-ledger">
+        <div class="desk-head"><b>资产台账</b><span>资产生命周期管理</span></div>
+        <div class="filters-line"><span>全部设备类型</span><span>全部状态</span><span>输入设备编号 / 名称</span><button>导出</button></div>
+        <table>
+          <thead><tr><th>设备编号</th><th>设备名称</th><th>设备类型</th><th>安装位置</th><th>状态</th><th>最近巡检</th></tr></thead>
+          <tbody>
+            <tr><td>fire_pump_room</td><td>消防泵房</td><td>综合巡检对象</td><td>p_zihan_daily</td><td><em class="tag warn">待复核</em></td><td>05-14 17:08</td></tr>
+            <tr><td>z4_energy_meter</td><td>Z4能耗表</td><td>电表</td><td>p_zihan_energy</td><td><em class="tag ok">正常</em></td><td>05-14 17:04</td></tr>
+            <tr><td>living_water_meter</td><td>生活水表</td><td>水表</td><td>p_zihan_energy</td><td><em class="tag warn">待复核</em></td><td>05-14 17:04</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="desktop desktop-detail">
+        <div class="asset-detail-card">
+          <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749668530788500_ef498c2ec919/img_1778749654533284500_f47fdb348dc4_微信图片_20260514141056_3_7.jpg" alt="消防泵房照片" />
+          <div>
+            <h3>消防泵房 <em class="tag warn">待复核</em></h3>
+            <p>设备编号：fire_pump_room</p>
+            <p>安装位置：p_zihan_daily</p>
+            <p>最近巡检：05-14 17:08</p>
+          </div>
+        </div>
+        <div class="summary-box"><b>管理摘要</b><span>消防泵房本次未填写状态，需人工复核。</span></div>
+        <div class="history-table">
+          <b>巡检记录</b>
+          <p>05-14 17:07 · 巡检员 · 紫涵雅集 · 异常</p>
+          <p>05-14 15:52 · 巡检员 · 紫涵雅集 · 异常</p>
+          <p>05-12 14:48 · 巡检员 · 紫涵雅集 · 待复核</p>
+        </div>
+      </article>
+
+      <article class="desktop desktop-records">
+        <div class="desk-head"><b>巡检记录</b><span>照片、字段、AI 总结可追溯</span></div>
+        <div class="record-row"><span>能耗抄表点位</span><b>Z4=150527.77 / 生活水表=722</b><em class="tag ok">已提交</em></div>
+        <div class="record-row"><span>综合巡检</span><b>配电箱状态正常，消防泵房待复核</b><em class="tag warn">待复核</em></div>
+        <div class="record-row"><span>UPS 机房</span><b>蓄电池组、指示灯、机房卫生待确认</b><em class="tag warn">草稿</em></div>
+      </article>
+
+      <article class="desktop desktop-review">
+        <div class="desk-head"><b>异常复核</b><span>异常进入工单闭环</span></div>
+        <div class="review-card"><b>消防水表缺少有效读数</b><p>AI 未能从照片中取得可靠读数，建议补拍或人工补录。</p><button>确认异常</button><button class="ghost">退回重拍</button></div>
+        <div class="review-card"><b>弱电机房状态缺失</b><p>日报字段未填写，需主管确认是否作为异常台账保留。</p><button>转工单</button><button class="ghost">标记正常</button></div>
+      </article>
+
+      <article class="desktop desktop-approval">
+        <div class="desk-head"><b>修改审批</b><span>人工修正留痕，不覆盖 AI 原始识别</span></div>
+        <div class="approval-card"><span>申请人：巡检员</span><b>Z1 能耗表读数修正</b><p>原值 112515.53，修正为 1125155.3，原因：小数点位置识别错误。</p><button>通过</button><button class="danger">驳回</button></div>
+        <div class="approval-card"><span>申请人：巡检员</span><b>生活水表读数修正</b><p>原值 72.2，修正为 722，原因：机械字轮末位非小数。</p><button>通过</button><button class="danger">驳回</button></div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

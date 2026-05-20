@@ -1,0 +1,93 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic "当前登录用户" [ref=e28]:
+        - generic [ref=e29]: 未
+        - generic [ref=e30]:
+          - text: 未登录
+          - generic [ref=e31]: 请登录
+  - main [ref=e32]:
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - text: 数据中心
+        - heading "数据看板" [level=1] [ref=e35]
+        - paragraph [ref=e36]: 展示资产状态、巡检效率、AI 识别准确率、异常闭环率和项目趋势。
+      - button "刷新数据" [ref=e37] [cursor=pointer]
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - heading "每日巡检记录" [level=2] [ref=e42]
+            - paragraph [ref=e43]: 按记录提交日统计，纵轴为当日条数。资产当前状态以顶部数字卡为准。
+          - generic [ref=e44]:
+            - generic [ref=e45]: 当日·正常
+            - generic [ref=e47]: 当日·待复核
+            - generic [ref=e49]: 当日·异常
+        - img [ref=e52]:
+          - generic [ref=e53]:
+            - generic [ref=e54]: "0"
+            - generic [ref=e55]: "1"
+            - generic [ref=e56]: "1"
+            - generic [ref=e57]: 05/14
+            - generic [ref=e58]: 05/15
+            - generic [ref=e59]: 05/16
+            - generic [ref=e60]: 05/17
+            - generic [ref=e61]: 05/18
+            - generic [ref=e62]: 05/19
+            - generic [ref=e63]: 05/20
+      - article [ref=e85]:
+        - heading "AI 识别准确率" [level=2] [ref=e86]
+        - generic [ref=e87]: —
+        - paragraph [ref=e88]: 样本不足（0/5）
+      - article [ref=e89]:
+        - heading "异常闭环率" [level=2] [ref=e90]
+        - generic [ref=e91]: 100%
+      - generic [ref=e92]:
+        - article [ref=e93]:
+          - generic [ref=e94]: 正常资产
+          - generic [ref=e95]: "0"
+          - generic [ref=e96]: 资产健康
+        - article [ref=e97]:
+          - generic [ref=e98]: 待复核
+          - generic [ref=e99]: "0"
+          - generic [ref=e100]: 人工确认
+        - article [ref=e101]:
+          - generic [ref=e102]: 异常资产
+          - generic [ref=e103]: "0"
+          - generic [ref=e104]: 需处理
+        - article [ref=e105]:
+          - generic [ref=e106]: 巡检记录
+          - generic [ref=e107]: "0"
+          - generic [ref=e108]: 历史沉淀
+  - complementary [ref=e109]:
+    - heading "指标解释" [level=2] [ref=e111]
+    - generic [ref=e112]:
+      - generic [ref=e113]:
+        - generic [ref=e114]: AI 识别准确率
+        - generic [ref=e115]: 按人工最终确认字段与 AI 原始识别字段比对计算。
+      - generic [ref=e116]:
+        - generic [ref=e117]: 异常闭环率
+        - generic [ref=e118]: 异常从识别、复核、工单、关闭的完整比例。

@@ -1,0 +1,176 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]: JADEAST 智巡后台
+    - navigation "后台导航" [ref=e6]:
+      - button "首页" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]: 巡检管理
+      - button "巡检计划" [ref=e9] [cursor=pointer]
+      - button "巡检任务" [ref=e10] [cursor=pointer]
+      - button "巡检记录" [ref=e11] [cursor=pointer]
+      - button "资产台账" [ref=e12] [cursor=pointer]
+      - button "设备管理" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]: 异常管理
+      - button "异常复核" [ref=e15] [cursor=pointer]
+      - button "修改审批" [ref=e16] [cursor=pointer]
+      - generic [ref=e17]: 数据中心
+      - button "数据看板" [ref=e18] [cursor=pointer]
+      - button "统计报表" [ref=e19] [cursor=pointer]
+      - button "系统管理" [ref=e20] [cursor=pointer]
+  - banner [ref=e21]:
+    - generic "项目筛选" [ref=e22]:
+      - combobox "项目筛选" [ref=e23]:
+        - option "全部项目" [selected]
+        - option "紫涵雅集"
+        - option "会议中心"
+    - generic [ref=e24]:
+      - button "↻ 0" [ref=e25] [cursor=pointer]:
+        - text: ↻
+        - emphasis [ref=e26]: "0"
+      - button "?" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - generic [ref=e29]: 张
+        - generic [ref=e30]: 张管理员
+  - main [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - text: 巡检管理
+        - heading "巡检计划" [level=1] [ref=e34]
+        - paragraph [ref=e35]: 按项目、点位、频次和模板维护巡检计划，自动生成每日可执行任务。
+      - button "新建计划" [ref=e36] [cursor=pointer]
+    - generic [ref=e37]:
+      - article [ref=e38]:
+        - generic [ref=e39]: 计划数量
+        - generic [ref=e40]: "10"
+        - generic [ref=e41]: 来自点位与模板
+      - article [ref=e42]:
+        - generic [ref=e43]: 启用计划
+        - generic [ref=e44]: "10"
+        - generic [ref=e45]: 当前有效
+      - article [ref=e46]:
+        - generic [ref=e47]: 今日执行
+        - generic [ref=e48]: "7"
+        - generic [ref=e49]: 每日计划
+      - article [ref=e50]:
+        - generic [ref=e51]: AI 模板
+        - generic [ref=e52]: "3"
+        - generic [ref=e53]: 已配置视觉识别
+    - generic [ref=e54]:
+      - generic [ref=e55]:
+        - heading "计划列表" [level=2] [ref=e56]
+        - generic [ref=e57]:
+          - generic [ref=e58]: 全部项目
+          - generic [ref=e59]: 全部频次
+          - generic [ref=e60]: 全部状态
+          - generic [ref=e61]: 搜索计划 / 点位
+      - table [ref=e63]:
+        - rowgroup [ref=e64]:
+          - row "计划名称 项目 巡检点位 频次 责任人 下次执行 状态" [ref=e65]:
+            - columnheader "计划名称" [ref=e66]
+            - columnheader "项目" [ref=e67]
+            - columnheader "巡检点位" [ref=e68]
+            - columnheader "频次" [ref=e69]
+            - columnheader "责任人" [ref=e70]
+            - columnheader "下次执行" [ref=e71]
+            - columnheader "状态" [ref=e72]
+        - rowgroup [ref=e73]:
+          - row "能耗抄表 紫涵雅集 能耗抄表点位 每日 09:00 张三 明日 09:00 启用" [ref=e74]:
+            - cell "能耗抄表" [ref=e75]
+            - cell "紫涵雅集" [ref=e76]
+            - cell "能耗抄表点位" [ref=e77]
+            - cell "每日 09:00" [ref=e78]
+            - cell "张三" [ref=e79]
+            - cell "明日 09:00" [ref=e80]
+            - cell "启用" [ref=e81]:
+              - generic [ref=e82]: 启用
+          - row "综合巡检 紫涵雅集 综合巡检点位 每日 09:00 巡检员 明日 09:00 启用" [ref=e83]:
+            - cell "综合巡检" [ref=e84]
+            - cell "紫涵雅集" [ref=e85]
+            - cell "综合巡检点位" [ref=e86]
+            - cell "每日 09:00" [ref=e87]
+            - cell "巡检员" [ref=e88]
+            - cell "明日 09:00" [ref=e89]
+            - cell "启用" [ref=e90]:
+              - generic [ref=e91]: 启用
+          - row "热水机房巡检 会议中心 热水机房 每周一 张三 下周一 09:00 启用" [ref=e92]:
+            - cell "热水机房巡检" [ref=e93]
+            - cell "会议中心" [ref=e94]
+            - cell "热水机房" [ref=e95]
+            - cell "每周一" [ref=e96]
+            - cell "张三" [ref=e97]
+            - cell "下周一 09:00" [ref=e98]
+            - cell "启用" [ref=e99]:
+              - generic [ref=e100]: 启用
+          - row "消防泵房巡检 会议中心 消防泵房 每日 09:00 巡检员 明日 09:00 启用" [ref=e101]:
+            - cell "消防泵房巡检" [ref=e102]
+            - cell "会议中心" [ref=e103]
+            - cell "消防泵房" [ref=e104]
+            - cell "每日 09:00" [ref=e105]
+            - cell "巡检员" [ref=e106]
+            - cell "明日 09:00" [ref=e107]
+            - cell "启用" [ref=e108]:
+              - generic [ref=e109]: 启用
+          - row "UPS 机房巡检 会议中心 UPS 机房 每日 09:00 张三 明日 09:00 启用" [ref=e110]:
+            - cell "UPS 机房巡检" [ref=e111]
+            - cell "会议中心" [ref=e112]
+            - cell "UPS 机房" [ref=e113]
+            - cell "每日 09:00" [ref=e114]
+            - cell "张三" [ref=e115]
+            - cell "明日 09:00" [ref=e116]
+            - cell "启用" [ref=e117]:
+              - generic [ref=e118]: 启用
+          - row "变电所巡检 会议中心 变电所 每周一 巡检员 下周一 09:00 启用" [ref=e119]:
+            - cell "变电所巡检" [ref=e120]
+            - cell "会议中心" [ref=e121]
+            - cell "变电所" [ref=e122]
+            - cell "每周一" [ref=e123]
+            - cell "巡检员" [ref=e124]
+            - cell "下周一 09:00" [ref=e125]
+            - cell "启用" [ref=e126]:
+              - generic [ref=e127]: 启用
+          - row "生活水泵房巡检 会议中心 生活水泵房 每日 09:00 张三 明日 09:00 启用" [ref=e128]:
+            - cell "生活水泵房巡检" [ref=e129]
+            - cell "会议中心" [ref=e130]
+            - cell "生活水泵房" [ref=e131]
+            - cell "每日 09:00" [ref=e132]
+            - cell "张三" [ref=e133]
+            - cell "明日 09:00" [ref=e134]
+            - cell "启用" [ref=e135]:
+              - generic [ref=e136]: 启用
+          - row "扶梯巡检 会议中心 扶梯 每日 09:00 巡检员 明日 09:00 启用" [ref=e137]:
+            - cell "扶梯巡检" [ref=e138]
+            - cell "会议中心" [ref=e139]
+            - cell "扶梯" [ref=e140]
+            - cell "每日 09:00" [ref=e141]
+            - cell "巡检员" [ref=e142]
+            - cell "明日 09:00" [ref=e143]
+            - cell "启用" [ref=e144]:
+              - generic [ref=e145]: 启用
+          - row "电梯巡检（无机房） 会议中心 无机房电梯 每周一 张三 下周一 09:00 启用" [ref=e146]:
+            - cell "电梯巡检（无机房）" [ref=e147]
+            - cell "会议中心" [ref=e148]
+            - cell "无机房电梯" [ref=e149]
+            - cell "每周一" [ref=e150]
+            - cell "张三" [ref=e151]
+            - cell "下周一 09:00" [ref=e152]
+            - cell "启用" [ref=e153]:
+              - generic [ref=e154]: 启用
+          - row "电梯巡检（有机房） 会议中心 有机房电梯 每日 09:00 巡检员 明日 09:00 启用" [ref=e155]:
+            - cell "电梯巡检（有机房）" [ref=e156]
+            - cell "会议中心" [ref=e157]
+            - cell "有机房电梯" [ref=e158]
+            - cell "每日 09:00" [ref=e159]
+            - cell "巡检员" [ref=e160]
+            - cell "明日 09:00" [ref=e161]
+            - cell "启用" [ref=e162]:
+              - generic [ref=e163]: 启用
+  - complementary [ref=e164]:
+    - heading "计划详情" [level=2] [ref=e166]
+    - generic [ref=e167]:
+      - generic [ref=e168]:
+        - generic [ref=e169]: 能耗抄表
+        - generic [ref=e170]: 园区水电表点位，使用 能耗抄表 模板。
+      - generic [ref=e171]:
+        - generic [ref=e172]: 计划配置
+        - generic [ref=e173]: 生成任务
+        - generic [ref=e174]: 执行巡检
+        - generic [ref=e175]: 结果入账

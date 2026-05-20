@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JADEAST 智巡后台子页面原型</title>
+  <link rel="stylesheet" href="./backend-pages-ref.css" />
+</head>
+<body>
+  <main class="monitor">
+    <div class="bezel-dot"></div>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">JADEAST <span>智巡后台</span></div>
+        <nav>
+          <button data-nav="dashboard">首页</button>
+          <small>巡检管理</small>
+          <button data-nav="plan">巡检计划</button>
+          <button data-nav="task">巡检任务</button>
+          <button data-nav="record">巡检记录</button>
+          <button data-nav="ledger">资产台账</button>
+          <button data-nav="device">设备管理</button>
+          <small>异常管理</small>
+          <button data-nav="exception">异常复核</button>
+          <button data-nav="approval">修改审批</button>
+          <small>数据中心</small>
+          <button data-nav="data">数据看板</button>
+          <button data-nav="report">统计报表</button>
+          <button data-nav="system">系统管理</button>
+        </nav>
+      </aside>
+
+      <header class="topbar">
+        <div class="company">无锡市智巡物业管理有限公司</div>
+        <div class="top-actions"><span class="bell">12</span><span class="help">?</span><div class="user"><b>张</b><span>张管理员</span></div></div>
+      </header>
+
+      <section class="page page-plan" data-page="plan">
+        <div class="main">
+          <div class="hero"><div><span>巡检管理</span><h1>巡检计划</h1><p>按项目、点位、频次和责任人配置巡检计划，并自动生成每日巡检任务。</p></div><button>新建计划</button></div>
+          <div class="kpis"><article><b>36</b><span>启用计划</span></article><article><b>12</b><span>今日待执行</span></article><article><b>4</b><span>逾期计划</span></article><article><b>92%</b><span>计划完成率</span></article></div>
+          <section class="panel">
+            <div class="panel-head"><h2>计划列表</h2><div class="filters"><span>全部项目</span><span>全部频次</span><span>全部状态</span><span class="search">搜索计划 / 点位</span></div></div>
+            <table><thead><tr><th>计划名称</th><th>项目</th><th>巡检点位</th><th>频次</th><th>责任人</th><th>下次执行</th><th>状态</th></tr></thead><tbody>
+              <tr><td>紫涵雅集能耗抄表</td><td>紫涵雅集</td><td>能耗抄表点位</td><td>每日 09:00</td><td>张三</td><td>明日 09:00</td><td><em class="tag ok">启用</em></td></tr>
+              <tr><td>综合巡检</td><td>紫涵雅集</td><td>配电箱 / 机房 / 水表</td><td>每日 17:00</td><td>巡检员</td><td>今日 17:00</td><td><em class="tag warn">待执行</em></td></tr>
+              <tr><td>UPS 机房巡检</td><td>会议中心</td><td>UPS 机房</td><td>每周一</td><td>李四</td><td>05-25 10:00</td><td><em class="tag ok">启用</em></td></tr>
+              <tr><td>电梯安全巡检</td><td>会议中心</td><td>无机房电梯 / 扶梯</td><td>每周三</td><td>王五</td><td>05-20 14:00</td><td><em class="tag bad">逾期</em></td></tr>
+            </tbody></table>
+          </section>
+        </div>
+        <aside class="right"><h2>计划详情</h2><div class="info-card"><b>综合巡检</b><span>覆盖配电箱、消防泵房、弱电机房、环境温湿度等对象。</span></div><div class="steps"><span class="done">计划配置</span><span class="active">生成任务</span><span>执行巡检</span><span>结果入账</span></div></aside>
+      </section>
+
+      <section class="page page-task" data-page="task">
+        <div class="main">
+          <div class="hero"><div><span>巡检管理</span><h1>巡检任务</h1><p>展示当前待办、进行中、已完成和逾期任务，支持按班组与点位追踪执行情况。</p></div><button>派发任务</button></div>
+          <div class="task-board">
+            <article><h2>待执行</h2><div class="task-card"><b>综合巡检</b><span>紫涵雅集 · 17:00 前完成</span><em class="tag warn">待执行</em></div><div class="task-card"><b>消防水表复核</b><span>喷淋管井 · 需补拍</span><em class="tag warn">待执行</em></div></article>
+            <article><h2>进行中</h2><div class="task-card"><b>能耗抄表</b><span>Z1-Z4 能耗表 · 已采集 4 张照片</span><em class="tag ok">进行中</em></div></article>
+            <article><h2>已完成</h2><div class="task-card"><b>环境温湿度</b><span>读数正常 · 已入账</span><em class="tag ok">完成</em></div><div class="task-card"><b>配电箱检查</b><span>状态正常 · 已提交</span><em class="tag ok">完成</em></div></article>
+            <article><h2>逾期</h2><div class="task-card"><b>电梯安全巡检</b><span>会议中心 · 超时 2 小时</span><em class="tag bad">逾期</em></div></article>
+          </div>
+        </div>
+        <aside class="right"><h2>任务跟踪</h2><div class="info-card"><b>能耗抄表</b><span>当前步骤：字段确认。已识别 Z1、Z2、Z3、Z4 和生活水表读数。</span></div><div class="photo-row"><img src="./assets/water-meter.jpg" alt=""><img src="./assets/electric-meter.jpg" alt=""></div></aside>
+      </section>
+
+      <section class="page page-record" data-page="record">
+        <div class="main">
+          <div class="hero"><div><span>巡检管理</span><h1>巡检记录</h1><p>照片、字段、AI 总结、人工确认和提交结果全部可追溯。</p></div><button>导出记录</button></div>
+          <section class="panel">
+            <div class="panel-head"><h2>巡检记录列表</h2><div class="filters"><span>全部项目</span><span>全部模板</span><span>全部状态</span><span class="search">搜索巡检人 / 点位</span></div></div>
+            <div class="record-list">
+              <article><time>05-15 10:24</time><div><b>能耗抄表点位</b><span>Z4=150527.77 / 生活水表=722 / 已提交</span></div><em class="tag ok">已提交</em></article>
+              <article><time>05-15 09:58</time><div><b>综合巡检</b><span>配电箱状态正常，消防泵房待复核</span></div><em class="tag warn">待复核</em></article>
+              <article><time>05-15 08:55</time><div><b>弱电机房巡检</b><span>设备状态缺失，进入异常复核队列</span></div><em class="tag bad">异常</em></article>
+              <article><time>05-14 17:04</time><div><b>能耗抄表点位</b><span>Z1=1125155.3 / Z2=55967.844 / Z3=42170.484</span></div><em class="tag ok">已提交</em></article>
+            </div>
+          </section>
+        </div>
+        <aside class="right"><h2>记录详情</h2><div class="info-card"><b>AI 总结</b><span>本次完成 Z1-Z4 能耗表及生活水表读数确认，消防水表缺少有效读数，进入待复核。</span></div><div class="photo-row"><img src="./assets/water-meter.jpg" alt=""><img src="./assets/electric-meter.jpg" alt=""></div></aside>
+      </section>
+
+      <section class="page page-ledger" data-page="ledger">
+        <div class="main">
+          <div class="hero"><div><span>资产管理</span><h1>资产台账</h1><p>按设备、点位、状态沉淀巡检资产，形成可维护、可追溯的资产底账。</p></div><button>导出台账</button></div>
+          <div class="kpis"><article><b>8,742</b><span>资产总数</span></article><article><b>7,568</b><span>在线设备</span></article><article><b>98</b><span>异常设备</span></article><article><b>236</b><span>今日巡检</span></article></div>
+          <section class="panel">
+            <div class="panel-head"><h2>资产列表</h2><div class="filters"><span>全部项目</span><span>全部设备类型</span><span>全部状态</span><span class="search">请输入设备编号 / 名称</span></div></div>
+            <table><thead><tr><th></th><th>设备编号</th><th>设备名称</th><th>设备类型</th><th>安装位置</th><th>状态</th><th>最近巡检时间</th><th>操作</th></tr></thead><tbody>
+              <tr class="selected"><td><i></i></td><td>25649966</td><td>Z1 能耗表</td><td>智能水表</td><td>1栋-地库-给水管井</td><td><em class="tag ok">正常</em></td><td>2025-05-15 10:24</td><td><a>查看</a></td></tr>
+              <tr><td><i></i></td><td>42170484</td><td>Z3 能耗表</td><td>智能水表</td><td>2栋-配电间</td><td><em class="tag bad">异常</em></td><td>2025-05-15 09:58</td><td><a>查看</a></td></tr>
+              <tr><td><i></i></td><td>EP1505</td><td>弱电机房</td><td>综合巡检对象</td><td>2栋-弱电井</td><td><em class="tag warn">待复核</em></td><td>2025-05-15 08:55</td><td><a>查看</a></td></tr>
+              <tr><td><i></i></td><td>WD0002</td><td>消防水表</td><td>智能水表</td><td>喷淋管井</td><td><em class="tag bad">异常</em></td><td>2025-05-15 08:18</td><td><a>查看</a></td></tr>
+            </tbody></table>
+          </section>
+        </div>
+        <aside class="right"><h2>资产详情</h2><div class="asset-card"><img src="./assets/water-meter.jpg" alt=""><h3>Z1 能耗表 <em class="tag ok">正常</em></h3><p><span>设备编号</span><b>25649966</b></p><p><span>最近巡检</span><b>2025-05-15 10:24</b></p></div><div class="info-card"><b>台账摘要</b><span>连续巡检 13 次，读数趋势平稳，暂无异常工单。</span></div></aside>
+      </section>
+
+      <section class="page page-device" data-page="device">
+        <div class="main">
+          <div class="hero"><div><span>资产管理</span><h1>设备管理</h1><p>维护设备档案、绑定点位、巡检模板、二维码和启停状态。</p></div><button>新增设备</button></div>
+          <section class="device-grid">
+            <article><b>Z1 能耗表</b><em class="tag ok">在线</em><p>绑定点位：能耗抄表点位</p><span>模板：能耗抄表</span></article>
+            <article><b>消防泵房</b><em class="tag warn">待复核</em><p>绑定点位：综合巡检</p><span>模板：综合巡检</span></article>
+            <article><b>弱电机房</b><em class="tag bad">离线</em><p>绑定点位：综合巡检</p><span>模板：综合巡检</span></article>
+            <article><b>消防水表</b><em class="tag bad">异常</em><p>绑定点位：能耗抄表</p><span>模板：能耗抄表</span></article>
+          </section>
+        </div>
+        <aside class="right"><h2>设备配置</h2><div class="info-card"><b>字段模板绑定</b><span>设备可绑定多个巡检字段，AI 识别结果按字段写入巡检记录，再沉淀到资产台账。</span></div><div class="steps"><span class="done">设备建档</span><span class="done">点位绑定</span><span class="active">模板绑定</span><span>启用巡检</span></div></aside>
+      </section>
+
+      <section class="page page-exception" data-page="exception">
+        <div class="main">
+          <div class="hero"><div><span>异常管理</span><h1>异常复核</h1><p>对 AI 识别异常、字段缺失、低置信度读数进行人工复核，并形成工单闭环。</p></div><button>批量处理</button></div>
+          <section class="risk-grid"><article class="bad"><b>Z3 能耗表读数异常</b><span>2栋-配电间 · 05-15 09:58</span><p>当前读数与历史趋势偏离，建议复核现场照片及人工确认值。</p><button>确认异常</button><button class="ghost">标记正常</button></article><article class="warn"><b>弱电机房状态缺失</b><span>EP1505 · 05-15 08:55</span><p>日报字段未填写，需主管确认是否作为异常台账保留。</p><button>转工单</button><button class="ghost">退回补录</button></article><article class="warn"><b>消防水表缺少有效读数</b><span>WD0002 · 喷淋管井</span><p>AI 未能从照片中取得可靠读数，建议补拍或人工补录。</p><button>确认异常</button><button class="ghost">退回重拍</button></article></section>
+        </div>
+        <aside class="right"><h2>复核证据</h2><img class="big-photo" src="./assets/electric-meter.jpg" alt=""><div class="info-card"><b>复核建议</b><span>异常应进入台账，不覆盖原始 AI 识别结果；人工结论作为最终处理字段。</span></div></aside>
+      </section>
+
+      <section class="page page-approval" data-page="approval">
+        <div class="main">
+          <div class="hero"><div><span>异常管理</span><h1>修改审批</h1><p>人工修正必须留痕，审批通过后更新最终字段，但保留 AI 原始识别。</p></div><button>审批设置</button></div>
+          <section class="approval-list"><article><div><span>申请人：巡检员</span><b>Z1 能耗表读数修正</b><p>原值 112515.53，修正为 1125155.3，原因：小数点位置识别错误。</p></div><div class="diff"><em>AI 原始值 112515.53</em><strong>人工确认 1125155.3</strong></div><footer><button>通过</button><button class="danger">驳回</button></footer></article><article><div><span>申请人：巡检员</span><b>生活水表读数修正</b><p>原值 72.2，修正为 722，原因：机械字轮末位非小数。</p></div><div class="diff"><em>AI 原始值 72.2</em><strong>人工确认 722</strong></div><footer><button>通过</button><button class="danger">驳回</button></footer></article></section>
+        </div>
+        <aside class="right"><h2>审批流</h2><div class="steps"><span class="done">巡检员提交</span><span class="done">字段对比</span><span class="active">主管审批</span><span>更新台账</span></div><div class="info-card"><b>规则</b><span>人工修改不直接覆盖 AI 识别，审批后写入最终字段，并保留变更前后值。</span></div></aside>
+      </section>
+
+      <section class="page page-data" data-page="data">
+        <div class="main">
+          <div class="hero"><div><span>数据中心</span><h1>数据看板</h1><p>展示资产状态、巡检效率、AI 识别准确率、异常闭环率和项目趋势。</p></div><button>刷新数据</button></div>
+          <div class="chart-grid"><article><h2>异常趋势</h2><svg viewBox="0 0 500 190"><polyline points="20,150 90,110 160,125 230,80 300,95 370,70 470,105" fill="none" stroke="#12a968" stroke-width="5"/><polyline points="20,165 90,135 160,145 230,105 300,125 370,112 470,128" fill="none" stroke="#f59e0b" stroke-width="5"/></svg></article><article><h2>AI 识别准确率</h2><div class="ring">94%</div></article><article><h2>异常闭环率</h2><div class="ring green">87%</div></article></div>
+        </div>
+        <aside class="right"><h2>指标解释</h2><div class="info-card"><b>AI 识别准确率</b><span>按人工最终确认字段与 AI 原始识别字段比对计算。</span></div><div class="info-card"><b>异常闭环率</b><span>异常从识别、复核、工单、关闭的完整比例。</span></div></aside>
+      </section>
+
+      <section class="page page-report" data-page="report">
+        <div class="main">
+          <div class="hero"><div><span>数据中心</span><h1>统计报表</h1><p>按日、周、月输出巡检日报、异常分析、资产健康和人员效率报表。</p></div><button>生成报表</button></div>
+          <section class="report-grid"><article><b>巡检日报</b><span>今日巡检 236 次，已提交 217 次，待复核 19 次。</span><button>预览</button></article><article><b>异常周报</b><span>本周异常 98 项，已闭环 85 项，超时 7 项。</span><button>预览</button></article><article><b>资产健康报表</b><span>按设备类型、项目、点位展示健康评分。</span><button>预览</button></article><article><b>人员效率报表</b><span>按巡检员统计任务完成率、退回率和补拍次数。</span><button>预览</button></article></section>
+        </div>
+        <aside class="right"><h2>报表预览</h2><div class="info-card"><b>紫涵雅集巡检日报</b><span>今日完成能耗抄表与综合巡检，消防水表缺少读数，已进入待复核。</span></div><div class="report-preview"></div></aside>
+      </section>
+
+      <section class="page page-system" data-page="system">
+        <div class="main">
+          <div class="hero"><div><span>数据中心</span><h1>系统管理</h1><p>展示 API、AI 服务、MySQL、文件存储、企业微信入口等运行状态与部署配置。</p></div><button>保存配置</button></div>
+          <section class="system-grid"><article><b>Go API 服务</b><em class="tag ok">运行中</em><p>http://127.0.0.1:18080</p></article><article><b>AI 视觉服务</b><em class="tag ok">运行中</em><p>http://127.0.0.1:19100</p></article><article><b>MySQL 数据库</b><em class="tag ok">已启用</em><p>资产、记录、审批、字段历史</p></article><article><b>文件存储</b><em class="tag warn">本地存储</em><p>storage/uploads</p></article></section>
+          <section class="panel"><div class="panel-head"><h2>部署配置</h2><span>云服务器迁移前检查项</span></div><table><tbody><tr><td>公网域名</td><td>api.your-domain.com</td><td><em class="tag warn">待配置证书</em></td></tr><tr><td>企业微信回调</td><td>/wework/callback</td><td><em class="tag ok">预留</em></td></tr><tr><td>对象存储</td><td>MinIO / OSS</td><td><em class="tag warn">可替换</em></td></tr></tbody></table></section>
+        </div>
+        <aside class="right"><h2>运行摘要</h2><div class="info-card"><b>当前架构</b><span>移动端 18080，后台管理端 18081，AI 服务 19100，数据落 MySQL。</span></div><div class="info-card"><b>迁移建议</b><span>云服务器优先准备域名、HTTPS 证书、MySQL、对象存储、反向代理和企业微信可信域名。</span></div></aside>
+      </section>
+    </div>
+  </main>
+  <script>
+    const pages = new Set(["plan", "task", "record", "ledger", "device", "exception", "approval", "data", "report", "system"]);
+
+    function switchPage(page, shouldPush = true) {
+      if (page === "dashboard") {
+        location.href = "./backend-admin-complete.html";
+        return;
+      }
+
+      if (!pages.has(page)) {
+        page = "ledger";
+      }
+
+      document.body.dataset.page = page;
+      document.querySelectorAll("[data-nav]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.nav === page);
+      });
+
+      if (shouldPush) {
+        const url = new URL(location.href);
+        url.searchParams.set("page", page);
+        history.pushState({ page }, "", url);
+      }
+    }
+
+    document.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => switchPage(btn.dataset.nav));
+    });
+
+    window.addEventListener("popstate", () => {
+      switchPage(new URLSearchParams(location.search).get("page") || "ledger", false);
+    });
+
+    switchPage(new URLSearchParams(location.search).get("page") || "ledger", false);
+  </script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JADEAST 智巡后台完整设计图</title>
+  <link rel="stylesheet" href="./backend-admin-complete.css" />
+</head>
+<body>
+  <main class="poster">
+    <section class="monitor">
+      <div class="camera-dot"></div>
+      <div class="screen">
+        <aside class="sidebar">
+          <div class="brand">JADEAST <span>智巡后台</span></div>
+          <nav>
+            <button>首页</button>
+            <small>巡检管理</small>
+            <button>巡检计划</button>
+            <button>巡检任务</button>
+            <button>巡检记录</button>
+            <button class="active">资产台账</button>
+            <button>设备管理</button>
+            <small>异常管理</small>
+            <button>异常复核</button>
+            <button>修改审批</button>
+            <small>数据中心</small>
+            <button>数据看板</button>
+            <button>统计报表</button>
+            <button>系统管理</button>
+          </nav>
+        </aside>
+
+        <header class="topbar">
+          <label class="company">无锡市智巡物业管理有限公司 <i></i></label>
+          <div class="top-actions">
+            <span class="bell">12</span>
+            <span class="help">?</span>
+            <div class="user"><b>张</b><span>张管理员</span></div>
+          </div>
+        </header>
+
+        <section class="workspace">
+          <section class="ops-banner">
+            <div>
+              <span>后台工作台</span>
+              <strong>紫涵雅集 · 资产巡检总览</strong>
+              <small>AI 识别、人工确认、异常复核、资产台账形成闭环</small>
+            </div>
+            <div class="ops-tags">
+              <em>12 项资产</em>
+              <em>6 项正常</em>
+              <em class="warn">6 项待复核</em>
+              <em>05-19 14:05 更新</em>
+            </div>
+          </section>
+
+          <section class="metrics">
+            <article>
+              <span>资产总数</span>
+              <b>8,742</b>
+              <small>台 / 套</small>
+            </article>
+            <article>
+              <span>在线设备</span>
+              <b>7,568</b>
+              <small class="ok">较昨日 +8.6%</small>
+            </article>
+            <article>
+              <span>异常设备</span>
+              <b>98</b>
+              <small class="bad">待处理 6 项</small>
+            </article>
+            <article>
+              <span>今日巡检</span>
+              <b>236</b>
+              <small class="ok">完成率 92.1%</small>
+            </article>
+          </section>
+
+          <section class="panel trend">
+            <div class="panel-head">
+              <h2>状态趋势</h2>
+              <div class="legend"><span class="ok">正常</span><span class="warn">待复核</span><span class="bad">异常</span></div>
+            </div>
+            <svg viewBox="0 0 450 160">
+              <g class="axis">
+                <line x1="36" y1="126" x2="430" y2="126" />
+                <line x1="36" y1="88" x2="430" y2="88" />
+                <line x1="36" y1="50" x2="430" y2="50" />
+                <text x="8" y="130">0</text>
+                <text x="8" y="92">75</text>
+                <text x="4" y="54">150</text>
+              </g>
+              <polyline points="42,84 98,78 154,82 210,62 266,56 322,70 378,72 430,62" fill="none" stroke="#10a968" stroke-width="4" />
+              <polyline points="42,106 98,96 154,98 210,98 266,82 322,102 378,108 430,94" fill="none" stroke="#f59e0b" stroke-width="4" />
+              <polyline points="42,122 98,120 154,124 210,126 266,122 322,126 378,124 430,120" fill="none" stroke="#ef4444" stroke-width="4" />
+              <g class="days">
+                <text x="42" y="150">05/09</text><text x="98" y="150">05/10</text><text x="154" y="150">05/11</text><text x="210" y="150">05/12</text>
+                <text x="266" y="150">05/13</text><text x="322" y="150">05/14</text><text x="378" y="150">05/15</text>
+              </g>
+            </svg>
+          </section>
+
+          <section class="panel ledger">
+            <div class="panel-head ledger-head">
+              <div>
+                <h2>资产台账</h2>
+                <p>设备资产全生命周期管理，支持按项目、类型、状态筛选，并从巡检记录自动沉淀台账。</p>
+              </div>
+              <div class="filters">
+                <span>全部项目</span>
+                <span>全部设备类型</span>
+                <span>全部状态</span>
+                <span class="search">请输入设备编号 / 名称</span>
+                <button>导出</button>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr><th></th><th>设备编号</th><th>设备名称</th><th>设备类型</th><th>安装位置</th><th>状态</th><th>最近巡检时间</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td><i></i></td><td>25649966</td><td>Z1 能耗表</td><td>智能水表</td><td>1栋-地库-给水管井</td><td><em class="tag ok">正常</em></td><td>2025-05-15 10:24</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>55961844</td><td>Z2 能耗表</td><td>智能水表</td><td>2栋-配电间</td><td><em class="tag ok">正常</em></td><td>2025-05-15 10:21</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>42170484</td><td>Z3 能耗表</td><td>智能水表</td><td>2栋-配电间</td><td><em class="tag bad">异常</em></td><td>2025-05-15 09:58</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>15052777</td><td>Z4 能耗表</td><td>智能水表</td><td>3栋-地库-给水管井</td><td><em class="tag ok">正常</em></td><td>2025-05-15 09:41</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>11251553</td><td>生活水表</td><td>智能水表</td><td>1栋-单元101</td><td><em class="tag ok">正常</em></td><td>2025-05-15 09:12</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>EP1505</td><td>电能表</td><td>智能电表</td><td>配电房A-1</td><td><em class="tag warn">待复核</em></td><td>2025-05-15 08:55</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>WD0001</td><td>消防水表</td><td>智能水表</td><td>消防泵房</td><td><em class="tag ok">正常</em></td><td>2025-05-15 08:30</td><td><a>查看</a></td></tr>
+                <tr><td><i></i></td><td>WD0002</td><td>消防水表</td><td>智能水表</td><td>喷淋管井</td><td><em class="tag bad">异常</em></td><td>2025-05-15 08:18</td><td><a>查看</a></td></tr>
+              </tbody>
+            </table>
+            <footer class="pager"><span>共 8,742 条</span><span>1 2 3 4 5 ... 438</span><span>20 条/页</span></footer>
+          </section>
+
+          <section class="panel queue">
+            <div class="panel-head">
+              <h2>异常复核队列</h2>
+              <a>全部 (98)</a>
+            </div>
+            <div class="queue-list">
+              <div class="danger"><b>Z3 能耗表读数异常</b><span>2栋-配电间 | 巡检时间：05-15 09:58</span><button>待复核</button></div>
+              <div class="warn"><b>弱电机房离线</b><span>设备编号：EP1505 | 05-15 08:55</span><button>待复核</button></div>
+              <div class="ok"><b>水表读数突增</b><span>WD0002 | 喷淋管井 | 05-15 08:18</span><button>待复核</button></div>
+              <div class="ok"><b>图像识别置信度低</b><span>Z2 能耗表 | 05-15 07:56</span><button>待复核</button></div>
+            </div>
+          </section>
+
+          <section class="panel timeline">
+            <div class="panel-head">
+              <h2>巡检记录</h2>
+              <a>全部记录</a>
+            </div>
+            <div class="time-list">
+              <div><time>05-15 10:24</time><b>张三 巡检完成</b><span>1栋-地库-给水管井</span><img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt=""></div>
+              <div><time>05-15 09:58</time><b>李四 上报异常</b><span>2栋-配电间</span><img src="http://127.0.0.1:18080/storage/uploads/rec_1778749668530788500_ef498c2ec919/img_1778749654533284500_f47fdb348dc4_微信图片_20260514141056_3_7.jpg" alt=""></div>
+              <div><time>05-15 09:41</time><b>王五 巡检完成</b><span>3栋-地库-给水管井</span><img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt=""></div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="detail">
+          <div class="detail-head"><h2>资产详情</h2><button>×</button></div>
+          <div class="asset-profile">
+            <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt="Z1 能耗表" />
+            <div>
+              <h3>Z1 能耗表 <em class="tag ok">正常</em></h3>
+              <p><span>设备编号</span><b>25649966</b></p>
+              <p><span>设备类型</span><b>智能水表</b></p>
+              <p><span>安装位置</span><b>1栋-地库-给水管井</b></p>
+              <p><span>厂家型号</span><b>ZENNER DN50</b></p>
+              <p><span>设备状态</span><b class="online">在线</b></p>
+            </div>
+          </div>
+          <div class="tabs"><button class="active">巡检记录</button><button>字段历史</button><button>异常记录</button><button>关联文件</button></div>
+          <table class="mini-table">
+            <thead><tr><th>巡检时间</th><th>巡检人</th><th>识别结果</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>05-15 10:24</td><td>张三</td><td>1505.2777</td><td><em class="tag ok">正常</em></td></tr>
+              <tr><td>05-15 09:21</td><td>张三</td><td>1495.1188</td><td><em class="tag ok">正常</em></td></tr>
+              <tr><td>05-15 08:18</td><td>李四</td><td>1485.0099</td><td><em class="tag ok">正常</em></td></tr>
+              <tr><td>05-14 10:12</td><td>王五</td><td>1475.6601</td><td><em class="tag ok">正常</em></td></tr>
+            </tbody>
+          </table>
+          <div class="photos">
+            <h3>巡检照片 <span>共 4 张</span></h3>
+            <div>
+              <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt="">
+              <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749668530788500_ef498c2ec919/img_1778749654533284500_f47fdb348dc4_微信图片_20260514141056_3_7.jpg" alt="">
+              <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749444059221100_269571b9bdc7/img_1778749423311431100_abc831c5f4cf_第4题_李诏_20251206_1764982132844_1.jpg" alt="">
+              <img src="http://127.0.0.1:18080/storage/uploads/rec_1778749668530788500_ef498c2ec919/img_1778749654533284500_f47fdb348dc4_微信图片_20260514141056_3_7.jpg" alt="">
+            </div>
+          </div>
+          <div class="approval-box">
+            <h3>修改审批</h3>
+            <p>Z1 能耗表读数由 112515.53 修正为 1125155.3，保留 AI 原始识别并形成审批痕迹。</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
