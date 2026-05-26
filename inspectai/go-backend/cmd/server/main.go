@@ -31,11 +31,11 @@ func main() {
 	frontendDir := getenv("FRONTEND_DIR", "../frontend")
 	aiURL := getenv("AI_SERVICE_URL", "http://127.0.0.1:19100")
 	addr := getenv("BACKEND_ADDR", ":18080")
-	authToken := getenv("INSPECTAI_AUTH_TOKEN", "")
-	supervisorToken := getenv("INSPECTAI_SUPERVISOR_TOKEN", "")
+	authToken := getenvWithSecret("INSPECTAI_AUTH_TOKEN", "")
+	supervisorToken := getenvWithSecret("INSPECTAI_SUPERVISOR_TOKEN", "")
 	identitySeed := IdentitySeed{
 		Username:    getenv("INSPECTAI_ADMIN_USER", defaultAdminUser),
-		Password:    getenv("INSPECTAI_ADMIN_PASSWORD", defaultAdminPass),
+		Password:    getenvWithSecret("INSPECTAI_ADMIN_PASSWORD", defaultAdminPass),
 		DisplayName: getenv("INSPECTAI_ADMIN_NAME", defaultAdminName),
 	}
 	corsAllowedOrigins := parseAllowedOrigins(
@@ -53,7 +53,7 @@ func main() {
 	driver := getenv("DB_DRIVER", "sqlite")
 	switch driver {
 	case "mysql":
-		dsn := os.Getenv("MYSQL_DSN")
+		dsn := getenvWithSecret("MYSQL_DSN", "")
 		if dsn == "" {
 			log.Fatalf("DB_DRIVER=mysql 但 MYSQL_DSN 未设置")
 		}
@@ -193,6 +193,24 @@ func loadDotEnvIfPresent() {
 		return
 	}
 	log.Printf("WARN: .env not found in any candidate path")
+}
+
+// getenvWithSecret 读敏感环境变量，优先支持 <name>_FILE 约定（Docker secret 标准），
+// 其次回退普通环境变量，最后用 fallback。
+// Why: 生产环境密钥不应明文出现在 env，secret 会挂在 /run/secrets/<name>，
+// 由 <NAME>_FILE 指向其路径，进程在启动时读一次即可。
+func getenvWithSecret(name, fallback string) string {
+	if path := strings.TrimSpace(os.Getenv(name + "_FILE")); path != "" {
+		if data, err := os.ReadFile(path); err == nil {
+			return strings.TrimSpace(string(data))
+		} else {
+			log.Printf("WARN: %s_FILE=%s 读取失败: %v，回退到 %s", name, path, err, name)
+		}
+	}
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func filepathIsAbs(p string) bool {

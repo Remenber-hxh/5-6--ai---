@@ -50,6 +50,9 @@ TEMPLATE_PROMPT_MAP = {
     "zihan_energy": "energy_meter",
     "zihan_daily": "screen_reading",
     "hot_water_room": "screen_reading",
+    "elevator_no_room": "elevator_visual",
+    "elevator_machine_room": "elevator_visual",
+    "escalator": "elevator_visual",
 }
 
 
@@ -235,6 +238,16 @@ def call_qwen_chat(
 
 
 def get_api_key() -> str:
+    # 优先支持 *_FILE 约定（Docker secret 标准），其次回退到普通环境变量。
+    # Why: 生产环境密钥不能明文进环境变量；secret 会挂载到 /run/secrets/<name>，
+    # 由 DASHSCOPE_API_KEY_FILE 指向其路径。
+    key_file = os.environ.get("DASHSCOPE_API_KEY_FILE", "").strip()
+    if key_file:
+        try:
+            with open(key_file, "r", encoding="utf-8") as fp:
+                return fp.read().strip()
+        except OSError:
+            pass
     return os.environ.get("DASHSCOPE_API_KEY", "").strip()
 
 
@@ -491,6 +504,74 @@ def normalize_recommendations(raw_list: list) -> list:
     return out
 
 
+CHAT_SYSTEM_PROMPT = """你是「智巡 AI 助手」，服务于设施巡检后台的主管/管理员。
+你的工作是：
+- 用简洁、专业、口语化的中文回答关于资产、巡检、AI 识别、异常处理、报表的问题
+- 主管会问"今天有几个异常"、"AI 准确率怎么样"、"派任务给谁"这类业务问题
+- 优先用数据 + 结论 + 建议三段回答；如果数据不足，直说"暂无数据"
+- 输出 60-180 字以内，避免长段落；多用「·」分隔
+- 不要承诺无法兑现的操作（你只是答疑，无法直接派发任务/审批），但可以告诉用户去哪个菜单操作
+
+context 字段可能包含本平台当前快照（资产数/异常数/记录数等），请尽量引用真实数字。
+"""
+
+
+def chat(payload: dict) -> dict:
+    api_key = get_api_key()
+    message = (payload.get("message") or "").strip()
+    if not message:
+        return {"reply": "请输入想问的问题，例如「今天有几条异常」。", "model": "noop"}
+    if not api_key:
+        return {
+            "reply": "未配置 AI 密钥，无法在线对话。请在系统配置中填入 DASHSCOPE_API_KEY。",
+            "model": "no-key",
+        }
+    history = payload.get("history") or []
+    context = payload.get("context") or {}
+    # 把上下文塞进 user_content（避免污染 system）
+    ctx_blob = json.dumps(context, ensure_ascii=False) if context else ""
+    user_lines = []
+    if ctx_blob:
+        user_lines.append(f"[平台数据快照] {ctx_blob}")
+    # 简单拼接最近几轮历史
+    for turn in history[-4:]:
+        role = turn.get("role", "user")
+        text = (turn.get("text") or "").strip()
+        if not text:
+            continue
+        prefix = "我" if role == "user" else "AI"
+        user_lines.append(f"{prefix}：{text}")
+    user_lines.append(f"我：{message}")
+    user_lines.append("AI：")
+    user_text = "\n".join(user_lines)
+
+    text_model = os.environ.get("QWEN_TEXT_MODEL", "qwen-plus")
+    try:
+        raw = call_qwen_chat(
+            model=text_model,
+            system=CHAT_SYSTEM_PROMPT,
+            user_content=user_text,
+            api_key=api_key,
+            timeout=12,
+            max_retries=1,
+        )
+    except Exception as exc:
+        print(f"[chat] qwen failed: {exc}", file=sys.stderr)
+        return {
+            "reply": f"AI 接口暂不可用：{str(exc)[:80]}。请稍后再试。",
+            "model": "fallback-call-failed",
+        }
+    reply = (raw or "").strip()
+    # qwen 偶尔会反引号包代码块或 "AI：" 前缀，清掉
+    if reply.startswith("AI："):
+        reply = reply[3:].strip()
+    if reply.startswith("```"):
+        reply = reply.strip("`").strip()
+    if not reply:
+        reply = "AI 没有给出回复，请换种问法再试。"
+    return {"reply": reply, "model": text_model}
+
+
 def fallback_summarize(payload: dict) -> dict:
     fields = payload.get("fields") or []
     parts = [f"{f.get('label')}={f.get('value')}" for f in fields[:6]]
@@ -623,6 +704,8 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(self, 200, summarize(payload))
             elif self.path == "/classify":
                 write_json(self, 200, classify(payload))
+            elif self.path == "/chat":
+                write_json(self, 200, chat(payload))
             else:
                 write_json(self, 404, {"error": "not_found"})
         except Exception as exc:
