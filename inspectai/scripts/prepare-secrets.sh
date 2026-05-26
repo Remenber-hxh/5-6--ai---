@@ -54,11 +54,19 @@ gen_token() {
 write_secret inspectai_auth_token       "${INSPECTAI_AUTH_TOKEN:-$(gen_token)}"
 write_secret inspectai_supervisor_token "${INSPECTAI_SUPERVISOR_TOKEN:-$(gen_token)}"
 
-# 组装 MYSQL_DSN
+# 组装 MYSQL_DSN —— 校验 password 不含会破坏 DSN 解析的特殊字符
 MYSQL_USER="${MYSQL_USER:-inspectai}"
 MYSQL_DATABASE="${MYSQL_DATABASE:-inspectai}"
-DSN="${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(mysql:3306)/${MYSQL_DATABASE}?charset=utf8mb4&parseTime=false&loc=Local"
-write_secret mysql_dsn "$DSN"
+if [[ -z "${MYSQL_PASSWORD:-}" ]]; then
+  echo "ERROR: MYSQL_PASSWORD 未设置，跳过 mysql_dsn" >&2
+elif [[ "$MYSQL_PASSWORD" =~ [@:/?\#\&] ]]; then
+  echo "ERROR: MYSQL_PASSWORD 含 @:/?#& 之一，go-sql-driver DSN 解析会失败。" >&2
+  echo "       请换成纯字母+数字的密码，或自行 URL-encode 后写入 secrets/mysql_dsn。" >&2
+  exit 1
+else
+  DSN="${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(mysql:3306)/${MYSQL_DATABASE}?charset=utf8mb4&parseTime=false&loc=Local"
+  write_secret mysql_dsn "$DSN"
+fi
 
 echo
 echo "Secrets prepared in: $SECRETS_DIR"

@@ -1,0 +1,28 @@
+# 保证文本文件在所有平台 checkout 后都是同一种行尾，
+# 避免 Windows checkout → 上 Linux 服务器跑出现 `bad interpreter` / heredoc 乱码。
+
+* text=auto eol=lf
+
+# bash / sh 脚本必须 LF（在 Linux 上跑的）
+*.sh text eol=lf
+scripts/prepare-secrets.sh text eol=lf
+scripts/build-images.sh text eol=lf
+
+# Docker / compose / nginx / yaml 都强制 LF
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+nginx/*.conf text eol=lf
+
+# PowerShell 可以 CRLF（只在 Windows 跑）
+*.ps1 text eol=crlf
+
+# 二进制文件不做行尾处理
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff2 binary
+*.exe binary

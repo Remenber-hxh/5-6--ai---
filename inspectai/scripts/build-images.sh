@@ -16,6 +16,11 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 REGISTRY="${REGISTRY:-inspectai}"
+# 防呆：REGISTRY 不能以 / 结尾，会产生 //svc 这种坏镜像名
+REGISTRY="${REGISTRY%/}"
+if [[ -z "$REGISTRY" ]]; then
+  echo "ERROR: REGISTRY 不能为空" >&2; exit 1
+fi
 # 默认用 git short-sha；不在 git 仓里时退到时间戳。
 DEFAULT_VERSION="$(git -C "$ROOT_DIR/.." rev-parse --short HEAD 2>/dev/null || date +%Y%m%d-%H%M%S)"
 INSPECTAI_VERSION="${INSPECTAI_VERSION:-$DEFAULT_VERSION}"
