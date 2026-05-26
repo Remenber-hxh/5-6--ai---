@@ -193,8 +193,9 @@ function toast(msg) {
   el._timer = setTimeout(() => el.classList.remove("show"), 2400);
 }
 
-const PROGRESS = { camera: 0, loading: 15, classify: 30, form: 60, preview: 85, ledger: 100, asset: 100, approvals: 100 };
+const PROGRESS = { login: 0, camera: 0, loading: 15, classify: 30, form: 60, preview: 85, ledger: 100, asset: 100, approvals: 100 };
 const TITLES = {
+  login: "登录",
   camera: "智巡",
   loading: "AI 识别中",
   classify: "确认场景",
@@ -219,13 +220,15 @@ function setScene(name) {
   $("#progressBar").style.width = (PROGRESS[name] || 0) + "%";
 
   // back button visibility
-  $("#backBtn").hidden = (name === "camera");
+  $("#backBtn").hidden = (name === "camera" || name === "login");
 
   // top action button
   const userWindowBtn = $("#userWindowBtn");
   if (userWindowBtn) {
     userWindowBtn.hidden = name !== "camera";
-    userWindowBtn.textContent = state.userName || "巡检员";
+    userWindowBtn.textContent = state.userRole === "inspector"
+      ? (state.userName || "\u5de1\u68c0\u5458")
+      : "\u5de1\u68c0\u5458";
   }
   if (name === "form" || name === "preview") {
     $("#topAction").hidden = false;
@@ -351,6 +354,131 @@ function bindFilePicker(inputId) {
 }
 bindFilePicker("#cameraInput");
 bindFilePicker("#uploadInput");
+
+// 兜底：鼠标/触屏点击走原生 label + file input；键盘操作时手动触发。
+// 不在 click 里 preventDefault，否则企业微信 WebView 可能拦截系统相机唤起。
+(function ensureShutterClick() {
+  const wrap = document.querySelector(".shutter-wrap");
+  const input = document.getElementById("cameraInput");
+  if (!wrap || !input) return;
+  wrap.addEventListener("click", (e) => {
+    if (e.target === input) return;
+    input.click();
+  });
+  wrap.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    input.click();
+  });
+})();
+
+// ===== 登录 / 注销 =====
+
+async function fetchMe() {
+  try {
+    const res = await fetch("/api/auth/me", {
+      credentials: "include",
+      headers: authToken() ? { "X-InspectAI-Token": authToken() } : {},
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.user || null;
+  } catch { return null; }
+}
+
+function isRealUser(user) {
+  // handleMe 在无登录时会回退一个 local_xxx 占位用户。视为未登录。
+  return !!user && !!user.id && !String(user.id).startsWith("local_") && user.status !== "local";
+}
+
+function applyUser(user) {
+  state.currentUser = user;
+  state.userName = user?.displayName || user?.username || "巡检员";
+  state.userRole = user?.roleCode || "inspector";
+  try {
+    localStorage.setItem("userName", state.userName);
+    localStorage.setItem("userRole", state.userRole);
+  } catch {}
+  const btn = $("#userWindowBtn");
+  if (btn) btn.textContent = state.userName;
+}
+
+async function doLogin(username, password) {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `登录失败 (${res.status})`);
+  if (data.token) saveAuthToken(data.token);
+  applyUser(data.user);
+  // 登录后预加载模板和点位（init 里的逻辑因走登录页跳过了）
+  try {
+    const [t, p] = await Promise.all([API.templates(), API.points()]);
+    state.templates = t.templates || [];
+    state.points = p.points || [];
+  } catch {}
+  refreshApprovalCount();
+  return data.user;
+}
+
+async function doLogout() {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      headers: authToken() ? { "X-InspectAI-Token": authToken() } : {},
+    });
+  } catch {}
+  saveAuthToken("");
+  state.currentUser = null;
+  try { localStorage.removeItem("userName"); } catch {}
+  setScene("login");
+}
+
+(function bindLoginForm() {
+  const form = document.getElementById("loginForm");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const u = document.getElementById("loginUser").value.trim();
+    const p = document.getElementById("loginPass").value;
+    const errBox = document.getElementById("loginErr");
+    errBox.hidden = true;
+    if (!u || !p) {
+      errBox.textContent = "请输入账号和密码";
+      errBox.hidden = false;
+      return;
+    }
+    const submitBtn = form.querySelector(".login-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "登录中…";
+    try {
+      await doLogin(u, p);
+      setScene("camera");
+    } catch (err) {
+      errBox.textContent = err.message || "登录失败";
+      errBox.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "登录";
+    }
+  });
+})();
+
+// 点击右上角姓名 → 询问是否退出
+(function bindUserBtn() {
+  const btn = document.getElementById("userWindowBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    if (!state.currentUser) return;
+    if (confirm(`确认退出登录？\n当前账号：${state.userName}`)) {
+      doLogout();
+    }
+  });
+})();
 
 async function classifyAndProceed(files) {
   setScene("loading");
@@ -1677,6 +1805,14 @@ if (boardManualBtn) boardManualBtn.addEventListener("click", startManualPick);
 
 async function init() {
   hideRetakeModal();
+  // 优先校验登录态：未登录直接走登录页，不去拉接口免得 401 弹 prompt
+  const me = await fetchMe();
+  if (!isRealUser(me)) {
+    setScene("login");
+    return;
+  }
+  applyUser(me);
+
   // 根据 role 显示/隐藏审批入口（移动端永远 inspector）
   refreshApprovalCount();
   try {

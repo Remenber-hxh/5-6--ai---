@@ -60,6 +60,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleCreateRecord(w, r)
 	case r.URL.Path == "/api/scene/classify" && r.Method == http.MethodPost:
 		s.handleClassifyScene(w, r)
+	case r.URL.Path == "/api/ai/chat" && r.Method == http.MethodPost:
+		s.handleAIChat(w, r)
 	case r.URL.Path == "/api/assets/summary" && r.Method == http.MethodGet:
 		s.handleAssetSummary(w, r)
 	case r.URL.Path == "/api/assets" && r.Method == http.MethodGet:
@@ -761,15 +763,41 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 		return rec
 	}
 	allowed := map[string]bool{}
+	allowedLabels := []string{}
+	removedLabels := []string{}
 	for _, f := range tpl.Fields {
 		allowed[f.Code] = true
+		allowedLabels = append(allowedLabels, f.Label)
 	}
 	clean := *rec
 	clean.Fields = make([]FieldValue, 0, len(rec.Fields))
 	for _, f := range rec.Fields {
 		if allowed[f.Code] {
 			clean.Fields = append(clean.Fields, f)
+		} else {
+			removedLabels = append(removedLabels, f.Label)
 		}
+	}
+	// M41 · 防御：剔除推荐里提到已删字段 label 的条目
+	if len(removedLabels) > 0 && len(rec.AIRecommendations) > 0 {
+		filtered := make([]Recommendation, 0, len(rec.AIRecommendations))
+		for _, r := range rec.AIRecommendations {
+			hit := false
+			full := r.Text + " " + r.Basis + " " + r.Category
+			for _, lbl := range removedLabels {
+				if lbl == "" {
+					continue
+				}
+				if strings.Contains(full, lbl) {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				filtered = append(filtered, r)
+			}
+		}
+		clean.AIRecommendations = filtered
 	}
 	return &clean
 }
@@ -1230,14 +1258,16 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 	}
 
 	// 1. 调 ai-service /summarize 同步生成总结+建议
-	historyPayload := s.lookupAssetHistory(rec)
+	// M41 · 只传当前模板还在的字段（防止 AI 引用已删除字段）
+	cleanedRec := sanitizeRecordForCurrentTemplate(rec)
+	historyPayload := s.lookupAssetHistory(cleanedRec)
 	summaryPayload := map[string]any{
 		"templateName":   rec.TemplateName,
 		"project":        rec.Project,
 		"pointName":      rec.PointName,
 		"inspector":      rec.Inspector,
 		"inspectionTime": rec.CreatedAt.Format("2006-01-02 15:04"),
-		"fields":         simplifyFieldsForSummary(rec.Fields),
+		"fields":         simplifyFieldsForSummary(cleanedRec.Fields),
 		"history":        historyPayload,
 	}
 	summary, sumErr := s.aiClient.Summarize(summaryPayload)
@@ -1274,6 +1304,82 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 }
 
 // ===== 场景分类 =====
+
+func (s *Server) handleAIChat(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Message string           `json:"message"`
+		History []map[string]any `json:"history,omitempty"`
+		Context map[string]any   `json:"context,omitempty"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Message) == "" {
+		writeError(w, http.StatusBadRequest, "empty_message", "请输入要询问的问题")
+		return
+	}
+	// 自动补充平台实时快照供 AI 引用
+	ctx := req.Context
+	if ctx == nil {
+		ctx = map[string]any{}
+	}
+	if assets, err := s.store.ListAssets(); err == nil {
+		total, normal, warning, danger := 0, 0, 0, 0
+		for _, a := range assets {
+			total++
+			switch a.LastStatus {
+			case "正常":
+				normal++
+			case "异常":
+				danger++
+			case "待复核":
+				warning++
+			}
+		}
+		ctx["assetTotal"] = total
+		ctx["assetNormal"] = normal
+		ctx["assetWarning"] = warning
+		ctx["assetDanger"] = danger
+	}
+	if recs, err := s.store.ListRecords(1000); err == nil {
+		ctx["recordTotal"] = len(recs)
+	}
+	if reqs, err := s.store.ListChangeRequests(ChangeRequestFilter{}); err == nil {
+		pending := 0
+		for _, c := range reqs {
+			if c.Status == "pending" {
+				pending++
+			}
+		}
+		ctx["changeRequestPending"] = pending
+	}
+	payload := map[string]any{
+		"message": req.Message,
+		"history": req.History,
+		"context": ctx,
+	}
+	resp, err := s.aiClient.Chat(payload)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "ai_chat_failed", err.Error())
+		return
+	}
+	_ = s.store.CreateOperationLog(&OperationLog{
+		UserID:     s.currentUserID(r),
+		ActorName:  s.currentUserName(r),
+		Action:     "ai_chat",
+		TargetType: "ai",
+		Detail:     map[string]any{"message": req.Message, "model": resp["model"]},
+	})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) currentUserID(r *http.Request) string {
+	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		return user.ID
+	}
+	return "anonymous"
+}
 
 func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
@@ -1541,8 +1647,27 @@ func applyRecognizedFields(rec *Record, recognized []RecognizedField) {
 		if !ok {
 			continue
 		}
-		rec.Fields[i].AIValue = got.Value
-		rec.Fields[i].Value = got.Value
+		rawValue := got.Value
+		normalized := rawValue
+		// choice 字段：把 AI 自由文本映射到模板列出的选项
+		if rec.Fields[i].Kind == "choice" {
+			normalized = normalizeChoiceValue(rawValue, rec.Fields[i].Options)
+			if !optionContains(rec.Fields[i].Options, normalized) {
+				rec.Fields[i].AIValue = rawValue
+				rec.Fields[i].Value = ""
+				rec.Fields[i].Source = "ai"
+				rec.Fields[i].Confidence = got.Confidence
+				rec.Fields[i].Reason = got.Reason
+				if strings.TrimSpace(rec.Fields[i].Reason) == "" {
+					rec.Fields[i].Reason = "AI 返回值未匹配模板选项，需人工复核"
+				}
+				rec.Fields[i].NeedsReview = true
+				rec.Fields[i].Version++
+				continue
+			}
+		}
+		rec.Fields[i].AIValue = normalized
+		rec.Fields[i].Value = normalized
 		rec.Fields[i].Source = "ai"
 		rec.Fields[i].Confidence = got.Confidence
 		rec.Fields[i].Reason = got.Reason
@@ -1550,6 +1675,60 @@ func applyRecognizedFields(rec *Record, recognized []RecognizedField) {
 		rec.Fields[i].NeedsReview = got.Confidence < 0.85
 		rec.Fields[i].Version++
 	}
+}
+
+func optionContains(options []string, value string) bool {
+	for _, o := range options {
+		if o == value {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeChoiceValue — 把 AI 返回的自由文本对齐到 options 里的某个值
+// 1) 完全匹配 → 直接用
+// 2) 包含同义词 → 映射到对应选项
+// 3) 都不匹配 → 返回原始值（前端会显示但 select 选不中）
+func normalizeChoiceValue(raw string, options []string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+	// 1) 直接匹配
+	for _, opt := range options {
+		if opt == v {
+			return opt
+		}
+	}
+	// 2) 同义词库（先按 "正常/异常" 类的语义优先级）
+	synonyms := map[string][]string{
+		"正常":  {"正常", "无问题", "无异常", "良好", "ok", "OK", "Ok", "通过", "合格", "完好", "是", "yes", "Yes", "运行正常", "运转正常"},
+		"异常":  {"异常", "有问题", "不正常", "故障", "损坏", "不合格", "报警", "有报警", "存在异常", "不通过"},
+		"是":   {"是", "yes", "Yes", "有", "true", "True"},
+		"否":   {"否", "no", "No", "无", "没有", "未发现", "false", "False"},
+		"无":   {"无", "无异常", "未发现", "没有", "no", "No"},
+		"有":   {"有", "存在", "发现", "yes", "Yes"},
+		"完好":  {"完好", "良好", "正常", "无破损", "无损坏"},
+		"缺失":  {"缺失", "没有", "无", "丢失", "失踪"},
+		"破损":  {"破损", "损坏", "破裂", "破碎", "裂纹"},
+		"良好":  {"良好", "正常", "完好", "无问题"},
+		"待复核": {"待复核", "需复核", "无法判定", "不确定", "看不清"},
+	}
+	vLower := strings.ToLower(v)
+	for _, opt := range options {
+		aliases, ok := synonyms[opt]
+		if !ok {
+			continue
+		}
+		for _, alias := range aliases {
+			if strings.ToLower(alias) == vLower || strings.Contains(vLower, strings.ToLower(alias)) {
+				return opt
+			}
+		}
+	}
+	// 3) 返回原始值，交由人工复核
+	return raw
 }
 
 func buildDailyPreview(rec *Record) string {

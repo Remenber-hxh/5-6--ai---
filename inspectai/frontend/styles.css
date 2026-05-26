@@ -245,6 +245,26 @@ button {
   position: relative;
   overflow: hidden;
 }
+/* 矮屏适配（笔记本 + 开发者工具占用）：减边距 + 改 overflow:auto 允许滚到 shutter */
+@media (max-height: 700px) {
+  .camera-hero {
+    overflow-y: auto;
+    min-height: auto;
+    padding: 16px 24px calc(24px + var(--safe-bottom));
+    gap: 12px;
+  }
+  .camera-hero .viewfinder {
+    aspect-ratio: auto;
+    height: 180px !important;
+    min-height: 0 !important;
+  }
+  .hero-text h2 { font-size: 18px !important; }
+  .hero-tagline { margin-bottom: 8px !important; }
+  .hero-hint { margin: 4px 0 8px !important; }
+  .shutter-wrap {
+    margin-top: 12px !important;
+  }
+}
 .hero-text { text-align: center; padding-top: 4px; position: relative; z-index: 1; }
 /* 毛玻璃半透明品牌 chip */
 .hero-tagline {
@@ -369,6 +389,37 @@ button {
   cursor: pointer;
   position: relative; z-index: 2;
   margin-top: auto;
+  /* label 本身可点 → 触发 cameraInput 文件选择 */
+}
+/* input 完全覆盖 label 区域，opacity 0 但保留点击行为 = 双保险
+   既能 label-for 触发，也能直接点 input —— 老 WebView / 微信内核全部稳 */
+.shutter-input {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 3;
+  /* 不能 display:none / visibility:hidden / pointer-events:none */
+}
+/* :has() 让 shutter 特效感知整个 label 的 hover / active 状态 */
+.shutter-wrap:hover .shutter::before,
+.shutter-wrap:focus-within .shutter::before {
+  border-color: rgba(0, 122, 255, 0.50);
+}
+.shutter-wrap:hover .shutter::after {
+  inset: 4px;
+}
+.shutter-wrap:active .shutter {
+  transform: scale(0.94);
+}
+.shutter-wrap:active .shutter::after {
+  inset: 12px;
+  background: linear-gradient(180deg, #F2F2F7 0%, #E5E5EA 100%);
 }
 /* iOS 相机 app 风：纯白快门 + 灰色外环（同 ring） */
 .shutter {
@@ -2159,8 +2210,8 @@ button.photo-thumb:hover { box-shadow: var(--shadow-2); }
     overflow-x: hidden;
   }
   #app[data-scene="camera"] {
-    width: 100vw;
-    max-width: 100vw;
+    width: min(100%, 480px);
+    max-width: 480px;
     overflow: hidden;
   }
 }
@@ -2454,6 +2505,35 @@ body:has(#app[data-scene="loading"])::before {
     0 0 0 1px rgba(67, 229, 172, 0.32) inset,
     0 0 16px rgba(67, 229, 172, 0.30);
 }
+
+.camera-hero::before,
+.camera-hero::after,
+.viewfinder,
+.vf-corner,
+.vf-scan {
+  pointer-events: none;
+}
+
+.shutter-wrap {
+  min-width: 112px;
+  min-height: 112px;
+  z-index: 20 !important;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.shutter-input {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: auto !important;
+}
+
+.hero-secondary,
+.upload-wrap,
+.upload-input {
+  pointer-events: auto;
+}
 .shutter-label,
 .link-btn,
 .link-sep {
@@ -2501,26 +2581,10 @@ body:has(#app[data-scene="loading"])::before {
   border: 1px solid rgba(111, 255, 219, 0.16);
 }
 @media (max-width: 899px) {
-  .user-window {
-    display: none !important;
-  }
+  /* 旧 CSS 在窄屏隐藏真实按钮 + 用 ::after 注入硬编码 "巡检员" 文案。
+     现在用户名通过 JS 写入真实按钮，需要让按钮在窄屏可见且去掉硬编码 ::after */
   #app[data-scene="camera"] .topbar::after {
-    content: "巡检员";
-    position: absolute;
-    right: 14px;
-    top: 50%;
-    height: 32px;
-    padding: 0 13px;
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid rgba(111, 255, 219, 0.20);
-    border-radius: 999px;
-    color: rgba(234, 255, 248, 0.90);
-    background: rgba(6, 18, 30, 0.72);
-    font-size: 13px;
-    font-weight: 650;
-    transform: translateY(-50%);
-    box-shadow: 0 0 20px rgba(67, 229, 172, 0.10);
+    content: none;
   }
   #app[data-scene="camera"] .topbar::before {
     content: "";
@@ -2568,4 +2632,265 @@ body:has(#app[data-scene="loading"])::before {
 /* (2) 桌面 ≥600px 隐藏 white-iOS body::before 渐变光晕，避免在宽屏空白侧栏漏色 */
 @media (min-width: 600px) {
   body::before { display: none; }
+}
+
+/* ========= 屏 0：登录 ========= */
+.scene-login {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(34, 225, 255, 0.18), transparent 38%),
+    radial-gradient(circle at 84% 78%, rgba(27, 224, 135, 0.16), transparent 40%),
+    linear-gradient(160deg, #061325 0%, #0a1f3a 55%, #06231e 100%);
+  color: #eaf7ff;
+}
+.scene-login.active {
+  display: flex;
+}
+.login-box {
+  width: 100%;
+  max-width: 360px;
+  padding: 32px 26px 28px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(12, 38, 70, 0.82), rgba(5, 20, 44, 0.86));
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid rgba(126, 255, 210, 0.18);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: rgba(126, 255, 210, 0.92);
+  padding: 4px 10px;
+  border: 1px solid rgba(126, 255, 210, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.login-brand .brand-divider {
+  width: 1px; height: 12px;
+  background: rgba(126, 255, 210, 0.45);
+}
+.login-brand .brand-cn {
+  letter-spacing: 0.04em;
+}
+.login-title {
+  margin: 22px 0 6px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+.login-sub {
+  margin: 0 0 22px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(234, 247, 255, 0.66);
+}
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+.login-row {
+  display: grid;
+  gap: 6px;
+}
+.login-row span {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(234, 247, 255, 0.72);
+}
+.login-row input {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #ffffff;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.login-row input::placeholder { color: rgba(234, 247, 255, 0.36); }
+.login-row input:focus {
+  border-color: rgba(126, 255, 210, 0.62);
+  box-shadow: 0 0 0 3px rgba(126, 255, 210, 0.14);
+}
+.login-err {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(239, 75, 63, 0.16);
+  border: 1px solid rgba(239, 75, 63, 0.32);
+  color: #ffb4af;
+  font-size: 13px;
+  font-weight: 600;
+}
+.login-submit {
+  height: 46px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1be087 0%, #22e1ff 100%);
+  color: #052015;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms;
+  box-shadow: 0 12px 32px rgba(27, 224, 135, 0.36);
+}
+.login-submit:hover { transform: translateY(-1px); box-shadow: 0 16px 38px rgba(27, 224, 135, 0.48); }
+.login-submit:active { transform: translateY(0); }
+.login-submit:disabled { opacity: 0.6; cursor: progress; }
+.login-hint {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: rgba(234, 247, 255, 0.48);
+  text-align: center;
+}
+
+/* 登录场景下隐藏顶栏 / 进度条 */
+#app[data-scene="login"] .topbar,
+#app[data-scene="login"] .progress,
+#app[data-scene="login"] .user-window,
+#app[data-scene="login"] .footer {
+  display: none !important;
+}
+
+/* ========= Camera viewport hotfix ========= */
+html:has(#app[data-scene="camera"]),
+body:has(#app[data-scene="camera"]) {
+  height: 100svh;
+  overflow: hidden;
+}
+
+#app[data-scene="camera"] {
+  height: 100svh;
+  min-height: 100svh;
+  overflow: hidden;
+}
+
+#app[data-scene="camera"] .main {
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+#app[data-scene="camera"] .scene-camera.active {
+  height: calc(100svh - var(--header-h));
+  min-height: 0;
+  overflow: hidden;
+}
+
+#app[data-scene="camera"] .camera-hero {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: clamp(18px, 3svh, 28px) 20px calc(20px + var(--safe-bottom));
+}
+
+#app[data-scene="camera"] .hero-text {
+  flex: 0 0 auto;
+}
+
+#app[data-scene="camera"] .hero-tagline {
+  margin-bottom: clamp(12px, 2svh, 18px);
+}
+
+#app[data-scene="camera"] .hero-text h2 {
+  font-size: clamp(22px, 5.4vw, 28px);
+  margin-bottom: 8px;
+}
+
+#app[data-scene="camera"] .hero-hint {
+  font-size: clamp(13px, 3.4vw, 15px);
+}
+
+#app[data-scene="camera"] .viewfinder {
+  flex: 0 0 auto;
+  width: min(282px, calc(100vw - 110px));
+  height: clamp(288px, 39svh, 312px);
+  aspect-ratio: auto;
+  margin: clamp(26px, 4.4svh, 38px) auto clamp(48px, 6.2svh, 60px);
+}
+
+#app[data-scene="camera"] .viewfinder::after {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: min(54%, 160px);
+  height: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+
+#app[data-scene="camera"] .shutter-wrap {
+  flex: 0 0 auto;
+  margin-top: 0 !important;
+  min-width: 112px;
+  min-height: 116px;
+  gap: 12px;
+}
+
+#app[data-scene="camera"] .shutter-input {
+  position: absolute;
+  inset: 0 !important;
+  display: block;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#app[data-scene="camera"] .hero-secondary {
+  flex: 0 0 auto;
+  margin-top: 18px;
+}
+
+@media (max-height: 700px) {
+  #app[data-scene="camera"] .camera-hero {
+    overflow: hidden;
+    padding-top: 14px;
+    padding-bottom: calc(10px + var(--safe-bottom));
+    gap: 0;
+  }
+
+  #app[data-scene="camera"] .viewfinder {
+    width: min(276px, calc(100vw - 100px));
+    height: clamp(268px, 38svh, 296px) !important;
+    min-height: 0 !important;
+    margin-top: 10px;
+    margin-bottom: 8px;
+  }
+
+  #app[data-scene="camera"] .hero-tagline {
+    margin-bottom: 8px !important;
+  }
+
+  #app[data-scene="camera"] .hero-text h2 {
+    font-size: 21px !important;
+    margin-bottom: 4px;
+  }
+
+  #app[data-scene="camera"] .hero-hint {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  #app[data-scene="camera"] .shutter {
+    width: 78px;
+    height: 78px;
+  }
+
+  #app[data-scene="camera"] .shutter-wrap {
+    min-height: 104px;
+  }
 }

@@ -31,6 +31,7 @@ _recycle_*.ps1
 _recycle_*.tmp
 inspectai/release/
 inspectai/output/
+inspectai/admin-frontend/login-bg-options/
 
 # ---- Go / Python 构建产物 ----
 inspectai/go-backend/server.exe

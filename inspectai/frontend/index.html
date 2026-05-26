@@ -4,9 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#07131f" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>智巡</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css?v=20260520twofix" />
+  <script>
+    // 防缓存：用每次加载的时间戳注入 CSS/JS，确保 demo 期间任何浏览器普通 F5 都能拉新版本
+    (function () {
+      var t = Date.now();
+      document.write('<link rel="stylesheet" href="/styles.css?t=' + t + '" />');
+      window.__assetTs = t;
+    })();
+  </script>
 </head>
 <body>
 <div id="app" data-scene="camera">
@@ -27,12 +37,37 @@
 
   <main class="main">
 
+    <!-- ========= 屏 0：登录 ========= -->
+    <section class="scene scene-login" id="sceneLogin">
+      <div class="login-box">
+        <div class="login-brand">
+          <span class="brand-word">JADEAST</span>
+          <span class="brand-divider"></span>
+          <span class="brand-cn">智巡</span>
+        </div>
+        <h2 class="login-title">巡检员登录</h2>
+        <p class="login-sub">请使用主管分配的账号登录，记录会自动归到你名下</p>
+        <form id="loginForm" class="login-form" autocomplete="on">
+          <label class="login-row">
+            <span>账号</span>
+            <input id="loginUser" name="username" type="text" autocomplete="username" placeholder="例如 inspector01" required />
+          </label>
+          <label class="login-row">
+            <span>密码</span>
+            <input id="loginPass" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required />
+          </label>
+          <div class="login-err" id="loginErr" hidden></div>
+          <button class="login-submit" type="submit">登录</button>
+        </form>
+        <p class="login-hint">忘记密码？联系主管或系统管理员重置</p>
+      </div>
+    </section>
+
     <!-- ========= 屏 1：相机入口（默认） ========= -->
     <section class="scene scene-camera active" id="sceneCamera">
       <div class="camera-hero">
         <div class="hero-text">
           <p class="hero-tagline" aria-label="JADEAST 智巡">
-            <span class="brand-emblem">J</span>
             <span class="brand-word">JADEAST</span>
             <span class="brand-divider"></span>
             <span class="brand-cn">智巡</span>
@@ -47,9 +82,9 @@
           <span class="vf-corner vf-br"></span>
           <span class="vf-scan"></span>
         </div>
-        <label class="shutter-wrap" for="cameraInput">
-          <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple hidden />
-          <span class="shutter" aria-label="拍照"></span>
+        <label class="shutter-wrap" for="cameraInput" role="button" tabindex="0" aria-label="拍照识别">
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple class="shutter-input" aria-label="拍照" />
+          <span class="shutter" aria-hidden="true"></span>
           <span class="shutter-label">拍照识别</span>
         </label>
         <div class="hero-secondary">
@@ -207,6 +242,6 @@
 
 </div>
 
-  <script src="/app.js?v=20260519o"></script>
+  <script>document.write('<scr' + 'ipt src="/app.js?t=' + (window.__assetTs || Date.now()) + '"></scr' + 'ipt>');</script>
 </body>
 </html>

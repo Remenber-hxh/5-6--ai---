@@ -144,6 +144,31 @@ func (c *AIClient) Classify(imagePaths []string) (*SceneClassifyResult, error) {
 	return &out, nil
 }
 
+// Chat — 调 /chat（后台 AI 对话）
+func (c *AIClient) Chat(payload map[string]any) (map[string]any, error) {
+	body, _ := json.Marshal(payload)
+	client := &http.Client{Timeout: 18 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/chat", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("ai-service /chat status %d: %s", resp.StatusCode, string(raw))
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("decode chat: %w", err)
+	}
+	return out, nil
+}
+
 // === 工具 ===
 
 // saveMultipartFile — 保存 multipart 文件到目标目录，返回 ImageInfo（不计算 EXIF 等）

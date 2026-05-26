@@ -34,6 +34,7 @@ type TemplateField struct {
 	Required bool     `json:"required"`
 	Source   string   `json:"source"` // ai / manual
 	Options  []string `json:"options,omitempty"`
+	Default  string   `json:"default,omitempty"` // 默认值，移动端表单可预填
 }
 
 // FieldValue — 字段实例（每条记录里的一项）

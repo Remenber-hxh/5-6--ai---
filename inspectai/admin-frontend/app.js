@@ -1,8 +1,11 @@
 const API_BASE_KEY = "inspectai_admin_api_base";
 const API_TOKEN_KEY = "inspectai_admin_token";
+const ADMIN_PLANS_KEY = "inspectai_admin_plans";
+const ADMIN_TASKS_KEY = "inspectai_admin_tasks";
 
 const pageLabels = {
   dashboard: "首页",
+  profile: "个人首页",
   plan: "巡检计划",
   task: "巡检任务",
   record: "巡检记录",
@@ -12,6 +15,8 @@ const pageLabels = {
   approval: "修改审批",
   data: "数据看板",
   report: "统计报表",
+  users: "用户与权限",
+  logs: "操作日志",
   system: "系统管理",
 };
 
@@ -34,6 +39,8 @@ const state = {
   templates: [],
   users: [],
   operationLogs: [],
+  customPlans: loadLocalArray(ADMIN_PLANS_KEY),
+  customTasks: loadLocalArray(ADMIN_TASKS_KEY),
   currentUser: null,
   health: null,
   selectedProject: "",
@@ -45,10 +52,45 @@ const state = {
     status: "",
     keyword: "",
   },
+  recordFilters: {
+    project: "",
+    template: "",
+    status: "",
+    keyword: "",
+  },
+  planFilters: {
+    project: "",
+    frequency: "",
+    status: "",
+    keyword: "",
+  },
 };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+function normalizeButtons(root = document) {
+  root.querySelectorAll("button:not([type])").forEach((button) => {
+    button.type = "button";
+  });
+}
+
+function loadLocalArray(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalArray(key, value) {
+  localStorage.setItem(key, JSON.stringify(value || []));
+}
+
+function clientId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+}
 
 function escapeHTML(value = "") {
   return String(value)
@@ -126,26 +168,11 @@ async function login(username, password) {
 }
 
 async function loadMe() {
-  try {
-    const data = await api("/api/auth/me");
-    state.currentUser = data.user || null;
-    updateUserBadge();
-    return state.currentUser;
-  } catch (error) {
-    if (/404|not_found/i.test(error.message || "")) {
-      state.currentUser = {
-        id: "legacy_supervisor",
-        username: "supervisor",
-        displayName: "张管理员",
-        roleCode: "supervisor",
-        roleName: "本地主管",
-        status: "legacy",
-      };
-      updateUserBadge();
-      return state.currentUser;
-    }
-    throw error;
-  }
+  // F9 修复 · 不再编 legacy_supervisor 假身份，404 直接抛错让上层走登录页
+  const data = await api("/api/auth/me");
+  state.currentUser = data.user || null;
+  updateUserBadge();
+  return state.currentUser;
 }
 
 async function logout() {
@@ -186,6 +213,10 @@ function normalizeStatus(status = "") {
   return "unknown";
 }
 
+const ASSET_STATUS_OPTIONS = ["正常", "待复核", "异常", "待维修", "未巡检", "未知"];
+const RECORD_STATUS_OPTIONS = ["已提交", "待复核", "异常", "识别中", "需重拍", "人工填写", "未开始"];
+const PLAN_STATUS_OPTIONS = ["启用", "暂停", "草稿", "已停用"];
+
 function statusLabel(value = "") {
   const map = {
     normal: "正常",
@@ -219,6 +250,16 @@ function statusClass(status = "") {
 function shortId(id = "") {
   const parts = String(id).split("::");
   return parts[parts.length - 1] || id || "-";
+}
+
+function logActionTone(action = "") {
+  const s = String(action).toLowerCase();
+  if (s.includes("login")) return "tone-success";
+  if (s.includes("logout")) return "tone-muted";
+  if (s.includes("delete") || s.includes("reject") || s.includes("disable")) return "tone-danger";
+  if (s.includes("approve") || s.includes("create")) return "tone-success";
+  if (s.includes("patch") || s.includes("update") || s.includes("modify")) return "tone-info";
+  return "tone-muted";
 }
 
 function locationText(asset) {
@@ -271,6 +312,8 @@ function projects() {
     ...state.records.map((item) => item.project),
     ...state.points.map((item) => item.project),
     ...state.templates.map((item) => item.project),
+    ...state.customPlans.map((item) => item.project),
+    ...state.customTasks.map((item) => item.project),
   ].filter(Boolean);
   return [...new Set(names)];
 }
@@ -280,7 +323,11 @@ function filteredAssets() {
   return state.assets.filter((asset) => {
     if (state.selectedProject && asset.project !== state.selectedProject && asset.projectCode !== state.selectedProject) return false;
     if (state.filters.assetType && asset.assetType !== state.filters.assetType) return false;
-    if (state.filters.status && asset.lastStatus !== state.filters.status) return false;
+    if (state.filters.status) {
+      const targetLevel = normalizeStatus(state.filters.status);
+      const assetLevel = asset.statusLevel || normalizeStatus(asset.lastStatus);
+      if (asset.lastStatus !== state.filters.status && assetLevel !== targetLevel) return false;
+    }
     if (!keyword) return true;
     return [
       asset.id,
@@ -289,6 +336,7 @@ function filteredAssets() {
       asset.assetType,
       asset.project,
       asset.pointId,
+      locationText(asset),
       asset.lastSummary,
     ].join(" ").toLowerCase().includes(keyword);
   });
@@ -298,6 +346,53 @@ function filteredRecords() {
   return state.records.filter((record) => {
     if (!state.selectedProject) return true;
     return record.project === state.selectedProject;
+  });
+}
+
+function recordSearchText(record) {
+  return [
+    record.id,
+    record.project,
+    record.pointName,
+    record.pointId,
+    record.templateName,
+    record.templateId,
+    record.inspector,
+    record.inspectorName,
+    record.createdBy,
+    record.aiSummary,
+    record.report,
+    record.retakeReason,
+    primaryReading(record),
+    ...(record.fields || []).flatMap((field) => [
+      field.code,
+      field.label,
+      field.value,
+      field.aiValue,
+      field.manualValue,
+      field.reason,
+    ]),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function filteredRecordRows() {
+  const filters = state.recordFilters;
+  const project = filters.project.trim();
+  const template = filters.template.trim();
+  const status = filters.status.trim();
+  const keyword = filters.keyword.trim().toLowerCase();
+  return state.records.filter((record) => {
+    if (state.selectedProject && !project && record.project !== state.selectedProject) return false;
+    if (project && record.project !== project) return false;
+    if (template && record.templateName !== template && record.templateId !== template) return false;
+    if (status) {
+      const level = normalizeStatus(status);
+      const recordLevelValue = recordLevel(record);
+      const labels = [recordStatus(record), statusLabel(record.recognitionStatus)].filter(Boolean);
+      if (!labels.includes(status) && recordLevelValue !== level) return false;
+    }
+    if (!keyword) return true;
+    return recordSearchText(record).includes(keyword);
   });
 }
 
@@ -395,37 +490,89 @@ function setPage(page, push = true) {
   render();
 }
 
+function setLoginScreen(enabled) {
+  document.body.classList.toggle("login-screen", Boolean(enabled));
+}
+
 function render() {
+  setLoginScreen(false);
   $$(".nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.page === state.page));
   $("#pendingBadge").textContent = filteredRequests().filter((item) => item.status === "pending").length;
   updateUserBadge();
   const renderer = pageRenderers[state.page] || renderDashboardPage;
   renderer();
+  normalizeButtons();
 }
 
 function updateUserBadge() {
   const el = $(".admin-user");
   if (!el) return;
-  const user = state.currentUser || { displayName: "未登录", roleName: "请登录" };
+  const user = state.currentUser || { displayName: "未登录" };
   const name = user.displayName || user.username || "未登录";
   const initial = name.slice(0, 1) || "?";
-  el.innerHTML = `<b>${escapeHTML(initial)}</b><span>${escapeHTML(name)}<small>${escapeHTML(user.roleName || user.roleCode || "")}</small></span>`;
-  el.title = "当前登录用户";
+  const todos = myTodoCount();
+  const dot = todos > 0 ? `<i class="user-dot" aria-label="${todos} 个待办">${todos > 9 ? "9+" : todos}</i>` : "";
+  el.innerHTML = `<b>${escapeHTML(initial)}</b><span>${escapeHTML(name)}</span>${dot}`;
+  el.title = todos > 0 ? `${todos} 个待办` : "当前登录用户";
+}
+
+function myAssignedTasks() {
+  const user = state.currentUser;
+  if (!user) return [];
+  const name = user.displayName || user.username;
+  return (state.customTasks || []).filter((t) => t.owner === name || t.owner === user.username);
+}
+
+function myOpenTasks() {
+  // 仍需处理的：待执行 + 进行中
+  return myAssignedTasks().filter((t) => t.status === "待执行" || t.status === "进行中");
+}
+
+function myCompletedTodayTasks() {
+  const today = todayKey();
+  return myAssignedTasks().filter((t) => t.status === "已完成" && String(t.completedAt || "").startsWith(today));
+}
+
+function myAssignedPlans() {
+  const user = state.currentUser;
+  if (!user) return [];
+  const name = user.displayName || user.username;
+  return (state.customPlans || []).filter((p) => p.status === "启用" && (p.owner === name || p.owner === user.username));
+}
+
+function myTodoCount() {
+  const user = state.currentUser;
+  if (!user) return 0;
+  let total = myOpenTasks().length;
+  if (["admin", "manager", "supervisor"].includes(user.roleCode || "")) {
+    total += (state.requests || []).filter((r) => r.status === "pending").length;
+  }
+  return total;
 }
 
 function renderLogin(message = "") {
+  setLoginScreen(true);
   $$(".nav button").forEach((btn) => btn.classList.remove("active"));
   $("#pendingBadge").textContent = "0";
   $("#pageMain").innerHTML = `
     <section class="login-panel">
-      <div class="login-copy">
-        <span>JADEAST 智巡后台</span>
-        <h1>登录管理端</h1>
-        <p>使用后台账号进入资产台账、异常复核、用户与权限管理。默认本地账号为 admin，密码为 InspectAI@2026，可在环境变量中调整。</p>
-      </div>
       <form class="login-card" id="loginForm">
-        <label>账号<input name="username" autocomplete="username" value="admin" required></label>
-        <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <div class="login-card-head">
+          <strong>JADEAST <span>智巡后台</span></strong>
+          <b>后台登录</b>
+        </div>
+        <label>账号<input name="username" autocomplete="username" value="admin" placeholder="请输入账号" required></label>
+        <label>密码
+          <div class="password-field">
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+            <button class="password-toggle" id="passwordToggleBtn" type="button" aria-label="显示密码" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.4 12s3.5-6 9.6-6 9.6 6 9.6 6-3.5 6-9.6 6-9.6-6-9.6-6Z"></path>
+                <circle cx="12" cy="12" r="3.2"></circle>
+              </svg>
+            </button>
+          </div>
+        </label>
         ${message ? `<p class="login-error">${escapeHTML(message)}</p>` : ""}
         <button class="primary" type="submit">登录后台</button>
       </form>
@@ -436,6 +583,22 @@ function renderLogin(message = "") {
     ["第一阶段", "账号密码登录 + 会话令牌"],
     ["后续扩展", "企业微信 OAuth 与组织架构绑定"],
   ]);
+  normalizeButtons();
+  bindLoginPasswordToggle();
+}
+
+function bindLoginPasswordToggle() {
+  const input = $("#loginPassword");
+  const button = $("#passwordToggleBtn");
+  if (!input || !button) return;
+  button.addEventListener("click", () => {
+    const visible = input.type === "password";
+    input.type = visible ? "text" : "password";
+    button.classList.toggle("visible", visible);
+    button.setAttribute("aria-label", visible ? "隐藏密码" : "显示密码");
+    button.setAttribute("aria-pressed", String(visible));
+    input.focus();
+  });
 }
 
 function renderError(message) {
@@ -451,15 +614,7 @@ function renderError(message) {
     ["处理方式", "先确认 18080 /health 是否可访问"],
   ]);
   $("#retryLoadBtn").addEventListener("click", () => loadData());
-}
-
-function pageHero(scope, title, desc, action = "") {
-  return `
-    <section class="page-hero">
-      <div><span>${escapeHTML(scope)}</span><h1>${escapeHTML(title)}</h1><p>${escapeHTML(desc)}</p></div>
-      ${action}
-    </section>
-  `;
+  normalizeButtons();
 }
 
 function metrics(items) {
@@ -483,51 +638,699 @@ function sideInfo(title, rows) {
   `;
 }
 
+// ============================================================
+// M27 · 全站实时动态 aside
+// ============================================================
+function relativeTime(iso) {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (!isFinite(t)) return "—";
+  const diff = Date.now() - t;
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
+  const days = Math.floor(diff / 86400_000);
+  if (days < 7) return `${days} 天前`;
+  return fmtTime(iso);
+}
+
+function liveActivityCard(opts = {}) {
+  const limit = opts.limit || 9;
+  const logs = (state.operationLogs || []).slice(0, limit);
+  const head = `
+    <div class="live-activity-head">
+      <div class="live-activity-title">
+        <span class="live-dot"></span>
+        <b>实时动态</b>
+      </div>
+      <span class="live-activity-sub">全站 · ${logs.length} 条</span>
+    </div>`;
+  if (!logs.length) {
+    return `<div class="live-activity">${head}<div class="live-activity-empty">暂无最近动作</div></div>`;
+  }
+  return `
+    <div class="live-activity">
+      ${head}
+      <ul class="live-activity-list">
+        ${logs.map(renderLiveActivityItem).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+function renderLiveActivityItem(log) {
+  const tone = logActionTone(log.action);
+  const label = actionLabel(log.action);
+  const actor = log.actorName || "系统";
+  const initial = (actor || "?").slice(0, 1);
+  const time = relativeTime(log.createdAt);
+  const target = log.targetType ? `${TARGET_LABEL[log.targetType] || log.targetType} ${shortId(log.targetId || "")}` : "";
+  return `
+    <li class="live-row tone-${tone}" data-live-target="${escapeHTML(log.targetType || "")}" data-live-target-id="${escapeHTML(log.targetId || "")}">
+      <span class="live-avatar">${escapeHTML(initial)}</span>
+      <div class="live-body">
+        <div class="live-line">
+          <b>${escapeHTML(actor)}</b>
+          <span class="live-action">${escapeHTML(label)}</span>
+        </div>
+        ${target ? `<div class="live-target">${escapeHTML(target)}</div>` : ""}
+      </div>
+      <time>${escapeHTML(time)}</time>
+    </li>
+  `;
+}
+
+const TARGET_LABEL = {
+  asset: "资产",
+  record: "记录",
+  user: "用户",
+  ai: "AI",
+  change_request: "申请",
+  changeRequest: "申请",
+};
+
+const TARGET_PAGE = {
+  asset: "ledger",
+  record: "record",
+  user: "users",
+  change_request: "approval",
+  changeRequest: "approval",
+};
+
+function bindLiveActivity() {
+  document.querySelectorAll(".live-row").forEach((row) => {
+    const tt = row.dataset.liveTarget;
+    const id = row.dataset.liveTargetId;
+    const page = TARGET_PAGE[tt];
+    if (!page) {
+      row.classList.add("no-click");
+      return;
+    }
+    row.classList.add("clickable");
+    row.addEventListener("click", () => {
+      if (tt === "asset" && id) state.selectedAssetId = id;
+      if (tt === "record" && id) state.selectedRecordId = id;
+      setPage(page);
+    });
+  });
+}
+
+function asideStack(...cards) {
+  return `<div class="aside-stack">${cards.filter(Boolean).join("")}</div>`;
+}
+
 function renderDashboardPage() {
   const assets = filteredAssets();
   const records = filteredRecords();
   const requests = filteredRequests();
   const counts = statusCounts(assets);
+  const today = new Date().toISOString().slice(0, 10);
+  const todayRecords = records.filter((r) => String(r.createdAt || "").slice(0, 10) === today);
+  const todayAuto = todayRecords.filter((r) => recordLevel(r) === "normal").length;
+  const todayFlagged = todayRecords.length - todayAuto;
+  const savedHours = Math.round(todayAuto * 0.07 * 10) / 10;
+  const accuracy = aiAccuracy(records);
+  const issuesCount = counts.warning + counts.danger + counts.repair;
+  const pendingApprovals = requests.filter((item) => item.status === "pending").length;
+  const issues = topIssues(assets);
+  const insights = riskInsights(records, assets);
+  const tileCounts = quickAccessCounts(records);
+
+  const trendCounts = last7DayAbnormal(records);
+  const todayKeyStr = todayKey();
+  const todayTaskDone = (state.customTasks || []).filter((t) => t.status === "已完成" && String(t.completedAt || "").startsWith(todayKeyStr)).length;
   $("#pageMain").innerHTML = `
-    ${pageHero("后台工作台", "运行总览", "汇总资产状态、巡检执行、异常复核和审批待办，作为主管进入后台后的第一屏。", `<button data-page-link="ledger">进入台账</button>`)}
-    ${metrics([
-      { label: "资产总数", value: counts.total, sub: "台/套" },
-      { label: "正常资产", value: counts.normal, sub: `${ratio(counts.normal, counts.total)}%`, good: true },
-      { label: "异常/待复核", value: counts.warning + counts.danger + counts.repair, sub: "需要处理", bad: counts.warning + counts.danger + counts.repair > 0 },
-      { label: "待审批", value: requests.filter((item) => item.status === "pending").length, sub: "修改申请" },
-    ])}
-    <section class="page-grid two">
-      <div class="grid-col">
-        ${trendPanel(records)}
-        ${assetTablePanel(assets.slice(0, 6), "资产台账", "展示最近更新的资产状态。", false)}
+    ${aiHeroBanner({ todayRecords: todayRecords.length, todayAuto, todayFlagged, savedHours, issuesCount, accuracy, trendCounts, todayTaskDone })}
+    ${quickAccessTiles(tileCounts)}
+    ${aiChatPanel()}
+  `;
+  $("#pageAside").innerHTML = dashboardAside({
+    monthly: monthlyAiStats(),
+    pendingExceptions: issuesCount,
+    pendingApprovals,
+    pendingTasks: tileCounts.tasks,
+    accuracy,
+    issues,
+  });
+  animateDashboardCounts();
+  animateHealthRings();
+  bindAiChat();
+  bindHeroCursor();
+}
+
+function bindHeroCursor() {
+  const hero = document.querySelector(".ai-hero.ai-hero-v2");
+  const cursor = hero?.querySelector(".ai-hero-cursor");
+  if (!hero || !cursor) return;
+  let rafId = 0;
+  let targetX = 0, targetY = 0;
+  let curX = 0, curY = 0;
+  let visible = false;
+
+  function tick() {
+    curX += (targetX - curX) * 0.18;
+    curY += (targetY - curY) * 0.18;
+    cursor.style.transform = `translate3d(${curX - 14}px, ${curY - 14}px, 0) rotate(${(curX - hero.clientWidth / 2) * 0.08}deg)`;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  hero.addEventListener("mouseenter", () => {
+    visible = true;
+    cursor.classList.add("show");
+    if (!rafId) tick();
+  });
+  hero.addEventListener("mouseleave", () => {
+    visible = false;
+    cursor.classList.remove("show");
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  });
+  hero.addEventListener("mousemove", (e) => {
+    const r = hero.getBoundingClientRect();
+    targetX = e.clientX - r.left;
+    targetY = e.clientY - r.top;
+  });
+}
+
+const AI_SUGGESTIONS = [
+  "今天异常资产有哪些？",
+  "上周 AI 识别准确率怎么样？",
+  "目前还有几个待审批？",
+  "下周需要重点关注什么？",
+  "怎么查最近的巡检记录？",
+];
+
+function aiChatPanel() {
+  return `
+    <section class="panel ai-chat">
+      <div class="panel-head">
+        <h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 智能问答</h2>
+        <span class="ai-chat-model">Qwen Plus · 实时</span>
       </div>
-      <div class="grid-col">
-        ${exceptionQueuePanel(assets, requests)}
-        ${recordListPanel(records.slice(0, 5), "巡检记录")}
+      <div class="ai-chat-body" id="aiChatBody">
+        <div class="ai-chat-empty">问 AI 看数据、查异常、要建议；下方点话题即可发起对话。</div>
+      </div>
+      <div class="ai-chat-suggestions" id="aiChatSuggestions">
+        ${AI_SUGGESTIONS.map((s) => `<button type="button" class="ai-chat-chip" data-ai-suggest="${escapeHTML(s)}">${escapeHTML(s)}</button>`).join("")}
+      </div>
+      <form class="ai-chat-form" id="aiChatForm" autocomplete="off">
+        <input id="aiChatInput" type="text" placeholder="输入你想问的，例如『派给我哪些任务还没完成』" maxlength="200" />
+        <button type="submit" class="ai-chat-send" id="aiChatSend">发送</button>
+      </form>
+    </section>
+  `;
+}
+
+const AI_CHAT_STATE = { history: [], busy: false };
+
+function bindAiChat() {
+  const form = document.getElementById("aiChatForm");
+  if (!form) return;
+  const body = document.getElementById("aiChatBody");
+  const input = document.getElementById("aiChatInput");
+  const sendBtn = document.getElementById("aiChatSend");
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text || AI_CHAT_STATE.busy) return;
+    input.value = "";
+    sendAiChat(text);
+  });
+  document.querySelectorAll("[data-ai-suggest]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const t = btn.dataset.aiSuggest;
+      if (!t || AI_CHAT_STATE.busy) return;
+      sendAiChat(t);
+    });
+  });
+  // restore history on re-render
+  if (AI_CHAT_STATE.history.length) {
+    body.innerHTML = AI_CHAT_STATE.history.map(renderChatBubble).join("");
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+function renderChatBubble(m) {
+  const cls = m.role === "user" ? "user" : "ai";
+  const html = (m.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div></div>`;
+}
+
+async function sendAiChat(message) {
+  const body = document.getElementById("aiChatBody");
+  const sendBtn = document.getElementById("aiChatSend");
+  if (!body) return;
+  // remove empty placeholder
+  body.querySelector(".ai-chat-empty")?.remove();
+  AI_CHAT_STATE.busy = true;
+  sendBtn.disabled = true;
+  sendBtn.textContent = "思考中…";
+
+  AI_CHAT_STATE.history.push({ role: "user", text: message });
+  body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "user", text: message }));
+  // typing placeholder
+  body.insertAdjacentHTML("beforeend", `<div class="ai-chat-msg ai" id="aiChatTyping"><div class="ai-chat-bubble typing"><i></i><i></i><i></i></div></div>`);
+  body.scrollTop = body.scrollHeight;
+
+  try {
+    const res = await api("/api/ai/chat", {
+      method: "POST",
+      body: JSON.stringify({ message, history: AI_CHAT_STATE.history.slice(-6) }),
+    });
+    const reply = res.reply || "AI 没有给出回复。";
+    AI_CHAT_STATE.history.push({ role: "ai", text: reply });
+    document.getElementById("aiChatTyping")?.remove();
+    body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: reply }));
+  } catch (err) {
+    document.getElementById("aiChatTyping")?.remove();
+    body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: `出错了：${err.message || "未知错误"}` }));
+  } finally {
+    AI_CHAT_STATE.busy = false;
+    sendBtn.disabled = false;
+    sendBtn.textContent = "发送";
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+function animateDashboardCounts() {
+  document.querySelectorAll(".dash-anim").forEach((el) => {
+    const target = parseFloat(el.dataset.count);
+    if (!isFinite(target)) return;
+    const decimals = parseInt(el.dataset.decimals || "0", 10);
+    const suffix = el.dataset.suffix || "";
+    const dur = 800;
+    const t0 = performance.now();
+    function tick(t) {
+      const k = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - k, 3);
+      el.textContent = (target * eased).toFixed(decimals) + suffix;
+      if (k < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function animateHealthRings() {
+  document.querySelectorAll(".health-ring .ring-svg circle:last-child").forEach((el) => {
+    const len = parseFloat(getComputedStyle(el).getPropertyValue("--ring-len")) || 0;
+    el.style.transition = "stroke-dasharray 900ms cubic-bezier(.4,0,.2,1) 200ms";
+    requestAnimationFrame(() => {
+      el.style.strokeDasharray = `${len} 999`;
+    });
+  });
+}
+
+function openAdminLightbox(src) {
+  if (!src) return;
+  closeAdminLightbox();
+  const box = document.createElement("div");
+  box.className = "admin-lightbox";
+  box.innerHTML = `<button class="admin-lightbox-close" aria-label="关闭">×</button><img src="${src}" alt="" />`;
+  document.body.appendChild(box);
+  document.addEventListener("keydown", lightboxKeyHandler);
+}
+function closeAdminLightbox() {
+  document.querySelectorAll(".admin-lightbox").forEach((el) => el.remove());
+  document.removeEventListener("keydown", lightboxKeyHandler);
+}
+function lightboxKeyHandler(e) {
+  if (e.key === "Escape") closeAdminLightbox();
+}
+
+const HELLO = (() => {
+  const h = new Date().getHours();
+  if (h < 6) return "深夜了";
+  if (h < 11) return "早上好";
+  if (h < 14) return "中午好";
+  if (h < 18) return "下午好";
+  return "晚上好";
+})();
+
+function last7DayAbnormal(records) {
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  return days.map((day) => records.filter((r) => String(r.createdAt || "").slice(0, 10) === day && recordLevel(r) !== "normal").length);
+}
+
+function aiHeroBanner({ todayRecords, todayAuto, todayFlagged, savedHours, issuesCount, accuracy, trendCounts, todayTaskDone = 0 }) {
+  const accText = accuracy && accuracy.sample ? `${accuracy.value}%` : "—";
+  // sparkline: 7 day abnormal trend
+  const w = 168, h = 44;
+  const max = Math.max(1, ...(trendCounts || [0]));
+  const pts = (trendCounts || []).map((v, i) => {
+    const x = 4 + (i * (w - 8)) / 6;
+    const y = h - 6 - (v / max) * (h - 14);
+    return `${x},${y}`;
+  }).join(" ");
+  return `
+    <section class="ai-hero ai-hero-v2">
+      <div class="ai-hero-text">
+        <div class="ai-hero-hi">${HELLO}，张管理员</div>
+        <div class="ai-hero-line">
+          今日 AI 交付
+          <b><span class="dash-anim" data-count="${todayRecords}">0</span></b><em>条巡检</em>
+          <b><span class="dash-anim" data-count="${issuesCount}">0</span></b><em>项异常</em>
+          <b><span class="dash-anim" data-count="${todayTaskDone}">0</span></b><em>项完成</em>
+        </div>
+        <div class="ai-hero-sub">其中 ${todayAuto} 条 AI 自动确认 · ${todayTaskDone} 个任务今日已闭环</div>
+      </div>
+      <aside class="ai-hero-side" aria-hidden="true">
+        <span class="ai-hero-orb ai-hero-orb-1"></span>
+        <span class="ai-hero-orb ai-hero-orb-2"></span>
+        <span class="ai-hero-orb ai-hero-orb-3"></span>
+      </aside>
+      <svg class="ai-hero-cursor" viewBox="0 0 28 28" aria-hidden="true">
+        <defs>
+          <linearGradient id="heroTriGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#7effd2"/>
+            <stop offset="100%" stop-color="#25d5ff"/>
+          </linearGradient>
+        </defs>
+        <polygon points="14,3 25,24 3,24" fill="url(#heroTriGrad)" opacity="0.85"/>
+      </svg>
+    </section>
+  `;
+}
+
+function healthCards(counts) {
+  const total = counts.total || 1;
+  const items = [
+    { key: "normal", label: "正常资产", count: counts.normal, pct: Math.round((counts.normal / total) * 100), color: "#12a968", desc: "AI 判定运行正常" },
+    { key: "warn",   label: "需关注",   count: counts.warning + counts.danger, pct: Math.round(((counts.warning + counts.danger) / total) * 100), color: "#f59e0b", desc: "AI 检出异常或建议复核" },
+    { key: "repair", label: "待维修",   count: counts.repair, pct: Math.round((counts.repair / total) * 100), color: "#ef4b3f", desc: "需现场处理" },
+  ];
+  const ring = (pct, color) => {
+    const r = 28, c = 2 * Math.PI * r;
+    const len = (pct / 100) * c;
+    return `<svg viewBox="0 0 72 72" class="ring-svg">
+      <circle cx="36" cy="36" r="${r}" fill="none" stroke="rgba(15,35,55,0.06)" stroke-width="6"/>
+      <circle cx="36" cy="36" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+        stroke-linecap="round" transform="rotate(-90 36 36)"
+        style="--ring-len:${len.toFixed(2)}; stroke-dasharray:0 999;"/>
+    </svg>`;
+  };
+  return `
+    <section class="health-grid">
+      ${items.map((it) => `
+        <article class="health-card health-${it.key}">
+          <div class="health-bar" style="background:${it.color}"></div>
+          <div class="health-body">
+            <div class="health-ring">${ring(it.pct, it.color)}<b><span class="dash-anim" data-count="${it.pct}" data-suffix="%">0%</span></b></div>
+            <div class="health-info">
+              <span class="health-label">${it.label}</span>
+              <b class="health-count"><span class="dash-anim" data-count="${it.count}">0</span> <em>项</em></b>
+              <span class="health-desc">${it.desc}</span>
+            </div>
+          </div>
+        </article>
+      `).join("")}
+    </section>
+  `;
+}
+
+function topIssues(assets) {
+  const PRI = { danger: "high", repair: "high", warning: "mid" };
+  // F3 修复 · 真按 status / lastStatus / assetType 拼提示，不再用 adjectives 假数组
+  const STATUS_HINT = {
+    danger: "AI 标记为异常状态",
+    warning: "AI 提交待复核",
+    repair: "AI 标记为待维修",
+  };
+  return assets
+    .filter((a) => ["danger", "warning", "repair"].includes(normalizeStatus(a.lastStatus)))
+    .slice(0, 4)
+    .map((a) => {
+      const lvl = normalizeStatus(a.lastStatus);
+      const hint = STATUS_HINT[lvl] || "AI 检出待处理项";
+      const typeText = a.assetType ? `（${a.assetType}）` : "";
+      const note = a.lastSummary
+        ? a.lastSummary
+        : `${hint}${typeText}，最近巡检 ${fmtTime(a.lastInspectedAt) || "—"}，请尽快复核`;
+      return {
+        asset: a,
+        priority: PRI[lvl] || "low",
+        aiNote: note,
+      };
+    });
+}
+
+function aiFindingsPanel(issues) {
+  if (!issues.length) {
+    return `
+      <section class="panel ai-findings">
+        <div class="panel-head"><h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 关键发现</h2></div>
+        <div class="ai-finding-empty">😊 今日所有资产 AI 判定正常，没有需要你关注的事项</div>
+      </section>`;
+  }
+  const labelMap = { high: "高优先级", mid: "中优先级", low: "低优先级" };
+  return `
+    <section class="panel ai-findings">
+      <div class="panel-head">
+        <h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 关键发现</h2>
+        <button class="link-btn" data-page-link="exception">全部 →</button>
+      </div>
+      <div class="finding-list">
+        ${issues.map((it) => `
+          <article class="finding finding-${it.priority}" data-asset-select="${escapeHTML(it.asset.id)}">
+            <span class="finding-bar"></span>
+            <div class="finding-body">
+              <div class="finding-head">
+                <span class="finding-pri">${labelMap[it.priority]}</span>
+                <h3>${escapeHTML(it.asset.assetName || "资产")}</h3>
+              </div>
+              <p class="finding-note"><span class="ai-tag">AI 分析</span>${escapeHTML(it.aiNote)}</p>
+            </div>
+            <button class="finding-cta" data-asset-select="${escapeHTML(it.asset.id)}">去处理 →</button>
+          </article>
+        `).join("")}
       </div>
     </section>
   `;
-  $("#pageAside").innerHTML = renderAssetSide(selectedAsset());
+}
+
+function riskInsights(records, assets) {
+  const counts = statusCounts(assets);
+  const total = assets.length || 1;
+  const abnormalCount = counts.warning + counts.danger;
+  const abnormalRate = Math.round((abnormalCount / total) * 100);
+
+  // F2 修复 · 真算本周 vs 上周异常记录数环比
+  const now = Date.now();
+  const dayMs = 24 * 3600 * 1000;
+  const isAbnormal = (r) => recordLevel(r) !== "normal";
+  const ts = (r) => new Date(r.createdAt || r.submittedAt || 0).getTime();
+  const thisWeek = records.filter((r) => isAbnormal(r) && ts(r) > now - 7 * dayMs).length;
+  const lastWeek = records.filter((r) => {
+    const t = ts(r);
+    return isAbnormal(r) && t > now - 14 * dayMs && t <= now - 7 * dayMs;
+  }).length;
+  let trendDelta;
+  if (lastWeek > 0) {
+    const diff = Math.round(((thisWeek - lastWeek) / lastWeek) * 100);
+    if (diff === 0) trendDelta = "，与上周持平";
+    else if (diff > 0) trendDelta = `，较上周上升 <b>${diff}%</b>`;
+    else trendDelta = `，较上周下降 <b>${Math.abs(diff)}%</b>`;
+  } else if (thisWeek > 0) {
+    trendDelta = "，上周无异常基线，不计算环比";
+  } else {
+    trendDelta = "，连续两周无异常记录";
+  }
+
+  const typeMap = {};
+  const GENERIC = /综合|未分类|其它|其他|通用|默认|default|other/i;
+  assets.filter((a) => normalizeStatus(a.lastStatus) !== "normal").forEach((a) => {
+    let key = a.assetType || "";
+    if (!key || GENERIC.test(key)) {
+      key = a.assetName ? a.assetName.replace(/[_\d#·\-\s]+\d*$/, "") || a.assetName : "";
+    }
+    if (!key) return;
+    typeMap[key] = (typeMap[key] || 0) + 1;
+  });
+  const topType = Object.entries(typeMap).sort((a, b) => b[1] - a[1])[0];
+  const focusType = topType ? topType[0] : "";
+  const focusPct = topType ? Math.round((topType[1] / (abnormalCount || 1)) * 100) : 0;
+  return {
+    trendText: `异常率 <b>${abnormalRate}%</b>${trendDelta}`,
+    focusText: abnormalCount && focusType
+      ? `${focusType} 类异常占比 <b>${focusPct}%</b>，是本周重点关注对象`
+      : `本周未发现需重点关注的异常资产`,
+    suggestText: abnormalCount && focusType
+      ? `建议加强「${focusType}」类资产的巡检频次，其余类目可维持当前节奏`
+      : `各类资产状态稳定，可按既定计划维持当前巡检节奏`,
+  };
+}
+
+function aiRiskReport(insights) {
+  const time = new Date().toTimeString().slice(0, 5);
+  return `
+    <section class="panel ai-risk">
+      <div class="ai-risk-side">
+        <img src="./assets/ai-brain.svg" alt="" class="ai-brain" />
+        <span class="ai-risk-label">AI 研判</span>
+      </div>
+      <div class="ai-risk-body">
+        <div class="ai-risk-head">
+          <h2>AI 风险研判</h2>
+          <span class="ai-risk-time">本周报告 · 生成于 ${time}</span>
+        </div>
+        <div class="ai-risk-row">
+          <img src="./assets/icon-trend.svg" alt="" />
+          <div><span>整体趋势</span><p>${insights.trendText}</p></div>
+        </div>
+        <div class="ai-risk-row">
+          <img src="./assets/icon-target.svg" alt="" />
+          <div><span>重点关注</span><p>${insights.focusText}</p></div>
+        </div>
+        <div class="ai-risk-row">
+          <img src="./assets/icon-bulb.svg" alt="" />
+          <div><span>AI 建议</span><p>${insights.suggestText}</p></div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function quickAccessCounts(records) {
+  return {
+    plans: planRows().length,
+    tasks: (typeof taskGroups === "function" ? taskGroups() : { pending: [] }).pending?.length || state.tasks?.filter?.((t) => t.status !== "completed").length || 0,
+    records: records.length,
+    assets: state.assets.length,
+    devices: new Set(state.assets.map((a) => a.assetType).filter(Boolean)).size,
+  };
+}
+
+function quickAccessTiles(c) {
+  const tiles = [
+    { key: "plan",   label: "巡检计划", num: c.plans,   unit: "项启用", sub: "巡检与配置", page: "plan",   icon: "icon-plan.svg",   color: "#4f7cff" },
+    { key: "task",   label: "派发任务", num: c.tasks,   unit: "项待派", sub: "今日待派发", page: "task",   icon: "icon-task.svg",   color: "#12a968" },
+    { key: "record", label: "巡检记录", num: c.records, unit: "条记录", sub: "本周累计",   page: "record", icon: "icon-record.svg", color: "#f59e0b" },
+    { key: "asset",  label: "资产台账", num: c.assets,  unit: "项资产", sub: "全量资产",   page: "ledger", icon: "icon-asset.svg",  color: "#8b5cf6" },
+    { key: "device", label: "设备管理", num: c.devices, unit: "类设备", sub: "设备类型",   page: "device", icon: "icon-device.svg", color: "#0ea5e9" },
+    { key: "board",  label: "数据看板", num: null,       unit: "", sub: "报表与分析", page: "data",   icon: "icon-board.svg",  color: "#06b6d4" },
+  ];
+  return `
+    <section class="panel quick-tiles-panel">
+      <div class="panel-head"><h2>巡检管理 · 快速入口</h2></div>
+      <div class="quick-tiles">
+        ${tiles.map((t) => `
+          <button class="quick-tile" data-page-link="${t.page}" style="--tile-color: ${t.color}; --tile-color-bg: ${t.color}1a; --tile-color-border: ${t.color}33; --tile-color-shadow: ${t.color}26;">
+            <div class="qt-left">
+              <span class="qt-ico"><span class="qt-ico-glyph" style="--icon-url: url('./assets/${t.icon}')"></span></span>
+              <span class="qt-title">${t.label}</span>
+            </div>
+            <div class="qt-right">
+              ${t.num != null ? `<b class="qt-num">${t.num}</b><em class="qt-unit">${t.unit}</em>` : `<span class="qt-arrow-only">→</span>`}
+            </div>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function monthlyAiStats() {
+  const records = state.records || [];
+  const month = new Date().toISOString().slice(0, 7);
+  const monthly = records.filter((r) => String(r.createdAt || "").slice(0, 7) === month);
+  const abnormal = monthly.filter((r) => recordLevel(r) !== "normal").length;
+  const accuracy = aiAccuracy(monthly);
+  const savedHours = Math.round((monthly.length - abnormal) * 0.07 * 10) / 10;
+  return {
+    processed: monthly.length || records.length,
+    abnormal,
+    savedHours,
+    accuracy: accuracy.sample ? accuracy.value : null,
+  };
+}
+
+function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingTasks, accuracy, issues }) {
+  const accText = accuracy.sample ? `${accuracy.value}%` : "—";
+  return `
+    <div class="aside-stack">
+      <div class="ai-month-card">
+        <div class="month-head">
+          <div><b>AI 本月成绩</b><span>来自巡检与识别累计</span></div>
+        </div>
+        <div class="month-rows">
+          <div><span>处理巡检</span><b><span class="dash-anim" data-count="${monthly.processed}">0</span></b></div>
+          <div><span>发现异常</span><b><span class="dash-anim" data-count="${monthly.abnormal}">0</span></b></div>
+          <div><span>识别准确</span><b>${accText}</b></div>
+        </div>
+      </div>
+      <div class="todo-card">
+        <div class="todo-head"><b>你的待办</b></div>
+        <a class="todo-row danger"  data-page-link="exception">
+          <img src="./assets/icon-warning.svg" alt=""/>
+          <span>异常复核</span><b>${pendingExceptions}</b><em>立即处理 →</em>
+        </a>
+        <a class="todo-row warn" data-page-link="approval">
+          <img src="./assets/icon-bulb.svg" alt=""/>
+          <span>修改审批</span><b>${pendingApprovals}</b><em>去审批 →</em>
+        </a>
+        <a class="todo-row info"  data-page-link="task">
+          <img src="./assets/icon-task.svg" alt=""/>
+          <span>巡检任务</span><b>${pendingTasks}</b><em>查看 →</em>
+        </a>
+      </div>
+      ${asideFindings(issues || [])}
+    </div>
+  `;
+}
+
+function asideFindings(issues) {
+  const PRI_LABEL = { high: "高", mid: "中", low: "低" };
+  if (!issues || issues.length === 0) {
+    return `
+      <div class="aside-findings empty">
+        <div class="aside-findings-head"><b>AI 关键发现</b></div>
+        <div class="aside-findings-empty">😊 全部资产 AI 判定正常，无重点关注项</div>
+      </div>`;
+  }
+  return `
+    <div class="aside-findings">
+      <div class="aside-findings-head"><b>AI 关键发现</b></div>
+      <ul class="aside-findings-list">
+        ${issues.slice(0, 4).map((it) => `
+          <li class="aside-finding f-${it.priority}" data-asset-select="${escapeHTML(it.asset.id)}">
+            <span class="aside-finding-pri">${PRI_LABEL[it.priority] || "·"}</span>
+            <div class="aside-finding-body">
+              <b>${escapeHTML(it.asset.assetName || "资产")}</b>
+              <span>${escapeHTML(String(it.aiNote || "").slice(0, 36))}${(it.aiNote || "").length > 36 ? "…" : ""}</span>
+            </div>
+            <em>→</em>
+          </li>
+        `).join("")}
+      </ul>
+    </div>
+  `;
 }
 
 function renderPlanPage() {
-  const rows = planRows();
+  const rows = filteredPlanRows();
   const todayPlans = rows.filter((row) => row.frequency.includes("每日"));
+  if (!state.selectedPlanId || !rows.some((r) => r.id === state.selectedPlanId)) {
+    state.selectedPlanId = rows[0]?.id || "";
+  }
   $("#pageMain").innerHTML = `
-    ${pageHero("巡检管理", "巡检计划", "按项目、点位、频次和模板维护巡检计划，自动生成每日可执行任务。", `<button data-drawer="plan">新建计划</button>`)}
     ${metrics([
       { label: "计划数量", value: rows.length, sub: "来自点位与模板" },
       { label: "启用计划", value: rows.filter((row) => row.status === "启用").length, sub: "当前有效", good: true },
       { label: "今日执行", value: todayPlans.length, sub: "每日计划" },
       { label: "AI 模板", value: state.templates.filter((tpl) => tpl.hasAI).length, sub: "已配置视觉识别", good: true },
     ])}
-    <section class="panel">
-      <div class="panel-head"><h2>计划列表</h2><div class="filters"><span>全部项目</span><span>全部频次</span><span>全部状态</span><span class="search">搜索计划 / 点位</span></div></div>
+    <section class="panel plan-table-panel">
+      <div class="panel-head plan-panel-head">
+        <div class="panel-title-block"><h2>巡检计划</h2><p>点击行可在右侧编辑该计划。</p></div>
+        <div class="panel-actions plan-toolbar">${planFiltersHTML()}<button data-drawer="plan">新建计划</button></div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>计划名称</th><th>项目</th><th>巡检点位</th><th>频次</th><th>责任人</th><th>下次执行</th><th>状态</th></tr></thead>
           <tbody>${rows.map((row) => `
-            <tr>
+            <tr class="plan-row ${row.id === state.selectedPlanId ? "selected" : ""}" data-plan-id="${escapeHTML(row.id)}">
               <td>${escapeHTML(row.name)}</td><td>${escapeHTML(row.project)}</td><td>${escapeHTML(row.point)}</td>
               <td>${escapeHTML(row.frequency)}</td><td>${escapeHTML(row.owner)}</td><td>${escapeHTML(row.next)}</td>
               <td><span class="status ${statusClass(row.status === "启用" ? "正常" : row.status)}">${escapeHTML(row.status)}</span></td>
@@ -537,17 +1340,249 @@ function renderPlanPage() {
       </div>
     </section>
   `;
-  $("#pageAside").innerHTML = `
-    <div class="detail-head"><h2>计划详情</h2></div>
-    <div class="side-stack">
-      <div class="info-card"><b>${escapeHTML(rows[0]?.name || "暂无计划")}</b><span>${escapeHTML(rows[0]?.desc || "由点位和日报模板自动生成巡检计划。")}</span></div>
-      ${steps(["计划配置", "生成任务", "执行巡检", "结果入账"], 1)}
+  const selected = rows.find((r) => r.id === state.selectedPlanId) || null;
+  $("#pageAside").innerHTML = asideStack(planEditCard(selected));
+  bindPlanFilters();
+  bindPlanRowClicks();
+  bindPlanEditForm();
+}
+
+function bindPlanRowClicks() {
+  document.querySelectorAll(".plan-row").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      state.selectedPlanId = tr.dataset.planId;
+      render();
+    });
+  });
+}
+
+function planEditCard(plan) {
+  if (!plan) {
+    return `
+      <div class="plan-edit-card empty">
+        <div class="plan-edit-head"><b>计划详情</b></div>
+        <div class="plan-edit-empty">点击左侧计划行查看 / 修改</div>
+      </div>`;
+  }
+  const isSeed = String(plan.id).startsWith("seed_");
+  const freqOptions = ["每日 09:00", "每日 14:00", "每周一", "每周一 09:00", "每月 1 日", "每月 15 日", "自定义"];
+  const statusOptions = ["启用", "暂停", "未配置"];
+  const aiOptions = ["视觉识别 + 人工确认", "视觉识别 自动写入", "纯人工填报"];
+  return `
+    <div class="plan-edit-card">
+      <div class="plan-edit-head">
+        <b>${isSeed ? "新建计划" : "编辑计划"}</b>
+        <span class="plan-edit-tag ${isSeed ? "seed" : "custom"}">${isSeed ? "未配置" : "已配置"}</span>
+      </div>
+      ${plan.lastCompletedAt ? `
+        <div class="plan-last-done">
+          <span class="pld-icon">✓</span>
+          <div>
+            <b>${escapeHTML(plan.lastCompletedBy || "—")} 已执行</b>
+            <span>${escapeHTML(relativeTime(plan.lastCompletedAt))} · ${escapeHTML(fmtTime(plan.lastCompletedAt))}</span>
+          </div>
+        </div>
+      ` : ""}
+      <form id="planEditForm" class="plan-edit-form" data-plan-id="${escapeHTML(plan.id)}">
+        <label class="pe-field">
+          <span>计划名称</span>
+          <input name="name" value="${escapeHTML(plan.name)}" required />
+        </label>
+        <div class="pe-row">
+          <label class="pe-field">
+            <span>项目</span>
+            <input name="project" value="${escapeHTML(plan.project)}" readonly />
+          </label>
+          <label class="pe-field">
+            <span>点位</span>
+            <input name="point" value="${escapeHTML(plan.point)}" readonly />
+          </label>
+        </div>
+        <label class="pe-field">
+          <span>模板</span>
+          <input name="templateName" value="${escapeHTML(plan.templateName || plan.name)}" readonly />
+        </label>
+        <div class="pe-row">
+          <label class="pe-field">
+            <span>频次</span>
+            <select name="frequency">
+              ${freqOptions.map((f) => `<option value="${escapeHTML(f)}" ${plan.frequency === f ? "selected" : ""}>${escapeHTML(f)}</option>`).join("")}
+              ${plan.frequency && !freqOptions.includes(plan.frequency) ? `<option value="${escapeHTML(plan.frequency)}" selected>${escapeHTML(plan.frequency)}</option>` : ""}
+            </select>
+          </label>
+          <label class="pe-field">
+            <span>状态</span>
+            <select name="status">
+              ${statusOptions.map((s) => `<option value="${s}" ${plan.status === s ? "selected" : ""}>${s}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+        <div class="pe-row">
+          <label class="pe-field">
+            <span>责任人</span>
+            <select name="owner">
+              <option value="">未指派</option>
+              ${(state.users || []).map((u) => {
+                const display = u.displayName || u.username;
+                const isSelected = plan.owner === display || plan.owner === u.username;
+                return `<option value="${escapeHTML(display)}" ${isSelected ? "selected" : ""}>${escapeHTML(display)}（${escapeHTML(u.roleName || u.roleCode || "")}）</option>`;
+              }).join("")}
+              ${plan.owner && plan.owner !== "-" && !(state.users || []).some((u) => (u.displayName || u.username) === plan.owner) ? `<option value="${escapeHTML(plan.owner)}" selected>${escapeHTML(plan.owner)}（自定义）</option>` : ""}
+            </select>
+          </label>
+          <label class="pe-field">
+            <span>下次执行</span>
+            <input name="nextRun" value="${escapeHTML(plan.next === "-" ? "" : plan.next)}" placeholder="如：明日 09:00" />
+          </label>
+        </div>
+        <label class="pe-field">
+          <span>AI 策略</span>
+          <select name="aiPolicy">
+            ${aiOptions.map((a) => `<option value="${escapeHTML(a)}" ${plan.aiPolicy === a ? "selected" : ""}>${escapeHTML(a)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="pe-field">
+          <span>说明</span>
+          <textarea name="remark" rows="2" placeholder="现场要求 / 拍照标准 / 异常处理口径">${escapeHTML(plan.remark || (isSeed ? "" : plan.desc || ""))}</textarea>
+        </label>
+        <div class="pe-actions">
+          ${!isSeed ? `<button type="button" class="pe-delete" id="planEditDeleteBtn">删除</button>` : ""}
+          <button type="submit" class="pe-save">${isSeed ? "启用计划" : "保存修改"}</button>
+        </div>
+      </form>
     </div>
   `;
 }
 
+function bindPlanEditForm() {
+  const form = document.getElementById("planEditForm");
+  if (!form) return;
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    savePlanFromAside(form);
+  });
+  document.getElementById("planEditDeleteBtn")?.addEventListener("click", () => {
+    if (!confirm("确认删除该计划？")) return;
+    const id = form.dataset.planId;
+    state.customPlans = state.customPlans.filter((p) => p.id !== id);
+    saveLocalArray(ADMIN_PLANS_KEY, state.customPlans);
+    state.selectedPlanId = "";
+    toast("计划已删除");
+    render();
+  });
+}
+
+function savePlanFromAside(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  const id = form.dataset.planId;
+  const isSeed = String(id).startsWith("seed_");
+  const rows = filteredPlanRows();
+  const src = rows.find((r) => r.id === id) || {};
+  const payload = {
+    id: isSeed ? `plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` : id,
+    name: (data.name || "").trim() || src.name,
+    project: src.project,
+    pointId: src.pointId || "",
+    pointName: src.point,
+    templateId: src.templateId || "",
+    templateName: src.templateName || src.name,
+    frequency: data.frequency || "每日 09:00",
+    owner: (data.owner || "").trim() || "-",
+    nextRun: (data.nextRun || "").trim() || "-",
+    status: data.status || "启用",
+    aiPolicy: data.aiPolicy || "视觉识别 + 人工确认",
+    remark: (data.remark || "").trim(),
+    createdAt: isSeed ? new Date().toISOString() : (src.createdAt || new Date().toISOString()),
+    updatedAt: new Date().toISOString(),
+  };
+  if (isSeed) {
+    state.customPlans.unshift(payload);
+    toast("计划已启用");
+  } else {
+    const idx = state.customPlans.findIndex((p) => p.id === id);
+    if (idx >= 0) {
+      state.customPlans[idx] = payload;
+      toast("计划已保存");
+    } else {
+      state.customPlans.unshift(payload);
+      toast("计划已新增");
+    }
+  }
+  saveLocalArray(ADMIN_PLANS_KEY, state.customPlans);
+  syncPlanTask(payload);
+  state.selectedPlanId = payload.id;
+  updateUserBadge();
+  render();
+}
+
+// M30 · 计划 -> 任务 双向联动
+function syncPlanTask(plan) {
+  const taskId = `task_from_${plan.id}`;
+  const idx = (state.customTasks || []).findIndex((t) => t.id === taskId);
+  if (plan.status !== "启用") {
+    // 计划暂停/未配置 → 删除自动生成的任务（手工建的不动）
+    if (idx >= 0) {
+      state.customTasks.splice(idx, 1);
+      saveLocalArray(ADMIN_TASKS_KEY, state.customTasks);
+    }
+    return;
+  }
+  const existing = idx >= 0 ? state.customTasks[idx] : null;
+  const task = {
+    id: taskId,
+    title: plan.name,
+    planId: plan.id,
+    planName: plan.name,
+    project: plan.project,
+    pointId: plan.pointId,
+    pointName: plan.pointName,
+    templateId: plan.templateId,
+    templateName: plan.templateName || plan.name,
+    owner: plan.owner,
+    frequency: plan.frequency,
+    dueAt: plan.nextRun || "—",
+    aiPolicy: plan.aiPolicy,
+    remark: plan.remark,
+    priority: "普通",
+    source: "plan",
+    // ↓ 保留任务进度相关字段，不被 plan 同步覆盖
+    status: existing?.status || "待执行",
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    completedAt: existing?.completedAt || null,
+    completedBy: existing?.completedBy || null,
+    updatedAt: new Date().toISOString(),
+  };
+  if (idx >= 0) {
+    state.customTasks[idx] = task;
+  } else {
+    state.customTasks.unshift(task);
+  }
+  saveLocalArray(ADMIN_TASKS_KEY, state.customTasks);
+}
+
 function planRows() {
   const templateById = new Map(state.templates.map((tpl) => [tpl.id, tpl]));
+  const customRows = (state.customPlans || [])
+    .filter((plan) => !state.selectedProject || plan.project === state.selectedProject)
+    .map((plan) => ({
+      id: plan.id,
+      name: plan.name,
+      project: plan.project || "-",
+      point: plan.pointName || "-",
+      pointId: plan.pointId || "",
+      templateId: plan.templateId || "",
+      templateName: plan.templateName || "",
+      frequency: plan.frequency || "-",
+      owner: plan.owner || "-",
+      next: plan.nextRun || "-",
+      status: plan.status || "启用",
+      aiPolicy: plan.aiPolicy || "视觉识别 + 人工确认",
+      desc: plan.remark || `${plan.pointName || "点位"}，使用 ${plan.templateName || "日报模板"}。`,
+      remark: plan.remark || "",
+      lastCompletedAt: plan.lastCompletedAt || null,
+      lastCompletedBy: plan.lastCompletedBy || null,
+      source: "manual",
+    }));
   const source = state.points.length ? state.points : state.templates.map((tpl) => ({
     id: tpl.id,
     project: tpl.project,
@@ -555,59 +1590,282 @@ function planRows() {
     location: tpl.assetType,
     templateId: tpl.id,
   }));
-  return source
+  // F4 修复 · seedRows 是基于真 points+templates 的"未配置"占位计划，
+  // 频次/责任人/下次执行没有真实排程，统一显示 "-" 并标 status="未配置"
+  const seedRows = source
     .filter((point) => !state.selectedProject || point.project === state.selectedProject)
-    .map((point, index) => {
+    .map((point) => {
       const tpl = templateById.get(point.templateId) || {};
       return {
+        id: `seed_${point.id || point.templateId || point.name}`,
         name: tpl.name || point.name || "巡检计划",
         project: point.project || tpl.project || "-",
         point: point.name || point.location || "-",
-        frequency: index % 3 === 2 ? "每周一" : "每日 09:00",
-        owner: index % 2 ? "巡检员" : "张三",
-        next: index % 3 === 2 ? "下周一 09:00" : "明日 09:00",
-        status: "启用",
-        desc: `${point.location || point.name || "点位"}，使用 ${tpl.name || "默认"} 模板。`,
+        pointId: point.id || "",
+        templateId: tpl.id || point.templateId || "",
+        templateName: tpl.name || "",
+        frequency: "-",
+        owner: "-",
+        next: "-",
+        status: "未配置",
+        aiPolicy: "视觉识别 + 人工确认",
+        desc: `${point.location || point.name || "点位"}，使用 ${tpl.name || "默认"} 模板。如需启用，请在「新建计划」中补全责任人与频次。`,
+        source: "seed",
       };
     });
+  return [...customRows, ...seedRows];
+}
+
+function planSearchText(row) {
+  return [
+    row.id,
+    row.name,
+    row.project,
+    row.point,
+    row.pointId,
+    row.templateId,
+    row.templateName,
+    row.frequency,
+    row.owner,
+    row.next,
+    row.status,
+    row.aiPolicy,
+    row.desc,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function filteredPlanRows() {
+  const rows = planRows();
+  const filters = state.planFilters;
+  const project = filters.project.trim();
+  const frequency = filters.frequency.trim();
+  const status = filters.status.trim();
+  const keyword = filters.keyword.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (project && row.project !== project) return false;
+    if (frequency && row.frequency !== frequency && !row.frequency.includes(frequency)) return false;
+    if (status && row.status !== status) return false;
+    if (!keyword) return true;
+    return planSearchText(row).includes(keyword);
+  });
+}
+
+function planFiltersHTML() {
+  const rows = planRows();
+  const projectOptions = [...new Set([...projects(), ...rows.map((row) => row.project)].filter(Boolean))];
+  const frequencyOptions = [...new Set(["每日", "每周", "每月", ...rows.map((row) => row.frequency).filter(Boolean)])];
+  const statusOptions = [...new Set([...PLAN_STATUS_OPTIONS, ...rows.map((row) => row.status).filter(Boolean)])];
+  return `
+    <div class="filters">
+      <select id="planProjectFilter"><option value="">全部项目</option>${projectOptions.map((project) => `<option value="${escapeHTML(project)}" ${state.planFilters.project === project ? "selected" : ""}>${escapeHTML(project)}</option>`).join("")}</select>
+      <select id="planFrequencyFilter"><option value="">全部频次</option>${frequencyOptions.map((frequency) => `<option value="${escapeHTML(frequency)}" ${state.planFilters.frequency === frequency ? "selected" : ""}>${escapeHTML(frequency)}</option>`).join("")}</select>
+      <select id="planStatusFilter"><option value="">全部状态</option>${statusOptions.map((status) => `<option value="${escapeHTML(status)}" ${state.planFilters.status === status ? "selected" : ""}>${escapeHTML(status)}</option>`).join("")}</select>
+      <input id="planKeywordInput" type="search" placeholder="搜索计划 / 点位" value="${escapeHTML(state.planFilters.keyword)}" />
+    </div>
+  `;
+}
+
+function bindPlanFilters() {
+  const refresh = () => renderPlanPage();
+  $("#planProjectFilter")?.addEventListener("change", (event) => {
+    state.planFilters.project = event.target.value;
+    refresh();
+  });
+  $("#planFrequencyFilter")?.addEventListener("change", (event) => {
+    state.planFilters.frequency = event.target.value;
+    refresh();
+  });
+  $("#planStatusFilter")?.addEventListener("change", (event) => {
+    state.planFilters.status = event.target.value;
+    refresh();
+  });
+  $("#planKeywordInput")?.addEventListener("input", (event) => {
+    state.planFilters.keyword = event.target.value;
+    clearTimeout(bindPlanFilters.keywordTimer);
+    bindPlanFilters.keywordTimer = setTimeout(() => {
+      const cursor = state.planFilters.keyword.length;
+      refresh();
+      requestAnimationFrame(() => {
+        const input = $("#planKeywordInput");
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(cursor, cursor);
+      });
+    }, 180);
+  });
 }
 
 function renderTaskPage() {
   const tasks = taskGroups();
+  const allTasks = [...tasks.pending, ...tasks.processing, ...tasks.done, ...tasks.overdue];
+  if (!state.selectedTaskId || !allTasks.some((t) => t.id === state.selectedTaskId)) {
+    state.selectedTaskId = allTasks[0]?.id || "";
+  }
   $("#pageMain").innerHTML = `
-    ${pageHero("巡检管理", "巡检任务", "展示待执行、进行中、已完成和逾期任务，主管可按点位追踪执行状态。", `<button data-drawer="task">派发任务</button>`)}
-    <section class="task-board">
-      ${taskColumn("待执行", tasks.pending, "warning")}
-      ${taskColumn("进行中", tasks.processing, "normal")}
-      ${taskColumn("已完成", tasks.done, "normal")}
-      ${taskColumn("逾期", tasks.overdue, "danger")}
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>巡检任务</h2><p>点击任意任务卡可在右侧查看详情 / 更改状态。</p></div>
+        <button data-drawer="task">派发任务</button>
+      </div>
+      <div class="task-board panel-body-grid">
+        ${taskColumn("待执行", tasks.pending, "warning")}
+        ${taskColumn("进行中", tasks.processing, "normal")}
+        ${taskColumn("已完成", tasks.done, "normal")}
+        ${taskColumn("逾期", tasks.overdue, "danger")}
+      </div>
     </section>
   `;
-  $("#pageAside").innerHTML = sideInfo("任务跟踪", [
-    ["当前重点", tasks.processing[0]?.title || tasks.pending[0]?.title || "暂无任务"],
-    ["字段状态", "识别后进入人工确认，确认后写入巡检记录与资产台账。"],
-    ["异常规则", "缺字段、低置信度、人工修改都会进入复核或审批链路。"],
-  ]);
+  const selected = (state.customTasks || []).find((t) => t.id === state.selectedTaskId) || allTasks.find((t) => t.id === state.selectedTaskId);
+  $("#pageAside").innerHTML = asideStack(taskDetailCard(selected));
+  bindTaskCardClicks();
+  bindTaskDetailActions();
+}
+
+function bindTaskCardClicks() {
+  document.querySelectorAll(".task-card").forEach((el) => {
+    const id = el.dataset.taskId;
+    if (!id) return;
+    el.classList.add("clickable");
+    if (id === state.selectedTaskId) el.classList.add("selected");
+    el.addEventListener("click", () => {
+      state.selectedTaskId = id;
+      render();
+    });
+  });
+}
+
+function taskDetailCard(task) {
+  if (!task) {
+    return `
+      <div class="task-detail-card empty">
+        <div class="task-detail-head"><b>任务详情</b></div>
+        <div class="task-detail-empty">点击左侧任意任务卡查看详情</div>
+      </div>`;
+  }
+  const isPlanTask = String(task.id).startsWith("task_from_") || task.source === "plan";
+  const statusFlow = ["待执行", "进行中", "已完成"];
+  const curIdx = statusFlow.indexOf(task.status);
+  return `
+    <div class="task-detail-card">
+      <div class="task-detail-head">
+        <div>
+          <b>任务详情</b>
+          <span class="td-status ${taskStatusTone(task.status)}">${escapeHTML(task.status)}</span>
+        </div>
+        ${isPlanTask ? `<button class="td-source-link" data-plan-link="${escapeHTML(task.planId || "")}" title="跳到对应计划">← 来自计划</button>` : ""}
+      </div>
+      <div class="td-title">${escapeHTML(task.title || task.planName || "任务")}</div>
+      <div class="td-meta-list">
+        ${task.project ? `<div><span>项目</span><b>${escapeHTML(task.project)}</b></div>` : ""}
+        ${task.pointName ? `<div><span>点位</span><b>${escapeHTML(task.pointName)}</b></div>` : ""}
+        ${task.templateName ? `<div><span>模板</span><b>${escapeHTML(task.templateName)}</b></div>` : ""}
+        ${task.owner ? `<div><span>责任人</span><b>${escapeHTML(task.owner)}</b></div>` : ""}
+        ${task.frequency ? `<div><span>频次</span><b>${escapeHTML(task.frequency)}</b></div>` : ""}
+        ${task.dueAt ? `<div><span>截止</span><b>${escapeHTML(task.dueAt)}</b></div>` : ""}
+        ${task.aiPolicy ? `<div><span>AI 策略</span><b>${escapeHTML(task.aiPolicy)}</b></div>` : ""}
+      </div>
+      ${task.remark ? `<div class="td-remark"><span>说明</span><p>${escapeHTML(task.remark)}</p></div>` : ""}
+      ${task.completedAt ? `
+        <div class="td-completed">
+          <i></i>
+          <div>
+            <b>${escapeHTML(task.completedBy || "—")} 已完成</b>
+            <span>${escapeHTML(fmtTime(task.completedAt))} · ${relativeTime(task.completedAt)}</span>
+          </div>
+        </div>
+      ` : ""}
+      <div class="td-flow">
+        ${statusFlow.map((s, i) => `<div class="td-step ${i <= curIdx ? "done" : ""} ${i === curIdx ? "current" : ""}"><i></i><span>${s}</span></div>`).join("")}
+      </div>
+      ${state.customTasks?.some((t) => t.id === task.id) ? `
+        <div class="td-actions">
+          ${task.status === "待执行" ? `<button class="td-btn primary" data-task-action="start">开始执行</button>` : ""}
+          ${task.status === "进行中" ? `<button class="td-btn primary" data-task-action="done">标记完成</button>` : ""}
+          ${task.status !== "已完成" ? `<button class="td-btn ghost" data-task-action="cancel">取消任务</button>` : `<button class="td-btn ghost" data-task-action="reopen">重新打开</button>`}
+        </div>
+      ` : `<div class="td-readonly">来自巡检记录，不可在此修改状态</div>`}
+    </div>
+  `;
+}
+
+function taskStatusTone(status) {
+  if (status === "已完成") return "tone-success";
+  if (status === "进行中") return "tone-info";
+  if (status === "逾期") return "tone-danger";
+  return "tone-warning";
+}
+
+function bindTaskDetailActions() {
+  document.querySelectorAll("[data-task-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = state.selectedTaskId;
+      const action = btn.dataset.taskAction;
+      const idx = state.customTasks.findIndex((t) => t.id === id);
+      if (idx < 0) return;
+      const map = { start: "进行中", done: "已完成", cancel: "已取消", reopen: "待执行" };
+      const newStatus = map[action] || state.customTasks[idx].status;
+      const task = state.customTasks[idx];
+      task.status = newStatus;
+      task.updatedAt = new Date().toISOString();
+      if (action === "done") {
+        task.completedAt = task.updatedAt;
+        task.completedBy = state.currentUser?.displayName || state.currentUser?.username || "—";
+        // 联动：在计划上记录最近一次完成
+        if (task.planId) {
+          const planIdx = state.customPlans.findIndex((p) => p.id === task.planId);
+          if (planIdx >= 0) {
+            state.customPlans[planIdx].lastCompletedAt = task.completedAt;
+            state.customPlans[planIdx].lastCompletedBy = task.completedBy;
+            saveLocalArray(ADMIN_PLANS_KEY, state.customPlans);
+          }
+        }
+      }
+      if (action === "reopen") {
+        task.completedAt = null;
+        task.completedBy = null;
+      }
+      saveLocalArray(ADMIN_TASKS_KEY, state.customTasks);
+      toast(`任务已${newStatus}`);
+      updateUserBadge();
+      render();
+    });
+  });
+  document.querySelectorAll("[data-plan-link]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const planId = btn.dataset.planLink;
+      if (planId) state.selectedPlanId = planId;
+      setPage("plan");
+    });
+  });
 }
 
 function taskGroups() {
   const records = filteredRecords();
   const today = todayKey();
+  const manualTasks = (state.customTasks || [])
+    .filter((task) => !state.selectedProject || task.project === state.selectedProject)
+    .map((task) => ({
+      title: task.title || task.planName || "临时巡检任务",
+      meta: `${task.project || "-"} · ${task.pointName || "-"} · ${task.owner || "-"} · 截止 ${task.dueAt || "-"}`,
+      status: task.status || "待执行",
+      priority: task.priority || "普通",
+      id: task.id,
+      source: "manual",
+    }));
   const done = records.filter((record) => record.submitted).slice(0, 4).map(recordToTask);
   const processing = records.filter((record) => !record.submitted && record.recognitionStatus !== "not_started").slice(0, 4).map(recordToTask);
-  const points = state.points.filter((point) => !state.selectedProject || point.project === state.selectedProject);
-  const pending = points.slice(0, Math.max(2, 5 - processing.length)).map((point) => ({
-    title: point.name || point.location || "巡检任务",
-    meta: `${point.project || "-"} · ${point.location || "-"} · 今日待执行`,
-    status: "待执行",
-  }));
+  // F5 修复 · 待执行不再用 points 假造，只接 manualTasks。无数据时给一条引导。
+  const pending = [];
   const overdue = filteredAssets()
     .filter((asset) => normalizeStatus(asset.lastStatus) === "danger")
     .slice(0, 3)
     .map((asset) => ({ title: asset.assetName, meta: `${assetKey(asset)} · ${fmtTime(asset.lastInspectedAt)} · 需复核`, status: "逾期" }));
-  if (!pending.length && !records.some((record) => String(record.createdAt || "").slice(0, 10) === today)) {
-    pending.push({ title: "今日巡检", meta: "暂无今日巡检记录，建议派发任务", status: "待执行" });
-  }
+  manualTasks.forEach((task) => {
+    if (task.status === "进行中") processing.unshift(task);
+    else if (task.status === "已完成") done.unshift(task);
+    else if (task.status === "逾期") overdue.unshift(task);
+    else pending.unshift(task);
+  });
   return { pending, processing, done, overdue };
 }
 
@@ -624,7 +1882,7 @@ function taskColumn(title, items, level) {
     <article class="task-column">
       <h2>${escapeHTML(title)}</h2>
       ${items.map((item) => `
-        <div class="task-card">
+        <div class="task-card" ${item.id ? `data-task-id="${escapeHTML(item.id)}"` : ""}>
           <b>${escapeHTML(item.title)}</b>
           <span>${escapeHTML(item.meta)}</span>
           <em class="status ${level === "danger" ? "danger" : level === "warning" ? "warning" : "normal"}">${escapeHTML(item.status)}</em>
@@ -635,19 +1893,21 @@ function taskColumn(title, items, level) {
 }
 
 function renderRecordPage() {
-  const all = filteredRecords();
+  const all = filteredRecordRows();
   const pageSize = 20;
   const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
   if (state.recordPage > totalPages - 1) state.recordPage = totalPages - 1;
   if (state.recordPage < 0) state.recordPage = 0;
   const start = state.recordPage * pageSize;
   const records = all.slice(start, start + pageSize);
-  const selected = selectedRecord() || all[0];
+  const selected = all.find((record) => record.id === state.selectedRecordId) || all[0] || null;
   if (selected) state.selectedRecordId = selected.id;
   $("#pageMain").innerHTML = `
-    ${pageHero("巡检管理", "巡检记录", "照片、识别字段、AI 总结、人工确认和提交结果全部可追溯。", `<button id="exportRecordsBtn">导出记录</button>`)}
-    <section class="panel">
-      <div class="panel-head"><h2>巡检记录列表</h2><div class="filters"><span>全部项目</span><span>全部模板</span><span>全部状态</span><span class="search">搜索巡检人 / 点位</span></div></div>
+    <section class="panel record-table-panel">
+      <div class="panel-head record-panel-head">
+        <div class="panel-title-block"><h2>巡检记录</h2><p>照片、识别字段、AI 总结、人工确认和提交结果全部可追溯。</p></div>
+        <div class="panel-actions record-toolbar">${recordFiltersHTML()}<button id="exportRecordsBtn">导出记录</button></div>
+      </div>
       <div class="record-list">
         ${records.map((record) => `
           <article data-record-select="${escapeHTML(record.id)}" class="${record.id === state.selectedRecordId ? "selected-card" : ""}">
@@ -667,9 +1927,16 @@ function renderRecordPage() {
     </section>
   `;
   $("#pageAside").innerHTML = renderRecordSide(selected);
-  $("#exportRecordsBtn").addEventListener("click", exportRecordsCsv);
+  $("#exportRecordsBtn").addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    exportRecordsWorkbook();
+  });
+  bindRecordFilters();
   $$("[data-record-pager]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       if (btn.disabled) return;
       state.recordPage += btn.dataset.recordPager === "prev" ? -1 : 1;
       renderRecordPage();
@@ -677,30 +1944,93 @@ function renderRecordPage() {
   });
 }
 
+function recordFiltersHTML() {
+  const projectOptions = projects();
+  const templateMap = new Map();
+  state.templates.forEach((template) => {
+    const value = template.name || template.templateName || template.id;
+    if (value) templateMap.set(value, template.name || template.templateName || template.id);
+  });
+  state.records.forEach((record) => {
+    const value = record.templateName || record.templateId;
+    if (value) templateMap.set(value, record.templateName || record.templateId);
+  });
+  const statusOptions = [...new Set([
+    ...RECORD_STATUS_OPTIONS,
+    ...state.records.map((record) => recordStatus(record)).filter(Boolean),
+    ...state.records.map((record) => statusLabel(record.recognitionStatus)).filter(Boolean),
+  ].filter((status) => status && status !== "-"))];
+  return `
+    <div class="filters">
+      <select id="recordProjectFilter"><option value="">全部项目</option>${projectOptions.map((project) => `<option value="${escapeHTML(project)}" ${state.recordFilters.project === project ? "selected" : ""}>${escapeHTML(project)}</option>`).join("")}</select>
+      <select id="recordTemplateFilter"><option value="">全部模板</option>${Array.from(templateMap.entries()).map(([value, label]) => `<option value="${escapeHTML(value)}" ${state.recordFilters.template === value ? "selected" : ""}>${escapeHTML(label)}</option>`).join("")}</select>
+      <select id="recordStatusFilter"><option value="">全部状态</option>${statusOptions.map((status) => `<option value="${escapeHTML(status)}" ${state.recordFilters.status === status ? "selected" : ""}>${escapeHTML(status)}</option>`).join("")}</select>
+      <input id="recordKeywordInput" type="search" placeholder="搜索巡检人 / 点位" value="${escapeHTML(state.recordFilters.keyword)}" />
+    </div>
+  `;
+}
+
+function bindRecordFilters() {
+  const refresh = () => {
+    state.recordPage = 0;
+    state.selectedRecordId = filteredRecordRows()[0]?.id || "";
+    renderRecordPage();
+  };
+  $("#recordProjectFilter")?.addEventListener("change", (event) => {
+    state.recordFilters.project = event.target.value;
+    refresh();
+  });
+  $("#recordTemplateFilter")?.addEventListener("change", (event) => {
+    state.recordFilters.template = event.target.value;
+    refresh();
+  });
+  $("#recordStatusFilter")?.addEventListener("change", (event) => {
+    state.recordFilters.status = event.target.value;
+    refresh();
+  });
+  $("#recordKeywordInput")?.addEventListener("input", (event) => {
+    state.recordFilters.keyword = event.target.value;
+    clearTimeout(bindRecordFilters.keywordTimer);
+    bindRecordFilters.keywordTimer = setTimeout(() => {
+      const cursor = state.recordFilters.keyword.length;
+      refresh();
+      requestAnimationFrame(() => {
+        const input = $("#recordKeywordInput");
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(cursor, cursor);
+      });
+    }, 180);
+  });
+}
+
 function renderLedgerPage() {
   const assets = filteredAssets();
   const counts = statusCounts(assets);
   $("#pageMain").innerHTML = `
-    ${pageHero("资产管理", "资产台账", "按设备、点位、状态沉淀巡检资产，形成可维护、可追溯的资产底账。", `<button id="exportAssetsBtn">导出台账</button>`)}
     ${metrics([
       { label: "资产总数", value: counts.total, sub: "台/套" },
       { label: "正常资产", value: counts.normal, sub: `${ratio(counts.normal, counts.total)}%`, good: true },
       { label: "异常资产", value: counts.danger, sub: "需处理", bad: counts.danger > 0 },
       { label: "待复核", value: counts.warning + counts.repair, sub: "人工确认" },
     ])}
-    ${assetTablePanel(assets, "资产列表", "点击任意资产查看详情并维护台账。", true)}
+    ${assetTablePanel(assets, "资产台账", "点击任意资产查看详情并维护台账。", true, `<button id="exportAssetsBtn">导出台账</button>`)}
   `;
   $("#pageAside").innerHTML = renderAssetSide(selectedAsset() || assets[0]);
-  $("#exportAssetsBtn").addEventListener("click", exportAssetsCsv);
+  $("#exportAssetsBtn").addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    exportAssetsWorkbook();
+  });
   bindAssetFilters();
 }
 
-function assetTablePanel(assets, title, desc, withFilters) {
+function assetTablePanel(assets, title, desc, withFilters, action = "") {
   return `
-    <section class="panel">
-      <div class="panel-head">
-        <div><h2>${escapeHTML(title)}</h2><p>${escapeHTML(desc)}</p></div>
-        ${withFilters ? assetFiltersHTML() : `<button class="link-btn" data-page-link="ledger">全部台账</button>`}
+    <section class="panel asset-table-panel">
+      <div class="panel-head asset-panel-head">
+        <div class="panel-title-block"><h2>${escapeHTML(title)}</h2><p>${escapeHTML(desc)}</p></div>
+        <div class="panel-actions asset-toolbar">${withFilters ? assetFiltersHTML() : `<button class="link-btn" data-page-link="ledger">全部台账</button>`}${action}</div>
       </div>
       <div class="table-wrap">
         <table>
@@ -726,7 +2056,7 @@ function assetTablePanel(assets, title, desc, withFilters) {
 
 function assetFiltersHTML() {
   const types = [...new Set(state.assets.map((asset) => asset.assetType).filter(Boolean))];
-  const statuses = [...new Set(state.assets.map((asset) => asset.lastStatus).filter(Boolean))];
+  const statuses = [...new Set([...ASSET_STATUS_OPTIONS, ...state.assets.map((asset) => asset.lastStatus).filter(Boolean)])];
   return `
     <div class="filters">
       <select id="assetTypeFilter"><option value="">全部设备类型</option>${types.map((type) => `<option value="${escapeHTML(type)}" ${state.filters.assetType === type ? "selected" : ""}>${escapeHTML(type)}</option>`).join("")}</select>
@@ -737,138 +2067,322 @@ function assetFiltersHTML() {
 }
 
 function bindAssetFilters() {
+  const refresh = () => {
+    const first = filteredAssets()[0];
+    state.selectedAssetId = first?.id || "";
+    renderLedgerPage();
+  };
   $("#assetTypeFilter")?.addEventListener("change", (event) => {
     state.filters.assetType = event.target.value;
-    renderLedgerPage();
+    refresh();
   });
   $("#statusFilter")?.addEventListener("change", (event) => {
     state.filters.status = event.target.value;
-    renderLedgerPage();
+    refresh();
   });
   $("#keywordInput")?.addEventListener("input", (event) => {
     state.filters.keyword = event.target.value;
-    renderLedgerPage();
+    clearTimeout(bindAssetFilters.keywordTimer);
+    bindAssetFilters.keywordTimer = setTimeout(() => {
+      const cursor = state.filters.keyword.length;
+      refresh();
+      requestAnimationFrame(() => {
+        const input = $("#keywordInput");
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(cursor, cursor);
+      });
+    }, 180);
   });
 }
 
 function renderDevicePage() {
   const assets = filteredAssets();
   $("#pageMain").innerHTML = `
-    ${pageHero("资产管理", "设备管理", "维护设备档案、绑定点位、巡检模板、二维码和启停状态。", `<button data-drawer="device">新增设备</button>`)}
-    <section class="device-grid">
-      ${assets.map((asset) => `
-        <article data-asset-select="${escapeHTML(asset.id)}">
-          <div><b>${escapeHTML(asset.assetName || "未命名设备")}</b><em class="status ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</em></div>
-          <p>设备编号：${escapeHTML(assetKey(asset))}</p>
-          <p>设备类型：${escapeHTML(asset.assetType || "-")}</p>
-          <span>绑定点位：${escapeHTML(locationText(asset))}</span>
-        </article>
-      `).join("") || `<div class="empty-state">暂无设备档案</div>`}
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>设备管理</h2><p>维护设备档案、绑定点位、巡检模板、二维码和启停状态。</p></div>
+        <button data-drawer="device">新增设备</button>
+      </div>
+      <div class="device-grid panel-body-grid">
+        ${assets.map((asset) => `
+          <article data-asset-select="${escapeHTML(asset.id)}">
+            <div><b>${escapeHTML(asset.assetName || "未命名设备")}</b><em class="status ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</em></div>
+            <p>设备编号：${escapeHTML(assetKey(asset))}</p>
+            <p>设备类型：${escapeHTML(asset.assetType || "-")}</p>
+            <span>绑定点位：${escapeHTML(locationText(asset))}</span>
+          </article>
+        `).join("") || `<div class="empty-state">暂无设备档案</div>`}
+      </div>
     </section>
   `;
-  $("#pageAside").innerHTML = sideInfo("设备配置", [
-    ["字段模板绑定", "设备可绑定多个巡检字段，AI 识别结果按字段写入巡检记录，再沉淀到资产台账。"],
-    ["维护口径", "设备档案负责长期属性，巡检记录负责单次事实，资产台账负责当前状态。"],
-  ]) + steps(["设备建档", "点位绑定", "模板绑定", "启用巡检"], 2);
+  $("#pageAside").innerHTML = "";
 }
 
 function renderExceptionPage() {
   const assets = filteredAssets().filter((asset) => ["warning", "danger", "repair"].includes(asset.statusLevel || normalizeStatus(asset.lastStatus)));
   const pending = filteredRequests().filter((request) => request.status === "pending");
   $("#pageMain").innerHTML = `
-    ${pageHero("异常管理", "异常复核", "对 AI 识别异常、字段缺失、低置信度读数进行人工复核，并形成工单闭环。", `<button data-drawer="exception">批量处理</button>`)}
-    <section class="risk-grid">
-      ${assets.map((asset) => `
-        <article class="${statusClass(asset.lastStatus) === "danger" ? "bad" : "warn"}" data-asset-select="${escapeHTML(asset.id)}">
-          <b>${escapeHTML(asset.assetName || "异常资产")}</b>
-          <span>${escapeHTML(assetKey(asset))} · ${fmtTime(asset.lastInspectedAt)}</span>
-          <p>${escapeHTML(asset.lastSummary || "该资产需要人工复核。")}</p>
-          <button data-asset-normal="${escapeHTML(asset.id)}">标记正常</button>
-          <button class="ghost" data-asset-select="${escapeHTML(asset.id)}">查看证据</button>
-        </article>
-      `).join("")}
-      ${pending.map((request) => `
-        <article class="warn" data-request-open="${escapeHTML(request.id)}">
-          <b>${escapeHTML(statusLabel(request.targetType))}修改申请</b>
-          <span>${escapeHTML(request.requestedBy || "-")} · ${fmtTime(request.requestedAt)}</span>
-          <p>${escapeHTML(request.reason || "待主管复核。")}</p>
-          <button data-request-open="${escapeHTML(request.id)}">进入审批</button>
-          <button class="ghost" data-request-open="${escapeHTML(request.id)}">查看详情</button>
-        </article>
-      `).join("")}
-      ${!assets.length && !pending.length ? `<div class="empty-state">暂无异常复核任务</div>` : ""}
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>异常复核</h2><p>对 AI 异常、字段缺失、低置信度读数进行人工复核。</p></div>
+        <button data-drawer="exception">批量处理</button>
+      </div>
+      <div class="risk-grid panel-body-grid">
+        ${assets.map((asset) => `
+          <article class="${statusClass(asset.lastStatus) === "danger" ? "bad" : "warn"}" data-asset-select="${escapeHTML(asset.id)}">
+            <b>${escapeHTML(asset.assetName || "异常资产")}</b>
+            <span>${escapeHTML(assetKey(asset))} · ${fmtTime(asset.lastInspectedAt)}</span>
+            <p>${escapeHTML(asset.lastSummary || "该资产需要人工复核。")}</p>
+            <button data-asset-normal="${escapeHTML(asset.id)}">标记正常</button>
+            <button class="ghost" data-asset-select="${escapeHTML(asset.id)}">查看证据</button>
+          </article>
+        `).join("")}
+        ${pending.map((request) => `
+          <article class="warn" data-request-open="${escapeHTML(request.id)}">
+            <b>${escapeHTML(statusLabel(request.targetType))}修改申请</b>
+            <span>${escapeHTML(request.requestedBy || "-")} · ${fmtTime(request.requestedAt)}</span>
+            <p>${escapeHTML(request.reason || "待主管复核。")}</p>
+            <button data-request-open="${escapeHTML(request.id)}">进入审批</button>
+            <button class="ghost" data-request-open="${escapeHTML(request.id)}">查看详情</button>
+          </article>
+        `).join("")}
+        ${!assets.length && !pending.length ? `<div class="empty-state">暂无异常复核任务</div>` : ""}
+      </div>
     </section>
   `;
-  $("#pageAside").innerHTML = renderExceptionSide(assets[0], pending[0]);
+  $("#pageAside").innerHTML = "";
 }
 
 function renderApprovalPage() {
   const requests = filteredRequests();
   $("#pageMain").innerHTML = `
-    ${pageHero("异常管理", "修改审批", "人工修正必须留痕，审批通过后更新最终字段，但保留 AI 原始识别。", `<button data-drawer="approval">审批设置</button>`)}
-    <section class="approval-list">
-      ${requests.map((request) => `
-        <article>
-          <div>
-            <span>申请人：${escapeHTML(request.requestedBy || "-")} · ${fmtTime(request.requestedAt)}</span>
-            <b>${escapeHTML(statusLabel(request.targetType))}数据修改</b>
-            <p>${escapeHTML(request.reason || "未填写申请原因")}</p>
-          </div>
-          <div class="diff"><em>${escapeHTML(statusLabel(request.status))}</em><strong>${escapeHTML(request.targetId || "-")}</strong></div>
-          <footer>
-            ${request.status === "pending" ? `<button data-request-review="${escapeHTML(request.id)}" data-action="approve">通过</button><button class="danger" data-request-review="${escapeHTML(request.id)}" data-action="reject">驳回</button>` : `<button data-request-open="${escapeHTML(request.id)}">查看</button>`}
-          </footer>
-        </article>
-      `).join("") || `<div class="empty-state">暂无修改申请</div>`}
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>修改审批</h2><p>人工修正必须留痕，审批后更新最终字段并保留 AI 原始识别。</p></div>
+        <button data-drawer="approval">审批设置</button>
+      </div>
+      <div class="approval-list panel-body-grid">
+        ${requests.map((request) => `
+          <article>
+            <div>
+              <span>申请人：${escapeHTML(request.requestedBy || "-")} · ${fmtTime(request.requestedAt)}</span>
+              <b>${escapeHTML(statusLabel(request.targetType))}数据修改</b>
+              <p>${escapeHTML(request.reason || "未填写申请原因")}</p>
+            </div>
+            <div class="diff"><em>${escapeHTML(statusLabel(request.status))}</em><strong>${escapeHTML(request.targetId || "-")}</strong></div>
+            <footer>
+              ${request.status === "pending" ? `<button data-request-review="${escapeHTML(request.id)}" data-action="approve">通过</button><button class="danger" data-request-review="${escapeHTML(request.id)}" data-action="reject">驳回</button>` : `<button data-request-open="${escapeHTML(request.id)}">查看</button>`}
+            </footer>
+          </article>
+        `).join("") || `<div class="empty-state">暂无修改申请</div>`}
+      </div>
     </section>
   `;
-  $("#pageAside").innerHTML = `<div class="detail-head"><h2>审批流</h2></div><div class="side-stack">${steps(["巡检员提交", "字段对比", "主管审批", "更新台账"], 2)}<div class="info-card"><b>规则</b><span>人工修改不直接覆盖 AI 识别，审批后写入最终字段，并保留变更前后值。</span></div></div>`;
+  $("#pageAside").innerHTML = "";
+}
+
+const DATA_PERIODS = [
+  { key: "today", label: "今日", days: 1 },
+  { key: "week",  label: "本周", days: 7 },
+  { key: "month", label: "本月", days: 30 },
+  { key: "quarter", label: "本季度", days: 90 },
+  { key: "all",   label: "全部", days: 9999 },
+];
+
+function periodFilter(records, period) {
+  const def = DATA_PERIODS.find((p) => p.key === period) || DATA_PERIODS[2];
+  if (def.key === "all") return records;
+  const cutoff = Date.now() - def.days * 24 * 3600 * 1000;
+  return records.filter((r) => new Date(r.createdAt || 0).getTime() > cutoff);
+}
+
+function periodSparkline(records, period, days = 14) {
+  const buckets = Array.from({ length: days }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (days - 1 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  return buckets.map((day) => records.filter((r) => String(r.createdAt || "").slice(0, 10) === day).length);
+}
+
+function sparkSvg(points, color = "var(--blue)", w = 90, h = 28) {
+  if (!points || !points.length) return "";
+  const max = Math.max(1, ...points);
+  const step = w / (points.length - 1 || 1);
+  const path = points.map((v, i) => {
+    const x = i * step;
+    const y = h - 3 - (v / max) * (h - 6);
+    return (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+  const area = path + ` L${w},${h} L0,${h} Z`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="kpi-spark">
+    <defs><linearGradient id="kpiGrad-${color.replace(/[^a-z0-9]/gi, "")}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <path d="${area}" fill="url(#kpiGrad-${color.replace(/[^a-z0-9]/gi, "")})"/>
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
 }
 
 function renderDataPage() {
+  if (!state.dataPeriod) state.dataPeriod = "month";
   const assets = filteredAssets();
-  const records = filteredRecords();
+  const allRecords = filteredRecords();
+  const records = periodFilter(allRecords, state.dataPeriod);
+  const periodDef = DATA_PERIODS.find((p) => p.key === state.dataPeriod) || DATA_PERIODS[2];
+  // 同比：上一周期
+  const cutoffMs = periodDef.days * 24 * 3600 * 1000;
+  const now = Date.now();
+  const prevRecords = allRecords.filter((r) => {
+    const t = new Date(r.createdAt || 0).getTime();
+    return t > now - 2 * cutoffMs && t <= now - cutoffMs;
+  });
+  const requests = filteredRequests();
   const counts = statusCounts(assets);
   const accuracy = aiAccuracy(records);
+  const closedPct = closedRate();
+  const submittedCnt = records.filter((r) => r.submitted).length;
+  const todayKeyStr = todayKey();
+  const todayRecords = records.filter((r) => String(r.createdAt || "").slice(0, 10) === todayKeyStr).length;
+  const pendingApprovals = requests.filter((r) => r.status === "pending").length;
+  const abnormalCnt = counts.warning + counts.danger + counts.repair;
+  const closedCnt = requests.filter((r) => r.status === "approved" || r.status === "rejected").length;
+  const submittedRate = records.length ? Math.round((submittedCnt / records.length) * 100) : 0;
+  const trendSpark = periodSparkline(allRecords, state.dataPeriod);
+  const trendSparkAbnormal = periodSparkline(allRecords.filter((r) => recordLevel(r) !== "normal"), state.dataPeriod);
+  const delta = (cur, prev) => {
+    if (!prev) return cur > 0 ? "+∞" : "持平";
+    const d = Math.round(((cur - prev) / prev) * 100);
+    return d === 0 ? "持平" : (d > 0 ? `+${d}%` : `${d}%`);
+  };
+  const recDelta = delta(records.length, prevRecords.length);
   const accuracyDisplay = accuracy.sample < 5
     ? `<div class="ring muted" style="--value:0">—</div><p class="ring-note">样本不足（${accuracy.sample}/5）</p>`
     : `<div class="ring" style="--value:${accuracy.value}">${accuracy.value}%</div><p class="ring-note">基于 ${accuracy.sample} 个已确认字段</p>`;
-  $("#pageMain").innerHTML = `
-    ${pageHero("数据中心", "数据看板", "展示资产状态、巡检效率、AI 识别准确率、异常闭环率和项目趋势。", `<button id="refreshDataBtn">刷新数据</button>`)}
-    <section class="chart-grid">
-      ${trendPanel(records)}
-      <article class="ring-card"><h2>AI 识别准确率</h2>${accuracyDisplay}</article>
-      <article class="ring-card"><h2>异常闭环率</h2><div class="ring green" style="--value:${closedRate()}">${closedRate()}%</div></article>
-      ${metrics([
-        { label: "正常资产", value: counts.normal, sub: "资产健康" },
-        { label: "待复核", value: counts.warning, sub: "人工确认" },
-        { label: "异常资产", value: counts.danger, sub: "需处理" },
-        { label: "巡检记录", value: records.length, sub: "历史沉淀" },
-      ])}
-    </section>
-  `;
-  $("#pageAside").innerHTML = sideInfo("指标解释", [
-    ["AI 识别准确率", "按人工最终确认字段与 AI 原始识别字段比对计算。"],
-    ["异常闭环率", "异常从识别、复核、工单、关闭的完整比例。"],
-  ]);
-  $("#refreshDataBtn").addEventListener("click", () => loadData());
-}
+  const typeMap = {};
+  assets.forEach((a) => {
+    const k = a.assetType || "未分类";
+    typeMap[k] = (typeMap[k] || 0) + 1;
+  });
+  const typeList = Object.entries(typeMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const typeMax = Math.max(1, ...typeList.map(([, n]) => n));
+  const TYPE_COLORS = ["#12a968", "#246bfe", "#f59e0b", "#8b5cf6", "#ef4b3f", "#06b6d4"];
 
-function renderReportPage() {
-  const records = filteredRecords();
-  const assets = filteredAssets();
-  const abnormal = assets.filter((asset) => normalizeStatus(asset.lastStatus) !== "normal").length;
+  const updatedStr = new Date().toTimeString().slice(0, 5);
   $("#pageMain").innerHTML = `
-    ${pageHero("数据中心", "统计报表", "按日、周、月输出巡检日报、异常分析、资产健康和人员效率报表。", `<button id="buildReportBtn">生成报表</button>`)}
-    <section class="report-grid">
-      ${reportCard("巡检日报", `当前项目共 ${records.length} 条巡检记录，已提交 ${records.filter((record) => record.submitted).length} 条。`)}
-      ${reportCard("异常周报", `当前异常/待复核资产 ${abnormal} 项，待审批 ${filteredRequests().filter((item) => item.status === "pending").length} 条。`)}
-      ${reportCard("资产健康报表", `资产总数 ${assets.length}，正常 ${statusCounts(assets).normal}，异常 ${statusCounts(assets).danger}。`)}
-      ${reportCard("人员效率报表", `巡检人员 ${new Set(records.map((record) => record.inspector).filter(Boolean)).size} 人，记录持续沉淀。`)}
+    <section class="data-hero data-hero-v3">
+      <div class="data-hero-bg" aria-hidden="true">
+        <span class="data-hero-orb data-hero-orb-1"></span>
+        <span class="data-hero-orb data-hero-orb-2"></span>
+        <span class="data-hero-orb data-hero-orb-3"></span>
+      </div>
+      <div class="data-hero-top">
+        <div class="data-hero-title">
+          <span class="data-hero-kicker">数据中心 · ${escapeHTML(periodDef.label)}</span>
+          <h1>数据看板</h1>
+        </div>
+      </div>
+      <div class="data-period-tabs" role="tablist">
+        ${DATA_PERIODS.map((p) => `
+          <button class="data-period-chip ${p.key === state.dataPeriod ? "active" : ""}" data-period="${p.key}" type="button">${escapeHTML(p.label)}</button>
+        `).join("")}
+      </div>
+    </section>
+    <section class="data-kpi-row">
+      <article class="data-kpi-card">
+        <div class="dk-head"><span>资产总数</span><b class="dk-tag good">+${counts.total}</b></div>
+        <b class="dk-value"><span class="dash-anim" data-count="${counts.total}">0</span><em>台</em></b>
+        <div class="dk-spark">${sparkSvg(periodSparkline(allRecords, "month"), "#4f7cff")}</div>
+      </article>
+      <article class="data-kpi-card">
+        <div class="dk-head"><span>正常资产</span><b class="dk-tag good">${ratio(counts.normal, counts.total)}%</b></div>
+        <b class="dk-value good"><span class="dash-anim" data-count="${counts.normal}">0</span><em>项</em></b>
+        <div class="dk-spark">${sparkSvg(trendSpark, "#12a968")}</div>
+      </article>
+      <article class="data-kpi-card">
+        <div class="dk-head"><span>异常 / 待复核</span><b class="dk-tag ${abnormalCnt > 0 ? "danger" : ""}">${abnormalCnt > 0 ? "需关注" : "全清"}</b></div>
+        <b class="dk-value ${abnormalCnt > 0 ? "danger" : ""}"><span class="dash-anim" data-count="${abnormalCnt}">0</span><em>项</em></b>
+        <div class="dk-spark">${sparkSvg(trendSparkAbnormal, "#ef4b3f")}</div>
+      </article>
+      <article class="data-kpi-card">
+        <div class="dk-head"><span>巡检记录</span><b class="dk-tag ${recDelta.startsWith("+") && recDelta !== "+0%" ? "good" : recDelta.startsWith("-") ? "danger" : ""}">${escapeHTML(recDelta)}</b></div>
+        <b class="dk-value"><span class="dash-anim" data-count="${records.length}">0</span><em>条</em></b>
+        <div class="dk-spark">${sparkSvg(trendSpark, "#f59e0b")}</div>
+      </article>
+    </section>
+    <section class="data-grid-2col">
+      <article class="ring-card ring-card-accuracy">
+        <div class="ring-head"><h2>AI 识别准确率</h2><span class="ring-tag">本月</span></div>
+        ${accuracyDisplay}
+        <ul class="ring-meta">
+          <li><span>已确认</span><b>${accuracy.sample}</b></li>
+          <li><span>提交</span><b>${submittedCnt}</b></li>
+          <li><span>待复核</span><b>${counts.warning}</b></li>
+        </ul>
+      </article>
+      <article class="ring-card ring-card-closed">
+        <div class="ring-head"><h2>异常闭环率</h2><span class="ring-tag">本月</span></div>
+        <div class="ring green" style="--value:${closedPct}">${closedPct}%</div>
+        <p class="ring-note">复核 → 审批 → 写入台账</p>
+        <ul class="ring-meta">
+          <li><span>申请</span><b>${requests.length}</b></li>
+          <li><span>待审</span><b>${pendingApprovals}</b></li>
+          <li><span>结案</span><b>${closedCnt}</b></li>
+        </ul>
+      </article>
+    </section>
+    ${trendPanel(records)}
+    <section class="data-grid-2col">
+      <section class="panel data-type-panel">
+        <div class="panel-head">
+          <h2>资产类型分布</h2>
+          <span class="panel-head-sub">Top ${typeList.length} 类</span>
+        </div>
+        <div class="type-bars">
+          ${typeList.map(([name, n], i) => {
+            const pct = Math.round((n / typeMax) * 100);
+            const ratioPct = Math.round((n / (counts.total || 1)) * 100);
+            const color = TYPE_COLORS[i % TYPE_COLORS.length];
+            return `<div class="type-bar"><span class="type-name">${escapeHTML(name)}</span><div class="type-track"><div class="type-fill" style="width:${pct}%; background:${color}"></div></div><span class="type-num"><b>${n}</b><em>${ratioPct}%</em></span></div>`;
+          }).join("") || `<div class="empty-state">暂无资产分类数据</div>`}
+        </div>
+      </section>
+      <section class="panel data-summary-panel">
+        <div class="panel-head"><h2>运营摘要</h2><span class="panel-head-sub">今日</span></div>
+        <div class="data-summary-list">
+          <div class="data-summary-row">
+            <span class="dsr-label">记录提交率</span>
+            <div class="dsr-bar"><div class="dsr-fill blue" style="width:${submittedRate}%"></div></div>
+            <b class="dsr-num">${submittedRate}<em>%</em></b>
+          </div>
+          <div class="data-summary-row">
+            <span class="dsr-label">异常资产占比</span>
+            <div class="dsr-bar"><div class="dsr-fill orange" style="width:${ratio(abnormalCnt, counts.total)}%"></div></div>
+            <b class="dsr-num">${ratio(abnormalCnt, counts.total)}<em>%</em></b>
+          </div>
+          <div class="data-summary-row">
+            <span class="dsr-label">闭环率</span>
+            <div class="dsr-bar"><div class="dsr-fill green" style="width:${closedPct}%"></div></div>
+            <b class="dsr-num">${closedPct}<em>%</em></b>
+          </div>
+          <div class="data-summary-row">
+            <span class="dsr-label">待审批事项</span>
+            <div class="dsr-bar"><div class="dsr-fill ${pendingApprovals > 0 ? "red" : "gray"}" style="width:${Math.min(100, pendingApprovals * 20)}%"></div></div>
+            <b class="dsr-num">${pendingApprovals}<em>项</em></b>
+          </div>
+        </div>
+      </section>
     </section>
   `;
-  $("#pageAside").innerHTML = `<div class="detail-head"><h2>报表预览</h2></div><div class="side-stack"><div class="info-card"><b>${escapeHTML(state.selectedProject || "全部项目")}巡检日报</b><span>${escapeHTML(buildReportPreview(records, assets))}</span></div><div class="report-preview"></div></div>`;
-  $("#buildReportBtn").addEventListener("click", () => toast("已根据当前数据生成报表预览"));
+  $("#pageAside").innerHTML = "";
+  document.querySelectorAll("[data-period]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.dataPeriod = btn.dataset.period;
+      render();
+    });
+  });
+  animateDashboardCounts();
 }
 
 function roleText(user = {}) {
@@ -880,25 +2394,35 @@ function roleText(user = {}) {
   }[user.roleCode] || user.roleCode || "-");
 }
 
-function usersTableHTML() {
+function roleClass(roleCode = "") {
+  return {
+    admin: "danger",
+    manager: "normal",
+    supervisor: "warning",
+    inspector: "unknown",
+  }[roleCode] || "unknown";
+}
+
+function usersTableHTML(action = "") {
   const users = state.users || [];
   return `
     <section class="panel">
-      <div class="panel-head"><h2>用户与权限</h2><span>当前账号 ${users.length || 0} 个，后续可接企业微信组织架构</span></div>
+      <div class="panel-head"><div><h2>用户与权限</h2><p>当前账号 ${users.length || 0} 个，后续可接企业微信组织架构。</p></div><div class="panel-actions">${action}</div></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>部门</th><th>状态</th><th>最近登录</th></tr></thead>
+          <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>部门</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
           <tbody>
             ${users.map((user) => `
               <tr>
                 <td>${escapeHTML(user.username)}</td>
                 <td>${escapeHTML(user.displayName)}</td>
-                <td>${escapeHTML(roleText(user))}</td>
+                <td><span class="pill ${roleClass(user.roleCode)}">${escapeHTML(roleText(user))}</span></td>
                 <td>${escapeHTML(user.departmentName || "-")}</td>
                 <td><span class="status ${user.status === "active" ? "normal" : "warning"}">${escapeHTML(user.status || "-")}</span></td>
                 <td>${fmtTime(user.lastLoginAt)}</td>
+                <td><button class="mini-btn" data-user-action="edit">编辑</button><button class="mini-btn" data-user-action="toggle">${user.status === "active" ? "停用" : "启用"}</button></td>
               </tr>
-            `).join("") || `<tr><td colspan="6">暂无用户数据</td></tr>`}
+            `).join("") || `<tr><td colspan="7">暂无用户数据</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -906,11 +2430,11 @@ function usersTableHTML() {
   `;
 }
 
-function operationLogsHTML() {
+function operationLogsHTML(action = "") {
   const logs = state.operationLogs || [];
   return `
     <section class="panel">
-      <div class="panel-head"><h2>操作日志</h2><span>记录登录、台账修改、审批等关键动作</span></div>
+      <div class="panel-head"><div><h2>操作日志</h2><p>记录登录、台账修改、审批等关键动作。</p></div><div class="panel-actions">${action}</div></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>时间</th><th>人员</th><th>动作</th><th>对象</th><th>编号</th></tr></thead>
@@ -919,9 +2443,9 @@ function operationLogsHTML() {
               <tr>
                 <td>${fmtTime(item.createdAt)}</td>
                 <td>${escapeHTML(item.actorName || "-")}</td>
-                <td>${escapeHTML(item.action || "-")}</td>
-                <td>${escapeHTML(item.targetType || "-")}</td>
-                <td>${escapeHTML(shortId(item.targetId || "-"))}</td>
+                <td><span class="log-action ${logActionTone(item.action)}">${escapeHTML(item.action || "-")}</span></td>
+                <td><span class="log-target">${escapeHTML(item.targetType || "-")}</span></td>
+                <td><code class="log-id">${escapeHTML(shortId(item.targetId || "-"))}</code></td>
               </tr>
             `).join("") || `<tr><td colspan="5">暂无操作日志</td></tr>`}
           </tbody>
@@ -939,23 +2463,274 @@ function currentUserSummaryHTML() {
       <span>账号：${escapeHTML(user.username || "-")}</span>
       <span>角色：${escapeHTML(roleText(user))}</span>
       <span>部门：${escapeHTML(user.departmentName || "-")}</span>
-      <button class="danger soft" id="logoutBtn" type="button">退出登录</button>
+      <button class="btn-ghost danger-ghost" id="logoutBtn" type="button">退出登录</button>
     </div>
   `;
 }
 
+function renderProfilePage() {
+  const user = state.currentUser || {};
+  const pending = filteredRequests().filter((item) => item.status === "pending").length;
+  const today = todayKey();
+  const todayRecords = state.records.filter((record) => String(record.createdAt || "").startsWith(today)).length;
+  const abnormal = filteredAssets().filter((asset) => normalizeStatus(asset.lastStatus) !== "normal").length;
+  const logs = (state.operationLogs || []).filter((item) => item.actorName === user.displayName || item.userId === user.id);
+  const avatar = (user.displayName || user.username || "管").slice(0, 1);
+  const role = roleText(user);
+  const weekMs = 7 * 24 * 3600 * 1000;
+  const weekLogins = logs.filter((l) => l.action === "login" && Date.now() - new Date(l.createdAt || 0).getTime() < weekMs).length;
+
+  $("#pageMain").innerHTML = `
+    <section class="ai-hero ai-hero-v2 profile-hero">
+      <div class="ai-hero-text">
+        <div class="profile-hero-row">
+          <div class="profile-hero-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+            </svg>
+          </div>
+          <div class="profile-hero-meta">
+            <b class="profile-hero-name">${escapeHTML(user.displayName || "未登录")}</b>
+            <span>${escapeHTML(role)} · 账号 ${escapeHTML(user.username || "-")}</span>
+          </div>
+        </div>
+      </div>
+      <button class="btn-ghost danger-ghost profile-hero-logout" id="profileLogoutBtn">退出登录</button>
+      <aside class="ai-hero-side" aria-hidden="true">
+        <span class="ai-hero-orb ai-hero-orb-1"></span>
+        <span class="ai-hero-orb ai-hero-orb-2"></span>
+        <span class="ai-hero-orb ai-hero-orb-3"></span>
+      </aside>
+      <svg class="ai-hero-cursor" viewBox="0 0 28 28" aria-hidden="true">
+        <defs>
+          <linearGradient id="profileTriGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#7effd2"/>
+            <stop offset="100%" stop-color="#25d5ff"/>
+          </linearGradient>
+        </defs>
+        <polygon points="14,3 25,24 3,24" fill="url(#profileTriGrad)" opacity="0.85"/>
+      </svg>
+    </section>
+    ${metrics([
+      { label: "待审批", value: pending, sub: "修改申请", bad: pending > 0 },
+      { label: "今日巡检", value: todayRecords, sub: "移动端记录" },
+      { label: "异常复核", value: abnormal, sub: "资产状态", bad: abnormal > 0 },
+      { label: "操作日志", value: logs.length, sub: "本人动作" },
+    ])}
+    <section class="page-grid two profile-grid">
+      <article class="panel profile-panel">
+        <div class="panel-head"><h2>权限范围</h2></div>
+        <div class="permission-list profile-permissions">
+          ${permissionItem("资产台账", "查看 / 修改 / 追踪状态", true)}
+          ${permissionItem("异常复核", "处理异常复核闭环", user.roleCode !== "inspector")}
+          ${permissionItem("修改审批", "审批字段修正与台账修改", user.roleCode === "admin" || user.roleCode === "manager" || user.roleCode === "supervisor")}
+          ${permissionItem("用户管理", "后台账号 / 角色 / 部门", user.roleCode === "admin")}
+        </div>
+      </article>
+      <article class="panel profile-panel">
+        <div class="panel-head"><h2>最近操作</h2><button class="link-btn" data-page-link="logs">全部</button></div>
+        <div class="activity-list profile-activity-list">
+          ${logs.slice(0, 6).map(profileActivityItem).join("") || `<div class="empty-state">暂无本人操作日志</div>`}
+        </div>
+      </article>
+    </section>
+  `;
+  const openTasks = myOpenTasks();
+  const doneToday = myCompletedTodayTasks();
+  $("#pageAside").innerHTML = `
+    <div class="aside-stack">
+      <div class="my-todo-card">
+        <div class="my-todo-head">
+          <b>我的待办</b>
+          <span class="my-todo-count ${openTasks.length > 0 ? "active" : ""}">${openTasks.length}</span>
+        </div>
+        ${openTasks.length === 0 ? `
+          <div class="my-todo-empty">${doneToday.length > 0 ? `今日已完成 ${doneToday.length} 项 🎉` : "暂无指派给你的任务"}</div>
+        ` : `
+          <ul class="my-todo-list">
+            ${openTasks.slice(0, 6).map((t) => `
+              <li class="my-todo-row" data-task-link="${escapeHTML(t.id)}">
+                <span class="my-todo-icon ${t.status === "进行中" ? "doing" : ""}"></span>
+                <div class="my-todo-body">
+                  <b>${escapeHTML(t.title)}</b>
+                  <span>${escapeHTML(t.project || "-")} · ${escapeHTML(t.frequency || "-")} · ${escapeHTML(t.status)}</span>
+                </div>
+                <em>${escapeHTML(t.dueAt || "—")}</em>
+              </li>
+            `).join("")}
+          </ul>
+        `}
+      </div>
+      ${doneToday.length > 0 ? `
+        <div class="my-done-card">
+          <div class="my-done-head">
+            <b>今日已完成</b>
+            <span class="my-done-count">${doneToday.length}</span>
+          </div>
+          <ul class="my-done-list">
+            ${doneToday.slice(0, 5).map((t) => `
+              <li class="my-done-row" data-task-link="${escapeHTML(t.id)}">
+                <span class="my-done-icon">✓</span>
+                <div class="my-done-body">
+                  <b>${escapeHTML(t.title)}</b>
+                  <span>${escapeHTML(relativeTime(t.completedAt))} 完成</span>
+                </div>
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : ""}
+      <div class="ai-month-card profile-aside-card">
+        <div class="month-head"><div><b>本周动作</b></div></div>
+        <div class="month-rows">
+          <div><span>本周登录</span><b>${weekLogins}</b></div>
+          <div><span>累计操作</span><b>${logs.length}</b></div>
+          <div><span>最近登录</span><b style="font-size:13px">${escapeHTML(fmtTime(user.lastLoginAt))}</b></div>
+        </div>
+      </div>
+      <div class="todo-card">
+        <div class="todo-head"><b>快速入口</b></div>
+        <a class="todo-row info" data-page-link="approval">
+          <img src="./assets/icon-bulb.svg" alt=""/>
+          <span>修改审批</span><b>${pending}</b><em>去审批 →</em>
+        </a>
+        <a class="todo-row info" data-page-link="ledger">
+          <img src="./assets/nav-asset.svg" alt=""/>
+          <span>资产台账</span><b>${state.assets.length}</b><em>查看 →</em>
+        </a>
+      </div>
+    </div>
+  `;
+  document.querySelectorAll("[data-task-link]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.selectedTaskId = el.dataset.taskLink;
+      setPage("task");
+    });
+  });
+  $("#profileLogoutBtn")?.addEventListener("click", logout);
+  bindHeroCursor();
+}
+
+function profileMetric(label, value, sub, tone = "info") {
+  return `<article class="profile-metric metric-${escapeHTML(tone)}"><span>${escapeHTML(label)}</span><b>${escapeHTML(value)}</b><em>${escapeHTML(sub)}</em></article>`;
+}
+
+const ACTION_LABEL = {
+  login: "登录后台",
+  logout: "退出登录",
+  ai_chat: "AI 智能问答",
+  "asset.patch": "修改资产",
+  "asset.create": "新建资产",
+  approval: "审批操作",
+  classify: "AI 场景识别",
+};
+function actionLabel(action = "") {
+  return ACTION_LABEL[action] || ACTION_LABEL[action.toLowerCase()] || action || "—";
+}
+
+function profileActivityItem(item) {
+  const tone = logActionTone(item.action);
+  const label = actionLabel(item.action);
+  const target = item.targetType ? `${item.targetType} ${shortId(item.targetId || "")}` : "";
+  return `
+    <div class="profile-activity-row tone-${escapeHTML(tone)}">
+      <i></i>
+      <div class="par-main">
+        <b>${escapeHTML(label)}</b>
+        ${target ? `<span class="par-target">${escapeHTML(target)}</span>` : ""}
+      </div>
+      <time>${fmtTime(item.createdAt)}</time>
+    </div>
+  `;
+}
+
+function identityMetric(label, value, sub) {
+  return `<article><span>${escapeHTML(label)}</span><b>${escapeHTML(value)}</b><em>${escapeHTML(sub)}</em></article>`;
+}
+
+function permissionItem(title, desc, enabled) {
+  return `
+    <div class="perm-row ${enabled ? "enabled" : "disabled"}">
+      <span class="perm-mark" aria-hidden="true">${enabled ? "✓" : "·"}</span>
+      <div class="perm-main">
+        <b>${escapeHTML(title)}</b>
+        <span>${escapeHTML(desc)}</span>
+      </div>
+      <em class="perm-chip">${enabled ? "已开放" : "未授权"}</em>
+    </div>
+  `;
+}
+
+function renderUsersPage() {
+  const users = state.users || [];
+  const roleSummary = users.reduce((acc, user) => {
+    const key = roleText(user);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  $("#pageMain").innerHTML = `
+    <section class="identity-metrics">
+      ${identityMetric("账号总数", users.length, "users")}
+      ${identityMetric("启用账号", users.filter((user) => user.status === "active").length, "active")}
+      ${identityMetric("角色类型", Object.keys(roleSummary).length, "roles")}
+      ${identityMetric("部门数量", new Set(users.map((user) => user.departmentName).filter(Boolean)).size, "departments")}
+    </section>
+    ${usersTableHTML(`<button id="addUserBtn">新增用户</button>`)}
+    <section class="panel">
+      <div class="panel-head"><h2>角色分布</h2><span>当前系统第一阶段权限模型</span></div>
+      <div class="role-board">
+        ${Object.entries(roleSummary).map(([name, count]) => `<div><b>${escapeHTML(name)}</b><span>${count} 人</span></div>`).join("") || `<div><b>暂无角色</b><span>等待账号初始化</span></div>`}
+      </div>
+    </section>
+  `;
+  $("#pageAside").innerHTML = asideStack(liveActivityCard());
+  bindLiveActivity();
+  $("#addUserBtn")?.addEventListener("click", () => toast("用户新增接口预留中，当前先展示账号与权限台账"));
+}
+
+function renderLogsPage() {
+  const logs = state.operationLogs || [];
+  $("#pageMain").innerHTML = `
+    <section class="identity-metrics">
+      ${identityMetric("日志总数", logs.length, "最近记录")}
+      ${identityMetric("登录动作", logs.filter((item) => item.action === "login").length, "login")}
+      ${identityMetric("台账修改", logs.filter((item) => String(item.action || "").includes("asset")).length, "asset.patch")}
+      ${identityMetric("审批动作", logs.filter((item) => String(item.action || "").includes("change_request")).length, "approval")}
+    </section>
+    ${operationLogsHTML(`<button id="refreshLogsBtn">刷新日志</button>`)}
+    <section class="panel">
+      <div class="panel-head"><h2>审计时间线</h2><span>按发生时间倒序展示</span></div>
+      <div class="audit-timeline">
+        ${logs.slice(0, 10).map((item) => `<div><i></i><b>${escapeHTML(item.actorName || "-")} · ${escapeHTML(item.action || "-")}</b><span>${fmtTime(item.createdAt)} / ${escapeHTML(item.targetType || "-")} / ${escapeHTML(shortId(item.targetId || "-"))}</span></div>`).join("") || `<div class="empty-state">暂无操作日志</div>`}
+      </div>
+    </section>
+  `;
+  $("#pageAside").innerHTML = asideStack(liveActivityCard());
+  bindLiveActivity();
+  $("#refreshLogsBtn")?.addEventListener("click", () => loadData());
+}
+
 function renderSystemPage() {
   const store = state.health?.storeKind || state.health?.store || "unknown";
+  // F7 · AI 视觉服务状态来自 backend health 的 aiServiceUrl
+  const aiUrl = state.health?.aiServiceUrl;
+  const aiStatus = aiUrl ? "已配置" : "未配置";
+  const aiLevel = aiUrl ? "normal" : "warning";
+  // F8 · 文件存储真状态（基于 backend health）
+  const storage = state.health?.storage || state.health?.uploadsDir;
+  const storagePath = storage || "未接入";
+  const storageStatus = storage ? "本地磁盘" : "未接入";
+  const storageLevel = storage ? "normal" : "warning";
   $("#pageMain").innerHTML = `
-    ${pageHero("数据中心", "系统管理", "展示 API、AI 服务、MySQL、文件存储、企业微信入口等运行状态与部署配置。", `<button id="saveSystemBtn">保存配置</button>`)}
-    <section class="system-grid">
+    <section class="system-grid system-health-grid">
       ${systemCard("Go API 服务", state.apiBase, state.health ? "运行中" : "待检查", state.health ? "normal" : "warning")}
-      ${systemCard("AI 视觉服务", "http://127.0.0.1:19100", "独立服务", "normal")}
+      ${systemCard("AI 视觉服务", aiUrl || "未配置", aiStatus, aiLevel)}
       ${systemCard("数据库", store, store === "mysql" ? "MySQL 已启用" : "当前存储", store === "mysql" ? "normal" : "warning")}
-      ${systemCard("文件存储", "storage/uploads", "本地存储", "warning")}
+      ${systemCard("文件存储", storagePath, storageStatus, storageLevel)}
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>部署配置</h2><span>云服务器迁移前检查项</span></div>
+      <div class="panel-head"><div><h2>部署配置</h2><p>云服务器迁移前检查项。</p></div><button id="saveSystemBtn">保存配置</button></div>
       <div class="table-wrap">
         <table><tbody>
           <tr><td>公网域名</td><td>api.your-domain.com</td><td><span class="status warning">待配置证书</span></td></tr>
@@ -967,7 +2742,8 @@ function renderSystemPage() {
     ${usersTableHTML()}
     ${operationLogsHTML()}
   `;
-  $("#pageAside").innerHTML = `<div class="detail-head"><h2>运行摘要</h2></div><div class="side-stack">${currentUserSummaryHTML()}<div class="info-card"><b>当前架构</b><span>移动端 18080，后台管理端 18081，AI 服务 19100，数据通过 Go API 落库。</span></div>${systemConfigForm()}</div>`;
+  $("#pageAside").innerHTML = asideStack(liveActivityCard(), systemConfigForm());
+  bindLiveActivity();
   $("#saveSystemBtn").addEventListener("click", saveSystemConfigFromSide);
   $("#logoutBtn")?.addEventListener("click", logout);
   $("#systemConfigForm")?.addEventListener("submit", (event) => {
@@ -978,6 +2754,7 @@ function renderSystemPage() {
 
 const pageRenderers = {
   dashboard: renderDashboardPage,
+  profile: renderProfilePage,
   plan: renderPlanPage,
   task: renderTaskPage,
   record: renderRecordPage,
@@ -986,7 +2763,8 @@ const pageRenderers = {
   exception: renderExceptionPage,
   approval: renderApprovalPage,
   data: renderDataPage,
-  report: renderReportPage,
+  users: renderUsersPage,
+  logs: renderLogsPage,
   system: renderSystemPage,
 };
 
@@ -1021,7 +2799,7 @@ function renderAssetSide(asset) {
           <tr><td>${fmtTime(record.createdAt)}</td><td>${escapeHTML(record.inspector || "-")}</td><td>${escapeHTML(primaryReading(record) || statusLabel(record.recognitionStatus))}</td><td><span class="status ${statusClass(recordStatus(record))}">${escapeHTML(recordStatus(record))}</span></td></tr>
         `).join("") || emptyRow(4, "暂无历史巡检")}</tbody>
       </table>
-      <div class="photo-strip"><h3>巡检照片 <small>共 ${photos.length} 张</small></h3><div class="photos">${photos.slice(0, 4).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("") || `<div class="empty-photo"></div>`}</div></div>
+      <div class="photo-strip" data-photos='${escapeHTML(JSON.stringify(photos))}'><h3>巡检照片 <small>共 ${photos.length} 张</small>${photos.length > 4 ? `<button class="link-btn photo-all-btn" type="button">查看全部 →</button>` : ""}</h3><div class="photos">${photos.slice(0, 4).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("") || `<div class="empty-photo"></div>`}</div></div>
       <form class="edit-form" id="assetEditForm">
         <label>资产名称<input name="assetName" value="${escapeHTML(asset.assetName || "")}"></label>
         <label>资产状态<select name="lastStatus">${["正常", "异常", "待复核", "待维修"].map((status) => `<option value="${status}" ${asset.lastStatus === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
@@ -1051,12 +2829,12 @@ function renderExceptionSide(asset, request) {
   return sideInfo("复核建议", [["当前状态", "暂无待复核异常"], ["处理规则", "异常应进入台账，不覆盖原始 AI 识别结果。"]]);
 }
 
-function trendPanel(records) {
+function trendPanel(records, action = "") {
   return `
     <section class="panel chart-panel">
       <div class="panel-head">
         <div><h2>每日巡检记录</h2></div>
-        <div class="legend"><span><i class="ok"></i>当日·正常</span><span><i class="warn"></i>当日·待复核</span><span><i class="bad"></i>当日·异常</span></div>
+        <div class="panel-actions"><div class="legend"><span><i class="ok"></i>当日·正常</span><span><i class="warn"></i>当日·待复核</span><span><i class="bad"></i>当日·异常</span></div>${action}</div>
       </div>
       <div class="chart">${buildTrendSvg(records)}</div>
     </section>
@@ -1075,30 +2853,46 @@ function buildTrendSvg(records) {
     danger: days.map((day) => records.filter((record) => String(record.createdAt || "").slice(0, 10) === day && recordLevel(record) === "danger").length),
   };
   const all = [...series.normal, ...series.warning, ...series.danger];
-  const max = Math.max(1, ...all);
-  const width = 460;
-  const height = 150;
-  const pad = { left: 32, right: 18, top: 16, bottom: 26 };
+  const max = Math.max(4, ...all);
+  const width = 520;
+  const height = 180;
+  const pad = { left: 36, right: 22, top: 14, bottom: 28 };
   const point = (value, index) => {
     const x = pad.left + ((width - pad.left - pad.right) / Math.max(days.length - 1, 1)) * index;
     const y = pad.top + (height - pad.top - pad.bottom) - (value / max) * (height - pad.top - pad.bottom);
     return [x, y];
   };
   const line = (values) => values.map((value, index) => point(value, index).join(",")).join(" ");
-  const dots = (values, color) => values.map((value, index) => {
+  const ticks = 4;
+  const gridLines = Array.from({ length: ticks + 1 }, (_, i) => {
+    const ratio = i / ticks;
+    const y = pad.top + (height - pad.top - pad.bottom) * (1 - ratio);
+    const value = Math.round(max * ratio);
+    return `<line class="grid" x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}"></line><text class="axis-y" x="${pad.left - 8}" y="${y + 4}" text-anchor="end">${value}</text>`;
+  }).join("");
+  const xLabels = days.map((day, index) => `<text class="axis-x" x="${point(0, index)[0]}" y="${height - 8}" text-anchor="middle">${day.slice(5).replace("-", "/")}</text>`).join("");
+  const area = (values, fill) => {
+    if (!values.some((v) => v > 0)) return "";
+    const pts = values.map((value, index) => point(value, index).join(",")).join(" ");
+    const first = point(values[0], 0);
+    const last = point(values[values.length - 1], values.length - 1);
+    return `<polygon class="trend-area" fill="${fill}" points="${pad.left},${height - pad.bottom} ${first[0]},${first[1]} ${pts.split(" ").slice(1).join(" ")} ${last[0]},${last[1]} ${width - pad.right},${height - pad.bottom}"></polygon>`;
+  };
+  const hotDots = (values, color, label) => values.map((value, index) => {
     const [x, y] = point(value, index);
-    return `<circle cx="${x}" cy="${y}" r="3" fill="${color}"></circle>`;
+    return `<g class="trend-dot"><circle class="dot-halo" cx="${x}" cy="${y}" r="9" fill="${color}" opacity="0"></circle><circle class="dot-core" cx="${x}" cy="${y}" r="3.5" fill="#ffffff" stroke="${color}" stroke-width="2"></circle><title>${days[index]} · ${label}：${value}</title></g>`;
   }).join("");
   return `
-    <svg viewBox="0 0 ${width} ${height}">
-      <g class="axis">${[0, 0.5, 1].map((scale) => {
-        const y = pad.top + (height - pad.top - pad.bottom) - (height - pad.top - pad.bottom) * scale;
-        return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}"></line><text x="4" y="${y + 4}">${Math.round(max * scale)}</text>`;
-      }).join("")}${days.map((day, index) => `<text x="${point(0, index)[0]}" y="${height - 5}" text-anchor="middle">${day.slice(5).replace("-", "/")}</text>`).join("")}</g>
-      <polyline points="${line(series.normal)}" fill="none" stroke="#12a968" stroke-width="3"></polyline>
-      <polyline points="${line(series.warning)}" fill="none" stroke="#f59e0b" stroke-width="3"></polyline>
-      <polyline points="${line(series.danger)}" fill="none" stroke="#ef4b3f" stroke-width="3"></polyline>
-      ${dots(series.normal, "#12a968")}${dots(series.warning, "#f59e0b")}${dots(series.danger, "#ef4b3f")}
+    <svg viewBox="0 0 ${width} ${height}" class="trend-svg" preserveAspectRatio="xMidYMid meet">
+      <g class="grid-g">${gridLines}</g>
+      <g class="axis-x-g">${xLabels}</g>
+      ${area(series.normal, "rgba(18,169,104,0.10)")}
+      <polyline points="${line(series.normal)}" fill="none" stroke="#12a968" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      <polyline points="${line(series.warning)}" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 4" opacity="0.85"></polyline>
+      <polyline points="${line(series.danger)}" fill="none" stroke="#ef4b3f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 3" opacity="0.85"></polyline>
+      ${hotDots(series.normal, "#12a968", "正常")}
+      ${hotDots(series.warning, "#f59e0b", "待复核")}
+      ${hotDots(series.danger, "#ef4b3f", "异常")}
     </svg>
   `;
 }
@@ -1130,7 +2924,15 @@ function reportCard(title, desc) {
 }
 
 function systemCard(title, desc, status, level) {
-  return `<article><b>${escapeHTML(title)}</b><em class="status ${level}">${escapeHTML(status)}</em><p>${escapeHTML(desc)}</p></article>`;
+  return `
+    <article class="system-card ${escapeHTML(level)}">
+      <div class="system-card-top">
+        <b>${escapeHTML(title)}</b>
+        <em class="status ${escapeHTML(level)}">${escapeHTML(status)}</em>
+      </div>
+      <p>${escapeHTML(desc)}</p>
+    </article>
+  `;
 }
 
 function steps(labels, activeIndex) {
@@ -1216,6 +3018,7 @@ function openDrawer(title, html) {
   $("#drawerBody").innerHTML = `<h2>${escapeHTML(title)}</h2>${html}`;
   $("#drawerMask").hidden = false;
   $("#drawer").hidden = false;
+  normalizeButtons($("#drawer"));
 }
 
 function closeDrawer() {
@@ -1240,10 +3043,107 @@ function openRequestDrawer(id) {
   `);
 }
 
+function optionHTML(value, label, selected = "") {
+  return `<option value="${escapeHTML(value)}" ${String(value) === String(selected) ? "selected" : ""}>${escapeHTML(label)}</option>`;
+}
+
+function ownerOptions(selected = "") {
+  const names = [
+    state.currentUser?.displayName,
+    ...state.users.map((user) => user.displayName || user.username),
+    "张三",
+    "巡检员",
+  ].filter(Boolean);
+  return [...new Set(names)].map((name) => optionHTML(name, name, selected)).join("");
+}
+
+function defaultDateTimeInput(addHours = 24) {
+  const date = new Date(Date.now() + addHours * 60 * 60 * 1000);
+  date.setMinutes(0, 0, 0);
+  const pad = (num) => String(num).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function displayDateTimeInput(value) {
+  return String(value || "").replace("T", " ") || "-";
+}
+
+function openPlanDrawer() {
+  const projectList = projects();
+  const pointList = state.points.length ? state.points : [{ id: "", name: "未配置点位", location: "请先维护点位", project: state.selectedProject || projectList[0] || "" }];
+  const templateList = state.templates.length ? state.templates : [{ id: "", name: "默认日报模板", project: state.selectedProject || projectList[0] || "", assetType: "-" }];
+  openDrawer("新建巡检计划", `
+    <form class="drawer-form" id="adminPlanForm">
+      <section class="drawer-section">
+        <h3>计划信息</h3>
+        <div class="form-grid">
+          <label>计划名称<input name="name" placeholder="如：能耗抄表每日巡检" required></label>
+          <label>所属项目<select name="project" required>${projectList.map((name) => optionHTML(name, name, state.selectedProject)).join("") || optionHTML("默认项目", "默认项目")}</select></label>
+          <label>巡检点位<select name="pointId">${pointList.map((point) => optionHTML(point.id, `${point.project || "-"} · ${point.name || point.location || "-"}`)).join("")}</select></label>
+          <label>日报模板<select name="templateId">${templateList.map((tpl) => optionHTML(tpl.id, `${tpl.name || "-"} / ${tpl.assetType || "-"}`)).join("")}</select></label>
+          <label>执行频次<select name="frequency" required>
+            ${["每日 09:00", "每日 18:00", "每周一 09:00", "每月 1 日 09:00", "临时计划"].map((item) => optionHTML(item, item)).join("")}
+          </select></label>
+          <label>首次执行<input name="firstRun" type="datetime-local" value="${defaultDateTimeInput(18)}" required></label>
+          <label>责任人<select name="owner">${ownerOptions(state.currentUser?.displayName || "张三")}</select></label>
+          <label>AI 策略<select name="aiPolicy">
+            ${["视觉识别 + 人工确认", "视觉识别 + 异常复核", "仅人工填写", "先识别失败再人工兜底"].map((item) => optionHTML(item, item)).join("")}
+          </select></label>
+        </div>
+      </section>
+      <section class="drawer-section">
+        <h3>执行要求</h3>
+        <label>计划说明<textarea name="remark" placeholder="填写现场要求、拍照标准、异常处理口径。"></textarea></label>
+        <div class="drawer-note">
+          <b>生产口径</b><span>计划对象应绑定项目、点位、模板、频次和责任人；移动端按计划生成可执行任务，巡检结果回写巡检记录和资产台账。</span>
+        </div>
+      </section>
+      <div class="drawer-actions">
+        <button class="btn-ghost" type="button" data-drawer-cancel>取消</button>
+        <button class="primary" type="submit">保存计划</button>
+      </div>
+    </form>
+  `);
+}
+
+function openTaskDrawer() {
+  const plans = planRows();
+  openDrawer("派发巡检任务", `
+    <form class="drawer-form" id="adminTaskForm">
+      <section class="drawer-section">
+        <h3>任务来源</h3>
+        <div class="form-grid">
+          <label>来源计划<select name="planIndex" required>${plans.map((plan, index) => optionHTML(index, `${plan.project} · ${plan.name} · ${plan.point}`)).join("")}</select></label>
+          <label>任务标题<input name="title" placeholder="留空则按计划自动生成"></label>
+          <label>巡检人<select name="owner">${ownerOptions("巡检员")}</select></label>
+          <label>截止时间<input name="dueAt" type="datetime-local" value="${defaultDateTimeInput(8)}" required></label>
+          <label>优先级<select name="priority">${["普通", "紧急", "高优先级"].map((item) => optionHTML(item, item)).join("")}</select></label>
+          <label>任务状态<select name="status">${["待执行", "进行中"].map((item) => optionHTML(item, item)).join("")}</select></label>
+        </div>
+      </section>
+      <section class="drawer-section">
+        <h3>识别与复核要求</h3>
+        <div class="form-grid">
+          <label>AI 质量阈值<select name="qualityGate">${["低于 90% 进入复核", "低于 95% 进入复核", "识别失败三次转人工"].map((item) => optionHTML(item, item)).join("")}</select></label>
+          <label>拍照要求<select name="photoRule">${["必须上传现场照片", "至少 2 张照片", "按模板要求上传"].map((item) => optionHTML(item, item)).join("")}</select></label>
+        </div>
+        <label>执行备注<textarea name="remark" placeholder="如：重点核对表盘读数、小数点位置和设备编号。"></textarea></label>
+        <div class="drawer-note">
+          <b>派发口径</b><span>任务应明确计划、点位、巡检人、截止时间、AI 质量阈值和复核规则，避免只生成一句说明。</span>
+        </div>
+      </section>
+      <div class="drawer-actions">
+        <button class="btn-ghost" type="button" data-drawer-cancel>取消</button>
+        <button class="primary" type="submit">确认派发</button>
+      </div>
+    </form>
+  `);
+}
+
 function openGenericDrawer(type) {
+  if (type === "plan") return openPlanDrawer();
+  if (type === "task") return openTaskDrawer();
   const copy = {
-    plan: ["新建计划", "生产版本应从点位、模板、责任人和频次生成计划；当前页面已按现有点位与模板渲染。"],
-    task: ["派发任务", "任务应由计划自动生成，也可以由主管临时派发到巡检员。"],
     device: ["新增设备", "设备档案应包含编号、名称、类型、点位、模板、状态和二维码绑定。"],
     exception: ["批量处理", "批量处理需保留复核结果和处理人，不直接覆盖 AI 原始识别。"],
     approval: ["审批设置", "审批流建议保留申请人、审批人、变更前值、变更后值、处理意见。"],
@@ -1251,47 +3151,293 @@ function openGenericDrawer(type) {
   openDrawer(copy[0], `<p>${escapeHTML(copy[1])}</p>`);
 }
 
-function exportCsv(name, header, rows) {
-  const csv = [header, ...rows].map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n");
-  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+function createAdminPlan(form) {
+  const template = state.templates.find((tpl) => tpl.id === form.get("templateId")) || {};
+  const point = state.points.find((item) => item.id === form.get("pointId")) || {};
+  const project = String(form.get("project") || point.project || template.project || "默认项目");
+  const plan = {
+    id: clientId("plan"),
+    name: String(form.get("name") || template.name || point.name || "巡检计划").trim(),
+    project,
+    pointId: point.id || "",
+    pointName: point.name || point.location || "未配置点位",
+    templateId: template.id || "",
+    templateName: template.name || "默认日报模板",
+    frequency: String(form.get("frequency") || "每日 09:00"),
+    owner: String(form.get("owner") || "巡检员"),
+    nextRun: displayDateTimeInput(form.get("firstRun")),
+    aiPolicy: String(form.get("aiPolicy") || "视觉识别 + 人工确认"),
+    remark: String(form.get("remark") || "").trim(),
+    status: "启用",
+    createdAt: new Date().toISOString(),
+  };
+  state.customPlans.unshift(plan);
+  saveLocalArray(ADMIN_PLANS_KEY, state.customPlans);
+  renderProjectOptions();
+  closeDrawer();
+  setPage("plan", false);
+  toast("巡检计划已保存");
+}
+
+function createAdminTask(form) {
+  const plans = planRows();
+  const plan = plans[Number(form.get("planIndex"))] || {};
+  const task = {
+    id: clientId("task"),
+    title: String(form.get("title") || `${plan.name || "巡检"}任务`).trim(),
+    planName: plan.name || "",
+    project: plan.project || state.selectedProject || "默认项目",
+    pointName: plan.point || "-",
+    templateName: plan.templateName || "",
+    owner: String(form.get("owner") || "巡检员"),
+    dueAt: displayDateTimeInput(form.get("dueAt")),
+    priority: String(form.get("priority") || "普通"),
+    status: String(form.get("status") || "待执行"),
+    qualityGate: String(form.get("qualityGate") || ""),
+    photoRule: String(form.get("photoRule") || ""),
+    remark: String(form.get("remark") || "").trim(),
+    createdAt: new Date().toISOString(),
+  };
+  state.customTasks.unshift(task);
+  saveLocalArray(ADMIN_TASKS_KEY, state.customTasks);
+  closeDrawer();
+  setPage("task", false);
+  toast("巡检任务已派发");
+}
+
+function fieldSummary(record) {
+  return (record.fields || [])
+    .map((field) => `${field.label || field.code}：${field.value || field.aiValue || "-"}${field.needsReview ? "（需复核）" : ""}`)
+    .join("；");
+}
+
+function recommendationSummary(record) {
+  return (record.aiRecommendations || [])
+    .map((item) => `${item.category || item.priority || "建议"}：${item.text || ""}`)
+    .filter(Boolean)
+    .join("；");
+}
+
+function xmlEscape(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function xlsxCellText(value) {
+  const text = String(value ?? "");
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
+}
+
+function xlsxColumnName(index) {
+  let name = "";
+  let n = index;
+  while (n > 0) {
+    const mod = (n - 1) % 26;
+    name = String.fromCharCode(65 + mod) + name;
+    n = Math.floor((n - mod) / 26);
+  }
+  return name;
+}
+
+function crc32(bytes) {
+  if (!crc32.table) {
+    crc32.table = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+  }
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = crc32.table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function u16(value) {
+  return Uint8Array.of(value & 0xff, (value >>> 8) & 0xff);
+}
+
+function u32(value) {
+  return Uint8Array.of(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+}
+
+function concatBytes(parts) {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function zipDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+    date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+  };
+}
+
+function makeZip(files) {
+  const encoder = new TextEncoder();
+  const now = zipDateTime();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.name);
+    const contentBytes = typeof file.content === "string" ? encoder.encode(file.content) : file.content;
+    const crc = crc32(contentBytes);
+    const localHeader = concatBytes([
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(now.time), u16(now.date),
+      u32(crc), u32(contentBytes.length), u32(contentBytes.length), u16(nameBytes.length), u16(0), nameBytes,
+    ]);
+    localParts.push(localHeader, contentBytes);
+    const centralHeader = concatBytes([
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(now.time), u16(now.date),
+      u32(crc), u32(contentBytes.length), u32(contentBytes.length), u16(nameBytes.length), u16(0), u16(0),
+      u16(0), u16(0), u32(0), u32(offset), nameBytes,
+    ]);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + contentBytes.length;
+  }
+  const central = concatBytes(centralParts);
+  const end = concatBytes([
+    u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(central.length), u32(offset), u16(0),
+  ]);
+  return concatBytes([...localParts, central, end]);
+}
+
+function makeWorksheetXML(title, headers, rows, metaRows) {
+  const colCount = headers.length;
+  const now = new Date().toLocaleString("zh-CN", { hour12: false });
+  const sheetRows = [
+    { values: [title], style: 1, merge: true },
+    { values: [`导出时间：${now}　数据范围：${state.selectedProject || "全部项目"}　记录数：${rows.length}`], style: 2, merge: true },
+    ...metaRows.map(([key, value]) => ({ values: [`${key}：${value}`], style: 2, merge: true })),
+    { values: headers, style: 3 },
+    ...rows.map((row) => ({ values: row, style: 0 })),
+  ];
+  const lastCol = xlsxColumnName(colCount);
+  const headerRow = 3 + metaRows.length;
+  const widths = headers.map((header, colIndex) => {
+    const max = Math.max(
+      String(header || "").length,
+      ...rows.slice(0, 80).map((row) => String(row[colIndex] ?? "").length),
+    );
+    return Math.max(10, Math.min(36, Math.ceil(max * 1.45)));
+  });
+  const rowXml = sheetRows.map((row, rowIndex) => {
+    const r = rowIndex + 1;
+    const cells = Array.from({ length: colCount }, (_, colIndex) => {
+      const value = colIndex < row.values.length ? xlsxCellText(row.values[colIndex]) : "";
+      const ref = `${xlsxColumnName(colIndex + 1)}${r}`;
+      if (!value && row.merge && colIndex > 0) return "";
+      return `<c r="${ref}" t="inlineStr" s="${row.style}"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+    }).join("");
+    return `<row r="${r}">${cells}</row>`;
+  }).join("");
+  const merges = sheetRows
+    .map((row, index) => row.merge ? `<mergeCell ref="A${index + 1}:${lastCol}${index + 1}"/>` : "")
+    .filter(Boolean)
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:${lastCol}${sheetRows.length}"/>
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRow}" topLeftCell="A${headerRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="20"/>
+  <cols>${widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("")}</cols>
+  <sheetData>${rowXml}</sheetData>
+  ${merges ? `<mergeCells count="${sheetRows.filter((row) => row.merge).length}">${merges}</mergeCells>` : ""}
+</worksheet>`;
+}
+
+function exportExcel(name, title, headers, rows, metaRows = []) {
+  const worksheet = makeWorksheetXML(title, headers, rows, metaRows);
+  const created = new Date().toISOString();
+  const files = [
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>` },
+    { name: "docProps/app.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>JADEAST InspectAI</Application></Properties>` },
+    { name: "docProps/core.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>JADEAST 智巡</dc:creator><dc:title>${xmlEscape(title)}</dc:title><dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified></cp:coreProperties>` },
+    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEscape(title.slice(0, 31) || "Sheet1")}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { name: "xl/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Microsoft YaHei"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei"/></font></fonts><fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F2740"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F2740"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFCBD5E1"/></left><right style="thin"><color rgb="FFCBD5E1"/></right><top style="thin"><color rgb="FFCBD5E1"/></top><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="49" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="49" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="49" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="49" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` },
+    { name: "xl/worksheets/sheet1.xml", content: worksheet },
+  ];
+  const blob = new Blob([makeZip(files)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `${name}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
 }
 
-function exportAssetsCsv() {
+function exportAssetsWorkbook() {
   const rows = filteredAssets();
-  exportCsv("inspectai-assets", ["设备编号", "设备名称", "设备类型", "项目", "安装位置", "状态", "最近巡检时间", "管理摘要"], rows.map((asset) => [
-    assetKey(asset),
-    asset.assetName,
-    asset.assetType,
-    asset.project || asset.projectCode,
-    locationText(asset),
-    asset.lastStatus,
-    fmtTime(asset.lastInspectedAt),
-    asset.lastSummary,
-  ]));
-  toast(`已导出 ${rows.length} 条资产`);
+  exportExcel(
+    "智巡-资产台账",
+    "JADEAST 智巡资产台账",
+    ["序号", "资产ID", "设备编号", "设备名称", "设备类型", "所属项目", "安装位置", "当前状态", "状态等级", "最近巡检时间", "最近巡检人", "巡检次数", "管理摘要"],
+    rows.map((asset, index) => [
+      index + 1,
+      asset.id,
+      assetKey(asset),
+      asset.assetName,
+      asset.assetType,
+      asset.project || asset.projectCode,
+      locationText(asset),
+      asset.lastStatus,
+      asset.statusLevel || normalizeStatus(asset.lastStatus),
+      fmtTime(asset.lastInspectedAt),
+      asset.lastInspector || "-",
+      asset.inspectionCount || 0,
+      asset.lastSummary,
+    ]),
+    [
+      ["表格说明", "资产台账记录资产当前状态；巡检记录记录每一次现场事实，两者不可混用"],
+      ["导出口径", "按当前项目筛选和台账筛选条件导出"],
+    ],
+  );
+  toast(`已导出 ${rows.length} 条资产台账 Excel`);
 }
 
-function exportRecordsCsv() {
-  const rows = filteredRecords();
-  exportCsv("inspectai-records", ["巡检时间", "项目", "点位", "模板", "巡检人", "状态", "主要识别", "AI总结"], rows.map((record) => [
-    fmtTime(record.createdAt),
-    record.project,
-    record.pointName,
-    record.templateName,
-    record.inspector,
-    recordStatus(record),
-    primaryReading(record),
-    record.aiSummary || record.report,
-  ]));
-  toast(`已导出 ${rows.length} 条记录`);
+function exportRecordsWorkbook() {
+  const rows = state.page === "record" ? filteredRecordRows() : filteredRecords();
+  exportExcel(
+    "智巡-巡检记录",
+    "JADEAST 智巡巡检记录",
+    ["序号", "记录ID", "巡检时间", "所属项目", "巡检点位", "日报模板", "巡检人", "识别状态", "提交状态", "拍照次数", "主要识别", "字段明细", "AI 总结", "AI 建议"],
+    rows.map((record, index) => [
+      index + 1,
+      record.id,
+      fmtTime(record.createdAt),
+      record.project,
+      record.pointName,
+      record.templateName,
+      record.inspector,
+      statusLabel(record.recognitionStatus),
+      record.submitted ? "已提交" : "未提交",
+      record.captureAttempts || 0,
+      primaryReading(record),
+      fieldSummary(record),
+      record.aiSummary || record.report,
+      recommendationSummary(record),
+    ]),
+    [
+      ["表格说明", "巡检记录保留每一次拍照识别、人工确认和 AI 总结，不直接覆盖资产台账"],
+      ["导出口径", "按当前项目筛选和当前页记录范围导出"],
+    ],
+  );
+  toast(`已导出 ${rows.length} 条巡检记录 Excel`);
 }
 
 function bindEvents() {
@@ -1312,6 +3458,49 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    // U4 · 查看全部照片 / 收起
+    const photoAllBtn = event.target.closest(".photo-all-btn");
+    if (photoAllBtn) {
+      const strip = photoAllBtn.closest(".photo-strip");
+      const grid = strip?.querySelector(".photos");
+      if (strip && grid) {
+        const photos = JSON.parse(strip.dataset.photos || "[]");
+        const expanded = strip.classList.toggle("expanded");
+        grid.innerHTML = (expanded ? photos : photos.slice(0, 4))
+          .map((url) => `<img src="${url.replace(/"/g, "&quot;")}" alt="">`).join("") || `<div class="empty-photo"></div>`;
+        photoAllBtn.textContent = expanded ? "收起 ↑" : "查看全部 →";
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // U3 · 资产详情 tab 切换（cosmetic）
+    const detailTab = event.target.closest(".detail-tabs button");
+    if (detailTab) {
+      detailTab.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      detailTab.classList.add("active");
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // P5 · admin lightbox — 资产详情大图 / 巡检照片
+    const lightboxImg = event.target.closest(".asset-card .photo-strip .photos img, .photo-strip .photos img, .asset-photo img, .photo-row img, .timeline-photos img, .dash-rec-thumb img, .dash-asset-photo img");
+    if (lightboxImg && !event.target.closest(".admin-lightbox")) {
+      openAdminLightbox(lightboxImg.src);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.target.closest(".admin-lightbox")) {
+      closeAdminLightbox();
+      return;
+    }
+    if (event.target.closest("[data-drawer-cancel]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDrawer();
+      return;
+    }
     const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;
     const assetId = event.target.closest("[data-asset-select]")?.dataset.assetSelect;
     const recordId = event.target.closest("[data-record-select]")?.dataset.recordSelect;
@@ -1319,21 +3508,59 @@ function bindEvents() {
     const drawerType = event.target.closest("[data-drawer]")?.dataset.drawer;
     const normalId = event.target.closest("[data-asset-normal]")?.dataset.assetNormal;
     const reviewBtn = event.target.closest("[data-request-review]");
-    if (pageLink) setPage(pageLink);
+    const userBadge = event.target.closest(".admin-user");
+    if (reviewBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      await reviewRequest(reviewBtn.dataset.requestReview, reviewBtn.dataset.action || "approve");
+      return;
+    }
+    if (normalId) {
+      event.preventDefault();
+      event.stopPropagation();
+      await setAssetNormal(normalId);
+      return;
+    }
+    if (drawerType) {
+      event.preventDefault();
+      event.stopPropagation();
+      openGenericDrawer(drawerType);
+      return;
+    }
+    if (pageLink) {
+      event.preventDefault();
+      event.stopPropagation();
+      setPage(pageLink);
+      return;
+    }
+    if (userBadge) {
+      event.preventDefault();
+      event.stopPropagation();
+      setPage("profile");
+      return;
+    }
     if (assetId) {
+      event.preventDefault();
+      event.stopPropagation();
       state.selectedAssetId = assetId;
       if (state.page !== "ledger" && state.page !== "device" && state.page !== "exception") setPage("ledger");
       else render();
+      return;
     }
     if (recordId) {
+      event.preventDefault();
+      event.stopPropagation();
       state.selectedRecordId = recordId;
       if (state.page !== "record") setPage("record");
       else render();
+      return;
     }
-    if (requestId) openRequestDrawer(requestId);
-    if (drawerType) openGenericDrawer(drawerType);
-    if (normalId) await setAssetNormal(normalId);
-    if (reviewBtn) await reviewRequest(reviewBtn.dataset.requestReview, reviewBtn.dataset.action || "approve");
+    if (requestId) {
+      event.preventDefault();
+      event.stopPropagation();
+      openRequestDrawer(requestId);
+      return;
+    }
   });
 
   document.addEventListener("submit", async (event) => {
@@ -1346,6 +3573,16 @@ function bindEvents() {
       } catch (error) {
         renderLogin(error.message);
       }
+      return;
+    }
+    if (event.target.id === "adminPlanForm") {
+      event.preventDefault();
+      createAdminPlan(new FormData(event.target));
+      return;
+    }
+    if (event.target.id === "adminTaskForm") {
+      event.preventDefault();
+      createAdminTask(new FormData(event.target));
       return;
     }
     if (event.target.id !== "assetEditForm") return;
@@ -1363,10 +3600,21 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  if (!state.token) {
+    renderLogin();
+    return;
+  }
   setPage(state.page, false);
   try {
     await loadMe();
     await loadData(false);
+    // M30 · 回填：保证启用计划都有对应任务，回填完重渲染
+    let synced = 0;
+    (state.customPlans || []).forEach((p) => {
+      if (p.status === "启用") { syncPlanTask(p); synced++; }
+    });
+    updateUserBadge();
+    if (synced) render();
   } catch (error) {
     if (state.token) {
       state.token = "";
