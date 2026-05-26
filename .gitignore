@@ -1,0 +1,53 @@
+# ---- Claude Code / 编辑器 ----
+.claude/settings.local.json
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- Playwright 临时产物（每次浏览器调试都会产） ----
+.playwright-mcp/
+.playwright-cli/
+inspectai/.playwright-cli/
+
+# ---- 调试截图（你过去几周积累的 200+ 张） ----
+*.png
+*.jpg
+*.jpeg
+*.webp
+# 但保留项目里真正用到的图（不在根目录）
+!inspectai/admin-frontend/**/*.png
+!inspectai/admin-frontend/**/*.jpg
+!inspectai/admin-frontend/**/*.svg
+!inspectai/frontend/**/*.png
+!inspectai/frontend/**/*.jpg
+!inspectai/frontend/**/*.svg
+!test/**/*.png
+!test/**/*.jpg
+
+# ---- 老备份 / 归档 ----
+_archive/
+_recycle_*.ps1
+_recycle_*.tmp
+inspectai/release/
+inspectai/output/
+
+# ---- Go / Python 构建产物 ----
+inspectai/go-backend/server.exe
+inspectai/go-backend/server.exe~*
+inspectai/go-backend/server_clean.exe
+inspectai/.gocache/
+inspectai/.gotelemetry/
+__pycache__/
+*.pyc
+
+# ---- 运行时数据 / 日志 ----
+inspectai/storage/
+*.log
+*.pid
+
+# ---- 密钥（绝对不能推） ----
+inspectai/.env
+inspectai/.env.prod
+inspectai/.env.secure
+inspectai/secrets/
