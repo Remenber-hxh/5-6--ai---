@@ -1,0 +1,12 @@
+# InspectAI ai-service runtime dependencies
+#
+# run.py 目前完全使用 Python 标准库（http.server / urllib / subprocess+curl）
+# 故此处暂无第三方依赖。本文件保留是为了：
+#   1. 给 Docker build 一个稳定的 pip install 钩子，未来加 SDK（dashscope/openai/requests）
+#      只需追加一行即可，无需修改 Dockerfile。
+#   2. 锁定 pip / setuptools 版本，避免镜像基础层漂移。
+#
+# 加新依赖时请固定版本号（==），并跟 README 同步说明。
+
+# pip>=24.0
+# setuptools>=70.0
