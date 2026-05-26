@@ -1,17 +1,54 @@
+# ---- 凭据：永远不入镜像 ----
 .env
 .env.secure
 .env.prod
+.env.prod.example
+secrets/
+
+# ---- 构建/缓存产物 ----
 .gocache
 .gotelemetry
-storage
-release
-__pycache__
-*.pyc
-*.pid
-*.log
 go-backend/server.exe
 go-backend/server
 go-backend/*.exe
 go-backend/*.exe~
+go-backend/*.exe~*
 go-backend/server_clean.exe
 go-backend/cmd/server/*.go.*
+
+# ---- 运行时数据：不能入镜像，应走卷挂载 ----
+storage
+ai-service/__pycache__
+**/__pycache__
+*.pyc
+*.pid
+*.log
+
+# ---- 历史快照：build context 杀手（每份 ~50MB 含 frontend 资源） ----
+release/
+_archive/
+
+# ---- 测试 / 调试产物 ----
+.playwright-mcp/
+.playwright-cli/
+test/
+output/
+docs/
+
+# ---- 设计稿 / 备用资源（仅开发用，运行时不需要） ----
+admin-frontend/login-bg-options/
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- Git 元数据 ----
+.git/
+.gitignore
+
+# 说明：
+# 不全局 ignore *.png/*.jpg —— 因为 admin-frontend/login-bg.png、frontend/assets/*.jpg
+# 是 UI 必需资源，必须随镜像分发。仅排除已知的非业务图（playwright 截图都在
+# 仓库根目录，不在 inspectai/ 构建上下文里，已自动隔离）。

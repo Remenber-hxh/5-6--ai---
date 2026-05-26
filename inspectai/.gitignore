@@ -1,13 +1,17 @@
 storage/
 .env
 .env.secure
+.env.prod
+secrets/
 .gocache*/
 .gotelemetry*/
 go-backend/server.exe
 go-backend/server
+go-backend/server.exe~*
 __pycache__/
 *.pyc
 *.pid
 *.log
 go-backend/cmd/server/*.go.*
 go-backend/server_clean.exe
+output/
