@@ -1075,6 +1075,15 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	// 安全：如果有 session 用户登录，inspector 强制锁定到登录账号，
+	// 不允许前端传别人名字伪造巡检记录归属。
+	// 没 session（兜底 token 模式）仍允许 body 传 inspector。
+	if sessionUser, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		req.Inspector = strings.TrimSpace(sessionUser.DisplayName)
+		if req.Inspector == "" {
+			req.Inspector = sessionUser.Username
+		}
+	}
 	if req.Inspector == "" {
 		req.Inspector = "巡检员"
 	}
@@ -2829,8 +2838,10 @@ func (s *Server) handleWithdrawChangeRequest(w http.ResponseWriter, r *http.Requ
 // 返回 {tmpDir, files: [{id, fileName, ...}]}；申请通过时再 adoptTmpImages 搬到 record。
 func (s *Server) handleUploadDraftPhotos(w http.ResponseWriter, r *http.Request) {
 	// 必须提供身份才能写盘（防匿名 DOS 写满磁盘）。
-	if strings.TrimSpace(r.Header.Get("X-User-Name")) == "" {
-		writeError(w, http.StatusUnauthorized, "missing_user", "需要 X-User-Name 头")
+	// 优先 session 登录身份，其次 X-User-Name header。
+	_, sessionOK := s.userFromSessionToken(s.tokenFromRequest(r))
+	if !sessionOK && strings.TrimSpace(r.Header.Get("X-User-Name")) == "" {
+		writeError(w, http.StatusUnauthorized, "missing_user", "请先登录后再上传")
 		return
 	}
 	role := s.userRole(r)
