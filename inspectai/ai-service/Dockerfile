@@ -8,8 +8,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 系统级依赖：curl 是 run.py 调用 dashscope 的传输层，ca-certificates 走 HTTPS
-RUN apt-get update \
+# 切 apt 源到腾讯云镜像（国内构建提速 10-50 倍）。
+# Why: python:3.13-slim 基于 debian trixie，默认 deb.debian.org 国内拉很慢；
+#      trixie 用 DEB822 格式（/etc/apt/sources.list.d/debian.sources）。
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i 's|http://deb.debian.org|http://mirrors.tencent.com|g; s|http://security.debian.org|http://mirrors.tencent.com|g' /etc/apt/sources.list.d/debian.sources; \
+    elif [ -f /etc/apt/sources.list ]; then \
+      sed -i 's|http://deb.debian.org|http://mirrors.tencent.com|g; s|http://security.debian.org|http://mirrors.tencent.com|g' /etc/apt/sources.list; \
+    fi \
+ && apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 

@@ -3,7 +3,8 @@ FROM golang:1.24-alpine AS build
 
 ENV GOTELEMETRY=off \
     CGO_ENABLED=0 \
-    GOOS=linux
+    GOOS=linux \
+    GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /src
 
@@ -20,7 +21,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates wget tzdata \
+# 切 apk 源到腾讯云镜像（国内构建提速）
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tencent.com|g' /etc/apk/repositories \
+ && apk add --no-cache ca-certificates wget tzdata \
  && adduser -D -u 10001 inspectai
 
 WORKDIR /app
