@@ -27,6 +27,14 @@ WORKDIR /app
 COPY --from=build /out/inspectai /app/inspectai
 COPY frontend/ /app/frontend/
 
+# 预建 /app/storage 并归属非 root 用户。
+# Why: 生产用 app_storage 命名卷挂载到 /app/storage。
+# Docker 挂卷会继承容器内目录的 owner/perm（如果挂卷为空），
+# 没有这一步，挂卷后 /app/storage 是 root:root，inspectai 用户写不进，
+# 上传照片直接 permission denied。
+RUN mkdir -p /app/storage \
+ && chown -R inspectai:inspectai /app/storage /app
+
 USER inspectai
 EXPOSE 8080
 

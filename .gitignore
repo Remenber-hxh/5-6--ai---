@@ -32,6 +32,12 @@ _recycle_*.tmp
 inspectai/release/
 inspectai/output/
 inspectai/admin-frontend/login-bg-options/
+inspectai/docs/ui-design/
+inspectai/docs/CLAUDE_*.md
+docs/CLAUDE_*.md
+samples/
+test/
+*.zip
 
 # ---- Go / Python 构建产物 ----
 inspectai/go-backend/server.exe

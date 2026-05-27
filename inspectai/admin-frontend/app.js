@@ -21,9 +21,15 @@ const pageLabels = {
 };
 
 function defaultApiBase() {
-  const { protocol, hostname } = window.location;
+  // 生产场景：浏览器从 nginx 反代进来（80/443），后端在容器内，
+  // 同源就能访问 /api/* — 不能再硬编码 :18080，否则去访问不存在的端口。
+  // 本地开发场景：admin 静态服务在 18081，go-backend 在 18080，需要跨端口。
+  const { protocol, hostname, port } = window.location;
   if ((protocol === "http:" || protocol === "https:") && hostname) {
-    return `${protocol}//${hostname}:18080`;
+    if (port === "18081") {
+      return `${protocol}//${hostname}:18080`;
+    }
+    return window.location.origin;
   }
   return "http://127.0.0.1:18080";
 }
