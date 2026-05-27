@@ -24,6 +24,13 @@ SECRETS_DIR="$ROOT_DIR/secrets"
 mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
+# 容器内 inspectai 用户的 uid（go-backend / ai-service Dockerfile 里建的）。
+# host 上把 secret 文件 chown 给这个 uid，容器以非 root 启动时才能读到
+# bind-mount 进来的 /run/secrets/* 文件（docker compose 非 swarm 模式下
+# secret 的 uid/gid 选项被忽略，只能靠 host 文件本身的 owner）。
+CONTAINER_UID="${INSPECTAI_CONTAINER_UID:-10001}"
+CONTAINER_GID="${INSPECTAI_CONTAINER_GID:-10001}"
+
 write_secret() {
   local name="$1"
   local value="$2"
@@ -34,7 +41,9 @@ write_secret() {
   fi
   printf '%s' "$value" > "$path"
   chmod 600 "$path"
-  echo "✔ wrote $path ($(stat -c '%a %U' "$path"))"
+  # chown 给容器用户 uid，让非 root 容器进程能读 bind-mount 进去的 secret
+  chown "${CONTAINER_UID}:${CONTAINER_GID}" "$path" 2>/dev/null || true
+  echo "✔ wrote $path ($(stat -c '%a %u:%g' "$path"))"
 }
 
 # 必填 5 个

@@ -73,13 +73,10 @@ services:
       QWEN_TEXT_MODEL: ${QWEN_TEXT_MODEL:-qwen-plus}
       TMP_IMAGE_TTL_HOURS: ${TMP_IMAGE_TTL_HOURS:-24}
     secrets:
-      # 长格式：给 ai-service 容器内的 inspectai 用户 (uid 10001) 读取权限。
-      # Docker secret 默认挂载 mode 0444 但 owner 是 root，非 root 进程读不到。
-      - source: dashscope_api_key
-        target: dashscope_api_key
-        uid: "10001"
-        gid: "10001"
-        mode: 0400
+      # 短格式。非 swarm 模式下 uid/gid/mode 被忽略（Docker 会直接 bind-mount
+      # host 文件，owner 跟随 host）。所以正确做法是 host 上把 secret 文件
+      # chown 给 uid 10001（容器内 inspectai 用户）— 见 prepare-secrets.sh。
+      - dashscope_api_key
     volumes:
       - app_storage:/app/storage:ro
     expose:
@@ -114,27 +111,10 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       TMP_IMAGE_TTL_HOURS: ${TMP_IMAGE_TTL_HOURS:-24}
     secrets:
-      # 同上：go-backend 容器内 inspectai 用户 (uid 10001)
-      - source: mysql_dsn
-        target: mysql_dsn
-        uid: "10001"
-        gid: "10001"
-        mode: 0400
-      - source: inspectai_auth_token
-        target: inspectai_auth_token
-        uid: "10001"
-        gid: "10001"
-        mode: 0400
-      - source: inspectai_supervisor_token
-        target: inspectai_supervisor_token
-        uid: "10001"
-        gid: "10001"
-        mode: 0400
-      - source: inspectai_admin_password
-        target: inspectai_admin_password
-        uid: "10001"
-        gid: "10001"
-        mode: 0400
+      - mysql_dsn
+      - inspectai_auth_token
+      - inspectai_supervisor_token
+      - inspectai_admin_password
     volumes:
       - app_storage:/app/storage
     depends_on:
