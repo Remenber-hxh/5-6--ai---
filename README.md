@@ -23,13 +23,9 @@
 
 ## 界面预览
 
-| 移动端入口 | 管理端登录 | 真实巡检样例 |
-|---|---|---|
-| ![移动端科技首页](inspectai/frontend/assets/zhixun-hero-tech.png) | ![管理后台登录背景](inspectai/admin-frontend/login-bg-ai.png) | ![水表样例](inspectai/frontend/assets/demo-water-meter.jpg) |
-
-| 电表识别样例 | 配电面板样例 | 异常/漏拍补充样例 |
-|---|---|---|
-| ![电表样例](inspectai/frontend/assets/demo-electric-meter.jpg) | ![配电面板样例 1](inspectai/frontend/assets/demo-panel-01.jpg) | ![配电面板样例 2](inspectai/frontend/assets/demo-panel-02.jpg) |
+| 移动端入口 | 管理端登录 |
+|---|---|
+| ![移动端科技首页](inspectai/frontend/assets/zhixun-hero-tech.png) | ![管理后台登录背景](inspectai/admin-frontend/login-bg-ai.png) |
 
 ---
 
