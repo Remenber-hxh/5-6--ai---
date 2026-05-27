@@ -2419,14 +2419,18 @@ function usersTableHTML(action = "") {
           <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>部门</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
           <tbody>
             ${users.map((user) => `
-              <tr>
+              <tr data-user-row="${escapeHTML(user.id)}">
                 <td>${escapeHTML(user.username)}</td>
                 <td>${escapeHTML(user.displayName)}</td>
                 <td><span class="pill ${roleClass(user.roleCode)}">${escapeHTML(roleText(user))}</span></td>
                 <td>${escapeHTML(user.departmentName || "-")}</td>
-                <td><span class="status ${user.status === "active" ? "normal" : "warning"}">${escapeHTML(user.status || "-")}</span></td>
+                <td><span class="status ${user.status === "active" ? "normal" : "warning"}">${escapeHTML(user.status === "active" ? "启用" : "停用")}</span></td>
                 <td>${fmtTime(user.lastLoginAt)}</td>
-                <td><button class="mini-btn" data-user-action="edit">编辑</button><button class="mini-btn" data-user-action="toggle">${user.status === "active" ? "停用" : "启用"}</button></td>
+                <td class="user-row-actions">
+                  <button class="mini-btn" data-user-action="edit" data-user-id="${escapeHTML(user.id)}">编辑</button>
+                  <button class="mini-btn" data-user-action="reset" data-user-id="${escapeHTML(user.id)}">重置密码</button>
+                  <button class="mini-btn ${user.status === "active" ? "danger" : ""}" data-user-action="toggle" data-user-id="${escapeHTML(user.id)}">${user.status === "active" ? "停用" : "启用"}</button>
+                </td>
               </tr>
             `).join("") || `<tr><td colspan="7">暂无用户数据</td></tr>`}
           </tbody>
@@ -2434,6 +2438,171 @@ function usersTableHTML(action = "") {
       </div>
     </section>
   `;
+}
+
+// 角色 / 部门下拉数据缓存
+const identityMeta = { roles: null, departments: null };
+
+async function ensureIdentityMeta() {
+  if (!identityMeta.roles) {
+    const data = await safeApi("/api/roles", { roles: [] });
+    identityMeta.roles = (data.roles || []).filter((r) => r && r.code);
+    if (identityMeta.roles.length === 0) {
+      identityMeta.roles = [
+        { code: "admin", name: "系统管理员" },
+        { code: "manager", name: "管理人员" },
+        { code: "supervisor", name: "复核审批人员" },
+        { code: "inspector", name: "一线巡检员" },
+      ];
+    }
+  }
+  if (!identityMeta.departments) {
+    const data = await safeApi("/api/departments", { departments: [] });
+    identityMeta.departments = data.departments || [];
+    if (identityMeta.departments.length === 0) {
+      identityMeta.departments = [{ id: "dept_default", name: "默认部门" }];
+    }
+  }
+  return identityMeta;
+}
+
+function bindUsersPageActions() {
+  const main = $("#pageMain");
+  if (!main) return;
+  main.querySelector("#addUserBtn")?.addEventListener("click", () => openUserModal());
+  main.querySelectorAll("[data-user-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-user-id");
+      const action = btn.getAttribute("data-user-action");
+      const user = (state.users || []).find((u) => u.id === id);
+      if (!user) return;
+      if (action === "edit") openUserModal(user);
+      else if (action === "reset") openResetPasswordModal(user);
+      else if (action === "toggle") toggleUserStatus(user);
+    });
+  });
+}
+
+async function openUserModal(user = null) {
+  await ensureIdentityMeta();
+  const isEdit = !!user;
+  const modal = createUserModal(user);
+  document.body.appendChild(modal);
+  modal.querySelector("[data-modal-close]").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+  modal.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const payload = {
+      username: form.username.value.trim(),
+      displayName: form.displayName.value.trim(),
+      phone: form.phone.value.trim(),
+      roleCode: form.roleCode.value,
+      departmentId: form.departmentId.value,
+      weworkUserId: form.weworkUserId.value.trim(),
+    };
+    if (!isEdit) payload.password = form.password.value.trim();
+    if (!payload.username || !payload.displayName) {
+      toast("账号和姓名必填");
+      return;
+    }
+    if (!isEdit && (!payload.password || payload.password.length < 6)) {
+      toast("初始密码至少 6 位");
+      return;
+    }
+    try {
+      if (isEdit) {
+        await api(`/api/users/${encodeURIComponent(user.id)}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        toast("用户已更新");
+      } else {
+        await api("/api/users", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        toast("用户已创建");
+      }
+      modal.remove();
+      await loadData();
+    } catch (err) {
+      toast(err.message || "保存失败");
+    }
+  });
+}
+
+function createUserModal(user = null) {
+  const isEdit = !!user;
+  const roles = identityMeta.roles || [];
+  const departments = identityMeta.departments || [];
+  const u = user || { roleCode: "inspector", departmentId: "dept_default" };
+  const overlay = document.createElement("div");
+  overlay.className = "user-modal-overlay";
+  overlay.innerHTML = `
+    <div class="user-modal">
+      <div class="user-modal-head">
+        <h3>${isEdit ? "编辑账号" : "新建账号"}</h3>
+        <button type="button" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <form class="user-modal-form">
+        <label>账号 <input name="username" value="${escapeHTML(u.username || "")}" ${isEdit ? "disabled" : "required"} autocomplete="off"></label>
+        <label>姓名 <input name="displayName" value="${escapeHTML(u.displayName || "")}" required></label>
+        <label>角色
+          <select name="roleCode" required>
+            ${roles.map((r) => `<option value="${escapeHTML(r.code)}" ${r.code === u.roleCode ? "selected" : ""}>${escapeHTML(r.name)}</option>`).join("")}
+          </select>
+        </label>
+        <label>部门
+          <select name="departmentId">
+            ${departments.map((d) => `<option value="${escapeHTML(d.id)}" ${d.id === u.departmentId ? "selected" : ""}>${escapeHTML(d.name)}</option>`).join("")}
+          </select>
+        </label>
+        <label>手机号 <input name="phone" value="${escapeHTML(u.phone || "")}" placeholder="选填"></label>
+        <label>企业微信 UserID <input name="weworkUserId" value="${escapeHTML(u.weworkUserId || "")}" placeholder="选填，未来对接 SSO 用"></label>
+        ${isEdit ? "" : `<label>初始密码 <input name="password" type="text" placeholder="至少 6 位" required minlength="6"></label>`}
+        <div class="user-modal-actions">
+          <button type="button" data-modal-close class="btn-ghost">取消</button>
+          <button type="submit" class="btn-primary">${isEdit ? "保存" : "创建"}</button>
+        </div>
+      </form>
+    </div>
+  `;
+  return overlay;
+}
+
+async function openResetPasswordModal(user) {
+  const newPwd = window.prompt(`为「${user.displayName}」(${user.username}) 重置密码：\n输入新密码（至少 6 位）`);
+  if (!newPwd) return;
+  if (newPwd.trim().length < 6) {
+    toast("密码至少 6 位");
+    return;
+  }
+  try {
+    await api(`/api/users/${encodeURIComponent(user.id)}/password`, {
+      method: "POST",
+      body: JSON.stringify({ password: newPwd.trim() }),
+    });
+    toast(`已为 ${user.username} 重置密码`);
+  } catch (err) {
+    toast(err.message || "重置失败");
+  }
+}
+
+async function toggleUserStatus(user) {
+  const next = user.status === "active" ? "disabled" : "active";
+  const verb = next === "disabled" ? "停用" : "启用";
+  if (!window.confirm(`确认${verb}「${user.displayName}」(${user.username})？`)) return;
+  try {
+    await api(`/api/users/${encodeURIComponent(user.id)}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status: next }),
+    });
+    toast(`已${verb} ${user.username}`);
+    await loadData();
+  } catch (err) {
+    toast(err.message || `${verb}失败`);
+  }
 }
 
 function operationLogsHTML(action = "") {
@@ -2692,7 +2861,7 @@ function renderUsersPage() {
   `;
   $("#pageAside").innerHTML = asideStack(liveActivityCard());
   bindLiveActivity();
-  $("#addUserBtn")?.addEventListener("click", () => toast("用户新增接口预留中，当前先展示账号与权限台账"));
+  bindUsersPageActions();
 }
 
 function renderLogsPage() {
@@ -2750,6 +2919,7 @@ function renderSystemPage() {
   `;
   $("#pageAside").innerHTML = asideStack(liveActivityCard(), systemConfigForm());
   bindLiveActivity();
+  bindUsersPageActions();
   $("#saveSystemBtn").addEventListener("click", saveSystemConfigFromSide);
   $("#logoutBtn")?.addEventListener("click", logout);
   $("#systemConfigForm")?.addEventListener("submit", (event) => {

@@ -46,8 +46,16 @@ type Store interface {
 	EnsureIdentitySeed(seed IdentitySeed) error
 	AuthenticateUser(username, password string) (*User, *LoginSession, error)
 	GetUserBySession(token string) (*User, error)
+	GetUser(id string) (*User, error)
 	ListUsers() ([]*User, error)
+	CreateUser(user *User, password string) error
+	UpdateUserProfile(id string, mutate func(*User)) error
+	SetUserPassword(id, password string) error
+	SetUserStatus(id, status string) error
 	DeleteSession(token string) error
+	DeleteUserSessions(userID string) error
+	ListRoles() ([]*Role, error)
+	ListDepartments() ([]*Department, error)
 	CreateOperationLog(log *OperationLog) error
 	ListOperationLogs(limit int) ([]*OperationLog, error)
 

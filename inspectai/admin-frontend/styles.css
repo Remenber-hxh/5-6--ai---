@@ -7872,3 +7872,100 @@ button.profile-hero-logout,
   font-weight: 600;
 }
 
+
+/* ============ 用户管理弹窗 (期 1) ============ */
+.user-modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(15, 20, 30, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+.user-modal {
+  background: #fff;
+  border-radius: 16px;
+  width: min(440px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: slideUp 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+
+.user-modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 22px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.user-modal-head h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.user-modal-head [data-modal-close] {
+  background: none; border: none; font-size: 24px; line-height: 1;
+  color: #999; cursor: pointer; padding: 0 4px;
+}
+.user-modal-head [data-modal-close]:hover { color: #333; }
+
+.user-modal-form {
+  padding: 18px 22px 22px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.user-modal-form label {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 13px; color: #555;
+}
+.user-modal-form input,
+.user-modal-form select {
+  padding: 9px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fafafa;
+  transition: border-color 0.15s, background 0.15s;
+}
+.user-modal-form input:focus,
+.user-modal-form select:focus {
+  outline: none;
+  border-color: #4a90e2;
+  background: #fff;
+}
+.user-modal-form input:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.user-modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 6px;
+}
+.user-modal-actions .btn-ghost,
+.user-modal-actions .btn-primary {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+}
+.user-modal-actions .btn-ghost {
+  background: transparent;
+  color: #666;
+  border: 1px solid #e0e0e0;
+}
+.user-modal-actions .btn-ghost:hover { background: #f5f5f5; }
+.user-modal-actions .btn-primary {
+  background: #1a1a1a;
+  color: #fff;
+}
+.user-modal-actions .btn-primary:hover { background: #000; }
+
+.user-row-actions {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.user-row-actions .mini-btn.danger {
+  color: #c0392b;
+  border-color: rgba(192, 57, 43, 0.3);
+}
+.user-row-actions .mini-btn.danger:hover {
+  background: rgba(192, 57, 43, 0.08);
+}

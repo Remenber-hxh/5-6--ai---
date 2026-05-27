@@ -204,6 +204,146 @@ func (s *MemStore) DeleteSession(token string) error {
 	return nil
 }
 
+func (s *MemStore) DeleteUserSessions(userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for token, sess := range s.sessions {
+		if sess.UserID == userID {
+			delete(s.sessions, token)
+		}
+	}
+	return nil
+}
+
+func (s *MemStore) GetUser(id string) (*User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.users[id]
+	if !ok {
+		return nil, sql.ErrNoRows
+	}
+	return cloneUser(item.user), nil
+}
+
+func (s *MemStore) CreateUser(user *User, password string) error {
+	if strings.TrimSpace(user.Username) == "" {
+		return errors.New("username required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return errors.New("password required")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.users {
+		if item.user.Username == user.Username {
+			return errors.New("username already exists")
+		}
+	}
+	if user.ID == "" {
+		user.ID = newID("user")
+	}
+	now := time.Now()
+	user.CreatedAt = now
+	user.UpdatedAt = now
+	if user.Status == "" {
+		user.Status = "active"
+	}
+	user.RoleName = roleNameByCode(user.RoleCode)
+	if user.DepartmentID == "" {
+		user.DepartmentID = "dept_default"
+		user.DepartmentName = "默认部门"
+	}
+	s.users[user.ID] = &memUser{user: cloneUser(user), passwordHash: hash}
+	return nil
+}
+
+func (s *MemStore) UpdateUserProfile(id string, mutate func(*User)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.users[id]
+	if !ok {
+		return sql.ErrNoRows
+	}
+	mutate(item.user)
+	item.user.UpdatedAt = time.Now()
+	item.user.RoleName = roleNameByCode(item.user.RoleCode)
+	return nil
+}
+
+func (s *MemStore) SetUserPassword(id, password string) error {
+	if strings.TrimSpace(password) == "" {
+		return errors.New("password required")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.users[id]
+	if !ok {
+		return sql.ErrNoRows
+	}
+	item.passwordHash = hash
+	item.user.UpdatedAt = time.Now()
+	return nil
+}
+
+func (s *MemStore) SetUserStatus(id, status string) error {
+	if status != "active" && status != "disabled" {
+		return errors.New("invalid status")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.users[id]
+	if !ok {
+		return sql.ErrNoRows
+	}
+	item.user.Status = status
+	item.user.UpdatedAt = time.Now()
+	if status == "disabled" {
+		for token, sess := range s.sessions {
+			if sess.UserID == id {
+				delete(s.sessions, token)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *MemStore) ListRoles() ([]*Role, error) {
+	return defaultRoles(), nil
+}
+
+func (s *MemStore) ListDepartments() ([]*Department, error) {
+	return []*Department{
+		{ID: "dept_default", Name: "默认部门", CreatedAt: time.Now()},
+	}, nil
+}
+
+func roleNameByCode(code string) string {
+	for _, r := range defaultRoles() {
+		if r.Code == code {
+			return r.Name
+		}
+	}
+	return code
+}
+
+func defaultRoles() []*Role {
+	now := time.Now()
+	return []*Role{
+		{ID: "role_admin", Code: "admin", Name: "系统管理员", Description: "系统配置、用户管理、全部数据权限", CreatedAt: now},
+		{ID: "role_manager", Code: "manager", Name: "管理人员", Description: "资产台账、统计报表、项目管理", CreatedAt: now},
+		{ID: "role_supervisor", Code: "supervisor", Name: "复核审批人员", Description: "异常复核、修改审批、巡检记录查看", CreatedAt: now},
+		{ID: "role_inspector", Code: "inspector", Name: "一线巡检员", Description: "移动端拍照巡检、日报提交、修改申请", CreatedAt: now},
+	}
+}
+
 func (s *MemStore) CreateOperationLog(logItem *OperationLog) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -379,6 +519,189 @@ func (s *SQLiteStore) ListUsers() ([]*User, error) {
 func (s *SQLiteStore) DeleteSession(token string) error {
 	_, err := s.db.Exec(`DELETE FROM login_sessions WHERE token_hash=?`, hashToken(token))
 	return err
+}
+
+func (s *SQLiteStore) DeleteUserSessions(userID string) error {
+	_, err := s.db.Exec(`DELETE FROM login_sessions WHERE user_id=?`, userID)
+	return err
+}
+
+func (s *SQLiteStore) GetUser(id string) (*User, error) {
+	q := userSelectSQL() + ` WHERE u.id=? LIMIT 1`
+	u, _, err := scanUserWithHash(s.db.QueryRow(q, id))
+	return u, err
+}
+
+func (s *SQLiteStore) CreateUser(user *User, password string) error {
+	if strings.TrimSpace(user.Username) == "" {
+		return errors.New("username required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return errors.New("password required")
+	}
+	if err := s.ensureDefaultRoles(); err != nil {
+		return err
+	}
+	if err := s.ensureDefaultDepartment(); err != nil {
+		return err
+	}
+	// 唯一性预检（schema 也有 UNIQUE 约束兜底）
+	var dup int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM users WHERE username=?`, user.Username).Scan(&dup); err != nil {
+		return err
+	}
+	if dup > 0 {
+		return errors.New("username already exists")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	if user.ID == "" {
+		user.ID = newID("user")
+	}
+	if user.Status == "" {
+		user.Status = "active"
+	}
+	if user.RoleID == "" {
+		user.RoleID = roleIDFromCode(user.RoleCode)
+	}
+	if user.DepartmentID == "" {
+		user.DepartmentID = "dept_default"
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO users (
+			id, username, display_name, phone, avatar, role_id, department_id,
+			wework_user_id, password_hash, status, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		user.ID, user.Username, user.DisplayName, user.Phone, user.Avatar,
+		user.RoleID, user.DepartmentID, user.WeworkUserID, hash, user.Status, now, now,
+	)
+	if err != nil {
+		return err
+	}
+	saved, getErr := s.GetUser(user.ID)
+	if getErr == nil && saved != nil {
+		*user = *saved
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateUserProfile(id string, mutate func(*User)) error {
+	u, err := s.GetUser(id)
+	if err != nil {
+		return err
+	}
+	mutate(u)
+	if u.RoleID == "" {
+		u.RoleID = roleIDFromCode(u.RoleCode)
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	res, err := s.db.Exec(`
+		UPDATE users SET
+			display_name=?, phone=?, avatar=?, role_id=?, department_id=?,
+			wework_user_id=?, updated_at=?
+		WHERE id=?`,
+		u.DisplayName, u.Phone, u.Avatar, u.RoleID,
+		nullableString(u.DepartmentID), u.WeworkUserID, now, id,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *SQLiteStore) SetUserPassword(id, password string) error {
+	if strings.TrimSpace(password) == "" {
+		return errors.New("password required")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	res, err := s.db.Exec(`UPDATE users SET password_hash=?, updated_at=? WHERE id=?`, hash, now, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	// 改密码后强制登出所有 session
+	_, _ = s.db.Exec(`DELETE FROM login_sessions WHERE user_id=?`, id)
+	return nil
+}
+
+func (s *SQLiteStore) SetUserStatus(id, status string) error {
+	if status != "active" && status != "disabled" {
+		return errors.New("invalid status")
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	res, err := s.db.Exec(`UPDATE users SET status=?, updated_at=? WHERE id=?`, status, now, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	if status == "disabled" {
+		_, _ = s.db.Exec(`DELETE FROM login_sessions WHERE user_id=?`, id)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListRoles() ([]*Role, error) {
+	rows, err := s.db.Query(`SELECT id, code, name, description, created_at FROM roles ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Role
+	for rows.Next() {
+		r := &Role{}
+		var createdStr string
+		if err := rows.Scan(&r.ID, &r.Code, &r.Name, &r.Description, &createdStr); err != nil {
+			return nil, err
+		}
+		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdStr)
+		out = append(out, r)
+	}
+	if len(out) == 0 {
+		return defaultRoles(), nil
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListDepartments() ([]*Department, error) {
+	rows, err := s.db.Query(`SELECT id, name, COALESCE(parent_id, ''), created_at FROM departments ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Department
+	for rows.Next() {
+		d := &Department{}
+		var createdStr string
+		if err := rows.Scan(&d.ID, &d.Name, &d.ParentID, &createdStr); err != nil {
+			return nil, err
+		}
+		d.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdStr)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func roleIDFromCode(code string) string {
+	for _, r := range defaultRoles() {
+		if r.Code == code {
+			return r.ID
+		}
+	}
+	return "role_inspector"
 }
 
 func (s *SQLiteStore) CreateOperationLog(logItem *OperationLog) error {

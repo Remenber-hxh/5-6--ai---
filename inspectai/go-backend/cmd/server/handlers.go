@@ -48,6 +48,14 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleLogout(w, r)
 	case r.URL.Path == "/api/users" && r.Method == http.MethodGet:
 		s.handleListUsers(w, r)
+	case r.URL.Path == "/api/users" && r.Method == http.MethodPost:
+		s.handleCreateUser(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/users/"):
+		s.handleUserRoutes(w, r)
+	case r.URL.Path == "/api/roles" && r.Method == http.MethodGet:
+		s.handleListRoles(w, r)
+	case r.URL.Path == "/api/departments" && r.Method == http.MethodGet:
+		s.handleListDepartments(w, r)
 	case r.URL.Path == "/api/operation-logs" && r.Method == http.MethodGet:
 		s.handleListOperationLogs(w, r)
 	case r.URL.Path == "/api/inspection/points" && r.Method == http.MethodGet:
@@ -383,6 +391,250 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+// hasAdminAccess 仅 admin 角色（用户管理操作）。
+// hasSupervisorAccess 更宽松（admin/manager/supervisor 都算）。
+func (s *Server) hasAdminAccess(r *http.Request) bool {
+	return s.userRole(r) == roleAdmin
+}
+
+type userUpsertRequest struct {
+	Username     string `json:"username"`
+	DisplayName  string `json:"displayName"`
+	Phone        string `json:"phone"`
+	Avatar       string `json:"avatar"`
+	RoleCode     string `json:"roleCode"`
+	DepartmentID string `json:"departmentId"`
+	WeworkUserID string `json:"weworkUserId"`
+	Password     string `json:"password"`
+}
+
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	if !s.hasAdminAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅系统管理员可新建账号")
+		return
+	}
+	var req userUpsertRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Username == "" || req.DisplayName == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "账号 / 姓名 / 初始密码 都不能为空")
+		return
+	}
+	if !isValidRoleCode(req.RoleCode) {
+		writeError(w, http.StatusBadRequest, "bad_request", "角色无效（admin/manager/supervisor/inspector）")
+		return
+	}
+	user := &User{
+		Username:     req.Username,
+		DisplayName:  req.DisplayName,
+		Phone:        strings.TrimSpace(req.Phone),
+		Avatar:       strings.TrimSpace(req.Avatar),
+		RoleCode:     req.RoleCode,
+		DepartmentID: strings.TrimSpace(req.DepartmentID),
+		WeworkUserID: strings.TrimSpace(req.WeworkUserID),
+		Status:       "active",
+	}
+	if err := s.store.CreateUser(user, req.Password); err != nil {
+		status := http.StatusInternalServerError
+		code := "create_user_failed"
+		if strings.Contains(err.Error(), "already exists") {
+			status = http.StatusConflict
+			code = "username_exists"
+		}
+		writeError(w, status, code, err.Error())
+		return
+	}
+	s.recordOperation(r, "user.create", "user", user.ID, map[string]any{
+		"username": user.Username,
+		"role":     user.RoleCode,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+// handleUserRoutes 处理 /api/users/<id>[/password|/status]
+func (s *Server) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.hasAdminAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅系统管理员可管理账号")
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/api/users/")
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) == 0 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not_found", "缺少用户 ID")
+		return
+	}
+	userID := parts[0]
+	sub := ""
+	if len(parts) == 2 {
+		sub = parts[1]
+	}
+	switch {
+	case sub == "" && r.Method == http.MethodPut:
+		s.handleUpdateUser(w, r, userID)
+	case sub == "password" && r.Method == http.MethodPost:
+		s.handleResetUserPassword(w, r, userID)
+	case sub == "status" && r.Method == http.MethodPost:
+		s.handleSetUserStatus(w, r, userID)
+	default:
+		writeError(w, http.StatusNotFound, "not_found", "未匹配的用户路由")
+	}
+}
+
+func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID string) {
+	var req userUpsertRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.RoleCode != "" && !isValidRoleCode(req.RoleCode) {
+		writeError(w, http.StatusBadRequest, "bad_request", "角色无效")
+		return
+	}
+	err := s.store.UpdateUserProfile(userID, func(u *User) {
+		if v := strings.TrimSpace(req.DisplayName); v != "" {
+			u.DisplayName = v
+		}
+		if req.Phone != "" {
+			u.Phone = strings.TrimSpace(req.Phone)
+		}
+		if req.Avatar != "" {
+			u.Avatar = strings.TrimSpace(req.Avatar)
+		}
+		if req.RoleCode != "" {
+			u.RoleCode = req.RoleCode
+			u.RoleID = roleIDFromCode(req.RoleCode)
+		}
+		if req.DepartmentID != "" {
+			u.DepartmentID = strings.TrimSpace(req.DepartmentID)
+		}
+		if req.WeworkUserID != "" {
+			u.WeworkUserID = strings.TrimSpace(req.WeworkUserID)
+		}
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "user_not_found", "用户不存在")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "update_user_failed", err.Error())
+		return
+	}
+	user, _ := s.store.GetUser(userID)
+	s.recordOperation(r, "user.update", "user", userID, map[string]any{
+		"role": req.RoleCode,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (s *Server) handleResetUserPassword(w http.ResponseWriter, r *http.Request, userID string) {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	req.Password = strings.TrimSpace(req.Password)
+	if len(req.Password) < 6 {
+		writeError(w, http.StatusBadRequest, "bad_request", "密码长度至少 6 位")
+		return
+	}
+	if err := s.store.SetUserPassword(userID, req.Password); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "user_not_found", "用户不存在")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "reset_password_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "user.reset_password", "user", userID, nil)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleSetUserStatus(w http.ResponseWriter, r *http.Request, userID string) {
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	req.Status = strings.TrimSpace(req.Status)
+	if req.Status != "active" && req.Status != "disabled" {
+		writeError(w, http.StatusBadRequest, "bad_request", "status 必须是 active / disabled")
+		return
+	}
+	// 安全护栏：不允许停用自己 / 不允许停用最后一个 admin
+	if currentUser, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok && currentUser.ID == userID && req.Status == "disabled" {
+		writeError(w, http.StatusBadRequest, "self_disable", "不能停用当前登录账号")
+		return
+	}
+	if req.Status == "disabled" {
+		if target, err := s.store.GetUser(userID); err == nil && target.RoleCode == roleAdmin {
+			users, _ := s.store.ListUsers()
+			activeAdmins := 0
+			for _, u := range users {
+				if u.RoleCode == roleAdmin && u.Status == "active" {
+					activeAdmins++
+				}
+			}
+			if activeAdmins <= 1 {
+				writeError(w, http.StatusBadRequest, "last_admin", "至少需要 1 个启用状态的系统管理员")
+				return
+			}
+		}
+	}
+	if err := s.store.SetUserStatus(userID, req.Status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "user_not_found", "用户不存在")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "set_status_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "user.set_status", "user", userID, map[string]any{"status": req.Status})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": req.Status})
+}
+
+func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "需要管理权限")
+		return
+	}
+	roles, err := s.store.ListRoles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_roles_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"roles": roles})
+}
+
+func (s *Server) handleListDepartments(w http.ResponseWriter, r *http.Request) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "需要管理权限")
+		return
+	}
+	depts, err := s.store.ListDepartments()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_departments_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"departments": depts})
+}
+
+func isValidRoleCode(code string) bool {
+	switch code {
+	case roleAdmin, roleManager, roleSupervisor, roleInspector:
+		return true
+	}
+	return false
 }
 
 func (s *Server) handleListOperationLogs(w http.ResponseWriter, r *http.Request) {
