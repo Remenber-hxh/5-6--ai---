@@ -154,8 +154,13 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # ACME HTTP-01 webroot：acme.sh 把验证文件丢这里，CA 经 nginx 取
+      - ./nginx/acme-webroot:/var/www/acme:ro
+      # SSL 证书目录：acme.sh 装证书到这里，nginx 加 443 server block 时引用
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       go-backend:
         condition: service_healthy
