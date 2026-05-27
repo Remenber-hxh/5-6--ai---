@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -1727,17 +1728,33 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(s.frontendDir, "index.html"))
 		return
 	}
-	cleanURL := filepath.Clean(r.URL.Path)
-	// 二次校验：阻止 .. 段、绝对路径、Windows 盘符等逃逸到 frontendDir 之外
-	if strings.Contains(cleanURL, "..") || filepath.IsAbs(cleanURL) || (len(cleanURL) >= 2 && cleanURL[1] == ':') {
+	// 用 path.Clean（URL 路径包，跨平台一致）而不是 filepath.Clean
+	// 后者在 Linux 会把 "/styles.css" 当作绝对路径，导致下面 IsAbs 误判返 403。
+	cleanURL := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+	rel := strings.TrimPrefix(cleanURL, "/")
+	if rel == "" || rel == "." {
+		http.ServeFile(w, r, filepath.Join(s.frontendDir, "index.html"))
+		return
+	}
+	// 二次校验：阻止 .. 段、Windows 盘符等逃逸到 frontendDir 之外
+	if strings.Contains(rel, "..") || filepath.IsAbs(rel) || (len(rel) >= 2 && rel[1] == ':') {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	path := filepath.Join(s.frontendDir, cleanURL)
-	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+	fullPath := filepath.Join(s.frontendDir, filepath.FromSlash(rel))
+	// 终态校验：解出的最终路径必须仍在 frontendDir 子树里（防符号链接 / Join 行为差异）
+	if absRoot, err := filepath.Abs(s.frontendDir); err == nil {
+		if absTarget, err := filepath.Abs(fullPath); err == nil {
+			if !strings.HasPrefix(absTarget, absRoot+string(filepath.Separator)) && absTarget != absRoot {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
+	}
+	if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
 		// 静态资源（含 ?v= 查询串）允许浏览器缓存，但默认不强缓存
 		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeFile(w, r, path)
+		http.ServeFile(w, r, fullPath)
 		return
 	}
 	http.ServeFile(w, r, filepath.Join(s.frontendDir, "index.html"))
