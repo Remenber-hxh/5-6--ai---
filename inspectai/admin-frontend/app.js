@@ -52,6 +52,7 @@ const state = {
   selectedProject: "",
   selectedAssetId: "",
   selectedRecordId: "",
+  assetHistory: {},
   recordPage: 0,
   filters: {
     assetType: "",
@@ -62,6 +63,7 @@ const state = {
     project: "",
     template: "",
     status: "",
+    flowStatus: "",
     keyword: "",
   },
   planFilters: {
@@ -157,6 +159,23 @@ async function safeApi(path, fallback) {
   }
 }
 
+// 资产历史以后端权威匹配为准（recordTouchesAsset），前端拿 templateId 松匹配会把
+// 同模板其它设备的记录串进同一台设备。拉一次缓存到 state.assetHistory[id]，失败也写空数组防重拉。
+const assetHistoryInflight = new Set();
+async function loadAssetHistory(assetId) {
+  if (!assetId || assetId in state.assetHistory || assetHistoryInflight.has(assetId)) return;
+  assetHistoryInflight.add(assetId);
+  try {
+    const data = await api(`/api/assets/${encodeURIComponent(assetId)}`);
+    state.assetHistory[assetId] = data.history || [];
+  } catch {
+    state.assetHistory[assetId] = [];
+  } finally {
+    assetHistoryInflight.delete(assetId);
+  }
+  render();
+}
+
 async function login(username, password) {
   const res = await fetch(state.apiBase + "/api/auth/login", {
     method: "POST",
@@ -220,7 +239,8 @@ function normalizeStatus(status = "") {
 }
 
 const ASSET_STATUS_OPTIONS = ["正常", "待复核", "异常", "待维修", "未巡检", "未知"];
-const RECORD_STATUS_OPTIONS = ["已提交", "待复核", "异常", "识别中", "需重拍", "人工填写", "未开始"];
+const RECORD_RESULT_OPTIONS = ["正常", "待复核", "异常"];
+const RECORD_FLOW_OPTIONS = ["未开始", "识别中", "已识别", "需重拍", "人工填写", "已提交"];
 const PLAN_STATUS_OPTIONS = ["启用", "暂停", "草稿", "已停用"];
 
 function statusLabel(value = "") {
@@ -292,24 +312,48 @@ function primaryReading(record) {
   return `${field.label || field.code}=${field.value || field.aiValue}`;
 }
 
+const ABNORMAL_VALUE_RE = /异常|告警|故障|离线|不合格|超标|漏水|渗漏|报警|破损|损坏|缺失|跳闸|烧毁/;
+
 function recordLevel(record) {
-  if (record.manualRequired || record.recognitionStatus === "manual_required") return "warning";
-  const text = [
-    record.aiSummary,
-    record.report,
-    record.retakeReason,
-    ...(record.fields || []).map((field) => `${field.value} ${field.reason} ${field.needsReview ? "复核" : ""}`),
-  ].join(" ");
-  if (/异常|告警|故障|离线|不合格|超标|风险/.test(text)) return "danger";
-  if (/复核|缺失|未填写|重拍|人工/.test(text)) return "warning";
+  // 异常只认「人工确认后的字段值」，不扫 AI 总结 / 报告 / 解释文本：
+  // 旧实现会把总结里的"未发现异常"、报告里的"需人工复核"误判成异常/待复核，
+  // 导致正常的已提交记录全被标成异常或待复核、normal 一条都露不出来。
+  const valueText = (record.fields || []).map((field) => String(field.value || "")).join(" ");
+  if (ABNORMAL_VALUE_RE.test(valueText)) return "danger";
+  // 已提交：提交时已拦截所有 needsReview / 必填缺失，无异常值即视为正常。
+  if (record.submitted) return "normal";
+  // 未提交：仍需人工介入的（低置信待确认 / 需重拍）标为待复核，其余按识别流程状态展示。
+  if ((record.fields || []).some((field) => field.needsReview)) return "warning";
+  if (record.recognitionStatus === "retake_required") return "warning";
   return "normal";
 }
 
-function recordStatus(record) {
+// 是否已产出可判定结果（已提交 / AI 已识别 / 已有字段值）。未到结果阶段不强标"正常"。
+function hasInspectionResult(record) {
+  if (record.submitted || record.recognitionStatus === "recognized") return true;
+  return (record.fields || []).some((field) => String(field.value || "").trim());
+}
+
+// 业务结果状态：正常 / 待复核 / 异常 / ""（尚无结果）。主管真正关心的是这一轴。
+function recordResultStatus(record) {
+  if (!hasInspectionResult(record)) return "";
   const level = recordLevel(record);
   if (level === "danger") return "异常";
   if (level === "warning") return "待复核";
-  return record.submitted ? "已提交" : statusLabel(record.recognitionStatus);
+  return "正常";
+}
+
+// 流程状态：AI 识别 / 提交流程走到哪一步，与结果无关。
+function recordFlowStatus(record) {
+  if (record.submitted) return "已提交";
+  if (record.manualRequired || record.recognitionStatus === "manual_required") return "人工填写";
+  const map = { not_started: "未开始", queued: "识别中", processing: "识别中", recognized: "已识别", retake_required: "需重拍" };
+  return map[record.recognitionStatus] || "未开始";
+}
+
+// 主状态（单标签展示位复用）：结果优先，无结果时回退流程状态。
+function recordStatus(record) {
+  return recordResultStatus(record) || recordFlowStatus(record);
 }
 
 function projects() {
@@ -385,18 +429,15 @@ function filteredRecordRows() {
   const filters = state.recordFilters;
   const project = filters.project.trim();
   const template = filters.template.trim();
-  const status = filters.status.trim();
+  const result = filters.status.trim();                 // 结果状态筛选：正常 / 待复核 / 异常
+  const flowStatus = (filters.flowStatus || "").trim();  // 流程状态筛选：未开始 … 已提交
   const keyword = filters.keyword.trim().toLowerCase();
   return state.records.filter((record) => {
     if (state.selectedProject && !project && record.project !== state.selectedProject) return false;
     if (project && record.project !== project) return false;
     if (template && record.templateName !== template && record.templateId !== template) return false;
-    if (status) {
-      const level = normalizeStatus(status);
-      const recordLevelValue = recordLevel(record);
-      const labels = [recordStatus(record), statusLabel(record.recognitionStatus)].filter(Boolean);
-      if (!labels.includes(status) && recordLevelValue !== level) return false;
-    }
+    if (result && recordResultStatus(record) !== result) return false;
+    if (flowStatus && recordFlowStatus(record) !== flowStatus) return false;
     if (!keyword) return true;
     return recordSearchText(record).includes(keyword);
   });
@@ -456,6 +497,7 @@ async function loadData(showToast = true) {
     ]);
     state.assets = assets.assets || [];
     state.records = records.records || [];
+    state.assetHistory = {}; // 数据整轮刷新后清缓存，避免历史陈旧
     state.requests = requests.requests || [];
     state.points = points.points || [];
     state.templates = templates.templates || [];
@@ -1915,13 +1957,17 @@ function renderRecordPage() {
         <div class="panel-actions record-toolbar">${recordFiltersHTML()}<button id="exportRecordsBtn">导出记录</button></div>
       </div>
       <div class="record-list">
-        ${records.map((record) => `
+        ${records.map((record) => {
+          const result = recordResultStatus(record);
+          const flow = recordFlowStatus(record);
+          const main = result || flow;
+          return `
           <article data-record-select="${escapeHTML(record.id)}" class="${record.id === state.selectedRecordId ? "selected-card" : ""}">
             <time>${fmtTime(record.createdAt)}</time>
             <div><b>${escapeHTML(record.pointName || record.templateName || "巡检记录")}</b><span>${escapeHTML(primaryReading(record) || record.aiSummary || record.report || "-")}</span></div>
-            <em class="status ${statusClass(recordStatus(record))}">${escapeHTML(recordStatus(record))}</em>
-          </article>
-        `).join("") || `<div class="empty-state">暂无巡检记录</div>`}
+            <div class="status-col"><em class="status ${statusClass(main)}">${escapeHTML(main)}</em>${result ? `<small class="flow-tag">${escapeHTML(flow)}</small>` : ""}</div>
+          </article>`;
+        }).join("") || `<div class="empty-state">暂无巡检记录</div>`}
       </div>
       <div class="pager">
         <span>共 ${all.length} 条 · 第 ${state.recordPage + 1}/${totalPages} 页</span>
@@ -1961,16 +2007,13 @@ function recordFiltersHTML() {
     const value = record.templateName || record.templateId;
     if (value) templateMap.set(value, record.templateName || record.templateId);
   });
-  const statusOptions = [...new Set([
-    ...RECORD_STATUS_OPTIONS,
-    ...state.records.map((record) => recordStatus(record)).filter(Boolean),
-    ...state.records.map((record) => statusLabel(record.recognitionStatus)).filter(Boolean),
-  ].filter((status) => status && status !== "-"))];
+  const opt = (val, cur) => `<option value="${escapeHTML(val)}" ${cur === val ? "selected" : ""}>${escapeHTML(val)}</option>`;
   return `
     <div class="filters">
       <select id="recordProjectFilter"><option value="">全部项目</option>${projectOptions.map((project) => `<option value="${escapeHTML(project)}" ${state.recordFilters.project === project ? "selected" : ""}>${escapeHTML(project)}</option>`).join("")}</select>
       <select id="recordTemplateFilter"><option value="">全部模板</option>${Array.from(templateMap.entries()).map(([value, label]) => `<option value="${escapeHTML(value)}" ${state.recordFilters.template === value ? "selected" : ""}>${escapeHTML(label)}</option>`).join("")}</select>
-      <select id="recordStatusFilter"><option value="">全部状态</option>${statusOptions.map((status) => `<option value="${escapeHTML(status)}" ${state.recordFilters.status === status ? "selected" : ""}>${escapeHTML(status)}</option>`).join("")}</select>
+      <select id="recordStatusFilter"><option value="">全部结果</option>${RECORD_RESULT_OPTIONS.map((s) => opt(s, state.recordFilters.status)).join("")}</select>
+      <select id="recordFlowFilter"><option value="">全部流程</option>${RECORD_FLOW_OPTIONS.map((s) => opt(s, state.recordFilters.flowStatus)).join("")}</select>
       <input id="recordKeywordInput" type="search" placeholder="搜索巡检人 / 点位" value="${escapeHTML(state.recordFilters.keyword)}" />
     </div>
   `;
@@ -1992,6 +2035,10 @@ function bindRecordFilters() {
   });
   $("#recordStatusFilter")?.addEventListener("change", (event) => {
     state.recordFilters.status = event.target.value;
+    refresh();
+  });
+  $("#recordFlowFilter")?.addEventListener("change", (event) => {
+    state.recordFilters.flowStatus = event.target.value;
     refresh();
   });
   $("#recordKeywordInput")?.addEventListener("input", (event) => {
@@ -2954,7 +3001,10 @@ function selectedRecord() {
 
 function renderAssetSide(asset) {
   if (!asset) return `<div class="detail-head"><h2>资产详情</h2></div><div class="empty-state">暂无资产数据</div>`;
-  const history = state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId || record.templateId === asset.templateId);
+  if (!(asset.id in state.assetHistory)) loadAssetHistory(asset.id); // 未命中则后台拉权威历史，回来再重渲染
+  const history = (asset.id in state.assetHistory)
+    ? state.assetHistory[asset.id]
+    : state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
   const photos = collectAssetPhotos(asset, history);
   return `
     <div class="detail-head"><h2>资产详情</h2></div>

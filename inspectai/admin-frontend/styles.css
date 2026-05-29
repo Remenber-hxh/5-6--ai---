@@ -1097,11 +1097,23 @@ body.login-screen .login-card .primary:hover {
 }
 
 .record-toolbar .filters {
-  display: grid;
-  grid-template-columns: minmax(118px, 0.62fr) minmax(118px, 0.62fr) minmax(112px, 0.55fr) minmax(190px, 1fr);
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   width: 100%;
+}
+
+/* 自适应排列：下拉等宽、搜索框占更大权重，新增筛选项也不再撑破布局 */
+.record-toolbar .filters select {
+  flex: 1 1 108px;
+  min-width: 88px;
+}
+
+.record-toolbar .filters input[type="search"] {
+  flex: 2 1 180px;
+  min-width: 150px;
 }
 
 .plan-toolbar .filters {
@@ -1400,6 +1412,19 @@ td i {
 
 .record-list article {
   grid-template-columns: 120px 1fr auto;
+}
+
+.status-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.flow-tag {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
 }
 
 .queue-item:hover,
