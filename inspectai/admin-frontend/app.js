@@ -2955,7 +2955,7 @@ function renderSystemPage() {
       <div class="panel-head"><div><h2>部署配置</h2><p>云服务器迁移前检查项。</p></div><button id="saveSystemBtn">保存配置</button></div>
       <div class="table-wrap">
         <table><tbody>
-          <tr><td>公网域名</td><td>api.your-domain.com</td><td><span class="status warning">待配置证书</span></td></tr>
+          <tr><td>公网域名</td><td>ai-demo.jadeastech.com</td><td><span class="status normal">HTTPS 已启用</span></td></tr>
           <tr><td>企业微信回调</td><td>/wework/callback</td><td><span class="status normal">预留</span></td></tr>
           <tr><td>对象存储</td><td>MinIO / OSS</td><td><span class="status warning">可替换</span></td></tr>
         </tbody></table>
