@@ -75,11 +75,17 @@ const API = {
     return API.json(`/api/inspection/records/${id}/ai-tasks`, { method: "POST" });
   },
   latestTask(id) { return API.json(`/api/inspection/records/${id}/ai/latest`); },
-  patchField(id, code, value, version) {
+  // §4 防惰性留痕：除 value/version 外可带 action(confirm/correct/uncertain)
+  // + 该字段停留时长 durationMs + 是否看过原图 viewedPhoto。后端按这些写 field_confirm_logs。
+  patchField(id, code, value, version, opts = {}) {
+    const body = { value, version };
+    if (opts.action) body.action = opts.action;
+    if (typeof opts.durationMs === "number" && opts.durationMs > 0) body.durationMs = opts.durationMs;
+    if (opts.viewedPhoto) body.viewedPhoto = true;
     return API.json(`/api/inspection/records/${id}/fields/${encodeURIComponent(code)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value, version }),
+      body: JSON.stringify(body),
     });
   },
   // ===== 修改申请（审批流） =====
@@ -697,9 +703,14 @@ async function renderForm() {
       ${rec.fields.map(renderField).join("")}
     </div>
   `;
-  // 绑定 input 变更 → 实时 PATCH
+  // 绑定 input 变更 → 实时 PATCH；focus 时打开停留计时器（用于 §4 留痕的 durationMs）
   groups.querySelectorAll("[data-field-input]").forEach(el => {
+    el.addEventListener("focus", () => trackFieldFocus(el.dataset.fieldCode));
     el.addEventListener("change", () => saveField(el.dataset.fieldCode));
+  });
+  // 「我无法判定」按钮 → 标记此字段为 uncertain，等主管复核
+  groups.querySelectorAll("[data-mark-uncertain]").forEach(btn => {
+    btn.addEventListener("click", () => markUncertain(btn.dataset.markUncertain));
   });
   // 缩略图点击 → 弹大图
   const strip = $("#formPhotoStrip");
@@ -713,12 +724,26 @@ async function renderForm() {
   }
 }
 
+// §4 防惰性留痕的客户端轻量埋点：每个字段的最近一次 focus 时间 + 表单期间是否打开过原图。
+// 在 saveField / markUncertain 时算出 durationMs、连同 viewedPhoto 一起 PATCH 给后端。
+const FieldAudit = { focusAt: {}, viewedPhoto: false };
+function trackFieldFocus(code) {
+  if (code) FieldAudit.focusAt[code] = Date.now();
+}
+function popFieldDurationMs(code) {
+  const t = FieldAudit.focusAt[code];
+  if (!t) return 0;
+  delete FieldAudit.focusAt[code];
+  return Date.now() - t;
+}
+
 // ===== 图片大图预览 =====
 const Lightbox = { images: [], index: 0 };
 function openLightbox(images, index) {
   if (!images || !images.length) return;
   Lightbox.images = images;
   Lightbox.index = Math.max(0, Math.min(index, images.length - 1));
+  FieldAudit.viewedPhoto = true; // 表单期间打开过原图 → 留痕里标 viewedPhoto=true
   renderLightbox();
   $("#imageLightbox").hidden = false;
   document.body.style.overflow = "hidden";
@@ -802,6 +827,7 @@ function renderField(field) {
       <div class="field block">
         <div class="label">${escapeHTML(field.label)}${reqMark} ${pillText ? `<span class="ai-pill ${pillClass}">${pillText}</span>` : ""}</div>
         <textarea data-field-input data-field-code="${escapeHTML(field.code)}" placeholder="可选填写">${escapeHTML(field.value)}</textarea>
+        <button class="mark-uncertain" type="button" data-mark-uncertain="${escapeHTML(field.code)}">我无法判定</button>
       </div>
     `;
   } else {
@@ -815,6 +841,7 @@ function renderField(field) {
         ${pillText ? `<span class="ai-pill ${pillClass}">${pillText}</span>` : ""}
         ${control}
       </div>
+      <button class="mark-uncertain" type="button" data-mark-uncertain="${escapeHTML(field.code)}">我无法判定</button>
     </div>
   `;
 }
@@ -937,15 +964,47 @@ async function saveField(code) {
   if (!el) return;
   const field = state.record.fields.find(f => f.code === code);
   if (!field) return;
+  const opts = {
+    durationMs: popFieldDurationMs(code),
+    viewedPhoto: FieldAudit.viewedPhoto,
+  };
   try {
-    const updated = await API.patchField(state.record.id, code, el.value, field.version);
+    const updated = await API.patchField(state.record.id, code, el.value, field.version, opts);
     Object.assign(field, updated);
+    FieldAudit.viewedPhoto = false; // 留痕一次后重置「是否看图」标记
     // 刷新 pill 显示
     const fieldEl = el.closest(".field");
     const pill = fieldEl.querySelector(".ai-pill");
     if (pill) {
       pill.className = "ai-pill " + pillFor(field);
       pill.textContent = pillTextFor(field);
+    }
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+// §4 mark_uncertain：人工无法判定，保留待复核交主管抽查；后端会写一条 uncertain 留痕。
+async function markUncertain(code) {
+  if (!state.record) return;
+  const field = state.record.fields.find(f => f.code === code);
+  if (!field) return;
+  const el = document.querySelector(`[data-field-input][data-field-code="${CSS.escape(code)}"]`);
+  const currentValue = el ? el.value : (field.value || "");
+  const opts = {
+    action: "uncertain",
+    durationMs: popFieldDurationMs(code),
+    viewedPhoto: FieldAudit.viewedPhoto,
+  };
+  try {
+    const updated = await API.patchField(state.record.id, code, currentValue, field.version, opts);
+    Object.assign(field, updated);
+    FieldAudit.viewedPhoto = false;
+    toast(`${field.label} 已标记为待主管复核`);
+    const fieldEl = el ? el.closest(".field") : null;
+    if (fieldEl) {
+      const pill = fieldEl.querySelector(".ai-pill");
+      if (pill) { pill.className = "ai-pill warn"; pill.textContent = "待主管复核"; }
     }
   } catch (err) {
     toast(err.message);
