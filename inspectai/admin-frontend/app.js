@@ -52,7 +52,8 @@ const state = {
   selectedProject: "",
   selectedAssetId: "",
   selectedRecordId: "",
-  assetHistory: {},
+  assetDetails: {}, // §3 资产详情缓存：{ id → { history, total, page, pageSize, trend } }
+  confirmLogs: {},  // §4 记录的字段确认留痕：{ recordId → [log,...] }
   recordPage: 0,
   filters: {
     assetType: "",
@@ -159,19 +160,45 @@ async function safeApi(path, fallback) {
   }
 }
 
-// 资产历史以后端权威匹配为准（recordTouchesAsset），前端拿 templateId 松匹配会把
-// 同模板其它设备的记录串进同一台设备。拉一次缓存到 state.assetHistory[id]，失败也写空数组防重拉。
-const assetHistoryInflight = new Set();
-async function loadAssetHistory(assetId) {
-  if (!assetId || assetId in state.assetHistory || assetHistoryInflight.has(assetId)) return;
-  assetHistoryInflight.add(assetId);
+// §3 资产详情：拉「分页历史快照 + 后端规则算的字段趋势」。
+// 历史用 asset_snapshots 表，不再受巡检记录 100/200 窗口限制；趋势数值字段才有意义。
+const assetDetailInflight = new Set();
+async function loadAssetDetail(assetId) {
+  if (!assetId || assetId in state.assetDetails || assetDetailInflight.has(assetId)) return;
+  assetDetailInflight.add(assetId);
   try {
-    const data = await api(`/api/assets/${encodeURIComponent(assetId)}`);
-    state.assetHistory[assetId] = data.history || [];
+    const id = encodeURIComponent(assetId);
+    const [hist, rep] = await Promise.all([
+      safeApi(`/api/assets/${id}/records?page=1&pageSize=20`, { records: [], total: 0, page: 1, pageSize: 20 }),
+      safeApi(`/api/assets/${id}/report?range=90d`, { fields: [] }),
+    ]);
+    state.assetDetails[assetId] = {
+      history: hist.records || [],
+      total: hist.total || 0,
+      page: hist.page || 1,
+      pageSize: hist.pageSize || 20,
+      trend: rep.fields || [],
+    };
   } catch {
-    state.assetHistory[assetId] = [];
+    state.assetDetails[assetId] = { history: [], total: 0, page: 1, pageSize: 20, trend: [] };
   } finally {
-    assetHistoryInflight.delete(assetId);
+    assetDetailInflight.delete(assetId);
+  }
+  render();
+}
+
+// §4 字段确认留痕：拉某条记录的所有 field_confirm_logs，展示给主管做防惰性追溯。
+const confirmLogsInflight = new Set();
+async function loadConfirmLogs(recordId) {
+  if (!recordId || recordId in state.confirmLogs || confirmLogsInflight.has(recordId)) return;
+  confirmLogsInflight.add(recordId);
+  try {
+    const data = await api(`/api/inspection/records/${encodeURIComponent(recordId)}/confirm-logs`);
+    state.confirmLogs[recordId] = data.logs || [];
+  } catch {
+    state.confirmLogs[recordId] = [];
+  } finally {
+    confirmLogsInflight.delete(recordId);
   }
   render();
 }
@@ -471,6 +498,61 @@ function collectPhotosFromRecord(record) {
   return (record.images || []).map((image) => mediaUrl(image.path)).filter(Boolean);
 }
 
+function truncateText(str, n) {
+  const s = String(str || "");
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+function formatNum(n) {
+  if (typeof n !== "number" || !isFinite(n)) return "-";
+  const abs = Math.abs(n);
+  if (abs >= 1000) return n.toFixed(0);
+  if (abs >= 10) return n.toFixed(1);
+  return n.toFixed(2);
+}
+
+function renderSparkline(points) {
+  if (!points || points.length < 2) return "";
+  const vals = points.map((p) => Number(p.value));
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const w = 180, h = 32, padY = 3;
+  const step = w / (points.length - 1);
+  const d = vals.map((v, i) => {
+    const x = (i * step).toFixed(1);
+    const y = (h - padY - ((v - min) / range) * (h - 2 * padY)).toFixed(1);
+    return (i ? "L" : "M") + x + "," + y;
+  }).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="#246bfe" stroke-width="1.5"/></svg>`;
+}
+
+// §3 字段趋势卡片：本次/上次/近7均 + 变化率徽章 + 简易折线
+function renderTrendCard(field) {
+  const cur = formatNum(field.current);
+  const prev = formatNum(field.previous);
+  const avg = formatNum(field.avgRecent);
+  let rate = "-";
+  let rateClass = "";
+  if (typeof field.changeRate === "number" && isFinite(field.changeRate)) {
+    rate = (field.changeRate >= 0 ? "+" : "") + (field.changeRate * 100).toFixed(1) + "%";
+    rateClass = field.overThreshold ? "danger" : (field.changeRate > 0 ? "up" : (field.changeRate < 0 ? "down" : ""));
+  }
+  return `
+    <div class="trend-card">
+      <div class="trend-card-head">
+        <span class="trend-label">${escapeHTML(field.fieldLabel || field.fieldKey)}</span>
+        <span class="trend-rate ${rateClass}">${escapeHTML(rate)}</span>
+      </div>
+      <div class="trend-spark">${renderSparkline(field.points || [])}</div>
+      <div class="trend-meta">
+        <span>本次 <b>${escapeHTML(cur)}</b></span>
+        <span>上次 <b>${escapeHTML(prev)}</b></span>
+        <span>近7均 <b>${escapeHTML(avg)}</b></span>
+      </div>
+    </div>
+  `;
+}
+
 function collectAssetPhotos(asset, history = []) {
   const paths = [];
   if (asset?.coverImage?.path) paths.push(asset.coverImage.path);
@@ -497,7 +579,8 @@ async function loadData(showToast = true) {
     ]);
     state.assets = assets.assets || [];
     state.records = records.records || [];
-    state.assetHistory = {}; // 数据整轮刷新后清缓存，避免历史陈旧
+    state.assetDetails = {}; // §3 资产详情(历史+趋势)缓存随数据刷新清空
+    state.confirmLogs = {};  // §4 字段确认留痕缓存随数据刷新清空
     state.requests = requests.requests || [];
     state.points = points.points || [];
     state.templates = templates.templates || [];
@@ -3001,11 +3084,19 @@ function selectedRecord() {
 
 function renderAssetSide(asset) {
   if (!asset) return `<div class="detail-head"><h2>资产详情</h2></div><div class="empty-state">暂无资产数据</div>`;
-  if (!(asset.id in state.assetHistory)) loadAssetHistory(asset.id); // 未命中则后台拉权威历史，回来再重渲染
-  const history = (asset.id in state.assetHistory)
-    ? state.assetHistory[asset.id]
-    : state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
-  const photos = collectAssetPhotos(asset, history);
+  if (!(asset.id in state.assetDetails)) loadAssetDetail(asset.id); // 未命中则后台拉历史+趋势，回来重渲染
+  const detail = state.assetDetails[asset.id];
+  const snapshots = detail ? detail.history : [];
+  const trend = detail ? detail.trend : [];
+  const total = detail ? detail.total : 0;
+  // 照片仍从本地 records 集合里取（snapshots 只带元数据不带 images）
+  const localHist = state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
+  const photos = collectAssetPhotos(asset, localHist);
+  const trendHTML = trend.length ? `
+    <div class="asset-trend">
+      <h4>字段趋势 <small>近 90 天 · 后端规则计算</small></h4>
+      <div class="trend-cards">${trend.map(renderTrendCard).join("")}</div>
+    </div>` : "";
   return `
     <div class="detail-head"><h2>资产详情</h2></div>
     <div class="asset-card">
@@ -3018,13 +3109,15 @@ function renderAssetSide(asset) {
         <div><span>最近巡检</span><b>${fmtTime(asset.lastInspectedAt)}</b></div>
       </div>
       <div class="info-card"><b>台账摘要</b><span>${escapeHTML(asset.lastSummary || "暂无管理摘要。")}</span></div>
+      ${trendHTML}
       <div class="detail-tabs"><button class="active">巡检记录</button><button>字段历史</button><button>异常记录</button><button>关联文件</button></div>
       <table class="history-table">
-        <thead><tr><th>巡检时间</th><th>巡检人</th><th>识别结果</th><th>状态</th></tr></thead>
-        <tbody>${history.slice(0, 5).map((record) => `
-          <tr><td>${fmtTime(record.createdAt)}</td><td>${escapeHTML(record.inspector || "-")}</td><td>${escapeHTML(primaryReading(record) || statusLabel(record.recognitionStatus))}</td><td><span class="status ${statusClass(recordStatus(record))}">${escapeHTML(recordStatus(record))}</span></td></tr>
-        `).join("") || emptyRow(4, "暂无历史巡检")}</tbody>
+        <thead><tr><th>巡检时间</th><th>巡检人</th><th>状态</th><th>结果摘要</th></tr></thead>
+        <tbody>${snapshots.slice(0, 5).map((sn) => `
+          <tr><td>${fmtTime(sn.createdAt)}</td><td>${escapeHTML(sn.inspector || "-")}</td><td><span class="status ${statusClass(sn.status)}">${escapeHTML(sn.status || "-")}</span></td><td>${escapeHTML(truncateText(sn.summary, 50))}</td></tr>
+        `).join("") || emptyRow(4, detail ? "暂无历史巡检" : "正在加载历史…")}</tbody>
       </table>
+      <div class="history-foot">${total > 0 ? `共 <b>${total}</b> 条历史巡检${total > 5 ? "（已显示最近 5 条）" : ""}` : ""}</div>
       <div class="photo-strip" data-photos='${escapeHTML(JSON.stringify(photos))}'><h3>巡检照片 <small>共 ${photos.length} 张</small>${photos.length > 4 ? `<button class="link-btn photo-all-btn" type="button">查看全部 →</button>` : ""}</h3><div class="photos">${photos.slice(0, 4).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("") || `<div class="empty-photo"></div>`}</div></div>
       <form class="edit-form" id="assetEditForm">
         <label>资产名称<input name="assetName" value="${escapeHTML(asset.assetName || "")}"></label>
@@ -3039,12 +3132,44 @@ function renderAssetSide(asset) {
 function renderRecordSide(record) {
   if (!record) return `<div class="detail-head"><h2>记录详情</h2></div><div class="empty-state">暂无巡检记录</div>`;
   const photos = collectPhotosFromRecord(record);
+  if (!(record.id in state.confirmLogs)) loadConfirmLogs(record.id);
+  const logs = state.confirmLogs[record.id] || [];
+  // §4 复核留痕：展示最近 8 条字段确认/修正/标疑动作
+  const confirmHTML = logs.length ? `
+    <div class="info-card">
+      <b>复核留痕 <small>共 ${logs.length} 次字段确认 · 防惰性留痕</small></b>
+      <div class="confirm-logs">${logs.slice().reverse().slice(0, 8).map(renderConfirmLogRow).join("")}</div>
+    </div>` : "";
   return `
     <div class="detail-head"><h2>记录详情</h2></div>
     <div class="side-stack">
       <div class="info-card"><b>AI 总结</b><span>${escapeHTML(record.aiSummary || record.report || "暂无总结")}</span></div>
       <div class="photo-row">${photos.slice(0, 2).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("")}</div>
       <table class="history-table"><thead><tr><th>字段</th><th>值</th><th>置信度</th></tr></thead><tbody>${(record.fields || []).slice(0, 8).map((field) => `<tr><td>${escapeHTML(field.label || field.code)}</td><td>${escapeHTML(field.value || field.aiValue || "-")}</td><td>${Math.round((field.confidence || 0) * 100)}%</td></tr>`).join("") || emptyRow(3, "暂无字段")}</tbody></table>
+      ${confirmHTML}
+    </div>
+  `;
+}
+
+// §4 复核留痕单行：AI 原值 → 最终值，置信度，是否看图，停留时长，操作人
+function renderConfirmLogRow(log) {
+  const ACT = { confirm: "确认", correct: "修正", uncertain: "标疑" };
+  const act = ACT[log.action] || log.action || "-";
+  const actClass = log.action === "correct" ? "warning" : (log.action === "uncertain" ? "danger" : "normal");
+  const conf = Math.round((log.aiConfidence || 0) * 100);
+  const viewed = log.viewedPhoto ? "看图" : "未看图";
+  const dur = log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-";
+  return `
+    <div class="confirm-row">
+      <div class="confirm-row-head">
+        <span class="confirm-label">${escapeHTML(log.fieldLabel || log.fieldKey || "-")}</span>
+        <span class="status ${actClass}">${escapeHTML(act)}</span>
+      </div>
+      <div class="confirm-row-body">
+        <span>AI <code>${escapeHTML(log.aiValue || "-")}</code> → 最终 <code>${escapeHTML(log.finalValue || "-")}</code></span>
+        <span>置信度 ${conf}% · ${viewed} · 停留 ${dur}</span>
+        <span class="confirm-meta">${escapeHTML(log.operator || "-")} · ${fmtTime(log.createdAt)}</span>
+      </div>
     </div>
   `;
 }

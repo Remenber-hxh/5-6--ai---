@@ -1427,6 +1427,125 @@ td i {
   white-space: nowrap;
 }
 
+/* §3 资产字段趋势卡 */
+.asset-trend {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+.asset-trend > h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.asset-trend > h4 small {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+.trend-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.trend-card {
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.trend-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.trend-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2a3d;
+}
+.trend-rate {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #64748b;
+  background: #f1f5f9;
+  white-space: nowrap;
+}
+.trend-rate.up     { color: #b8741a; background: #fef3c7; }
+.trend-rate.down   { color: #047857; background: #d1fae5; }
+.trend-rate.danger { color: #b91c1c; background: #fee2e2; }
+.trend-spark { margin: 4px 0; }
+.trend-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+.trend-meta b { color: #1f2a3d; font-weight: 700; }
+
+.history-foot {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  color: #64748b;
+  text-align: right;
+}
+.history-foot b { color: #1f2a3d; font-weight: 700; }
+
+/* §4 字段确认留痕条目 */
+.confirm-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.confirm-row {
+  padding: 6px 8px;
+  background: #f8fafc;
+  border-left: 3px solid #cbd5e1;
+  border-radius: 0 4px 4px 0;
+}
+.confirm-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.confirm-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2a3d;
+}
+.confirm-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #475569;
+}
+.confirm-row-body code {
+  padding: 0 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 10px;
+}
+.confirm-meta {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
 .queue-item:hover,
 .timeline-item:hover,
 .record-list article:hover {
