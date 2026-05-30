@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -906,19 +907,167 @@ func assetGroupValues(groups map[string]*AssetGroupSummary) []AssetGroupSummary 
 }
 
 func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/assets/")
-	if id == "" || strings.Contains(id, "/") {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/assets/")
+	if rest == "" {
+		writeError(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	// 子资源：/api/assets/{id}/records、/api/assets/{id}/report（按已知后缀匹配，
+	// 避免资产 id 里的分隔符干扰；assetID 形如 项目::模板::key，不含 /）
+	if id := strings.TrimSuffix(rest, "/records"); id != rest {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetRecords(w, r, id)
+		return
+	}
+	if id := strings.TrimSuffix(rest, "/report"); id != rest {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetReport(w, r, id)
+		return
+	}
+	if strings.Contains(rest, "/") {
 		writeError(w, http.StatusNotFound, "not_found", "")
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		s.handleGetAsset(w, r, id)
+		s.handleGetAsset(w, r, rest)
 	case http.MethodPatch:
-		s.handlePatchAsset(w, r, id)
+		s.handlePatchAsset(w, r, rest)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
 	}
+}
+
+// handleAssetRecords —— §3 按资产分页翻完整历史（查 asset_snapshots，不受记录列表窗口限制）
+func (s *Server) handleAssetRecords(w http.ResponseWriter, r *http.Request, id string) {
+	asset, err := s.store.GetAsset(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
+		return
+	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	total, _ := s.store.CountAssetSnapshots(id)
+	snaps, err := s.store.ListAssetSnapshots(id, pageSize, (page-1)*pageSize)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"asset":      asset,
+		"records":    snaps,
+		"page":       page,
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": totalPages,
+	})
+}
+
+type fieldTrendPoint struct {
+	Time  string  `json:"time"`
+	Value float64 `json:"value"`
+}
+
+type fieldTrend struct {
+	FieldKey      string            `json:"fieldKey"`
+	FieldLabel    string            `json:"fieldLabel"`
+	Points        []fieldTrendPoint `json:"points"`
+	Current       *float64          `json:"current,omitempty"`
+	Previous      *float64          `json:"previous,omitempty"`
+	AvgRecent     *float64          `json:"avgRecent,omitempty"`
+	ChangeRate    *float64          `json:"changeRate,omitempty"`
+	OverThreshold bool              `json:"overThreshold"`
+}
+
+// handleAssetReport —— §3/§5 设备健康报告：对数值字段算 本次/上次/近N均值/变化率/超阈值。
+// 趋势由后端规则计算，不依赖大模型；AI 只负责把这些数字转成可读摘要。
+func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id string) {
+	if _, err := s.store.GetAsset(id); err != nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
+		return
+	}
+	days := 30
+	switch r.URL.Query().Get("range") {
+	case "7d":
+		days = 7
+	case "90d":
+		days = 90
+	}
+	since := time.Now().AddDate(0, 0, -days)
+	obs, err := s.store.ListFieldObservations(id, "", 1000)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	grouped := map[string]*fieldTrend{}
+	order := []string{}
+	for _, o := range obs {
+		if o.ValueNumber == nil || o.CreatedAt.Before(since) {
+			continue
+		}
+		ft, ok := grouped[o.FieldKey]
+		if !ok {
+			ft = &fieldTrend{FieldKey: o.FieldKey, FieldLabel: o.FieldLabel}
+			grouped[o.FieldKey] = ft
+			order = append(order, o.FieldKey)
+		}
+		ft.Points = append(ft.Points, fieldTrendPoint{Time: o.CreatedAt.Format("2006-01-02 15:04"), Value: *o.ValueNumber})
+	}
+	trends := []*fieldTrend{}
+	for _, k := range order {
+		ft := grouped[k]
+		n := len(ft.Points)
+		if n == 0 {
+			continue
+		}
+		cur := ft.Points[n-1].Value
+		ft.Current = &cur
+		if n >= 2 {
+			prev := ft.Points[n-2].Value
+			ft.Previous = &prev
+			if prev != 0 {
+				cr := (cur - prev) / prev
+				ft.ChangeRate = &cr
+				abs := cr
+				if abs < 0 {
+					abs = -abs
+				}
+				ft.OverThreshold = abs > 0.1
+			}
+		}
+		m := n
+		if m > 7 {
+			m = 7
+		}
+		sum := 0.0
+		for i := n - m; i < n; i++ {
+			sum += ft.Points[i].Value
+		}
+		avg := sum / float64(m)
+		ft.AvgRecent = &avg
+		trends = append(trends, ft)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"assetId": id,
+		"range":   fmt.Sprintf("%dd", days),
+		"fields":  trends,
+	})
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request, id string) {
@@ -1174,6 +1323,8 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleEnableManual(w, r, recordID)
 	case len(parts) == 2 && parts[1] == "submit" && r.Method == http.MethodPost:
 		s.handleSubmit(w, r, recordID)
+	case len(parts) == 2 && parts[1] == "confirm-logs" && r.Method == http.MethodGet:
+		s.handleListConfirmLogs(w, r, recordID)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "")
 	}
@@ -1389,8 +1540,11 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, recordID, code string) {
 	var req struct {
-		Value   string `json:"value"`
-		Version int    `json:"version"`
+		Value       string `json:"value"`
+		Version     int    `json:"version"`
+		Action      string `json:"action"`      // confirm / correct / uncertain（缺省按值是否变化推断）
+		DurationMs  int    `json:"durationMs"`  // 该字段停留时长（移动端可选上报）
+		ViewedPhoto bool   `json:"viewedPhoto"` // 是否看过原图（移动端可选上报）
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -1411,22 +1565,67 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		return
 	}
 
-	// 判断是 confirmed（值没变）还是 edited（值改了）
+	// 留痕用：变更前先抓 AI 原值 / 改前值 / 置信度
+	aiValue := field.AIValue
 	originalValue := field.Value
-	if strings.TrimSpace(req.Value) == strings.TrimSpace(originalValue) {
+	confidence := field.Confidence
+
+	action := req.Action
+	switch {
+	case action == "uncertain":
+		// 人工无法判定：保留待复核交主管抽查，不改值
+		field.Source = "human-uncertain"
+		field.NeedsReview = true
+	case strings.TrimSpace(req.Value) == strings.TrimSpace(originalValue):
 		field.Source = "human-confirmed"
-	} else {
+		field.NeedsReview = false
+		action = "confirm"
+	default:
 		field.Value = req.Value
 		field.Source = "human-edited"
+		field.NeedsReview = false
+		action = "correct"
 	}
-	field.NeedsReview = false
 	field.Version++
 	rec.Report = buildDailyPreview(rec)
 	if err := s.store.UpdateRecord(rec); err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", err.Error())
 		return
 	}
+
+	// §4 防惰性闭环：每次确认/修正/标疑都留痕（AI 原值 → 最终值、置信度、操作人、停留时长、是否看图）
+	operator := rec.Inspector
+	if u, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		if u.DisplayName != "" {
+			operator = u.DisplayName
+		} else {
+			operator = u.Username
+		}
+	}
+	_ = s.store.CreateFieldConfirmLog(&FieldConfirmLog{
+		RecordID:      recordID,
+		FieldKey:      field.Code,
+		FieldLabel:    field.Label,
+		AIValue:       aiValue,
+		OriginalValue: originalValue,
+		FinalValue:    field.Value,
+		AIConfidence:  confidence,
+		Action:        action,
+		Operator:      operator,
+		DurationMs:    req.DurationMs,
+		ViewedPhoto:   req.ViewedPhoto,
+	})
 	writeJSON(w, http.StatusOK, field)
+}
+
+// handleListConfirmLogs —— §4 返回某条记录的字段确认留痕，供后台展示"谁确认了什么、AI原值→最终值"
+func (s *Server) handleListConfirmLogs(w http.ResponseWriter, r *http.Request, recordID string) {
+	logs, err := s.store.ListFieldConfirmLogs(recordID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
 }
 
 func (s *Server) handleEnableManual(w http.ResponseWriter, r *http.Request, recordID string) {
@@ -1561,6 +1760,12 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		return
 	}
 	_ = s.store.CompleteSubmission(recordID, idemKey)
+
+	// §3 长期台账：把本次提交拆成资产快照 + 字段观测落库（失败不影响提交主流程）
+	snaps, obs := buildRecordObservations(rec, assets, now)
+	if err := s.store.WriteAssetSnapshots(snaps, obs); err != nil {
+		log.Printf("WARN: write asset snapshots failed for %s: %v", recordID, err)
+	}
 
 	writeJSON(w, http.StatusOK, sanitizeRecordForCurrentTemplate(rec))
 }
@@ -2198,6 +2403,102 @@ func buildAsset(rec *Record, now time.Time) *AssetEntry {
 		LastInspector:   rec.Inspector,
 		LastPhotoPath:   lastPhotoPath,
 	}
+}
+
+// assetFieldCodeMap 给多资产模板返回「资产Key(已 sanitize) → 该资产关联字段码」。
+// 单资产模板返回 nil（调用方把整条记录字段都归到那台资产）。
+// Key 必须与 buildAssetEntry 里的 AssetKey 一致（sanitizeAssetIdent(spec.Key)），否则归属对不上。
+func assetFieldCodeMap(rec *Record) map[string][]string {
+	switch rec.TemplateID {
+	case "zihan_energy":
+		return map[string][]string{
+			sanitizeAssetIdent("z1_energy_meter"):    {"z1_reading"},
+			sanitizeAssetIdent("z2_energy_meter"):    {"z2_reading"},
+			sanitizeAssetIdent("z3_energy_meter"):    {"z3_reading"},
+			sanitizeAssetIdent("z4_energy_meter"):    {"z4_reading"},
+			sanitizeAssetIdent("living_water_meter"): {"living_water_reading"},
+			sanitizeAssetIdent("fire_water_meter"):   {"fire_water_reading"},
+		}
+	case "zihan_daily":
+		return map[string][]string{
+			sanitizeAssetIdent("strong_room"):             {"strong_room_01"},
+			sanitizeAssetIdent("distribution_box"):        {"distribution_box"},
+			sanitizeAssetIdent("distribution_box_inside"): {"distribution_box_inside"},
+			sanitizeAssetIdent("weak_room"):               {"weak_room"},
+			sanitizeAssetIdent("fire_pump_room"):          {"fire_pump_room"},
+			sanitizeAssetIdent("environment"):             {"temperature", "humidity"},
+		}
+	}
+	return nil
+}
+
+// buildRecordObservations 把一条已提交记录拆成「资产快照 + 字段观测」，供 §3 长期台账/趋势使用。
+// 数值字段额外解析出 ValueNumber，便于后端算变化率/均值/阈值。
+func buildRecordObservations(rec *Record, assets []*AssetEntry, t time.Time) ([]*AssetSnapshot, []*FieldObservation) {
+	fieldMap := assetFieldCodeMap(rec) // nil = 单资产模板
+	snaps := make([]*AssetSnapshot, 0, len(assets))
+	obs := make([]*FieldObservation, 0, len(assets)*2)
+	for _, a := range assets {
+		snaps = append(snaps, &AssetSnapshot{
+			AssetID:     a.ID,
+			RecordID:    rec.ID,
+			Status:      a.LastStatus,
+			StatusLevel: a.StatusLevel,
+			Summary:     a.LastSummary,
+			Inspector:   rec.Inspector,
+			CreatedAt:   t,
+		})
+		var codes []string
+		if fieldMap == nil {
+			for i := range rec.Fields {
+				codes = append(codes, rec.Fields[i].Code)
+			}
+		} else {
+			codes = fieldMap[a.AssetKey]
+		}
+		for _, code := range codes {
+			f, _ := fieldByCode(rec.Fields, code)
+			if f == nil || strings.TrimSpace(f.Value) == "" {
+				continue
+			}
+			ob := &FieldObservation{
+				AssetID:    a.ID,
+				RecordID:   rec.ID,
+				FieldKey:   f.Code,
+				FieldLabel: f.Label,
+				ValueText:  f.Value,
+				Source:     f.Source,
+				Confidence: f.Confidence,
+				CreatedAt:  t,
+			}
+			if num, err := strconv.ParseFloat(strings.TrimSpace(f.Value), 64); err == nil {
+				ob.ValueNumber = &num
+			}
+			obs = append(obs, ob)
+		}
+	}
+	return snaps, obs
+}
+
+// backfillAssetSnapshots 启动时把已有的已提交记录补成快照/观测（幂等，靠唯一索引去重）。
+func (s *Server) backfillAssetSnapshots() error {
+	records, err := s.store.ListRecords(2000)
+	if err != nil {
+		return err
+	}
+	var allSnaps []*AssetSnapshot
+	var allObs []*FieldObservation
+	for _, rec := range records {
+		if rec == nil || !rec.Submitted {
+			continue
+		}
+		t := assetLedgerTime(rec)
+		assets := buildAssets(rec, t)
+		snaps, obs := buildRecordObservations(rec, assets, t)
+		allSnaps = append(allSnaps, snaps...)
+		allObs = append(allObs, obs...)
+	}
+	return s.store.WriteAssetSnapshots(allSnaps, allObs)
 }
 
 func assetID(rec *Record) string {

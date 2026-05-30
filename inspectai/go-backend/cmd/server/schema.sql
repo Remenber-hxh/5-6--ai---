@@ -165,3 +165,51 @@ CREATE TABLE IF NOT EXISTS operation_logs (
 CREATE INDEX IF NOT EXISTS idx_operation_logs_user ON operation_logs(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_target ON operation_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at);
+
+CREATE TABLE IF NOT EXISTS asset_snapshots (
+    id           TEXT PRIMARY KEY,
+    asset_id     TEXT NOT NULL,
+    record_id    TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT '',
+    status_level TEXT NOT NULL DEFAULT 'unknown',
+    summary      TEXT NOT NULL DEFAULT '',
+    inspector    TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_snap_asset ON asset_snapshots(asset_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_snap_uniq ON asset_snapshots(asset_id, record_id);
+
+CREATE TABLE IF NOT EXISTS field_observations (
+    id           TEXT PRIMARY KEY,
+    asset_id     TEXT NOT NULL,
+    record_id    TEXT NOT NULL,
+    field_key    TEXT NOT NULL,
+    field_label  TEXT NOT NULL DEFAULT '',
+    value_text   TEXT NOT NULL DEFAULT '',
+    value_number REAL,
+    source       TEXT NOT NULL DEFAULT '',
+    confidence   REAL NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_field_obs_asset_field ON field_observations(asset_id, field_key, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_field_obs_uniq ON field_observations(asset_id, record_id, field_key);
+
+CREATE TABLE IF NOT EXISTS field_confirm_logs (
+    id             TEXT PRIMARY KEY,
+    record_id      TEXT NOT NULL,
+    field_key      TEXT NOT NULL,
+    field_label    TEXT NOT NULL DEFAULT '',
+    ai_value       TEXT NOT NULL DEFAULT '',
+    original_value TEXT NOT NULL DEFAULT '',
+    final_value    TEXT NOT NULL DEFAULT '',
+    ai_confidence  REAL NOT NULL DEFAULT 0,
+    action         TEXT NOT NULL DEFAULT '',
+    operator       TEXT NOT NULL DEFAULT '',
+    duration_ms    INTEGER NOT NULL DEFAULT 0,
+    viewed_photo   INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fcl_record ON field_confirm_logs(record_id, created_at);

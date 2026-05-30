@@ -160,3 +160,48 @@ CREATE TABLE IF NOT EXISTS operation_logs (
     INDEX idx_operation_logs_target (target_type, target_id),
     INDEX idx_operation_logs_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_snapshots (
+    id           VARCHAR(64)  NOT NULL PRIMARY KEY,
+    asset_id     VARCHAR(255) NOT NULL,
+    record_id    VARCHAR(64)  NOT NULL,
+    status       VARCHAR(32)  NOT NULL DEFAULT '',
+    status_level VARCHAR(32)  NOT NULL DEFAULT 'unknown',
+    summary      MEDIUMTEXT   NOT NULL,
+    inspector    VARCHAR(64)  NOT NULL DEFAULT '',
+    created_at   VARCHAR(40)  NOT NULL,
+    UNIQUE KEY uq_asset_snap (asset_id, record_id),
+    INDEX idx_asset_snap_asset (asset_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS field_observations (
+    id           VARCHAR(64)  NOT NULL PRIMARY KEY,
+    asset_id     VARCHAR(255) NOT NULL,
+    record_id    VARCHAR(64)  NOT NULL,
+    field_key    VARCHAR(64)  NOT NULL,
+    field_label  VARCHAR(128) NOT NULL DEFAULT '',
+    value_text   VARCHAR(512) NOT NULL DEFAULT '',
+    value_number DOUBLE       NULL,
+    source       VARCHAR(32)  NOT NULL DEFAULT '',
+    confidence   DOUBLE       NOT NULL DEFAULT 0,
+    created_at   VARCHAR(40)  NOT NULL,
+    UNIQUE KEY uq_field_obs (asset_id, record_id, field_key),
+    INDEX idx_field_obs_asset_field (asset_id, field_key, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS field_confirm_logs (
+    id             VARCHAR(64)  NOT NULL PRIMARY KEY,
+    record_id      VARCHAR(64)  NOT NULL,
+    field_key      VARCHAR(64)  NOT NULL,
+    field_label    VARCHAR(128) NOT NULL DEFAULT '',
+    ai_value       VARCHAR(512) NOT NULL DEFAULT '',
+    original_value VARCHAR(512) NOT NULL DEFAULT '',
+    final_value    VARCHAR(512) NOT NULL DEFAULT '',
+    ai_confidence  DOUBLE       NOT NULL DEFAULT 0,
+    action         VARCHAR(32)  NOT NULL DEFAULT '',
+    operator       VARCHAR(64)  NOT NULL DEFAULT '',
+    duration_ms    BIGINT       NOT NULL DEFAULT 0,
+    viewed_photo   TINYINT(1)   NOT NULL DEFAULT 0,
+    created_at     VARCHAR(40)  NOT NULL,
+    INDEX idx_fcl_record (record_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

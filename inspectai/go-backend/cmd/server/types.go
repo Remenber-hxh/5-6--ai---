@@ -99,6 +99,52 @@ type Recommendation struct {
 	Basis    string `json:"basis"`
 }
 
+// AssetSnapshot — 一台资产在某次已提交巡检后的状态快照（§3 长期台账）。
+// 每条已提交记录 × 其触及的每台资产写一行，按资产可完整翻历史，不受记录列表窗口限制。
+type AssetSnapshot struct {
+	ID          string    `json:"id"`
+	AssetID     string    `json:"assetId"`
+	RecordID    string    `json:"recordId"`
+	Status      string    `json:"status"`
+	StatusLevel string    `json:"statusLevel"`
+	Summary     string    `json:"summary"`
+	Inspector   string    `json:"inspector"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// FieldObservation — 字段级观测明细（§3 趋势分析的数据底座）。
+// 数值字段额外存 ValueNumber，便于后端算变化率/均值/阈值。
+type FieldObservation struct {
+	ID          string    `json:"id"`
+	AssetID     string    `json:"assetId"`
+	RecordID    string    `json:"recordId"`
+	FieldKey    string    `json:"fieldKey"`
+	FieldLabel  string    `json:"fieldLabel"`
+	ValueText   string    `json:"valueText"`
+	ValueNumber *float64  `json:"valueNumber,omitempty"`
+	Source      string    `json:"source"`
+	Confidence  float64   `json:"confidence"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// FieldConfirmLog — 字段人工确认留痕（§4 防惰性闭环）。
+// 记录 AI 原值 → 最终值、置信度、动作（confirm/correct/uncertain）、操作人、停留时长、是否看图。
+type FieldConfirmLog struct {
+	ID            string    `json:"id"`
+	RecordID      string    `json:"recordId"`
+	FieldKey      string    `json:"fieldKey"`
+	FieldLabel    string    `json:"fieldLabel"`
+	AIValue       string    `json:"aiValue"`
+	OriginalValue string    `json:"originalValue"`
+	FinalValue    string    `json:"finalValue"`
+	AIConfidence  float64   `json:"aiConfidence"`
+	Action        string    `json:"action"`
+	Operator      string    `json:"operator"`
+	DurationMs    int       `json:"durationMs"`
+	ViewedPhoto   bool      `json:"viewedPhoto"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
 // AITask — AI 分析任务
 type AITask struct {
 	ID           string         `json:"id"`

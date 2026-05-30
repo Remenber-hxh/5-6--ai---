@@ -101,6 +101,9 @@ func main() {
 	if err := server.ensureAssetLedgerFromRecords(); err != nil {
 		log.Printf("WARN: asset ledger backfill failed: %v", err)
 	}
+	if err := server.backfillAssetSnapshots(); err != nil {
+		log.Printf("WARN: asset snapshot backfill failed: %v", err)
+	}
 	if removed, err := server.cleanupTmpClassifyDirs(); err != nil {
 		log.Printf("WARN: cleanup tmp_classify failed: %v", err)
 	} else if removed > 0 {

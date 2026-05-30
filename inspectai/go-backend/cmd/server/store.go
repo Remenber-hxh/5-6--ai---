@@ -38,6 +38,16 @@ type Store interface {
 	GetAsset(id string) (*AssetEntry, error)
 	UpdateAssetMeta(id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
 
+	// §3 资产长期台账 + 字段级趋势底座（幂等写入，按 asset_id 完整翻历史）
+	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
+	ListAssetSnapshots(assetID string, limit, offset int) ([]*AssetSnapshot, error)
+	CountAssetSnapshots(assetID string) (int, error)
+	ListFieldObservations(assetID, fieldKey string, limit int) ([]*FieldObservation, error)
+
+	// §4 字段人工确认留痕（防惰性闭环）
+	CreateFieldConfirmLog(entry *FieldConfirmLog) error
+	ListFieldConfirmLogs(recordID string) ([]*FieldConfirmLog, error)
+
 	CreateChangeRequest(cr *ChangeRequest) error
 	ListChangeRequests(filter ChangeRequestFilter) ([]*ChangeRequest, error)
 	GetChangeRequest(id string) (*ChangeRequest, error)
@@ -93,6 +103,9 @@ type MemStore struct {
 	users          map[string]*memUser
 	sessions       map[string]*LoginSession
 	operationLogs  map[string]*OperationLog
+	assetSnapshots []*AssetSnapshot
+	fieldObs       []*FieldObservation
+	confirmLogs    []*FieldConfirmLog
 }
 
 type memUser struct {
