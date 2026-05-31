@@ -16,6 +16,7 @@ type Server struct {
 	store              Store
 	storeKind          string // "sqlite" / "mem"
 	aiClient           *AIClient
+	analyticsClient    *AnalyticsClient
 	storageDir         string
 	frontendDir        string
 	authToken          string
@@ -30,6 +31,9 @@ func main() {
 	storageDir := getenv("STORAGE_DIR", "../storage")
 	frontendDir := getenv("FRONTEND_DIR", "../frontend")
 	aiURL := getenv("AI_SERVICE_URL", "http://127.0.0.1:19100")
+	// 管理 AI(DeepSeek)走 ai-service 的 /management/* 内部路由 —— 不开新公网端口。
+	// 没单独设的话沿用 AI_SERVICE_URL,跟视觉识别共用同一个进程。
+	analyticsURL := getenv("ANALYTICS_SERVICE_URL", aiURL)
 	addr := getenv("BACKEND_ADDR", ":18080")
 	authToken := getenvWithSecret("INSPECTAI_AUTH_TOKEN", "")
 	supervisorToken := getenvWithSecret("INSPECTAI_SUPERVISOR_TOKEN", "")
@@ -92,6 +96,7 @@ func main() {
 		store:              store,
 		storeKind:          storeKind,
 		aiClient:           NewAIClient(aiURL),
+		analyticsClient:    NewAnalyticsClient(analyticsURL),
 		storageDir:         storageDir,
 		frontendDir:        frontendDir,
 		authToken:          authToken,

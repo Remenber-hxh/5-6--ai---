@@ -675,6 +675,76 @@ def classify(payload: dict) -> dict:
     }
 
 
+# ===== /management/* (DeepSeek 管理 AI,阶段一只返回 mock) =====
+#
+# 阶段一目的:把"前端→后端→ai-service→AI"整条链路先打通,DeepSeek 真接通在阶段二。
+# 返回结构必须跟阶段二真打 DeepSeek 时一致,这样前端代码不用改两遍。
+
+
+def management_chat_mock(payload: dict) -> dict:
+    message = (payload.get("message") or "").strip()
+    context = payload.get("context") or {}
+    overview = context.get("overview") or {}
+    attention = context.get("attention") or []
+    reply_lines = ["[mock] 这是管理 AI 占位回答(阶段一,阶段二接 DeepSeek-V4)。"]
+    if message:
+        reply_lines.append(f"你问的是:{message}")
+    if overview:
+        reply_lines.append(
+            "看板态势:资产 {at} / 异常 {ad} / 待复核 {aw} / 本期巡检 {rr}".format(
+                at=overview.get("assetTotal", "-"),
+                ad=overview.get("assetDanger", "-"),
+                aw=overview.get("assetWarning", "-"),
+                rr=overview.get("recordRecent", "-"),
+            )
+        )
+    if attention:
+        top = attention[0] if isinstance(attention, list) and attention else {}
+        if top:
+            reply_lines.append(
+                "重点关注:{name}({score} 分),原因:{reason}".format(
+                    name=top.get("assetName", "-"),
+                    score=top.get("riskScore", "-"),
+                    reason=(top.get("reasons") or ["-"])[0],
+                )
+            )
+    return {
+        "reply": "\n".join(reply_lines),
+        "model": "mock-v4-flash",
+        "generatedAt": now_iso(),
+        "evidence": [],
+        "mock": True,
+    }
+
+
+def management_analyze_mock(payload: dict) -> dict:
+    overview = (payload.get("overview") or {})
+    attention = (payload.get("attention") or [])[:5]
+    summary_parts = []
+    if overview:
+        summary_parts.append(
+            "本期共 {at} 台资产,完成 {rr} 次巡检,正常 {an} / 待复核 {aw} / 异常 {ad}".format(
+                at=overview.get("assetTotal", 0),
+                rr=overview.get("recordRecent", 0),
+                an=overview.get("assetNormal", 0),
+                aw=overview.get("assetWarning", 0),
+                ad=overview.get("assetDanger", 0),
+            )
+        )
+    if attention:
+        names = ", ".join(a.get("assetName", "-") for a in attention[:3])
+        summary_parts.append(f"重点关注:{names}")
+    summary = "。".join(summary_parts) + "。" if summary_parts else "暂无足够数据生成摘要。"
+    return {
+        "summary": "[mock] " + summary,
+        "attention": attention,
+        "recommendations": [],
+        "model": "mock-v4-pro",
+        "generatedAt": now_iso(),
+        "mock": True,
+    }
+
+
 # ===== HTTP server =====
 
 
@@ -706,6 +776,10 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(self, 200, classify(payload))
             elif self.path == "/chat":
                 write_json(self, 200, chat(payload))
+            elif self.path == "/management/chat":
+                write_json(self, 200, management_chat_mock(payload))
+            elif self.path == "/management/analyze":
+                write_json(self, 200, management_analyze_mock(payload))
             else:
                 write_json(self, 404, {"error": "not_found"})
         except Exception as exc:

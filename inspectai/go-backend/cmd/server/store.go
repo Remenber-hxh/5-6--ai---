@@ -48,6 +48,12 @@ type Store interface {
 	CreateFieldConfirmLog(entry *FieldConfirmLog) error
 	ListFieldConfirmLogs(recordID string) ([]*FieldConfirmLog, error)
 
+	// 管理 AI 报告持久化缓存（30 min + 异常触发刷新）
+	SaveManagementAIReport(report *ManagementAIReport) error
+	GetLatestManagementAIReport(reportType, project, rangeKey string) (*ManagementAIReport, error)
+	DeleteExpiredManagementAIReports(now time.Time) (int, error)
+	ListRecentFieldConfirmLogs(limit int) ([]*FieldConfirmLog, error)
+
 	CreateChangeRequest(cr *ChangeRequest) error
 	ListChangeRequests(filter ChangeRequestFilter) ([]*ChangeRequest, error)
 	GetChangeRequest(id string) (*ChangeRequest, error)
@@ -106,6 +112,7 @@ type MemStore struct {
 	assetSnapshots []*AssetSnapshot
 	fieldObs       []*FieldObservation
 	confirmLogs    []*FieldConfirmLog
+	mgmtReports    []*ManagementAIReport
 }
 
 type memUser struct {

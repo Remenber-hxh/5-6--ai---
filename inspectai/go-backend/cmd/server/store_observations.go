@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"sort"
 	"time"
 )
@@ -275,6 +276,25 @@ func (s *SQLiteStore) ListFieldConfirmLogs(recordID string) ([]*FieldConfirmLog,
 		return nil, err
 	}
 	defer rows.Close()
+	return scanConfirmLogs(rows)
+}
+
+// ListRecentFieldConfirmLogs 给巡检员质量榜 / 复核惰性指标用,跨记录查最近 N 条。
+func (s *SQLiteStore) ListRecentFieldConfirmLogs(limit int) ([]*FieldConfirmLog, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := s.db.Query(`
+		SELECT id, record_id, field_key, field_label, ai_value, original_value, final_value, ai_confidence, action, operator, duration_ms, viewed_photo, created_at
+		FROM field_confirm_logs ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanConfirmLogs(rows)
+}
+
+func scanConfirmLogs(rows *sql.Rows) ([]*FieldConfirmLog, error) {
 	out := []*FieldConfirmLog{}
 	for rows.Next() {
 		e := &FieldConfirmLog{}
@@ -288,4 +308,140 @@ func (s *SQLiteStore) ListFieldConfirmLogs(recordID string) ([]*FieldConfirmLog,
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// ===== 管理 AI 报告缓存 =====
+
+func (s *MemStore) SaveManagementAIReport(r *ManagementAIReport) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r.ID == "" {
+		r.ID = newID("mar")
+	}
+	if r.GeneratedAt.IsZero() {
+		r.GeneratedAt = time.Now()
+	}
+	cp := *r
+	s.mgmtReports = append(s.mgmtReports, &cp)
+	return nil
+}
+
+func (s *MemStore) GetLatestManagementAIReport(reportType, project, rangeKey string) (*ManagementAIReport, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var best *ManagementAIReport
+	for _, r := range s.mgmtReports {
+		if r.ReportType != reportType || r.Project != project || r.RangeKey != rangeKey {
+			continue
+		}
+		if best == nil || r.GeneratedAt.After(best.GeneratedAt) {
+			best = r
+		}
+	}
+	if best == nil {
+		return nil, sql.ErrNoRows
+	}
+	cp := *best
+	return &cp, nil
+}
+
+func (s *MemStore) DeleteExpiredManagementAIReports(now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.mgmtReports[:0]
+	dropped := 0
+	for _, r := range s.mgmtReports {
+		if r.ExpiresAt.Before(now) {
+			dropped++
+			continue
+		}
+		kept = append(kept, r)
+	}
+	s.mgmtReports = kept
+	return dropped, nil
+}
+
+func (s *MemStore) ListRecentFieldConfirmLogs(limit int) ([]*FieldConfirmLog, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := append([]*FieldConfirmLog{}, s.confirmLogs...)
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// JSON 字段序列化的小工具(报告里多列都是 JSON 字符串)
+func mustJSON(v any) string {
+	if v == nil {
+		return ""
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func (s *SQLiteStore) SaveManagementAIReport(r *ManagementAIReport) error {
+	if r.ID == "" {
+		r.ID = newID("mar")
+	}
+	if r.GeneratedAt.IsZero() {
+		r.GeneratedAt = time.Now()
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO management_ai_reports
+		(id, report_type, project, range_key, facts_json, summary, attention_json,
+		 recommendations, evidence_json, model, prompt_version, duration_ms,
+		 generated_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.ReportType, r.Project, r.RangeKey,
+		mustJSON(r.Facts), r.Summary, mustJSON(r.Attention),
+		mustJSON(r.Recommendations), mustJSON(r.Evidence),
+		r.Model, r.PromptVersion, r.DurationMs,
+		r.GeneratedAt.Format(time.RFC3339Nano),
+		r.ExpiresAt.Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetLatestManagementAIReport(reportType, project, rangeKey string) (*ManagementAIReport, error) {
+	row := s.db.QueryRow(`
+		SELECT id, report_type, project, range_key, facts_json, summary, attention_json,
+		       recommendations, evidence_json, model, prompt_version, duration_ms,
+		       generated_at, expires_at
+		FROM management_ai_reports
+		WHERE report_type=? AND project=? AND range_key=?
+		ORDER BY generated_at DESC LIMIT 1`, reportType, project, rangeKey)
+	r := &ManagementAIReport{}
+	var factsJSON, attentionJSON, recosJSON, evidenceJSON string
+	var generatedStr, expiresStr string
+	err := row.Scan(
+		&r.ID, &r.ReportType, &r.Project, &r.RangeKey,
+		&factsJSON, &r.Summary, &attentionJSON,
+		&recosJSON, &evidenceJSON,
+		&r.Model, &r.PromptVersion, &r.DurationMs,
+		&generatedStr, &expiresStr,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_ = json.Unmarshal([]byte(factsJSON), &r.Facts)
+	_ = json.Unmarshal([]byte(attentionJSON), &r.Attention)
+	_ = json.Unmarshal([]byte(recosJSON), &r.Recommendations)
+	_ = json.Unmarshal([]byte(evidenceJSON), &r.Evidence)
+	r.GeneratedAt, _ = time.Parse(time.RFC3339Nano, generatedStr)
+	r.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expiresStr)
+	return r, nil
+}
+
+func (s *SQLiteStore) DeleteExpiredManagementAIReports(now time.Time) (int, error) {
+	res, err := s.db.Exec(`DELETE FROM management_ai_reports WHERE expires_at < ?`, now.Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }

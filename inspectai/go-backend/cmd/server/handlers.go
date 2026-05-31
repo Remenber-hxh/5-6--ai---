@@ -90,6 +90,12 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleUploadDraftPhotos(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/change-requests/"):
 		s.handleChangeRequestRoutes(w, r)
+	case r.URL.Path == "/api/management-ai/snapshot" && r.Method == http.MethodGet:
+		s.handleManagementSnapshot(w, r)
+	case r.URL.Path == "/api/management-ai/attention" && r.Method == http.MethodGet:
+		s.handleManagementAttention(w, r)
+	case r.URL.Path == "/api/management-ai/chat" && r.Method == http.MethodPost:
+		s.handleManagementChat(w, r)
 	default:
 		s.serveStatic(w, r)
 	}

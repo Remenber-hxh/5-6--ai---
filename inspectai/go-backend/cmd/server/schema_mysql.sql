@@ -205,3 +205,22 @@ CREATE TABLE IF NOT EXISTS field_confirm_logs (
     created_at     VARCHAR(40)  NOT NULL,
     INDEX idx_fcl_record (record_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS management_ai_reports (
+    id              VARCHAR(64)  NOT NULL PRIMARY KEY,
+    report_type     VARCHAR(32)  NOT NULL,
+    project         VARCHAR(128) NOT NULL DEFAULT '',
+    range_key       VARCHAR(16)  NOT NULL DEFAULT '30d',
+    facts_json      MEDIUMTEXT   NOT NULL,
+    summary         MEDIUMTEXT   NOT NULL,
+    attention_json  MEDIUMTEXT   NOT NULL,
+    recommendations MEDIUMTEXT   NOT NULL,
+    evidence_json   MEDIUMTEXT   NOT NULL,
+    model           VARCHAR(64)  NOT NULL DEFAULT '',
+    prompt_version  VARCHAR(32)  NOT NULL DEFAULT '',
+    duration_ms     INT          NOT NULL DEFAULT 0,
+    generated_at    VARCHAR(40)  NOT NULL,
+    expires_at      VARCHAR(40)  NOT NULL,
+    INDEX idx_mar_latest (report_type, project, range_key, generated_at),
+    INDEX idx_mar_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

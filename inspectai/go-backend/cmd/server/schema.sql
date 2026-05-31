@@ -213,3 +213,23 @@ CREATE TABLE IF NOT EXISTS field_confirm_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fcl_record ON field_confirm_logs(record_id, created_at);
+
+CREATE TABLE IF NOT EXISTS management_ai_reports (
+    id              TEXT PRIMARY KEY,
+    report_type     TEXT NOT NULL,
+    project         TEXT NOT NULL DEFAULT '',
+    range_key       TEXT NOT NULL DEFAULT '30d',
+    facts_json      TEXT NOT NULL DEFAULT '{}',
+    summary         TEXT NOT NULL DEFAULT '',
+    attention_json  TEXT NOT NULL DEFAULT '[]',
+    recommendations TEXT NOT NULL DEFAULT '[]',
+    evidence_json   TEXT NOT NULL DEFAULT '[]',
+    model           TEXT NOT NULL DEFAULT '',
+    prompt_version  TEXT NOT NULL DEFAULT '',
+    duration_ms     INTEGER NOT NULL DEFAULT 0,
+    generated_at    TEXT NOT NULL,
+    expires_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mar_latest ON management_ai_reports(report_type, project, range_key, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mar_expires ON management_ai_reports(expires_at);
