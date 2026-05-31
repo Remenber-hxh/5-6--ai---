@@ -251,6 +251,124 @@ def get_api_key() -> str:
     return os.environ.get("DASHSCOPE_API_KEY", "").strip()
 
 
+def get_deepseek_key() -> str:
+    """管理 AI(DeepSeek)的 key。Linux 走 *_FILE,Windows 本地走 DPAPI 注入的 env。"""
+    key_file = os.environ.get("DEEPSEEK_API_KEY_FILE", "").strip()
+    if key_file:
+        try:
+            with open(key_file, "r", encoding="utf-8") as fp:
+                return fp.read().strip()
+        except OSError:
+            pass
+    return os.environ.get("DEEPSEEK_API_KEY", "").strip()
+
+
+def call_deepseek_chat(
+    *,
+    model: str,
+    system: str,
+    user_content: str,
+    api_key: str,
+    timeout: int = 30,
+    temperature: float = 0.2,
+    max_retries: int = 1,
+) -> tuple[str, str]:
+    """打 DeepSeek OpenAI 兼容端点;返回 (reply_text, actual_model)。"""
+    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+    url = f"{base_url}/chat/completions"
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": temperature,
+    }
+    body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    tmp = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
+    try:
+        tmp.write(body_bytes)
+        tmp.close()
+        tmp_path = tmp.name
+        last_err: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                proc = subprocess.run(
+                    [
+                        CURL_PATH, "-4", "-s", "-S",
+                        "--noproxy", "*",
+                        "-m", str(timeout),
+                        "-X", "POST", url,
+                        "-H", f"Authorization: Bearer {api_key}",
+                        "-H", "Content-Type: application/json",
+                        "--data-binary", f"@{tmp_path}",
+                    ],
+                    capture_output=True,
+                    timeout=timeout + 5,
+                )
+                if proc.returncode != 0:
+                    err = proc.stderr.decode("utf-8", errors="replace")[:200]
+                    last_err = RuntimeError(f"curl exit {proc.returncode}: {err}")
+                    if attempt < max_retries:
+                        time.sleep(0.4 * (2 ** attempt))
+                        continue
+                    raise last_err
+                raw = proc.stdout.decode("utf-8", errors="replace")
+                payload = json.loads(raw)
+                if "error" in payload:
+                    err_obj = payload.get("error") or {}
+                    msg = err_obj.get("message", "unknown")
+                    code = err_obj.get("code") or err_obj.get("type", "error")
+                    raise RuntimeError(f"deepseek error [{code}]: {msg}")
+                choices = payload.get("choices") or []
+                if not choices:
+                    raise RuntimeError("deepseek response has no choices")
+                content = (choices[0].get("message") or {}).get("content") or ""
+                actual_model = payload.get("model") or model
+                return content, actual_model
+            except subprocess.TimeoutExpired:
+                last_err = RuntimeError(f"deepseek curl timeout after {timeout}s")
+                if attempt < max_retries:
+                    continue
+                raise last_err
+        if last_err:
+            raise last_err
+        raise RuntimeError("deepseek call failed after retries")
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+# 管理 AI 的系统 prompt — 阶段一边界约束:只回答台账问题,不修改任何数据
+MANAGEMENT_CHAT_SYSTEM = """你是「智巡」管理后台的 AI 分析助手,服务于设施巡检主管。
+
+工作范围:
+- 解读后端给你的台账聚合数据(资产/巡检/异常/复核留痕等)
+- 用主管能读懂的语言总结风险、变化、需关注的资产
+- 给出可执行的下一步建议(去看哪台资产/补什么巡检/找谁复核)
+
+约束:
+- 只回答与本巡检系统数据相关的问题,无关问题直接说"请问与巡检台账相关的问题"
+- 严禁编造数据。回答只能基于上下文里给的数字/名称
+- 不要假装能修改/审批/派单——你只能告诉用户去后台哪个菜单做
+- 回答 80-200 字,简洁专业,优先三段式:结论 + 依据 + 建议动作
+- 提到具体资产/记录时,优先用 context 中的真实名称和 ID
+"""
+
+MANAGEMENT_REPORT_SYSTEM = """你是「智巡」管理 AI 的报告生成器。基于后端聚合好的数据,
+为主管写一段「全局态势摘要」,80-180 字,无 markdown,无项目符号,流水句。
+
+包含:
+1. 本期巡检规模与异常情况(资产数/巡检数/正常/待复核/异常)
+2. 重点关注的 1-3 个资产(从 attention 列表里挑风险最高的)
+3. 一个建议性的方向(下次优先关注什么)
+
+不要编造名称或数字;只用 overview/attention 里有的数据。
+"""
+
+
 # ===== /analyze =====
 
 
@@ -681,8 +799,55 @@ def classify(payload: dict) -> dict:
 # 返回结构必须跟阶段二真打 DeepSeek 时一致,这样前端代码不用改两遍。
 
 
+def management_chat(payload: dict) -> dict:
+    """先打真 DeepSeek,失败/没 key 走 rule-based mock 降级。
+    后端 risk_score / context 始终可用,即使 AI 挂了主管也能看见东西。
+    """
+    key = get_deepseek_key()
+    model = os.environ.get("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
+    if not key:
+        return management_chat_mock(payload)
+    message = (payload.get("message") or "").strip()
+    context = payload.get("context") or {}
+    history = payload.get("history") or []
+    if not message:
+        return {"reply": "请告诉我想问的问题。", "model": "noop", "isMock": False}
+
+    # 拼上下文 + 最近 6 轮历史 + 本轮问题
+    parts = []
+    if context:
+        parts.append(f"[当前看板数据 JSON]\n{json.dumps(context, ensure_ascii=False)}")
+    for turn in history[-6:]:
+        role = "管理员" if turn.get("role") == "user" else "AI"
+        text = (turn.get("text") or "").strip()
+        if text:
+            parts.append(f"{role}: {text}")
+    parts.append(f"管理员: {message}")
+    parts.append("AI:")
+    user_text = "\n\n".join(parts)
+
+    timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "30") or "30")
+    try:
+        reply, actual_model = call_deepseek_chat(
+            model=model, system=MANAGEMENT_CHAT_SYSTEM,
+            user_content=user_text, api_key=key, timeout=timeout,
+        )
+    except Exception as exc:
+        print(f"[management/chat] deepseek failed, fallback mock: {exc}", file=sys.stderr)
+        out = management_chat_mock(payload)
+        out["fallbackReason"] = str(exc)[:120]
+        return out
+    return {
+        "reply": (reply or "").strip(),
+        "model": actual_model,
+        "generatedAt": now_iso(),
+        "evidence": [],
+        "isMock": False,
+    }
+
+
 def management_chat_mock(payload: dict) -> dict:
-    """阶段一回 mock,但 reply 内容用真实数据组装,不暴露 [mock] 字样。
+    """rule-based 兜底:reply 内容用真实数据组装,不暴露 [mock] 字样。
     isMock 标记交给前端,由前端决定 model 标签是否打"预览模式"角标。
     """
     message = (payload.get("message") or "").strip()
@@ -724,6 +889,34 @@ def management_chat_mock(payload: dict) -> dict:
         "generatedAt": now_iso(),
         "evidence": [],
         "isMock": True,
+    }
+
+
+def management_analyze(payload: dict) -> dict:
+    """先打真 DeepSeek(用 report model),失败 fallback mock。"""
+    key = get_deepseek_key()
+    model = os.environ.get("DEEPSEEK_REPORT_MODEL", "deepseek-chat")
+    if not key:
+        return management_analyze_mock(payload)
+    user_text = json.dumps(payload, ensure_ascii=False)
+    timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "30") or "30")
+    try:
+        reply, actual_model = call_deepseek_chat(
+            model=model, system=MANAGEMENT_REPORT_SYSTEM,
+            user_content=user_text, api_key=key, timeout=timeout,
+        )
+    except Exception as exc:
+        print(f"[management/analyze] deepseek failed, fallback mock: {exc}", file=sys.stderr)
+        out = management_analyze_mock(payload)
+        out["fallbackReason"] = str(exc)[:120]
+        return out
+    return {
+        "summary": (reply or "").strip(),
+        "attention": (payload.get("attention") or [])[:5],
+        "recommendations": [],
+        "model": actual_model,
+        "generatedAt": now_iso(),
+        "isMock": False,
     }
 
 
@@ -787,9 +980,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/chat":
                 write_json(self, 200, chat(payload))
             elif self.path == "/management/chat":
-                write_json(self, 200, management_chat_mock(payload))
+                write_json(self, 200, management_chat(payload))
             elif self.path == "/management/analyze":
-                write_json(self, 200, management_analyze_mock(payload))
+                write_json(self, 200, management_analyze(payload))
             else:
                 write_json(self, 404, {"error": "not_found"})
         except Exception as exc:
