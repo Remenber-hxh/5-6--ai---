@@ -2445,6 +2445,7 @@ async function loadDataInsights(period, project = "", force = false) {
       items:            attn.items || [],
       summary:          attn.summary || "",
       model:            attn.model || "",
+      isMock:           attn.isMock === true, // 阶段一 ai-service 是 mock,前端用这个改底栏标签
       generatedAt:      attn.generatedAt || snap.generatedAt || new Date().toISOString(),
       rangeKey,
     };
@@ -2469,7 +2470,7 @@ function renderInsightHero(insights, periodDef) {
         <div class="insight-hero-title">
           <span class="insight-hero-kicker">智能洞察 · ${escapeHTML(periodDef.label)} · ${escapeHTML(project)}</span>
           <h1>智能洞察台</h1>
-          <span class="insight-hero-meta">数据更新 ${escapeHTML(updated)} · 模型 ${escapeHTML(insights.model || "—")}</span>
+          <span class="insight-hero-meta">数据更新 ${escapeHTML(updated)} · ${escapeHTML(insights.isMock ? "DeepSeek-V4 · 预览模式" : (insights.model ? "DeepSeek-V4" : "—"))}</span>
         </div>
         <button class="insight-hero-refresh" data-action="refresh-insights">重新分析</button>
       </div>
@@ -2697,13 +2698,15 @@ function renderInsightAux(records, assets, requests, periodDef) {
 // ⑨ 底栏元信息
 function renderInsightFooter(insights) {
   const upd = insights.generatedAt ? fmtTime(insights.generatedAt) : "—";
+  // mock 期把 model 显示成「DeepSeek-V4 · 预览」,不暴露 deepseek-v4-pro/flash 的具体名
+  const modelLabel = insights.isMock
+    ? "DeepSeek-V4 · 预览模式"
+    : (insights.model ? `DeepSeek-V4(${insights.model})` : "—");
   return `
     <footer class="insight-footer">
       <span>数据更新 ${escapeHTML(upd)}</span>
       <span>·</span>
-      <span>模型 ${escapeHTML(insights.model || "—")}</span>
-      <span>·</span>
-      <span>prompt v1-mock</span>
+      <span>${escapeHTML(modelLabel)}</span>
       <span>·</span>
       <span>range ${escapeHTML(insights.rangeKey || "—")}</span>
     </footer>
@@ -2744,163 +2747,6 @@ function renderDataPage() {
   });
 }
 
-function renderDataPageLegacy_DEAD_REMOVED() {
-  // 旧数据看板已替换为洞察台。下方残留代码仅供参考,会在下次维护时删除。
-  return;
-  /* eslint-disable */
-  // 同比：上一周期
-  const cutoffMs = periodDef.days * 24 * 3600 * 1000;
-  const now = Date.now();
-  const prevRecords = allRecords.filter((r) => {
-    const t = new Date(r.createdAt || 0).getTime();
-    return t > now - 2 * cutoffMs && t <= now - cutoffMs;
-  });
-  const requests = filteredRequests();
-  const counts = statusCounts(assets);
-  const accuracy = aiAccuracy(records);
-  const closedPct = closedRate();
-  const submittedCnt = records.filter((r) => r.submitted).length;
-  const todayKeyStr = todayKey();
-  const todayRecords = records.filter((r) => String(r.createdAt || "").slice(0, 10) === todayKeyStr).length;
-  const pendingApprovals = requests.filter((r) => r.status === "pending").length;
-  const abnormalCnt = counts.warning + counts.danger + counts.repair;
-  const closedCnt = requests.filter((r) => r.status === "approved" || r.status === "rejected").length;
-  const submittedRate = records.length ? Math.round((submittedCnt / records.length) * 100) : 0;
-  const trendSpark = periodSparkline(allRecords, state.dataPeriod);
-  const trendSparkAbnormal = periodSparkline(allRecords.filter((r) => recordLevel(r) !== "normal"), state.dataPeriod);
-  const delta = (cur, prev) => {
-    if (!prev) return cur > 0 ? "+∞" : "持平";
-    const d = Math.round(((cur - prev) / prev) * 100);
-    return d === 0 ? "持平" : (d > 0 ? `+${d}%` : `${d}%`);
-  };
-  const recDelta = delta(records.length, prevRecords.length);
-  const accuracyDisplay = accuracy.sample < 5
-    ? `<div class="ring muted" style="--value:0">—</div><p class="ring-note">样本不足（${accuracy.sample}/5）</p>`
-    : `<div class="ring" style="--value:${accuracy.value}">${accuracy.value}%</div><p class="ring-note">基于 ${accuracy.sample} 个已确认字段</p>`;
-  const typeMap = {};
-  assets.forEach((a) => {
-    const k = a.assetType || "未分类";
-    typeMap[k] = (typeMap[k] || 0) + 1;
-  });
-  const typeList = Object.entries(typeMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const typeMax = Math.max(1, ...typeList.map(([, n]) => n));
-  const TYPE_COLORS = ["#12a968", "#246bfe", "#f59e0b", "#8b5cf6", "#ef4b3f", "#06b6d4"];
-
-  const updatedStr = new Date().toTimeString().slice(0, 5);
-  $("#pageMain").innerHTML = `
-    <section class="data-hero data-hero-v3">
-      <div class="data-hero-bg" aria-hidden="true">
-        <span class="data-hero-orb data-hero-orb-1"></span>
-        <span class="data-hero-orb data-hero-orb-2"></span>
-        <span class="data-hero-orb data-hero-orb-3"></span>
-      </div>
-      <div class="data-hero-top">
-        <div class="data-hero-title">
-          <span class="data-hero-kicker">数据中心 · ${escapeHTML(periodDef.label)}</span>
-          <h1>数据看板</h1>
-        </div>
-      </div>
-      <div class="data-period-tabs" role="tablist">
-        ${DATA_PERIODS.map((p) => `
-          <button class="data-period-chip ${p.key === state.dataPeriod ? "active" : ""}" data-period="${p.key}" type="button">${escapeHTML(p.label)}</button>
-        `).join("")}
-      </div>
-    </section>
-    <section class="data-kpi-row">
-      <article class="data-kpi-card">
-        <div class="dk-head"><span>资产总数</span><b class="dk-tag good">+${counts.total}</b></div>
-        <b class="dk-value"><span class="dash-anim" data-count="${counts.total}">0</span><em>台</em></b>
-        <div class="dk-spark">${sparkSvg(periodSparkline(allRecords, "month"), "#4f7cff")}</div>
-      </article>
-      <article class="data-kpi-card">
-        <div class="dk-head"><span>正常资产</span><b class="dk-tag good">${ratio(counts.normal, counts.total)}%</b></div>
-        <b class="dk-value good"><span class="dash-anim" data-count="${counts.normal}">0</span><em>项</em></b>
-        <div class="dk-spark">${sparkSvg(trendSpark, "#12a968")}</div>
-      </article>
-      <article class="data-kpi-card">
-        <div class="dk-head"><span>异常 / 待复核</span><b class="dk-tag ${abnormalCnt > 0 ? "danger" : ""}">${abnormalCnt > 0 ? "需关注" : "全清"}</b></div>
-        <b class="dk-value ${abnormalCnt > 0 ? "danger" : ""}"><span class="dash-anim" data-count="${abnormalCnt}">0</span><em>项</em></b>
-        <div class="dk-spark">${sparkSvg(trendSparkAbnormal, "#ef4b3f")}</div>
-      </article>
-      <article class="data-kpi-card">
-        <div class="dk-head"><span>巡检记录</span><b class="dk-tag ${recDelta.startsWith("+") && recDelta !== "+0%" ? "good" : recDelta.startsWith("-") ? "danger" : ""}">${escapeHTML(recDelta)}</b></div>
-        <b class="dk-value"><span class="dash-anim" data-count="${records.length}">0</span><em>条</em></b>
-        <div class="dk-spark">${sparkSvg(trendSpark, "#f59e0b")}</div>
-      </article>
-    </section>
-    <section class="data-grid-2col">
-      <article class="ring-card ring-card-accuracy">
-        <div class="ring-head"><h2>AI 识别准确率</h2><span class="ring-tag">本月</span></div>
-        ${accuracyDisplay}
-        <ul class="ring-meta">
-          <li><span>已确认</span><b>${accuracy.sample}</b></li>
-          <li><span>提交</span><b>${submittedCnt}</b></li>
-          <li><span>待复核</span><b>${counts.warning}</b></li>
-        </ul>
-      </article>
-      <article class="ring-card ring-card-closed">
-        <div class="ring-head"><h2>异常闭环率</h2><span class="ring-tag">本月</span></div>
-        <div class="ring green" style="--value:${closedPct}">${closedPct}%</div>
-        <p class="ring-note">复核 → 审批 → 写入台账</p>
-        <ul class="ring-meta">
-          <li><span>申请</span><b>${requests.length}</b></li>
-          <li><span>待审</span><b>${pendingApprovals}</b></li>
-          <li><span>结案</span><b>${closedCnt}</b></li>
-        </ul>
-      </article>
-    </section>
-    ${trendPanel(records)}
-    <section class="data-grid-2col">
-      <section class="panel data-type-panel">
-        <div class="panel-head">
-          <h2>资产类型分布</h2>
-          <span class="panel-head-sub">Top ${typeList.length} 类</span>
-        </div>
-        <div class="type-bars">
-          ${typeList.map(([name, n], i) => {
-            const pct = Math.round((n / typeMax) * 100);
-            const ratioPct = Math.round((n / (counts.total || 1)) * 100);
-            const color = TYPE_COLORS[i % TYPE_COLORS.length];
-            return `<div class="type-bar"><span class="type-name">${escapeHTML(name)}</span><div class="type-track"><div class="type-fill" style="width:${pct}%; background:${color}"></div></div><span class="type-num"><b>${n}</b><em>${ratioPct}%</em></span></div>`;
-          }).join("") || `<div class="empty-state">暂无资产分类数据</div>`}
-        </div>
-      </section>
-      <section class="panel data-summary-panel">
-        <div class="panel-head"><h2>运营摘要</h2><span class="panel-head-sub">今日</span></div>
-        <div class="data-summary-list">
-          <div class="data-summary-row">
-            <span class="dsr-label">记录提交率</span>
-            <div class="dsr-bar"><div class="dsr-fill blue" style="width:${submittedRate}%"></div></div>
-            <b class="dsr-num">${submittedRate}<em>%</em></b>
-          </div>
-          <div class="data-summary-row">
-            <span class="dsr-label">异常资产占比</span>
-            <div class="dsr-bar"><div class="dsr-fill orange" style="width:${ratio(abnormalCnt, counts.total)}%"></div></div>
-            <b class="dsr-num">${ratio(abnormalCnt, counts.total)}<em>%</em></b>
-          </div>
-          <div class="data-summary-row">
-            <span class="dsr-label">闭环率</span>
-            <div class="dsr-bar"><div class="dsr-fill green" style="width:${closedPct}%"></div></div>
-            <b class="dsr-num">${closedPct}<em>%</em></b>
-          </div>
-          <div class="data-summary-row">
-            <span class="dsr-label">待审批事项</span>
-            <div class="dsr-bar"><div class="dsr-fill ${pendingApprovals > 0 ? "red" : "gray"}" style="width:${Math.min(100, pendingApprovals * 20)}%"></div></div>
-            <b class="dsr-num">${pendingApprovals}<em>项</em></b>
-          </div>
-        </div>
-      </section>
-    </section>
-  `;
-  $("#pageAside").innerHTML = "";
-  document.querySelectorAll("[data-period]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.dataPeriod = btn.dataset.period;
-      render();
-    });
-  });
-  animateDashboardCounts();
-}
 
 function roleText(user = {}) {
   return user.roleName || ({

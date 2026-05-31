@@ -215,16 +215,22 @@ func (s *SQLiteStore) ListFieldObservations(assetID, fieldKey string, limit int)
 		rows *sql.Rows
 		err  error
 	)
+	// 子查询先按时间倒序取最近 N 条,外层正序返回给趋势图 ——
+	// 直接 ORDER BY ASC LIMIT 会把最早 N 条拿出来,数据涨过 limit 后趋势图永远是历史死数据。
 	if fieldKey == "" {
 		rows, err = s.db.Query(`
-			SELECT id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at
-			FROM field_observations WHERE asset_id=?
-			ORDER BY created_at ASC LIMIT ?`, assetID, limit)
+			SELECT id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at FROM (
+				SELECT id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at
+				FROM field_observations WHERE asset_id=?
+				ORDER BY created_at DESC LIMIT ?
+			) t ORDER BY created_at ASC`, assetID, limit)
 	} else {
 		rows, err = s.db.Query(`
-			SELECT id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at
-			FROM field_observations WHERE asset_id=? AND field_key=?
-			ORDER BY created_at ASC LIMIT ?`, assetID, fieldKey, limit)
+			SELECT id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at FROM (
+				SELECT id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at
+				FROM field_observations WHERE asset_id=? AND field_key=?
+				ORDER BY created_at DESC LIMIT ?
+			) t ORDER BY created_at ASC`, assetID, fieldKey, limit)
 	}
 	if err != nil {
 		return nil, err

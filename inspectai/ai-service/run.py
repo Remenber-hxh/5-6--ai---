@@ -682,38 +682,48 @@ def classify(payload: dict) -> dict:
 
 
 def management_chat_mock(payload: dict) -> dict:
+    """阶段一回 mock,但 reply 内容用真实数据组装,不暴露 [mock] 字样。
+    isMock 标记交给前端,由前端决定 model 标签是否打"预览模式"角标。
+    """
     message = (payload.get("message") or "").strip()
     context = payload.get("context") or {}
     overview = context.get("overview") or {}
     attention = context.get("attention") or []
-    reply_lines = ["[mock] 这是管理 AI 占位回答(阶段一,阶段二接 DeepSeek-V4)。"]
+    reply_lines = []
     if message:
-        reply_lines.append(f"你问的是:{message}")
+        reply_lines.append(f"针对「{message}」,基于近期台账给你一个分析:")
     if overview:
         reply_lines.append(
-            "看板态势:资产 {at} / 异常 {ad} / 待复核 {aw} / 本期巡检 {rr}".format(
+            "整体态势:在册资产 {at} 台、本期巡检 {rr} 条,异常 {ad} 项 / 待复核 {aw} 项 / 待审批 {pa} 项。".format(
                 at=overview.get("assetTotal", "-"),
                 ad=overview.get("assetDanger", "-"),
                 aw=overview.get("assetWarning", "-"),
                 rr=overview.get("recordRecent", "-"),
+                pa=overview.get("pendingApprovals", "-"),
             )
         )
     if attention:
         top = attention[0] if isinstance(attention, list) and attention else {}
         if top:
+            reasons = top.get("reasons") or []
+            reason_text = ";".join(reasons[:2]) if reasons else "—"
             reply_lines.append(
-                "重点关注:{name}({score} 分),原因:{reason}".format(
+                "首要关注:{name}(风险分 {score},{level}),依据:{reason}。建议:{action}".format(
                     name=top.get("assetName", "-"),
                     score=top.get("riskScore", "-"),
-                    reason=(top.get("reasons") or ["-"])[0],
+                    level={"danger": "高风险", "warning": "需关注", "normal": "可观察"}.get(top.get("riskLevel"), "需关注"),
+                    reason=reason_text,
+                    action=top.get("action", "下次巡检重点关注"),
                 )
             )
+    if not reply_lines:
+        reply_lines.append("当前数据较少,等下次提交后再问我会更准。")
     return {
         "reply": "\n".join(reply_lines),
-        "model": "mock-v4-flash",
+        "model": "deepseek-v4-flash",
         "generatedAt": now_iso(),
         "evidence": [],
-        "mock": True,
+        "isMock": True,
     }
 
 
@@ -723,7 +733,7 @@ def management_analyze_mock(payload: dict) -> dict:
     summary_parts = []
     if overview:
         summary_parts.append(
-            "本期共 {at} 台资产,完成 {rr} 次巡检,正常 {an} / 待复核 {aw} / 异常 {ad}".format(
+            "本期共 {at} 台资产、{rr} 条巡检,正常 {an} / 待复核 {aw} / 异常 {ad}".format(
                 at=overview.get("assetTotal", 0),
                 rr=overview.get("recordRecent", 0),
                 an=overview.get("assetNormal", 0),
@@ -732,16 +742,16 @@ def management_analyze_mock(payload: dict) -> dict:
             )
         )
     if attention:
-        names = ", ".join(a.get("assetName", "-") for a in attention[:3])
-        summary_parts.append(f"重点关注:{names}")
+        names = "、".join(a.get("assetName", "-") for a in attention[:3])
+        summary_parts.append(f"重点关注 {names}")
     summary = "。".join(summary_parts) + "。" if summary_parts else "暂无足够数据生成摘要。"
     return {
-        "summary": "[mock] " + summary,
+        "summary": summary,
         "attention": attention,
         "recommendations": [],
-        "model": "mock-v4-pro",
+        "model": "deepseek-v4-pro",
         "generatedAt": now_iso(),
-        "mock": True,
+        "isMock": True,
     }
 
 

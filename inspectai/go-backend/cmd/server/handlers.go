@@ -2179,44 +2179,116 @@ func optionContains(options []string, value string) bool {
 // 1) 完全匹配 → 直接用
 // 2) 包含同义词 → 映射到对应选项
 // 3) 都不匹配 → 返回原始值（前端会显示但 select 选不中）
+// 否定 / 异常词 —— 命中其中任何一个,直接归到「异常」(若有)或「待复核」,
+// 不再进入下方同义词包含匹配。修这种 bug:"不正常" 不能因为包含"正常"二字而被判正常。
+var normalizeNegativeAndAbnormalCues = []string{
+	"不正常", "不合格", "不通过", "不良", "不行", "不可", "不好", "不正确",
+	"异常", "故障", "损坏", "报警", "告警", "破损", "破裂", "缺失", "丢失", "失踪",
+	"漏水", "渗漏", "短路", "跳闸", "烧毁", "焦糊", "霉味", "燃气", "刺激性",
+	"超标", "存在问题", "有问题", "存在隐患", "未通过",
+}
+
+// 模糊词 —— 命中视为「待复核」(若选项有),不要硬归正常/异常。
+var normalizeUncertainCues = []string{
+	"看不清", "无法判定", "不确定", "拿不准", "需复核", "需要复核", "建议复核",
+	"模糊", "不清楚", "辨认不清",
+}
+
+// "否定异常"的短语 —— 字面上虽然带"异常/报警/故障"字样,但语义是「没有发生」=正常。
+// 这一步必须先于第 2 步的异常词扫描,否则 "无异常" 会因为包含 "异常" 被误判。
+var normalizeNegatedAbnormalPhrases = []string{
+	"无异常", "无报警", "无告警", "无故障", "无破损", "无缺失", "无损坏",
+	"无漏水", "无渗漏", "无烧毁", "无问题", "无隐患", "无超标",
+	"未发现异常", "未发现报警", "未发现故障", "未发现破损", "未发现漏水", "未发现问题",
+	"没有异常", "没有报警", "没有故障", "没有破损", "没有问题", "没问题",
+	"不存在异常", "不存在报警", "不存在故障", "不存在问题",
+}
+
 func normalizeChoiceValue(raw string, options []string) string {
 	v := strings.TrimSpace(raw)
 	if v == "" {
 		return ""
 	}
-	// 1) 直接匹配
+	// 1) 精确匹配最优先
 	for _, opt := range options {
 		if opt == v {
 			return opt
 		}
 	}
-	// 2) 同义词库（先按 "正常/异常" 类的语义优先级）
-	synonyms := map[string][]string{
-		"正常":  {"正常", "无问题", "无异常", "良好", "ok", "OK", "Ok", "通过", "合格", "完好", "是", "yes", "Yes", "运行正常", "运转正常"},
-		"异常":  {"异常", "有问题", "不正常", "故障", "损坏", "不合格", "报警", "有报警", "存在异常", "不通过"},
-		"是":   {"是", "yes", "Yes", "有", "true", "True"},
-		"否":   {"否", "no", "No", "无", "没有", "未发现", "false", "False"},
-		"无":   {"无", "无异常", "未发现", "没有", "no", "No"},
-		"有":   {"有", "存在", "发现", "yes", "Yes"},
-		"完好":  {"完好", "良好", "正常", "无破损", "无损坏"},
-		"缺失":  {"缺失", "没有", "无", "丢失", "失踪"},
-		"破损":  {"破损", "损坏", "破裂", "破碎", "裂纹"},
-		"良好":  {"良好", "正常", "完好", "无问题"},
-		"待复核": {"待复核", "需复核", "无法判定", "不确定", "看不清"},
-	}
 	vLower := strings.ToLower(v)
+
+	// 2a) 否定异常的短语优先 —— "无异常/未发现报警/没有故障"等,语义是正常。
+	for _, neg := range normalizeNegatedAbnormalPhrases {
+		if strings.Contains(vLower, strings.ToLower(neg)) {
+			if optionContains(options, "正常") {
+				return "正常"
+			}
+			if optionContains(options, "完好") {
+				return "完好"
+			}
+			if optionContains(options, "无") {
+				return "无"
+			}
+			if optionContains(options, "否") {
+				return "否"
+			}
+			return raw
+		}
+	}
+
+	// 2b) 否定 / 异常词扫一遍。命中就强归"异常"(没"异常"选项就归"待复核")。
+	//    这一步必须先于同义词 Contains,否则 "不正常" 会因为包含 "正常" 被判正常。
+	for _, neg := range normalizeNegativeAndAbnormalCues {
+		if strings.Contains(vLower, strings.ToLower(neg)) {
+			if optionContains(options, "异常") {
+				return "异常"
+			}
+			if optionContains(options, "破损") && (neg == "破损" || neg == "破裂" || neg == "损坏") {
+				return "破损"
+			}
+			if optionContains(options, "缺失") && (neg == "缺失" || neg == "丢失" || neg == "失踪") {
+				return "缺失"
+			}
+			if optionContains(options, "待复核") {
+				return "待复核"
+			}
+			return raw // 没合适选项,留原值交人工
+		}
+	}
+
+	// 3) 模糊词归"待复核"(若选项有)。
+	for _, u := range normalizeUncertainCues {
+		if strings.Contains(vLower, strings.ToLower(u)) {
+			if optionContains(options, "待复核") {
+				return "待复核"
+			}
+			return raw
+		}
+	}
+
+	// 4) 同义词库(精简到正向词,反向词已在第 2 步处理)
+	positiveSynonyms := map[string][]string{
+		"正常":  {"无问题", "无异常", "良好", "ok", "通过", "合格", "完好", "运行正常", "运转正常"},
+		"是":   {"yes", "有", "true"},
+		"否":   {"no", "无", "没有", "未发现", "false"},
+		"无":   {"未发现", "没有", "none"},
+		"有":   {"存在", "发现"},
+		"完好":  {"良好", "无破损", "无损坏"},
+		"良好":  {"完好", "无问题"},
+	}
 	for _, opt := range options {
-		aliases, ok := synonyms[opt]
+		aliases, ok := positiveSynonyms[opt]
 		if !ok {
 			continue
 		}
 		for _, alias := range aliases {
-			if strings.ToLower(alias) == vLower || strings.Contains(vLower, strings.ToLower(alias)) {
+			a := strings.ToLower(alias)
+			if a == vLower || strings.Contains(vLower, a) {
 				return opt
 			}
 		}
 	}
-	// 3) 返回原始值，交由人工复核
+	// 5) 返回原始值,交人工复核
 	return raw
 }
 

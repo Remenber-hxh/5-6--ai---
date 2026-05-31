@@ -860,19 +860,23 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 	// 缓存读 / 写
 	var summary string
 	var model string
+	var promptVersion string
+	var isMock bool
 	var generatedAt time.Time
 	if !refresh {
 		if cached, err := s.store.GetLatestManagementAIReport("attention", project, rangeKey); err == nil {
 			if time.Now().Before(cached.ExpiresAt) {
 				summary = cached.Summary
 				model = cached.Model
+				promptVersion = cached.PromptVersion
 				generatedAt = cached.GeneratedAt
+				isMock = strings.HasPrefix(cached.PromptVersion, "v1-mock")
 			}
 		}
 	}
 	overview, _ := s.toolGetOverview(project, rangeKey)
 	if summary == "" {
-		// 调 mock(阶段二改真 DeepSeek)
+		// 调 ai-service(阶段一返回 mock,阶段二接真 DeepSeek)
 		if s.analyticsClient != nil {
 			payload := map[string]any{
 				"overview":  overview,
@@ -890,12 +894,18 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 				if v, ok := resp["model"].(string); ok {
 					model = v
 				}
+				if v, ok := resp["isMock"].(bool); ok {
+					isMock = v
+				}
+				promptVersion = "v1-mock"
+				if !isMock {
+					promptVersion = "v1"
+				}
 				generatedAt = time.Now()
-				// 写缓存
 				_ = s.store.SaveManagementAIReport(&ManagementAIReport{
 					ReportType: "attention", Project: project, RangeKey: rangeKey,
 					Summary: summary, Attention: items, Model: model,
-					PromptVersion: "v1-mock",
+					PromptVersion: promptVersion,
 					GeneratedAt:   generatedAt,
 					ExpiresAt:     generatedAt.Add(30 * time.Minute),
 				})
@@ -903,13 +913,15 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"summary":     summary,
-		"model":       model,
-		"overview":    overview,
-		"rangeKey":    rangeKey,
-		"project":     project,
-		"generatedAt": generatedAt,
+		"items":         items,
+		"summary":       summary,
+		"model":         model,
+		"isMock":        isMock,
+		"promptVersion": promptVersion,
+		"overview":      overview,
+		"rangeKey":      rangeKey,
+		"project":       project,
+		"generatedAt":   generatedAt,
 	})
 }
 
