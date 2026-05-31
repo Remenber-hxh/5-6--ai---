@@ -54,6 +54,7 @@ const state = {
   selectedRecordId: "",
   assetDetails: {}, // §3 资产详情缓存：{ id → { history, total, page, pageSize, trend } }
   confirmLogs: {},  // §4 记录的字段确认留痕：{ recordId → [log,...] }
+  dataInsights: {}, // 阶段一 数据看板缓存：{ key → { overview, items, summary, model, generatedAt } }
   recordPage: 0,
   filters: {
     assetType: "",
@@ -581,6 +582,7 @@ async function loadData(showToast = true) {
     state.records = records.records || [];
     state.assetDetails = {}; // §3 资产详情(历史+趋势)缓存随数据刷新清空
     state.confirmLogs = {};  // §4 字段确认留痕缓存随数据刷新清空
+    state.dataInsights = {}; // 阶段一 数据看板/洞察缓存随数据刷新清空
     state.requests = requests.requests || [];
     state.points = points.points || [];
     state.templates = templates.templates || [];
@@ -890,9 +892,14 @@ function renderDashboardPage() {
   const trendCounts = last7DayAbnormal(records);
   const todayKeyStr = todayKey();
   const todayTaskDone = (state.customTasks || []).filter((t) => t.status === "已完成" && String(t.completedAt || "").startsWith(todayKeyStr)).length;
+  // 阶段一:首页加 Top 3 重点关注 mini 卡(数据看板算好的 risk_score),引流去洞察台
+  const insightKey = `month::${state.selectedProject || ""}`;
+  if (!(insightKey in state.dataInsights)) loadDataInsights("month", state.selectedProject || "");
+  const dashInsights = state.dataInsights[insightKey] || { items: [], summary: "" };
   $("#pageMain").innerHTML = `
     ${aiHeroBanner({ todayRecords: todayRecords.length, todayAuto, todayFlagged, savedHours, issuesCount, accuracy, trendCounts, todayTaskDone })}
     ${quickAccessTiles(tileCounts)}
+    ${dashboardFocusMini(dashInsights)}
     ${aiChatPanel()}
   `;
   $("#pageAside").innerHTML = dashboardAside({
@@ -943,12 +950,49 @@ function bindHeroCursor() {
   });
 }
 
+// 首页「重点关注 Top 3」mini 卡 —— 引流到数据看板看全部。
+function dashboardFocusMini(insights) {
+  const items = (insights.items || []).slice(0, 3);
+  if (!items.length) {
+    return `
+      <section class="panel focus-mini-panel">
+        <div class="panel-head"><h2>今日重点关注</h2><button class="link-btn" data-page-link="data">去洞察台 →</button></div>
+        <div class="empty-state">AI 正在分析…暂无重点关注资产</div>
+      </section>
+    `;
+  }
+  return `
+    <section class="panel focus-mini-panel">
+      <div class="panel-head">
+        <h2>今日重点关注 <small>AI 综合判定</small></h2>
+        <button class="link-btn" data-page-link="data">去洞察台看全部 →</button>
+      </div>
+      <div class="focus-mini-grid">
+        ${items.map((it, idx) => `
+          <article class="focus-mini focus-${it.riskLevel}" data-asset-select="${escapeHTML(it.assetId)}">
+            <div class="focus-mini-rank">${idx + 1}</div>
+            <div class="focus-mini-body">
+              <b class="focus-mini-name">${escapeHTML(it.assetName || "—")}</b>
+              <div class="focus-mini-meta">
+                <span class="focus-mini-score">${it.riskScore} 分</span>
+                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(it.riskLevel === "danger" ? "异常" : (it.riskLevel === "warning" ? "待关注" : "正常"))}</span>
+              </div>
+              <div class="focus-mini-reason">${escapeHTML((it.reasons && it.reasons[0]) || "—")}</div>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 const AI_SUGGESTIONS = [
-  "今天异常资产有哪些？",
-  "上周 AI 识别准确率怎么样？",
-  "目前还有几个待审批？",
-  "下周需要重点关注什么？",
-  "怎么查最近的巡检记录？",
+  "最近 30 天有哪些设备需要重点关注？",
+  "本周异常比上周增加了吗？",
+  "无机房电梯最近有哪些重复风险？",
+  "复核率怎么样？有谁没看图就确认？",
+  "目前有哪些待复核记录需要处理？",
+  "今天应该优先处理什么？",
 ];
 
 function aiChatPanel() {
@@ -956,7 +1000,7 @@ function aiChatPanel() {
     <section class="panel ai-chat">
       <div class="panel-head">
         <h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 智能问答</h2>
-        <span class="ai-chat-model">Qwen Plus · 实时</span>
+        <span class="ai-chat-model">DeepSeek-V4 · 台账分析</span>
       </div>
       <div class="ai-chat-body" id="aiChatBody">
         <div class="ai-chat-empty">问 AI 看数据、查异常、要建议；下方点话题即可发起对话。</div>
@@ -1024,9 +1068,14 @@ async function sendAiChat(message) {
   body.scrollTop = body.scrollHeight;
 
   try {
-    const res = await api("/api/ai/chat", {
+    const res = await api("/api/management-ai/chat", {
       method: "POST",
-      body: JSON.stringify({ message, history: AI_CHAT_STATE.history.slice(-6) }),
+      body: JSON.stringify({
+        message,
+        history: AI_CHAT_STATE.history.slice(-6),
+        project: state.selectedProject || "",
+        range: "30d",
+      }),
     });
     const reply = res.reply || "AI 没有给出回复。";
     AI_CHAT_STATE.history.push({ role: "ai", text: reply });
@@ -2361,12 +2410,344 @@ function sparkSvg(points, color = "var(--blue)", w = 90, h = 28) {
   </svg>`;
 }
 
+// ===== 阶段一 数据看板 = 智能洞察台 =====
+// 前端时间 tab(today/week/month/quarter/all) → 后端 range key(7d/30d/90d/365d)
+function periodToRangeKey(period) {
+  switch (period) {
+    case "today":   return "7d";   // 后端最小窗口
+    case "week":    return "7d";
+    case "month":   return "30d";
+    case "quarter": return "90d";
+    case "all":     return "365d";
+    default:        return "30d";
+  }
+}
+
+const dataInsightsInflight = new Set();
+async function loadDataInsights(period, project = "", force = false) {
+  const key = `${period}::${project}`;
+  if (!force && key in state.dataInsights) return;
+  if (dataInsightsInflight.has(key)) return;
+  dataInsightsInflight.add(key);
+  const rangeKey = periodToRangeKey(period);
+  try {
+    const q = new URLSearchParams({ range: rangeKey });
+    if (project) q.set("project", project);
+    const [snap, attn] = await Promise.all([
+      safeApi("/api/management-ai/snapshot?" + q.toString(), { overview: {}, repeatedIssues: [], inspectorQuality: [], pendingReviews: { needsReview: [], pendingApprovals: [] } }),
+      safeApi(`/api/management-ai/attention?${q.toString()}&limit=5${force ? "&refresh=1" : ""}`, { items: [], summary: "", model: "" }),
+    ]);
+    state.dataInsights[key] = {
+      overview:         snap.overview || {},
+      repeatedIssues:   snap.repeatedIssues || [],
+      inspectorQuality: snap.inspectorQuality || [],
+      pendingReviews:   snap.pendingReviews || { needsReview: [], pendingApprovals: [] },
+      items:            attn.items || [],
+      summary:          attn.summary || "",
+      model:            attn.model || "",
+      generatedAt:      attn.generatedAt || snap.generatedAt || new Date().toISOString(),
+      rangeKey,
+    };
+  } catch {
+    state.dataInsights[key] = { overview: {}, repeatedIssues: [], inspectorQuality: [], items: [], summary: "", model: "", rangeKey };
+  } finally {
+    dataInsightsInflight.delete(key);
+  }
+  render();
+}
+
+// ① Hero(标题 + AI 全局摘要 + 时间 tabs + 项目筛选 + 重新分析)
+function renderInsightHero(insights, periodDef) {
+  const project = state.selectedProject || "全部项目";
+  const updated = insights.generatedAt ? fmtTime(insights.generatedAt) : "—";
+  const summary = insights.summary || (insights.items.length === 0
+    ? "暂无足够数据生成摘要。先安排一次新巡检 / 提交几条记录,洞察 AI 才有内容可读。"
+    : "等待 AI 总结…");
+  return `
+    <section class="insight-hero">
+      <div class="insight-hero-top">
+        <div class="insight-hero-title">
+          <span class="insight-hero-kicker">智能洞察 · ${escapeHTML(periodDef.label)} · ${escapeHTML(project)}</span>
+          <h1>智能洞察台</h1>
+          <span class="insight-hero-meta">数据更新 ${escapeHTML(updated)} · 模型 ${escapeHTML(insights.model || "—")}</span>
+        </div>
+        <button class="insight-hero-refresh" data-action="refresh-insights">重新分析</button>
+      </div>
+      <div class="insight-hero-summary">
+        ${escapeHTML(summary)}
+      </div>
+      <div class="data-period-tabs" role="tablist">
+        ${DATA_PERIODS.map((p) => `
+          <button class="data-period-chip ${p.key === state.dataPeriod ? "active" : ""}" data-period="${p.key}" type="button">${escapeHTML(p.label)}</button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+// ② Risk panorama 4 KPI(AI 综合,不是裸数字)
+function renderRiskKpi(insights) {
+  const ov = insights.overview || {};
+  const top = insights.items[0];
+  const riskIndex = top ? Math.min(100, top.riskScore) : 0;
+  const focusCount = insights.items.length;
+  const drift = ov.driftFieldCount || 0;
+  const lazy = Math.round((ov.lazyConfirmRate || 0) * 100);
+  const deltaTxt = (ov.abnormalRecent != null && ov.abnormalPrev != null)
+    ? (ov.abnormalRecent > ov.abnormalPrev ? `↑ +${ov.abnormalRecent - ov.abnormalPrev} vs 上期` :
+       ov.abnormalRecent < ov.abnormalPrev ? `↓ -${ov.abnormalPrev - ov.abnormalRecent} vs 上期` : `↔ 与上期持平`)
+    : "—";
+  const riskClass = riskIndex >= 60 ? "danger" : (riskIndex >= 25 ? "warning" : "normal");
+  return `
+    <section class="risk-kpi-row">
+      <article class="risk-kpi ${riskClass}">
+        <span class="risk-kpi-label">风险指数</span>
+        <b class="risk-kpi-value">${riskIndex}<em>/100</em></b>
+        <span class="risk-kpi-sub">${escapeHTML(deltaTxt)}</span>
+      </article>
+      <article class="risk-kpi">
+        <span class="risk-kpi-label">重点关注资产</span>
+        <b class="risk-kpi-value">${focusCount}<em>台</em></b>
+        <span class="risk-kpi-sub">AI 综合判定</span>
+      </article>
+      <article class="risk-kpi ${drift > 0 ? "warning" : ""}">
+        <span class="risk-kpi-label">字段漂移项</span>
+        <b class="risk-kpi-value">${drift}<em>项</em></b>
+        <span class="risk-kpi-sub">数值字段超阈值</span>
+      </article>
+      <article class="risk-kpi ${lazy >= 30 ? "warning" : ""}">
+        <span class="risk-kpi-label">复核惰性</span>
+        <b class="risk-kpi-value">${lazy}<em>%</em></b>
+        <span class="risk-kpi-sub">未看图就确认占比</span>
+      </article>
+    </section>
+  `;
+}
+
+// ③ 重点关注 Top 5
+function renderFocusBoard(insights) {
+  if (!insights.items.length) {
+    return `<section class="focus-board"><div class="focus-board-head"><h2>今日重点关注</h2><span>暂无需重点关注的资产</span></div></section>`;
+  }
+  return `
+    <section class="focus-board">
+      <div class="focus-board-head">
+        <h2>今日重点关注</h2>
+        <small>AI 综合判定 · 后端 risk_score 公式可解释</small>
+      </div>
+      <div class="focus-grid">
+        ${insights.items.map((it, idx) => `
+          <article class="focus-card focus-${it.riskLevel}" data-asset-select="${escapeHTML(it.assetId)}">
+            <div class="focus-card-rank">${idx + 1}</div>
+            <div class="focus-card-body">
+              <div class="focus-card-head">
+                <b class="focus-card-name">${escapeHTML(it.assetName || "—")}</b>
+                <span class="focus-card-score">${it.riskScore}<em>分</em></span>
+                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(it.riskLevel === "danger" ? "异常" : (it.riskLevel === "warning" ? "待关注" : "正常"))}</span>
+              </div>
+              <ul class="focus-card-reasons">
+                ${(it.reasons || []).slice(0, 3).map((r) => `<li>${escapeHTML(r)}</li>`).join("")}
+              </ul>
+              ${it.action ? `<div class="focus-card-action">建议:${escapeHTML(it.action)}</div>` : ""}
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+// ④ 设备状态时间热力图 — 用户核心诉求"时间维度直观看到设备的各种状态"
+// 客户端从 state.records 聚合(近 30/60d 按日格)。简单可靠;后续可换 asset_snapshots 后端数据。
+function renderStatusHeatmap(periodDef) {
+  const days = Math.min(periodDef.days, 30); // 阶段一固定显示最近 30 天,避免格子太多
+  const today = new Date();
+  const dayKeys = Array.from({ length: days }, (_, i) => {
+    const d = new Date(today); d.setDate(d.getDate() - (days - 1 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  const assets = filteredAssets();
+  if (!assets.length) {
+    return `<section class="status-heatmap-panel"><div class="panel-head"><h2>设备状态时间轴</h2><small>近 ${days} 天</small></div><div class="empty-state">暂无资产</div></section>`;
+  }
+  // 给每台资产建一个 day → 最严重级别的 map
+  const bucket = new Map();
+  for (const a of assets) bucket.set(a.id, {});
+  for (const r of state.records) {
+    if (!r.submitted) continue;
+    const k = String(r.createdAt || "").slice(0, 10);
+    if (!k) continue;
+    const lvl = recordLevel(r);
+    for (const a of assets) {
+      const touches = (r.id === a.lastRecordId)
+        || (a.pointId && r.pointId === a.pointId);
+      if (!touches) continue;
+      const m = bucket.get(a.id);
+      const prev = m[k];
+      // 严重度优先:danger > warning > normal
+      const rank = { danger: 3, warning: 2, normal: 1 };
+      if (!prev || rank[lvl] > rank[prev]) m[k] = lvl;
+    }
+  }
+  const rows = assets.slice(0, 15).map((a) => {
+    const m = bucket.get(a.id) || {};
+    const cells = dayKeys.map((k) => {
+      const lvl = m[k];
+      const cls = lvl === "danger" ? "danger" : (lvl === "warning" ? "warning" : (lvl === "normal" ? "normal" : "empty"));
+      const tip = lvl ? `${k} · ${lvl === "danger" ? "异常" : (lvl === "warning" ? "待复核" : "正常")}` : `${k} · 未巡检`;
+      return `<span class="hm-cell hm-${cls}" title="${escapeHTML(tip)}"></span>`;
+    }).join("");
+    return `
+      <div class="hm-row" data-asset-select="${escapeHTML(a.id)}">
+        <span class="hm-name" title="${escapeHTML(a.assetName)}">${escapeHTML(a.assetName)}</span>
+        <span class="hm-track">${cells}</span>
+      </div>
+    `;
+  }).join("");
+  const startLabel = dayKeys[0];
+  const endLabel = dayKeys[dayKeys.length - 1];
+  return `
+    <section class="status-heatmap-panel">
+      <div class="panel-head">
+        <h2>设备状态时间轴</h2>
+        <small>${escapeHTML(startLabel)} → ${escapeHTML(endLabel)} · ■正常 ▲待复核 ●异常 □未巡</small>
+      </div>
+      <div class="hm-grid">${rows}</div>
+      <div class="hm-legend">
+        <span><i class="hm-cell hm-normal"></i>正常</span>
+        <span><i class="hm-cell hm-warning"></i>待复核</span>
+        <span><i class="hm-cell hm-danger"></i>异常</span>
+        <span><i class="hm-cell hm-empty"></i>未巡检</span>
+      </div>
+    </section>
+  `;
+}
+
+// ⑧ 辅助区(降级保底):旧 4 KPI / 准确率环 / 闭环率环 / 资产类型分布
+function renderInsightAux(records, assets, requests, periodDef) {
+  const counts = statusCounts(assets);
+  const accuracy = aiAccuracy(records);
+  const closedPct = closedRate();
+  const submittedCnt = records.filter((r) => r.submitted).length;
+  const abnormalCnt = counts.warning + counts.danger + counts.repair;
+  const submittedRate = records.length ? Math.round((submittedCnt / records.length) * 100) : 0;
+  const pendingApprovals = requests.filter((r) => r.status === "pending").length;
+  const closedCnt = requests.filter((r) => r.status === "approved" || r.status === "rejected").length;
+  const typeMap = {};
+  assets.forEach((a) => {
+    const k = a.assetType || "未分类";
+    typeMap[k] = (typeMap[k] || 0) + 1;
+  });
+  const typeList = Object.entries(typeMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const typeMax = Math.max(1, ...typeList.map(([, n]) => n));
+  const TYPE_COLORS = ["#12a968", "#246bfe", "#f59e0b", "#8b5cf6", "#ef4b3f", "#06b6d4"];
+  const accuracyDisplay = accuracy.sample < 5
+    ? `<div class="ring muted" style="--value:0">—</div><p class="ring-note">样本不足（${accuracy.sample}/5）</p>`
+    : `<div class="ring" style="--value:${accuracy.value}">${accuracy.value}%</div><p class="ring-note">基于 ${accuracy.sample} 个已确认字段</p>`;
+  return `
+    <section class="insight-aux">
+      <div class="insight-aux-head"><h2>基础指标 <small>规则版 · 降级保底</small></h2></div>
+      <div class="insight-aux-grid">
+        <article class="aux-card">
+          <span class="aux-card-label">资产总数</span>
+          <b class="aux-card-value">${counts.total}</b>
+          <span class="aux-card-sub">正常 ${counts.normal} · 异常 ${counts.danger}</span>
+        </article>
+        <article class="aux-card">
+          <span class="aux-card-label">本期巡检</span>
+          <b class="aux-card-value">${records.length}</b>
+          <span class="aux-card-sub">提交率 ${submittedRate}%</span>
+        </article>
+        <article class="aux-card">
+          <span class="aux-card-label">待复核 / 异常</span>
+          <b class="aux-card-value ${abnormalCnt > 0 ? "danger" : ""}">${abnormalCnt}</b>
+          <span class="aux-card-sub">${abnormalCnt > 0 ? "需关注" : "全清"}</span>
+        </article>
+        <article class="aux-card">
+          <span class="aux-card-label">闭环率</span>
+          <b class="aux-card-value">${closedPct}%</b>
+          <span class="aux-card-sub">${closedCnt} 结案 / ${pendingApprovals} 待审</span>
+        </article>
+      </div>
+      <div class="insight-aux-rings">
+        <article class="ring-card">
+          <div class="ring-head"><h3>AI 识别准确率</h3></div>
+          ${accuracyDisplay}
+        </article>
+        <article class="ring-card">
+          <div class="ring-head"><h3>异常闭环率</h3></div>
+          <div class="ring green" style="--value:${closedPct}">${closedPct}%</div>
+          <p class="ring-note">复核 → 审批 → 写入台账</p>
+        </article>
+        <article class="ring-card aux-type-card">
+          <div class="ring-head"><h3>资产类型 Top ${typeList.length}</h3></div>
+          <div class="type-bars">
+            ${typeList.map(([name, n], i) => {
+              const pct = Math.round((n / typeMax) * 100);
+              const color = TYPE_COLORS[i % TYPE_COLORS.length];
+              return `<div class="type-bar"><span class="type-name">${escapeHTML(name)}</span><div class="type-track"><div class="type-fill" style="width:${pct}%; background:${color}"></div></div><span class="type-num"><b>${n}</b></span></div>`;
+            }).join("") || `<div class="empty-state">暂无</div>`}
+          </div>
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+// ⑨ 底栏元信息
+function renderInsightFooter(insights) {
+  const upd = insights.generatedAt ? fmtTime(insights.generatedAt) : "—";
+  return `
+    <footer class="insight-footer">
+      <span>数据更新 ${escapeHTML(upd)}</span>
+      <span>·</span>
+      <span>模型 ${escapeHTML(insights.model || "—")}</span>
+      <span>·</span>
+      <span>prompt v1-mock</span>
+      <span>·</span>
+      <span>range ${escapeHTML(insights.rangeKey || "—")}</span>
+    </footer>
+  `;
+}
+
 function renderDataPage() {
   if (!state.dataPeriod) state.dataPeriod = "month";
+  const periodDef = DATA_PERIODS.find((p) => p.key === state.dataPeriod) || DATA_PERIODS[2];
+  const project = state.selectedProject || "";
+  const cacheKey = `${state.dataPeriod}::${project}`;
+  if (!(cacheKey in state.dataInsights)) loadDataInsights(state.dataPeriod, project);
+  const insights = state.dataInsights[cacheKey] || { overview: {}, items: [], summary: "", model: "—", inspectorQuality: [], rangeKey: periodToRangeKey(state.dataPeriod) };
+
   const assets = filteredAssets();
   const allRecords = filteredRecords();
   const records = periodFilter(allRecords, state.dataPeriod);
-  const periodDef = DATA_PERIODS.find((p) => p.key === state.dataPeriod) || DATA_PERIODS[2];
+  const requests = filteredRequests();
+
+  $("#pageMain").innerHTML = `
+    ${renderInsightHero(insights, periodDef)}
+    ${renderRiskKpi(insights)}
+    ${renderFocusBoard(insights)}
+    ${renderStatusHeatmap(periodDef)}
+    ${renderInsightAux(records, assets, requests, periodDef)}
+    ${renderInsightFooter(insights)}
+  `;
+  $("#pageAside").innerHTML = "";
+  document.querySelectorAll("[data-period]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.dataPeriod = btn.dataset.period;
+      render();
+    });
+  });
+  document.querySelector("[data-action=refresh-insights]")?.addEventListener("click", async () => {
+    delete state.dataInsights[cacheKey];
+    await loadDataInsights(state.dataPeriod, project, true);
+  });
+}
+
+function renderDataPageLegacy_DEAD_REMOVED() {
+  // 旧数据看板已替换为洞察台。下方残留代码仅供参考,会在下次维护时删除。
+  return;
+  /* eslint-disable */
   // 同比：上一周期
   const cutoffMs = periodDef.days * 24 * 3600 * 1000;
   const now = Date.now();
