@@ -696,8 +696,19 @@ async function renderForm() {
       `).join("")}
     </div>
   ` : "";
+  // P0-4 防惰性闭环:统计还没人工 patch 过的 AI 字段。提交接口对这些字段会拦截。
+  const unconfirmedCount = rec.fields.filter(f => f.source === "ai" && String(f.value || "").trim() !== "").length;
+  const confirmAllBanner = unconfirmedCount > 0 ? `
+    <div class="confirm-all-banner" id="confirmAllBanner">
+      <div class="cab-msg">
+        <b>${unconfirmedCount}</b> 个 AI 识别字段还未确认 · 请逐项核对,或一键确认正常字段(会留痕)
+      </div>
+      <button type="button" id="confirmAllBtn">一键确认正常 (${unconfirmedCount})</button>
+    </div>
+  ` : "";
   groups.innerHTML = `
     ${imagesHTML}
+    ${confirmAllBanner}
     <div class="group-title">日报字段</div>
     <div class="group">
       ${rec.fields.map(renderField).join("")}
@@ -712,6 +723,8 @@ async function renderForm() {
   groups.querySelectorAll("[data-mark-uncertain]").forEach(btn => {
     btn.addEventListener("click", () => markUncertain(btn.dataset.markUncertain));
   });
+  // P0-4 一键确认按钮:批量给所有 source=ai 字段写一条 confirm-batch 留痕,主管能识别"批量过的"
+  document.getElementById("confirmAllBtn")?.addEventListener("click", () => confirmAllAIFields());
   // 缩略图点击 → 弹大图
   const strip = $("#formPhotoStrip");
   if (strip) {
@@ -982,6 +995,41 @@ async function saveField(code) {
   } catch (err) {
     toast(err.message);
   }
+}
+
+// P0-4 一键确认所有 source=ai 字段:批量调 patchField (action=confirm-batch),
+// 让主管能在 confirm_logs 里看出"这是批量过的,不是逐项检查的",对应放进抽检池。
+async function confirmAllAIFields() {
+  if (!state.record) return;
+  const aiFields = state.record.fields.filter(f =>
+    f.source === "ai" && String(f.value || "").trim() !== ""
+  );
+  if (aiFields.length === 0) {
+    toast("没有需要确认的 AI 字段");
+    return;
+  }
+  if (!confirm(`一键确认 ${aiFields.length} 个 AI 字段为「正常」?\n所有动作会留痕,主管可追溯。`)) return;
+  const btn = document.getElementById("confirmAllBtn");
+  if (btn) { btn.disabled = true; btn.textContent = `处理中… 0/${aiFields.length}`; }
+  let ok = 0;
+  for (const field of aiFields) {
+    try {
+      const opts = {
+        action: "confirm-batch",
+        durationMs: popFieldDurationMs(field.code),
+        viewedPhoto: FieldAudit.viewedPhoto,
+      };
+      const updated = await API.patchField(state.record.id, field.code, field.value, field.version, opts);
+      Object.assign(field, updated);
+      ok++;
+      if (btn) btn.textContent = `处理中… ${ok}/${aiFields.length}`;
+    } catch (err) {
+      toast(`字段 ${field.label} 确认失败:${err.message || err}`);
+    }
+  }
+  FieldAudit.viewedPhoto = false;
+  toast(`已批量确认 ${ok} / ${aiFields.length} 个字段`);
+  renderForm(); // 重渲染 -> banner 应消失或更新数量
 }
 
 // §4 mark_uncertain：人工无法判定，保留待复核交主管抽查；后端会写一条 uncertain 留痕。

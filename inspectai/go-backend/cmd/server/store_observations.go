@@ -129,6 +129,50 @@ func (s *SQLiteStore) insertIgnore() string {
 	return "INSERT OR IGNORE INTO"
 }
 
+// writeAssetSnapshotsExec —— 事务内可复用的快照/观测写入,无 Begin/Commit。
+// 让 SubmitRecordWithAssets 把日报/资产/快照/观测放进同一个事务,失败整体回滚。
+func writeAssetSnapshotsExec(exec sqlExecutor, dialect string, snaps []*AssetSnapshot, obs []*FieldObservation) error {
+	if len(snaps) == 0 && len(obs) == 0 {
+		return nil
+	}
+	prefix := "INSERT OR IGNORE INTO"
+	if dialect == "mysql" {
+		prefix = "INSERT IGNORE INTO"
+	}
+	snapSQL := prefix + ` asset_snapshots
+		(id, asset_id, record_id, status, status_level, summary, inspector, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	for _, sn := range snaps {
+		if sn.ID == "" {
+			sn.ID = newID("snap")
+		}
+		if _, err := exec.Exec(snapSQL,
+			sn.ID, sn.AssetID, sn.RecordID, sn.Status, sn.StatusLevel, sn.Summary, sn.Inspector,
+			sn.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	obsSQL := prefix + ` field_observations
+		(id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	for _, o := range obs {
+		if o.ID == "" {
+			o.ID = newID("obs")
+		}
+		var num any
+		if o.ValueNumber != nil {
+			num = *o.ValueNumber
+		}
+		if _, err := exec.Exec(obsSQL,
+			o.ID, o.AssetID, o.RecordID, o.FieldKey, o.FieldLabel, o.ValueText, num, o.Source, o.Confidence,
+			o.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// WriteAssetSnapshots —— 独立调用,用于启动回填等非提交流程。
 func (s *SQLiteStore) WriteAssetSnapshots(snaps []*AssetSnapshot, obs []*FieldObservation) error {
 	if len(snaps) == 0 && len(obs) == 0 {
 		return nil
@@ -138,37 +182,8 @@ func (s *SQLiteStore) WriteAssetSnapshots(snaps []*AssetSnapshot, obs []*FieldOb
 		return err
 	}
 	defer tx.Rollback()
-
-	snapSQL := s.insertIgnore() + ` asset_snapshots
-		(id, asset_id, record_id, status, status_level, summary, inspector, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	for _, sn := range snaps {
-		if sn.ID == "" {
-			sn.ID = newID("snap")
-		}
-		if _, err := tx.Exec(snapSQL,
-			sn.ID, sn.AssetID, sn.RecordID, sn.Status, sn.StatusLevel, sn.Summary, sn.Inspector,
-			sn.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-			return err
-		}
-	}
-
-	obsSQL := s.insertIgnore() + ` field_observations
-		(id, asset_id, record_id, field_key, field_label, value_text, value_number, source, confidence, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	for _, o := range obs {
-		if o.ID == "" {
-			o.ID = newID("obs")
-		}
-		var num any // nil → NULL（非数值字段）
-		if o.ValueNumber != nil {
-			num = *o.ValueNumber
-		}
-		if _, err := tx.Exec(obsSQL,
-			o.ID, o.AssetID, o.RecordID, o.FieldKey, o.FieldLabel, o.ValueText, num, o.Source, o.Confidence,
-			o.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-			return err
-		}
+	if err := writeAssetSnapshotsExec(tx, s.dialect, snaps, obs); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

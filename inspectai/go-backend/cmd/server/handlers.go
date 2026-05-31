@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -1698,6 +1697,21 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		return
 	}
 
+	// P0-4 防惰性闭环:任何 source 仍是「ai」的字段说明从未被人工 patch 过,
+	// 必须先「确认全部 AI 识别字段」或逐项 tap,留下 confirm log 后才能提交。
+	var unconfirmed []string
+	for _, f := range rec.Fields {
+		if f.Source == "ai" && strings.TrimSpace(f.Value) != "" {
+			unconfirmed = append(unconfirmed, f.Label)
+		}
+	}
+	if len(unconfirmed) > 0 {
+		writeError(w, http.StatusBadRequest, "needs_confirmation",
+			"以下 AI 识别字段还未人工确认:"+strings.Join(unconfirmed, "、")+
+				";请逐项检查或点「确认全部 AI 字段」")
+		return
+	}
+
 	claim, err := s.store.ClaimSubmission(recordID, idemKey)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "idempotency_failed", err.Error())
@@ -1759,19 +1773,15 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 	rec.Submitted = true
 	rec.SubmittedAt = &now
 	assets := buildAssets(rec, now)
-	if err := s.store.SubmitRecordWithAssets(rec, assets); err != nil {
+	// P0-6 原子写入:日报/资产/快照/观测同事务,失败整体回滚,杜绝"日报已提交但快照漏写"
+	snaps, obs := buildRecordObservations(rec, assets, now)
+	if err := s.store.SubmitRecordWithAssets(rec, assets, snaps, obs); err != nil {
 		_ = s.store.ReleaseSubmission(recordID, idemKey)
 		writeError(w, http.StatusInternalServerError, "submit_failed",
 			"日报提交与台账写入失败，已回滚："+err.Error())
 		return
 	}
 	_ = s.store.CompleteSubmission(recordID, idemKey)
-
-	// §3 长期台账：把本次提交拆成资产快照 + 字段观测落库（失败不影响提交主流程）
-	snaps, obs := buildRecordObservations(rec, assets, now)
-	if err := s.store.WriteAssetSnapshots(snaps, obs); err != nil {
-		log.Printf("WARN: write asset snapshots failed for %s: %v", recordID, err)
-	}
 
 	writeJSON(w, http.StatusOK, sanitizeRecordForCurrentTemplate(rec))
 }

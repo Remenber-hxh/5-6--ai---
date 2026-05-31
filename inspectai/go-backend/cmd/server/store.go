@@ -33,7 +33,9 @@ type Store interface {
 	LatestTaskByRecord(recordID string) (*AITask, error)
 
 	UpsertAsset(asset *AssetEntry) error
-	SubmitRecordWithAssets(rec *Record, assets []*AssetEntry) error
+	// SubmitRecordWithAssets —— 原子提交:日报、资产台账、资产快照、字段观测全部在同事务内写入。
+	// 失败整体回滚,避免出现"日报已提交但快照没记录"的数据缺口。
+	SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error
 	ListAssets() ([]*AssetEntry, error)
 	GetAsset(id string) (*AssetEntry, error)
 	UpdateAssetMeta(id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
@@ -270,7 +272,7 @@ func (s *MemStore) upsertAssetLocked(asset *AssetEntry) error {
 	return nil
 }
 
-func (s *MemStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry) error {
+func (s *MemStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.records[rec.ID]; !ok {
@@ -281,6 +283,31 @@ func (s *MemStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry) err
 	for _, asset := range assets {
 		if err := s.upsertAssetLocked(asset); err != nil {
 			return err
+		}
+	}
+	// 在同一锁内顺序写快照/观测,保持与 SQL 版本"全成功或全失败"的语义。
+	for _, sn := range snaps {
+		dup := false
+		for _, ex := range s.assetSnapshots {
+			if ex.AssetID == sn.AssetID && ex.RecordID == sn.RecordID {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			s.assetSnapshots = append(s.assetSnapshots, sn)
+		}
+	}
+	for _, o := range obs {
+		dup := false
+		for _, ex := range s.fieldObs {
+			if ex.AssetID == o.AssetID && ex.RecordID == o.RecordID && ex.FieldKey == o.FieldKey {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			s.fieldObs = append(s.fieldObs, o)
 		}
 	}
 	return nil
@@ -1030,7 +1057,7 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 	return err
 }
 
-func (s *SQLiteStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry) error {
+func (s *SQLiteStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -1044,6 +1071,10 @@ func (s *SQLiteStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry) 
 		if err := upsertAssetExec(tx, s.dialect, asset); err != nil {
 			return err
 		}
+	}
+	// 快照/观测在同事务里,失败一起回滚,确保「日报已提交但快照漏写」不会发生。
+	if err := writeAssetSnapshotsExec(tx, s.dialect, snaps, obs); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
