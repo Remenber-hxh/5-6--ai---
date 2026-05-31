@@ -55,6 +55,7 @@ const state = {
   assetDetails: {}, // §3 资产详情缓存：{ id → { history, total, page, pageSize, trend } }
   confirmLogs: {},  // §4 记录的字段确认留痕：{ recordId → [log,...] }
   dataInsights: {}, // 阶段一 数据看板缓存：{ key → { overview, items, summary, model, generatedAt } }
+  loadErrors: {},   // P1-4 接口失败留痕：{ "scope:id" → 错误消息 }；为空表示无错
   recordPage: 0,
   filters: {
     assetType: "",
@@ -167,11 +168,14 @@ const assetDetailInflight = new Set();
 async function loadAssetDetail(assetId) {
   if (!assetId || assetId in state.assetDetails || assetDetailInflight.has(assetId)) return;
   assetDetailInflight.add(assetId);
+  const errKey = `assetDetail:${assetId}`;
   try {
     const id = encodeURIComponent(assetId);
-    const [hist, rep] = await Promise.all([
-      safeApi(`/api/assets/${id}/records?page=1&pageSize=20`, { records: [], total: 0, page: 1, pageSize: 20 }),
-      safeApi(`/api/assets/${id}/report?range=90d`, { fields: [] }),
+    // P1-4 改用 api() 真抛错(safeApi 隐式吞掉 → 永远显示"暂无数据"误导用户)
+    const [hist, rep, events] = await Promise.all([
+      api(`/api/assets/${id}/records?page=1&pageSize=20`),
+      api(`/api/assets/${id}/report?range=90d`),
+      api(`/api/assets/${id}/status-events?range=30d`),
     ]);
     state.assetDetails[assetId] = {
       history: hist.records || [],
@@ -179,9 +183,12 @@ async function loadAssetDetail(assetId) {
       page: hist.page || 1,
       pageSize: hist.pageSize || 20,
       trend: rep.fields || [],
+      events,
     };
-  } catch {
-    state.assetDetails[assetId] = { history: [], total: 0, page: 1, pageSize: 20, trend: [] };
+    delete state.loadErrors[errKey];
+  } catch (err) {
+    state.assetDetails[assetId] = { history: [], total: 0, page: 1, pageSize: 20, trend: [], events: null };
+    state.loadErrors[errKey] = err && err.message || "接口请求失败";
   } finally {
     assetDetailInflight.delete(assetId);
   }
@@ -193,11 +200,14 @@ const confirmLogsInflight = new Set();
 async function loadConfirmLogs(recordId) {
   if (!recordId || recordId in state.confirmLogs || confirmLogsInflight.has(recordId)) return;
   confirmLogsInflight.add(recordId);
+  const errKey = `confirmLogs:${recordId}`;
   try {
     const data = await api(`/api/inspection/records/${encodeURIComponent(recordId)}/confirm-logs`);
     state.confirmLogs[recordId] = data.logs || [];
-  } catch {
+    delete state.loadErrors[errKey];
+  } catch (err) {
     state.confirmLogs[recordId] = [];
+    state.loadErrors[errKey] = err && err.message || "接口请求失败";
   } finally {
     confirmLogsInflight.delete(recordId);
   }
@@ -525,6 +535,38 @@ function renderSparkline(points) {
     return (i ? "L" : "M") + x + "," + y;
   }).join(" ");
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="#246bfe" stroke-width="1.5"/></svg>`;
+}
+
+// P1-2 状态事件统计卡 — 电梯/状态类资产的核心展示,代替数值字段折线
+function renderStatusEventsCard(events) {
+  const total = events.inspections || 0;
+  const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
+  const repeatFields = events.repeatFields || [];
+  return `
+    <div class="status-events">
+      <h4>状态事件统计 <small>近 30 天 · ${total} 次巡检</small></h4>
+      <div class="se-bars">
+        <div class="se-bar"><span class="se-label">正常</span><div class="se-track"><div class="se-fill se-normal" style="width:${pct(events.normal)}%"></div></div><b class="se-num">${events.normal || 0}</b></div>
+        <div class="se-bar"><span class="se-label">待复核</span><div class="se-track"><div class="se-fill se-warning" style="width:${pct(events.warning)}%"></div></div><b class="se-num">${events.warning || 0}</b></div>
+        <div class="se-bar"><span class="se-label">异常</span><div class="se-track"><div class="se-fill se-danger" style="width:${pct(events.danger)}%"></div></div><b class="se-num">${events.danger || 0}</b></div>
+      </div>
+      <div class="se-meta-row">
+        <span>补拍 <b>${events.retakeCount || 0}</b></span>
+        <span>·</span>
+        <span>无法判定 <b>${events.uncertainCount || 0}</b></span>
+        <span>·</span>
+        <span>未看图确认 <b class="${(events.noPhotoConfirm || 0) > 0 ? "danger-num" : ""}">${events.noPhotoConfirm || 0}</b></span>
+      </div>
+      ${repeatFields.length ? `
+        <div class="se-repeat">
+          <b class="se-repeat-title">重复异常字段</b>
+          <div class="se-repeat-list">
+            ${repeatFields.map((f) => `<span class="se-repeat-pill">${escapeHTML(f.fieldLabel || f.fieldKey)} <em>×${f.count}</em></span>`).join("")}
+          </div>
+        </div>
+      ` : ""}
+    </div>
+  `;
 }
 
 // §3 字段趋势卡片：本次/上次/近7均 + 变化率徽章 + 简易折线
@@ -2430,18 +2472,21 @@ async function loadDataInsights(period, project = "", force = false) {
   if (dataInsightsInflight.has(key)) return;
   dataInsightsInflight.add(key);
   const rangeKey = periodToRangeKey(period);
+  const errKey = `dataInsights:${key}`;
   try {
     const q = new URLSearchParams({ range: rangeKey });
     if (project) q.set("project", project);
+    // P1-4 改用 api():失败要让用户知道,不再隐式回退空数组
     const [snap, attn] = await Promise.all([
-      safeApi("/api/management-ai/snapshot?" + q.toString(), { overview: {}, repeatedIssues: [], inspectorQuality: [], pendingReviews: { needsReview: [], pendingApprovals: [] } }),
-      safeApi(`/api/management-ai/attention?${q.toString()}&limit=5${force ? "&refresh=1" : ""}`, { items: [], summary: "", model: "" }),
+      api("/api/management-ai/snapshot?" + q.toString()),
+      api(`/api/management-ai/attention?${q.toString()}&limit=5${force ? "&refresh=1" : ""}`),
     ]);
     state.dataInsights[key] = {
       overview:         snap.overview || {},
       repeatedIssues:   snap.repeatedIssues || [],
       inspectorQuality: snap.inspectorQuality || [],
       pendingReviews:   snap.pendingReviews || { needsReview: [], pendingApprovals: [] },
+      numericDrifts:    snap.numericDrifts || [],
       items:            attn.items || [],
       summary:          attn.summary || "",
       model:            attn.model || "",
@@ -2449,12 +2494,26 @@ async function loadDataInsights(period, project = "", force = false) {
       generatedAt:      attn.generatedAt || snap.generatedAt || new Date().toISOString(),
       rangeKey,
     };
-  } catch {
-    state.dataInsights[key] = { overview: {}, repeatedIssues: [], inspectorQuality: [], items: [], summary: "", model: "", rangeKey };
+    delete state.loadErrors[errKey];
+  } catch (err) {
+    state.dataInsights[key] = { overview: {}, repeatedIssues: [], inspectorQuality: [], items: [], summary: "", model: "", rangeKey, numericDrifts: [] };
+    state.loadErrors[errKey] = err && err.message || "接口请求失败";
   } finally {
     dataInsightsInflight.delete(key);
   }
   render();
+}
+
+// P1-4 错误三态:加载失败显示警告条,让用户知道是接口挂了还是真没数据
+function renderLoadErrorBanner(scopeKey) {
+  const msg = state.loadErrors && state.loadErrors[scopeKey];
+  if (!msg) return "";
+  return `
+    <div class="load-error-banner">
+      <span class="leb-icon">⚠</span>
+      <span class="leb-msg">加载失败:${escapeHTML(msg)}。后端规则结果仍可看,请稍后刷新或检查服务。</span>
+    </div>
+  `;
 }
 
 // ① Hero(标题 + AI 全局摘要 + 时间 tabs + 项目筛选 + 重新分析)
@@ -2624,6 +2683,126 @@ function renderStatusHeatmap(periodDef) {
   `;
 }
 
+// ⑤ 字段漂移看板:左列数值字段(变化率徽章 + sparkline 暂略,显示 cur/prev),右列重复异常状态字段
+function renderDriftBoard(insights) {
+  const numeric = insights.numericDrifts || [];
+  const repeated = insights.repeatedIssues || [];
+  if (!numeric.length && !repeated.length) return "";
+  const numericHTML = numeric.length ? `
+    <div class="drift-col">
+      <h4>数值字段漂移 <small>近 30 天 · 变化率 |Δ| 排序</small></h4>
+      <ul class="drift-list">
+        ${numeric.slice(0, 6).map((d) => {
+          const pct = (d.changeRate >= 0 ? "+" : "") + (d.changeRate * 100).toFixed(1) + "%";
+          const cls = d.overThreshold ? "danger" : (d.changeRate >= 0 ? "up" : "down");
+          return `<li class="drift-item">
+            <span class="drift-name">${escapeHTML(d.assetName)} · ${escapeHTML(d.fieldLabel || d.fieldKey)}</span>
+            <span class="drift-vals">本次 ${formatNum(d.current)} · 上次 ${formatNum(d.previous)}</span>
+            <span class="drift-rate ${cls}">${escapeHTML(pct)}</span>
+          </li>`;
+        }).join("")}
+      </ul>
+    </div>` : `<div class="drift-col"><h4>数值字段漂移</h4><div class="empty-state">无数值字段或无足够历史</div></div>`;
+  const repeatedHTML = repeated.length ? `
+    <div class="drift-col">
+      <h4>状态字段重复异常 <small>同字段累计 ≥2 次</small></h4>
+      <ul class="drift-list">
+        ${repeated.slice(0, 6).map((r) => `
+          <li class="drift-item" data-asset-select="${escapeHTML(r.assetId)}">
+            <span class="drift-name">${escapeHTML(r.assetName)} · ${escapeHTML(r.fieldLabel || r.fieldKey)}</span>
+            <span class="drift-vals">${escapeHTML(r.lastTime || "")}</span>
+            <span class="drift-rate danger">×${r.count}</span>
+          </li>`).join("")}
+      </ul>
+    </div>` : `<div class="drift-col"><h4>状态字段重复异常</h4><div class="empty-state">本期未发现重复异常</div></div>`;
+  return `
+    <section class="drift-board">
+      <div class="drift-board-head"><h2>字段漂移看板</h2><small>规则计算 · 不依赖 AI</small></div>
+      <div class="drift-grid">
+        ${numericHTML}
+        ${repeatedHTML}
+      </div>
+    </section>
+  `;
+}
+
+// ⑥ 巡检员质量榜:补拍/无判/未看图/快速确认 等防惰性指标按人聚合
+function renderInspectorQuality(insights) {
+  const rows = insights.inspectorQuality || [];
+  if (!rows.length) return "";
+  return `
+    <section class="inspector-quality">
+      <div class="iq-head"><h2>巡检员质量榜</h2><small>近 30 天 · 留痕指标</small></div>
+      <table class="iq-table">
+        <thead>
+          <tr>
+            <th>巡检员</th>
+            <th>留痕数</th>
+            <th>补拍</th>
+            <th>无法判定</th>
+            <th>未看图确认</th>
+            <th>快速确认 &lt;2s</th>
+            <th>平均停留</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.slice(0, 10).map((r) => `
+            <tr>
+              <td><b>${escapeHTML(r.operator)}</b></td>
+              <td>${r.total}</td>
+              <td class="${r.retakeCount > 0 ? "warn" : ""}">${r.retakeCount}</td>
+              <td class="${r.uncertainCount > 0 ? "warn" : ""}">${r.uncertainCount}</td>
+              <td class="${r.noPhotoConfirm > 0 ? "danger" : ""}">${r.noPhotoConfirm}</td>
+              <td class="${r.fastConfirmCount > 0 ? "danger" : ""}">${r.fastConfirmCount}</td>
+              <td>${r.avgDurationMs > 0 ? (r.avgDurationMs / 1000).toFixed(1) + "s" : "—"}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+// ⑦ 异常本期 vs 上期 + AI 一句话解读
+function renderPeriodCompare(insights) {
+  const ov = insights.overview || {};
+  const cur = ov.abnormalRecent || 0;
+  const prev = ov.abnormalPrev || 0;
+  const recCur = ov.recordRecent || 0;
+  const recPrev = ov.recordPrev || 0;
+  const delta = cur - prev;
+  const deltaTxt = delta > 0 ? `+${delta}` : `${delta}`;
+  const trendCls = delta > 0 ? "danger" : (delta < 0 ? "ok" : "neutral");
+  const aiLine = delta > 0
+    ? `本期异常 ${cur} 项,比上期(${prev} 项)多 ${delta} 项,需要重点关注趋势`
+    : delta < 0
+      ? `本期异常 ${cur} 项,比上期(${prev} 项)少 ${-delta} 项,趋势在好转`
+      : `本期异常 ${cur} 项,与上期持平`;
+  return `
+    <section class="period-compare">
+      <div class="pc-head"><h2>异常本期 vs 上期</h2><small>同长度时间窗对比</small></div>
+      <div class="pc-grid">
+        <article class="pc-card">
+          <span class="pc-label">本期异常</span>
+          <b class="pc-value ${cur > 0 ? "danger" : ""}">${cur}</b>
+          <span class="pc-sub">${recCur} 条巡检中</span>
+        </article>
+        <article class="pc-card">
+          <span class="pc-label">上期异常</span>
+          <b class="pc-value">${prev}</b>
+          <span class="pc-sub">${recPrev} 条巡检中</span>
+        </article>
+        <article class="pc-card pc-delta-card">
+          <span class="pc-label">环比</span>
+          <b class="pc-value pc-${trendCls}">${escapeHTML(deltaTxt)}</b>
+          <span class="pc-sub">${trendCls === "danger" ? "↑ 上升" : (trendCls === "ok" ? "↓ 下降" : "持平")}</span>
+        </article>
+      </div>
+      <div class="pc-ai-line">AI: ${escapeHTML(aiLine)}</div>
+    </section>
+  `;
+}
+
 // ⑧ 辅助区(降级保底):旧 4 KPI / 准确率环 / 闭环率环 / 资产类型分布
 function renderInsightAux(records, assets, requests, periodDef) {
   const counts = statusCounts(assets);
@@ -2727,10 +2906,14 @@ function renderDataPage() {
   const requests = filteredRequests();
 
   $("#pageMain").innerHTML = `
+    ${renderLoadErrorBanner(`dataInsights:${cacheKey}`)}
     ${renderInsightHero(insights, periodDef)}
     ${renderRiskKpi(insights)}
     ${renderFocusBoard(insights)}
     ${renderStatusHeatmap(periodDef)}
+    ${renderDriftBoard(insights)}
+    ${renderInspectorQuality(insights)}
+    ${renderPeriodCompare(insights)}
     ${renderInsightAux(records, assets, requests, periodDef)}
     ${renderInsightFooter(insights)}
   `;
@@ -3324,8 +3507,12 @@ function renderAssetSide(asset) {
       <h4>字段趋势 <small>近 90 天 · 后端规则计算</small></h4>
       <div class="trend-cards">${trend.map(renderTrendCard).join("")}</div>
     </div>` : "";
+  // P1-2 电梯等状态类资产没数值趋势时,显示状态事件统计代替
+  const events = detail && detail.events;
+  const eventsHTML = (events && events.inspections > 0) ? renderStatusEventsCard(events) : "";
   return `
     <div class="detail-head"><h2>资产详情</h2></div>
+    ${renderLoadErrorBanner(`assetDetail:${asset.id}`)}
     <div class="asset-card">
       <div class="asset-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : ""}</div>
       <div class="asset-title"><h3>${escapeHTML(asset.assetName || "未命名资产")}</h3><span class="pill ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></div>
@@ -3337,7 +3524,8 @@ function renderAssetSide(asset) {
       </div>
       <div class="info-card"><b>台账摘要</b><span>${escapeHTML(asset.lastSummary || "暂无管理摘要。")}</span></div>
       ${trendHTML}
-      <div class="detail-tabs"><button class="active">巡检记录</button><button>字段历史</button><button>异常记录</button><button>关联文件</button></div>
+      ${eventsHTML}
+      <div class="detail-tabs"><button class="active">巡检记录</button><button class="disabled" disabled title="阶段二开放">字段历史</button><button class="disabled" disabled title="阶段二开放">异常记录</button><button class="disabled" disabled title="阶段二开放">关联文件</button></div>
       <table class="history-table">
         <thead><tr><th>巡检时间</th><th>巡检人</th><th>状态</th><th>结果摘要</th></tr></thead>
         <tbody>${snapshots.slice(0, 5).map((sn) => `
@@ -3369,6 +3557,7 @@ function renderRecordSide(record) {
     </div>` : "";
   return `
     <div class="detail-head"><h2>记录详情</h2></div>
+    ${renderLoadErrorBanner(`confirmLogs:${record.id}`)}
     <div class="side-stack">
       <div class="info-card"><b>AI 总结</b><span>${escapeHTML(record.aiSummary || record.report || "暂无总结")}</span></div>
       <div class="photo-row">${photos.slice(0, 2).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("")}</div>

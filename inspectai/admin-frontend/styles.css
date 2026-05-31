@@ -1493,6 +1493,76 @@ td i {
 }
 .trend-meta b { color: #1f2a3d; font-weight: 700; }
 
+/* P1-2 状态事件统计卡(电梯/状态类资产) */
+.status-events {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+.status-events > h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 700;
+}
+.status-events > h4 small {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
+  margin-left: 6px;
+}
+.se-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.se-bar {
+  display: grid;
+  grid-template-columns: 60px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+}
+.se-label { font-size: 12px; color: #475569; font-weight: 700; }
+.se-track {
+  height: 10px;
+  background: #e2e8f0;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.se-fill { height: 100%; border-radius: 5px; transition: width 200ms ease; }
+.se-fill.se-normal  { background: #12a968; }
+.se-fill.se-warning { background: #f59e0b; }
+.se-fill.se-danger  { background: #ef4b3f; }
+.se-num { text-align: right; font-size: 12px; font-weight: 800; color: #1f2a3d; }
+.se-meta-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+  padding: 6px 0;
+  border-top: 1px dashed #e2e8f0;
+  flex-wrap: wrap;
+}
+.se-meta-row b { color: #1f2a3d; font-weight: 800; }
+.se-meta-row b.danger-num { color: #b91c1c; }
+.se-repeat {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+.se-repeat-title { display: block; font-size: 11px; color: #64748b; font-weight: 700; margin-bottom: 6px; }
+.se-repeat-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.se-repeat-pill {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.se-repeat-pill em {
+  font-style: normal;
+  font-weight: 800;
+  margin-left: 2px;
+}
+
 .history-foot {
   margin: 4px 0 8px;
   font-size: 11px;
@@ -1850,6 +1920,168 @@ td i {
   font-size: 11px;
   color: #94a3b8;
 }
+
+/* P1-1 ⑤ 字段漂移看板 */
+.drift-board {
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 0 0 18px;
+}
+.drift-board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.drift-board-head h2 { margin: 0; font-size: 16px; font-weight: 800; }
+.drift-board-head small { color: #94a3b8; font-size: 11px; }
+.drift-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.drift-col > h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 700;
+}
+.drift-col > h4 small {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
+  margin-left: 6px;
+}
+.drift-list { list-style: none; margin: 0; padding: 0; }
+.drift-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.drift-item:hover { background: #f1f5f9; }
+.drift-name { font-size: 12px; font-weight: 700; color: #1f2a3d; }
+.drift-vals { font-size: 11px; color: #64748b; }
+.drift-rate {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  background: #e2e8f0;
+}
+.drift-rate.up     { color: #b8741a; background: #fef3c7; }
+.drift-rate.down   { color: #047857; background: #d1fae5; }
+.drift-rate.danger { color: #b91c1c; background: #fee2e2; }
+
+/* P1-1 ⑥ 巡检员质量榜 */
+.inspector-quality {
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 0 0 18px;
+}
+.iq-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.iq-head h2 { margin: 0; font-size: 16px; font-weight: 800; }
+.iq-head small { color: #94a3b8; font-size: 11px; }
+.iq-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.iq-table th {
+  text-align: left;
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.iq-table td {
+  padding: 10px 6px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1f2a3d;
+}
+.iq-table td.warn   { color: #b8741a; font-weight: 700; }
+.iq-table td.danger { color: #b91c1c; font-weight: 800; }
+
+/* P1-1 ⑦ 异常本期 vs 上期 */
+.period-compare {
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 0 0 18px;
+}
+.pc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.pc-head h2 { margin: 0; font-size: 16px; font-weight: 800; }
+.pc-head small { color: #94a3b8; font-size: 11px; }
+.pc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.pc-card {
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pc-label { font-size: 11px; color: #64748b; font-weight: 700; }
+.pc-value {
+  font-size: 28px;
+  font-weight: 900;
+  color: #1f2a3d;
+}
+.pc-value.danger     { color: #b91c1c; }
+.pc-value.pc-danger  { color: #b91c1c; }
+.pc-value.pc-ok      { color: #047857; }
+.pc-value.pc-neutral { color: #64748b; }
+.pc-sub { font-size: 11px; color: #94a3b8; }
+.pc-ai-line {
+  padding: 10px 14px;
+  background: #eff6ff;
+  border-left: 3px solid #246bfe;
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+  color: #1e3a8a;
+  line-height: 1.6;
+}
+
+/* P1-4 加载失败警告条 — 让用户分清"接口挂了"和"真没数据" */
+.load-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #991b1b;
+  line-height: 1.5;
+}
+.leb-icon { font-size: 16px; }
+.leb-msg { flex: 1; }
 .insight-footer span:nth-child(even) { color: #cbd5e1; }
 
 @media (max-width: 1180px) {
@@ -2358,6 +2590,18 @@ td i {
 .detail-tabs button.active {
   color: var(--green);
   border-bottom-color: var(--green);
+}
+
+/* P1-6 阶段二开放的 Tab 显示成灰色禁用,hover 不抖动,避免点了无反应 */
+.detail-tabs button.disabled,
+.detail-tabs button[disabled] {
+  color: #cbd5e1 !important;
+  cursor: not-allowed;
+  border-bottom-color: transparent !important;
+}
+.detail-tabs button.disabled:hover {
+  background: transparent !important;
+  color: #cbd5e1 !important;
 }
 
 .history-table {

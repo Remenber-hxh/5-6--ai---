@@ -305,6 +305,78 @@ func (s *Server) countDriftFields(ctx *insightsContext) int {
 	return cnt
 }
 
+// ===== Tool 1b: 全资产数值字段漂移明细(看板 ⑤ 字段漂移看板用)=====
+
+type NumericDriftEntry struct {
+	AssetID       string  `json:"assetId"`
+	AssetName     string  `json:"assetName"`
+	FieldKey      string  `json:"fieldKey"`
+	FieldLabel    string  `json:"fieldLabel"`
+	Current       float64 `json:"current"`
+	Previous      float64 `json:"previous"`
+	ChangeRate    float64 `json:"changeRate"`
+	OverThreshold bool    `json:"overThreshold"`
+}
+
+func (s *Server) toolListNumericDrift(project string) ([]*NumericDriftEntry, error) {
+	ctx, err := s.buildInsightsContext(project, "30d")
+	if err != nil {
+		return nil, err
+	}
+	out := []*NumericDriftEntry{}
+	for _, a := range ctx.assets {
+		obs, err := s.store.ListFieldObservations(a.ID, "", 200)
+		if err != nil || len(obs) == 0 {
+			continue
+		}
+		byKey := map[string][]*FieldObservation{}
+		for _, o := range obs {
+			if o.ValueNumber == nil || o.CreatedAt.Before(ctx.rangeStart) {
+				continue
+			}
+			byKey[o.FieldKey] = append(byKey[o.FieldKey], o)
+		}
+		for key, list := range byKey {
+			if len(list) < 2 {
+				continue
+			}
+			sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.Before(list[j].CreatedAt) })
+			prev := *list[len(list)-2].ValueNumber
+			cur := *list[len(list)-1].ValueNumber
+			if prev == 0 {
+				continue
+			}
+			rate := (cur - prev) / prev
+			abs := rate
+			if abs < 0 {
+				abs = -abs
+			}
+			out = append(out, &NumericDriftEntry{
+				AssetID: a.ID, AssetName: a.AssetName,
+				FieldKey: key, FieldLabel: list[0].FieldLabel,
+				Current: cur, Previous: prev, ChangeRate: rate,
+				OverThreshold: abs > 0.10,
+			})
+		}
+	}
+	// 按变化率绝对值降序
+	sort.SliceStable(out, func(i, j int) bool {
+		ai := out[i].ChangeRate
+		aj := out[j].ChangeRate
+		if ai < 0 {
+			ai = -ai
+		}
+		if aj < 0 {
+			aj = -aj
+		}
+		return ai > aj
+	})
+	if len(out) > 10 {
+		out = out[:10]
+	}
+	return out, nil
+}
+
 // ===== Tool 2: list_attention_assets (按 risk_score 排序的 Top N) =====
 
 const (
@@ -758,6 +830,126 @@ func (s *Server) toolGetInspectorQuality(rangeKey string) ([]*InspectorQualityRo
 	return out, nil
 }
 
+// ===== Tool 8+: get_status_events (电梯类资产专用,字段都是 choice 时数值趋势空白)=====
+
+type StatusEventStat struct {
+	AssetID         string             `json:"assetId"`
+	RangeKey        string             `json:"rangeKey"`
+	Inspections     int                `json:"inspections"`
+	Normal          int                `json:"normal"`
+	Warning         int                `json:"warning"`
+	Danger          int                `json:"danger"`
+	RetakeCount     int                `json:"retakeCount"`
+	UncertainCount  int                `json:"uncertainCount"`
+	NoPhotoConfirm  int                `json:"noPhotoConfirm"`
+	RepeatFields    []FieldFreqEntry   `json:"repeatFields"`    // 重复异常字段 Top
+	LastInspection  string             `json:"lastInspection,omitempty"`
+}
+
+type FieldFreqEntry struct {
+	FieldKey   string `json:"fieldKey"`
+	FieldLabel string `json:"fieldLabel"`
+	Count      int    `json:"count"`
+}
+
+func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat, error) {
+	asset, err := s.store.GetAsset(assetID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	start, _, _ := rangeWindow(rangeKey, now)
+	out := &StatusEventStat{AssetID: assetID, RangeKey: rangeKey}
+
+	snaps, _ := s.store.ListAssetSnapshots(assetID, 200, 0)
+	fieldFreq := map[string]*FieldFreqEntry{}
+	for _, sn := range snaps {
+		if sn.CreatedAt.Before(start) {
+			continue
+		}
+		out.Inspections++
+		switch sn.StatusLevel {
+		case "danger":
+			out.Danger++
+		case "warning":
+			out.Warning++
+		case "normal":
+			out.Normal++
+		}
+		if out.LastInspection == "" || sn.CreatedAt.Format("2006-01-02 15:04") > out.LastInspection {
+			out.LastInspection = sn.CreatedAt.Format("2006-01-02 15:04")
+		}
+		// 翻 record 找异常字段做"重复异常"计数
+		rec, err := s.store.GetRecord(sn.RecordID)
+		if err != nil || rec == nil {
+			continue
+		}
+		for _, f := range rec.Fields {
+			if !abnormalValueRE.Match(f.Value) {
+				continue
+			}
+			ent, ok := fieldFreq[f.Code]
+			if !ok {
+				ent = &FieldFreqEntry{FieldKey: f.Code, FieldLabel: f.Label}
+				fieldFreq[f.Code] = ent
+			}
+			ent.Count++
+		}
+	}
+
+	// 跨记录数补拍/无法判定/未看图次数
+	all, _ := s.store.ListRecords(2000)
+	for _, r := range all {
+		if r == nil || !recordTouchesAsset(r, asset) {
+			continue
+		}
+		if recordTimestamp(r).Before(start) {
+			continue
+		}
+		if r.RecognitionStatus == "retake_required" {
+			out.RetakeCount++
+		}
+	}
+	confirmLogs, _ := s.store.ListRecentFieldConfirmLogs(2000)
+	recBy := map[string]*Record{}
+	for _, r := range all {
+		if r != nil {
+			recBy[r.ID] = r
+		}
+	}
+	for _, e := range confirmLogs {
+		if e.CreatedAt.Before(start) {
+			continue
+		}
+		rec, ok := recBy[e.RecordID]
+		if !ok || !recordTouchesAsset(rec, asset) {
+			continue
+		}
+		switch e.Action {
+		case "uncertain":
+			out.UncertainCount++
+		case "confirm", "correct", "confirm-batch":
+			if !e.ViewedPhoto {
+				out.NoPhotoConfirm++
+			}
+		}
+	}
+
+	// Top 5 重复异常字段
+	rep := make([]FieldFreqEntry, 0, len(fieldFreq))
+	for _, e := range fieldFreq {
+		if e.Count >= 1 {
+			rep = append(rep, *e)
+		}
+	}
+	sort.SliceStable(rep, func(i, j int) bool { return rep[i].Count > rep[j].Count })
+	if len(rep) > 5 {
+		rep = rep[:5]
+	}
+	out.RepeatFields = rep
+	return out, nil
+}
+
 // ===== Tool 8: get_record_detail =====
 
 func (s *Server) toolGetRecordDetail(recordID string) (map[string]any, error) {
@@ -833,11 +1025,13 @@ func (s *Server) handleManagementSnapshot(w http.ResponseWriter, r *http.Request
 	repeated, _ := s.toolListRepeatedIssues(project, 10)
 	quality, _ := s.toolGetInspectorQuality(rangeKey)
 	pending, _ := s.toolListPendingReviews(project, 20)
+	numericDrifts, _ := s.toolListNumericDrift(project)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"overview":         overview,
 		"repeatedIssues":   repeated,
 		"inspectorQuality": quality,
 		"pendingReviews":   pending,
+		"numericDrifts":    numericDrifts,
 		"generatedAt":      time.Now().Format(time.RFC3339),
 	})
 }

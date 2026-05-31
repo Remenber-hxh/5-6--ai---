@@ -935,6 +935,14 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetReport(w, r, id)
 		return
 	}
+	if id := strings.TrimSuffix(rest, "/status-events"); id != rest {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetStatusEvents(w, r, id)
+		return
+	}
 	if strings.Contains(rest, "/") {
 		writeError(w, http.StatusNotFound, "not_found", "")
 		return
@@ -998,6 +1006,18 @@ type fieldTrend struct {
 	AvgRecent     *float64          `json:"avgRecent,omitempty"`
 	ChangeRate    *float64          `json:"changeRate,omitempty"`
 	OverThreshold bool              `json:"overThreshold"`
+}
+
+// handleAssetStatusEvents —— P1-2 电梯等状态类资产的"状态事件统计",
+// 字段都是 choice 时数值趋势空白,这里返回 巡检次数/正常/待复核/异常/补拍/无判/未看图/重复异常字段 Top。
+func (s *Server) handleAssetStatusEvents(w http.ResponseWriter, r *http.Request, id string) {
+	rangeKey := firstNonEmpty(r.URL.Query().Get("range"), "30d")
+	stat, err := s.toolGetStatusEvents(id, rangeKey)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stat)
 }
 
 // handleAssetReport —— §3/§5 设备健康报告：对数值字段算 本次/上次/近N均值/变化率/超阈值。
@@ -1623,8 +1643,28 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 	writeJSON(w, http.StatusOK, field)
 }
 
-// handleListConfirmLogs —— §4 返回某条记录的字段确认留痕，供后台展示"谁确认了什么、AI原值→最终值"
+// handleListConfirmLogs —— §4 返回某条记录的字段确认留痕，供后台展示"谁确认了什么、AI原值→最终值"。
+// 权限:主管/管理员读全部;巡检员只能读自己提交/经手的记录留痕(防止互相看)。
 func (s *Server) handleListConfirmLogs(w http.ResponseWriter, r *http.Request, recordID string) {
+	if !s.hasSupervisorAccess(r) {
+		// 非主管:校验该记录是否归当前登录用户
+		sessionUser, ok := s.userFromSessionToken(s.tokenFromRequest(r))
+		if !ok {
+			writeError(w, http.StatusForbidden, "forbidden", "需要登录")
+			return
+		}
+		rec, err := s.store.GetRecord(recordID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
+			return
+		}
+		owner := strings.TrimSpace(rec.Inspector)
+		if owner != strings.TrimSpace(sessionUser.DisplayName) && owner != sessionUser.Username {
+			writeError(w, http.StatusForbidden, "forbidden",
+				"只能查看本人记录的确认留痕")
+			return
+		}
+	}
 	logs, err := s.store.ListFieldConfirmLogs(recordID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
