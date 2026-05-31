@@ -22,6 +22,8 @@ import (
 
 func parseRangeDays(key string) int {
 	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "1d", "today", "day":
+		return 1
 	case "7d", "week":
 		return 7
 	case "90d", "season":

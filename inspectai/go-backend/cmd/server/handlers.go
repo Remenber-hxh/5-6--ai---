@@ -292,7 +292,7 @@ func userName(r *http.Request) string {
 
 // ===== handlers =====
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       "ok",
 		"service":      "go-backend",
@@ -672,11 +672,11 @@ func (s *Server) recordOperation(r *http.Request, action, targetType, targetID s
 	_ = s.store.CreateOperationLog(item)
 }
 
-func (s *Server) handleListPoints(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListPoints(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"points": seedPoints()})
 }
 
-func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListTemplates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"templates": reportTemplates()})
 }
 
@@ -1095,7 +1095,7 @@ func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id st
 	})
 }
 
-func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleGetAsset(w http.ResponseWriter, _ *http.Request, id string) {
 	asset, err := s.store.GetAsset(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
@@ -1229,7 +1229,7 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 	return &clean
 }
 
-func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListRecords(w http.ResponseWriter, _ *http.Request) {
 	records, err := s.store.ListRecords(100)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_records_failed", err.Error())
@@ -1355,7 +1355,7 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleGetRecord(w http.ResponseWriter, _ *http.Request, id string) {
 	rec, err := s.store.GetRecord(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
@@ -1408,7 +1408,7 @@ func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, reco
 	writeJSON(w, http.StatusCreated, map[string]any{"images": saved, "record": sanitizeRecordForCurrentTemplate(rec)})
 }
 
-func (s *Server) handleStartAnalysis(w http.ResponseWriter, r *http.Request, recordID string) {
+func (s *Server) handleStartAnalysis(w http.ResponseWriter, _ *http.Request, recordID string) {
 	rec, err := s.store.GetRecord(recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
@@ -1544,7 +1544,7 @@ func (s *Server) runAnalysis(taskID, recordID string) {
 	})
 }
 
-func (s *Server) handleGetLatestTask(w http.ResponseWriter, r *http.Request, recordID string) {
+func (s *Server) handleGetLatestTask(w http.ResponseWriter, _ *http.Request, recordID string) {
 	task, err := s.store.LatestTaskByRecord(recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "task_not_found", "暂无 AI 任务")
@@ -1673,7 +1673,7 @@ func (s *Server) handleListConfirmLogs(w http.ResponseWriter, r *http.Request, r
 	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
 }
 
-func (s *Server) handleEnableManual(w http.ResponseWriter, r *http.Request, recordID string) {
+func (s *Server) handleEnableManual(w http.ResponseWriter, _ *http.Request, recordID string) {
 	rec, err := s.store.GetRecord(recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
@@ -2233,7 +2233,7 @@ func optionContains(options []string, value string) bool {
 // 不再进入下方同义词包含匹配。修这种 bug:"不正常" 不能因为包含"正常"二字而被判正常。
 var normalizeNegativeAndAbnormalCues = []string{
 	"不正常", "不合格", "不通过", "不良", "不行", "不可", "不好", "不正确",
-	"异常", "故障", "损坏", "报警", "告警", "破损", "破裂", "缺失", "丢失", "失踪",
+	"异常", "故障", "损坏", "报警", "告警", "破损", "破裂", "破碎", "裂纹", "缺失", "丢失", "失踪",
 	"漏水", "渗漏", "短路", "跳闸", "烧毁", "焦糊", "霉味", "燃气", "刺激性",
 	"超标", "存在问题", "有问题", "存在隐患", "未通过",
 }
@@ -2293,7 +2293,10 @@ func normalizeChoiceValue(raw string, options []string) string {
 			if optionContains(options, "异常") {
 				return "异常"
 			}
-			if optionContains(options, "破损") && (neg == "破损" || neg == "破裂" || neg == "损坏") {
+			// 破损家族:破损/破裂/损坏/裂纹/破碎 都归"破损"(若选项有)
+			breakage := neg == "破损" || neg == "破裂" || neg == "损坏" ||
+				strings.Contains(vLower, "裂纹") || strings.Contains(vLower, "破碎")
+			if optionContains(options, "破损") && breakage {
 				return "破损"
 			}
 			if optionContains(options, "缺失") && (neg == "缺失" || neg == "丢失" || neg == "失踪") {

@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --nav: #071827;
   --nav2: #10283b;
   --page: #f5f7fb;
@@ -8740,4 +8740,535 @@ button.profile-hero-logout,
 }
 .user-row-actions .mini-btn.danger:hover {
   background: rgba(192, 57, 43, 0.08);
+}
+
+/* ============================================================
+   M20 · 管理后台验收版收敛
+   ============================================================ */
+
+/* 首页：风险关注不再伪装成实时异常。 */
+.focus-mini-panel {
+  padding: 0 !important;
+  overflow: hidden;
+}
+.focus-mini-panel .panel-head {
+  padding: 16px 18px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+}
+.focus-mini-grid {
+  gap: 0 !important;
+}
+.focus-mini {
+  min-height: 116px;
+  padding: 14px 16px !important;
+  border: 0 !important;
+  border-right: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+}
+.focus-mini:last-child { border-right: 0 !important; }
+.focus-mini:hover {
+  transform: none !important;
+  background: #f7fbfb !important;
+}
+.focus-mini-rank {
+  color: #0a9f78 !important;
+  font-variant-numeric: tabular-nums;
+}
+.focus-mini-name { font-size: 14px !important; }
+.focus-mini-reason {
+  max-width: 32ch;
+  color: #64748b !important;
+}
+.aside-findings.attention {
+  border-color: rgba(245, 158, 11, 0.22);
+}
+.aside-findings.attention .aside-finding em {
+  color: #b8741a;
+  font-size: 12px;
+}
+
+/* 数据看板：一个重点结论，辅以可下钻的列表和时间轴。 */
+.insight-hero {
+  background:
+    radial-gradient(circle at 92% 12%, rgba(26, 196, 158, 0.18), transparent 26%),
+    linear-gradient(135deg, #07192a 0%, #0a2637 58%, #0b3a3a 100%) !important;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  box-shadow: 0 14px 28px rgba(7, 25, 42, 0.12);
+}
+.insight-hero-summary {
+  border-left-color: #2dd4bf !important;
+  background: rgba(3, 12, 24, 0.25) !important;
+}
+.risk-kpi {
+  border-radius: 10px !important;
+  box-shadow: 0 2px 10px rgba(15, 35, 55, 0.04);
+}
+.risk-kpi.danger {
+  color: inherit !important;
+  background: #fff !important;
+  border-color: var(--line) !important;
+  border-left-color: #ef4b3f !important;
+}
+.risk-kpi.danger .risk-kpi-label,
+.risk-kpi.danger .risk-kpi-sub { color: #64748b !important; }
+.risk-kpi.danger .risk-kpi-value { color: #1f2a3d !important; }
+.focus-board {
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 14px !important;
+}
+.focus-board-head {
+  margin: 0 !important;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.focus-board-head > div {
+  display: grid;
+  gap: 4px;
+}
+.focus-board-count {
+  padding: 5px 9px;
+  color: #047857;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.focus-feature {
+  margin: 16px 18px 12px;
+  padding: 18px 20px;
+  color: #dffcf4;
+  background:
+    radial-gradient(circle at 92% 15%, rgba(45, 212, 191, 0.2), transparent 28%),
+    #072637;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.focus-feature-top,
+.focus-feature-reasons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.focus-feature-top {
+  justify-content: space-between;
+  color: #7effd2;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.focus-feature-top strong {
+  color: #fff;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+.focus-feature-top em {
+  margin-left: 3px;
+  color: #9cc8cc;
+  font-size: 11px;
+  font-style: normal;
+}
+.focus-feature h3 {
+  margin: 4px 0 10px;
+  color: #fff;
+  font-size: 20px;
+}
+.focus-feature-reasons span {
+  padding: 4px 8px;
+  color: #cdeae9;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.focus-feature p {
+  margin: 12px 0 0;
+  color: #a5d8d4;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.focus-grid-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0 !important;
+  padding: 0 18px 16px;
+}
+.focus-grid-compact .focus-card {
+  min-height: 88px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: #fff;
+}
+.focus-grid-compact .focus-card:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+.focus-grid-compact .focus-card:hover {
+  transform: none;
+  background: #f7fbfb;
+}
+.focus-card-summary {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.status-heatmap-panel {
+  border-radius: 14px !important;
+}
+.status-heatmap-panel .panel-head > div {
+  display: grid;
+  gap: 4px;
+}
+.hm-grid { gap: 7px !important; }
+.hm-row { min-height: 22px; }
+
+/* 异常复核：空队列也要能表达管理价值，但不制造假异常。 */
+.exception-workbench {
+  padding: 0 !important;
+  overflow: hidden;
+}
+.exception-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  padding: 22px 24px 18px;
+  color: #e8fffb;
+  background:
+    radial-gradient(circle at 85% 15%, rgba(45, 212, 191, 0.18), transparent 32%),
+    #072637;
+}
+.exception-title span {
+  color: #7effd2;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.exception-title h2 {
+  margin: 5px 0;
+  color: #fff;
+  font-size: 24px;
+}
+.exception-title p {
+  max-width: 60ch;
+  margin: 0;
+  color: #b3d2d3;
+  font-size: 13px;
+}
+.exception-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 94px);
+  align-items: center;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 255, 210, 0.18);
+  border-radius: 10px;
+}
+.exception-stats article {
+  min-height: 72px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.exception-stats span {
+  display: block;
+  color: #9cc8cc;
+  font-size: 11px;
+}
+.exception-stats b {
+  color: #fff;
+  font-size: 26px;
+}
+.exception-stats em {
+  margin-left: 3px;
+  color: #9cc8cc;
+  font-size: 11px;
+  font-style: normal;
+}
+.exception-workbench .risk-grid { padding: 18px; }
+.exception-empty-state {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+  background: #f7fbfb;
+  border: 1px solid #d7efeb;
+  border-radius: 10px;
+}
+.exception-empty-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: #047857;
+  background: #d1fae5;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 900;
+}
+.exception-empty-state b {
+  color: #163046;
+  font-size: 14px;
+}
+.exception-empty-state p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+.exception-watchlist .panel-head { padding-bottom: 12px; }
+.exception-watch-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+.exception-watch-grid article {
+  position: relative;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.exception-watch-grid article:hover {
+  border-color: rgba(18, 169, 104, 0.42);
+  background: #f7fbfb;
+}
+.exception-watch-grid div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.exception-watch-grid b {
+  color: var(--text);
+  font-size: 13px;
+}
+.exception-watch-grid p {
+  min-height: 36px;
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.exception-watch-grid em {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: #b8741a;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+/* 资产侧栏：移除不可点击的伪标签，按台账阅读顺序组织。 */
+.asset-detail-head {
+  display: grid;
+  gap: 3px;
+}
+.asset-detail-head span {
+  color: #047857;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.asset-card-v2 {
+  display: grid;
+  gap: 14px;
+}
+.asset-side-hero {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  background: #f7fbfb;
+  border: 1px solid #dcebea;
+  border-radius: 10px;
+}
+.asset-side-hero .asset-photo {
+  width: 132px;
+  height: 144px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.asset-side-hero .asset-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.asset-side-intro { min-width: 0; }
+.asset-side-intro .asset-title {
+  margin: 0 0 12px;
+}
+.asset-side-intro .asset-title h3,
+.asset-side-kv b {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.asset-side-kv {
+  display: grid !important;
+  gap: 7px !important;
+}
+.asset-side-kv div {
+  display: grid !important;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 6px;
+}
+.asset-side-kv span,
+.asset-side-kv b {
+  font-size: 11px !important;
+}
+.asset-summary-card {
+  border-left: 3px solid #0a9f78 !important;
+}
+.asset-side-section {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.asset-side-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 9px;
+}
+.asset-side-section-head h3,
+.photo-strip h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+.asset-side-section-head span,
+.photo-strip small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.asset-maintenance {
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.asset-maintenance .edit-form {
+  margin-top: 0;
+}
+
+@media (max-width: 1180px) {
+  .focus-grid-compact,
+  .exception-watch-grid { grid-template-columns: 1fr !important; }
+  .focus-grid-compact .focus-card:nth-child(odd) { border-right: 0; }
+  .exception-overview { grid-template-columns: 1fr; }
+}
+
+/* 首页愿景表达：现有闭环 + 未来穿戴扩展，不增加伪功能。 */
+.ai-hero-title {
+  position: relative;
+  z-index: 2;
+  margin: 0;
+  color: #fff;
+  font-size: 27px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+.ai-hero-desc {
+  position: relative;
+  z-index: 2;
+  max-width: 52ch;
+  margin: 8px 0 18px;
+  color: rgba(214, 232, 248, 0.66);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.ai-vision-rail {
+  display: grid !important;
+  align-content: center;
+  gap: 8px !important;
+  flex-basis: 248px !important;
+  max-width: 248px !important;
+}
+.vision-node {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 8px 10px;
+  background: rgba(4, 18, 33, 0.48);
+  border: 1px solid rgba(126, 255, 210, 0.14);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+}
+.vision-node i {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: #7effd2;
+  background: rgba(126, 255, 210, 0.08);
+  border: 1px solid rgba(126, 255, 210, 0.22);
+  border-radius: 50%;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+.vision-node div {
+  display: grid;
+  gap: 2px;
+}
+.vision-node b {
+  color: #f0fffc;
+  font-size: 12px;
+}
+.vision-node span {
+  color: rgba(214, 232, 248, 0.52);
+  font-size: 10px;
+}
+.vision-node.future {
+  border-style: dashed;
+  border-color: rgba(37, 213, 255, 0.32);
+}
+.vision-node.future i {
+  color: #8ddff0;
+  background: rgba(37, 213, 255, 0.07);
+  border-color: rgba(37, 213, 255, 0.24);
+}
+.ai-chat-body:has(.ai-chat-empty) {
+  min-height: 146px !important;
+  max-height: 146px !important;
+  height: 146px !important;
+}
+.ai-chat-empty {
+  gap: 5px !important;
+  padding: 20px !important;
+}
+.ai-chat-empty::before {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 11px !important;
+  font-size: 17px !important;
+}
+.ai-chat-empty b {
+  color: var(--text);
+  font-size: 14px;
+}
+.ai-chat-empty span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-chat-bubble strong {
+  color: #0f6d62;
+  font-weight: 900;
+}
+.ai-chat-bubble code {
+  padding: 1px 5px;
+  color: #075985;
+  background: #e8f4fb;
+  border-radius: 4px;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 0.9em;
 }
