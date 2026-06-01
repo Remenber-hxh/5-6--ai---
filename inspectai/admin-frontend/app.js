@@ -951,6 +951,7 @@ function renderDashboardPage() {
     pendingTasks: tileCounts.tasks,
     accuracy,
     issues,
+    attentionItems: dashInsights.items || [],
   });
   animateDashboardCounts();
   animateHealthRings();
@@ -998,7 +999,7 @@ function dashboardFocusMini(insights) {
   if (!items.length) {
     return `
       <section class="panel focus-mini-panel">
-        <div class="panel-head"><h2>今日重点关注</h2><button class="link-btn" data-page-link="data">去洞察台 →</button></div>
+        <div class="panel-head"><h2>近期重点关注</h2><button class="link-btn" data-page-link="data">去洞察台 →</button></div>
         <div class="empty-state">AI 正在分析…暂无重点关注资产</div>
       </section>
     `;
@@ -1006,7 +1007,7 @@ function dashboardFocusMini(insights) {
   return `
     <section class="panel focus-mini-panel">
       <div class="panel-head">
-        <h2>今日重点关注 <small>AI 综合判定</small></h2>
+        <h2>近期重点关注 <small>基于历史巡检与趋势</small></h2>
         <button class="link-btn" data-page-link="data">去洞察台看全部 →</button>
       </div>
       <div class="focus-mini-grid">
@@ -1017,7 +1018,7 @@ function dashboardFocusMini(insights) {
               <b class="focus-mini-name">${escapeHTML(it.assetName || "—")}</b>
               <div class="focus-mini-meta">
                 <span class="focus-mini-score">${it.riskScore} 分</span>
-                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(it.riskLevel === "danger" ? "异常" : (it.riskLevel === "warning" ? "待关注" : "正常"))}</span>
+                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span>
               </div>
               <div class="focus-mini-reason">${escapeHTML((it.reasons && it.reasons[0]) || "—")}</div>
             </div>
@@ -1089,7 +1090,13 @@ function bindAiChat() {
 
 function renderChatBubble(m) {
   const cls = m.role === "user" ? "user" : "ai";
-  const html = (m.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+  const html = (m.text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
   return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div></div>`;
 }
 
@@ -1468,7 +1475,7 @@ function monthlyAiStats() {
   };
 }
 
-function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingTasks, accuracy, issues }) {
+function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingTasks, accuracy, issues, attentionItems }) {
   const accText = accuracy.sample ? `${accuracy.value}%` : "—";
   return `
     <div class="aside-stack">
@@ -1497,37 +1504,66 @@ function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingT
           <span>巡检任务</span><b>${pendingTasks}</b><em>查看 →</em>
         </a>
       </div>
-      ${asideFindings(issues || [])}
+      ${asideFindings(issues || [], attentionItems || [])}
     </div>
   `;
 }
 
-function asideFindings(issues) {
+function riskAttentionLabel(level) {
+  return level === "danger" ? "高风险" : (level === "warning" ? "需关注" : "低风险");
+}
+
+function asideFindings(issues, attentionItems = []) {
   const PRI_LABEL = { high: "高", mid: "中", low: "低" };
+  if (issues && issues.length > 0) {
+    return `
+      <div class="aside-findings">
+        <div class="aside-findings-head"><b>实时异常</b><span>当前状态</span></div>
+        <ul class="aside-findings-list">
+          ${issues.slice(0, 4).map((it) => `
+            <li class="aside-finding f-${it.priority}" data-asset-select="${escapeHTML(it.asset.id)}">
+              <span class="aside-finding-pri">${PRI_LABEL[it.priority] || "·"}</span>
+              <div class="aside-finding-body">
+                <b>${escapeHTML(it.asset.assetName || "资产")}</b>
+                <span>${escapeHTML(String(it.aiNote || "").slice(0, 36))}${(it.aiNote || "").length > 36 ? "…" : ""}</span>
+              </div>
+              <em>→</em>
+            </li>
+          `).join("")}
+        </ul>
+      </div>
+    `;
+  }
+  if (attentionItems.length > 0) {
+    return `
+      <div class="aside-findings attention">
+        <div class="aside-findings-head"><b>历史风险提醒</b><span>AI 趋势</span></div>
+        <ul class="aside-findings-list">
+          ${attentionItems.slice(0, 4).map((it) => {
+            const pri = it.riskLevel === "danger" ? "high" : (it.riskLevel === "warning" ? "mid" : "low");
+            return `
+              <li class="aside-finding f-${pri}" data-asset-select="${escapeHTML(it.assetId)}">
+                <span class="aside-finding-pri">${PRI_LABEL[pri]}</span>
+                <div class="aside-finding-body">
+                  <b>${escapeHTML(it.assetName || "资产")}</b>
+                  <span>${escapeHTML((it.reasons && it.reasons[0]) || "建议查看历史巡检变化")}</span>
+                </div>
+                <em>${it.riskScore}</em>
+              </li>
+            `;
+          }).join("")}
+        </ul>
+      </div>
+    `;
+  }
   if (!issues || issues.length === 0) {
     return `
       <div class="aside-findings empty">
         <div class="aside-findings-head"><b>AI 关键发现</b></div>
-        <div class="aside-findings-empty">😊 全部资产 AI 判定正常，无重点关注项</div>
+        <div class="aside-findings-empty">当前资产状态正常，暂无实时异常或历史风险提醒。</div>
       </div>`;
   }
-  return `
-    <div class="aside-findings">
-      <div class="aside-findings-head"><b>AI 关键发现</b></div>
-      <ul class="aside-findings-list">
-        ${issues.slice(0, 4).map((it) => `
-          <li class="aside-finding f-${it.priority}" data-asset-select="${escapeHTML(it.asset.id)}">
-            <span class="aside-finding-pri">${PRI_LABEL[it.priority] || "·"}</span>
-            <div class="aside-finding-body">
-              <b>${escapeHTML(it.asset.assetName || "资产")}</b>
-              <span>${escapeHTML(String(it.aiNote || "").slice(0, 36))}${(it.aiNote || "").length > 36 ? "…" : ""}</span>
-            </div>
-            <em>→</em>
-          </li>
-        `).join("")}
-      </ul>
-    </div>
-  `;
+  return "";
 }
 
 function renderPlanPage() {
@@ -2349,11 +2385,24 @@ function renderDevicePage() {
 function renderExceptionPage() {
   const assets = filteredAssets().filter((asset) => ["warning", "danger", "repair"].includes(asset.statusLevel || normalizeStatus(asset.lastStatus)));
   const pending = filteredRequests().filter((request) => request.status === "pending");
+  const allAssets = filteredAssets();
+  const insightKey = `month::${state.selectedProject || ""}`;
+  if (!(insightKey in state.dataInsights)) loadDataInsights("month", state.selectedProject || "");
+  const attentionItems = (state.dataInsights[insightKey]?.items || []).slice(0, 3);
+  const activeCount = assets.length + pending.length;
   $("#pageMain").innerHTML = `
-    <section class="panel">
-      <div class="panel-head">
-        <div><h2>异常复核</h2><p>对 AI 异常、字段缺失、低置信度读数进行人工复核。</p></div>
-        <button data-drawer="exception">批量处理</button>
+    <section class="panel exception-workbench">
+      <div class="exception-overview">
+        <div class="exception-title">
+          <span>异常管理</span>
+          <h2>异常复核</h2>
+          <p>仅展示需要人工介入的实时异常、字段缺失和低置信度记录。</p>
+        </div>
+        <div class="exception-stats">
+          <article><span>待处理</span><b>${activeCount}</b><em>项</em></article>
+          <article><span>异常资产</span><b>${assets.length}</b><em>台</em></article>
+          <article><span>正常资产</span><b>${Math.max(0, allAssets.length - assets.length)}</b><em>台</em></article>
+        </div>
       </div>
       <div class="risk-grid panel-body-grid">
         ${assets.map((asset) => `
@@ -2374,9 +2423,31 @@ function renderExceptionPage() {
             <button class="ghost" data-request-open="${escapeHTML(request.id)}">查看详情</button>
           </article>
         `).join("")}
-        ${!assets.length && !pending.length ? `<div class="empty-state">暂无异常复核任务</div>` : ""}
+        ${!assets.length && !pending.length ? `
+          <div class="exception-empty-state">
+            <span class="exception-empty-icon">✓</span>
+            <div><b>当前没有待处理异常</b><p>实时异常队列已清空。历史趋势关注项会保留在下方，便于提前排查。</p></div>
+            <button class="ghost" data-page-link="data">查看智能洞察</button>
+          </div>` : ""}
       </div>
     </section>
+    ${attentionItems.length ? `
+      <section class="panel exception-watchlist">
+        <div class="panel-head">
+          <div><h2>历史风险关注</h2><p>以下内容来自历史巡检趋势，不等同于当前异常。</p></div>
+          <button class="link-btn" data-page-link="data">查看完整洞察 →</button>
+        </div>
+        <div class="exception-watch-grid">
+          ${attentionItems.map((it) => `
+            <article data-asset-select="${escapeHTML(it.assetId)}">
+              <div><span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span><b>${escapeHTML(it.assetName || "资产")}</b></div>
+              <p>${escapeHTML((it.reasons && it.reasons[0]) || "建议查看历史巡检变化")}</p>
+              <em>${it.riskScore} 分</em>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    ` : ""}
   `;
   $("#pageAside").innerHTML = "";
 }
@@ -2453,10 +2524,10 @@ function sparkSvg(points, color = "var(--blue)", w = 90, h = 28) {
 }
 
 // ===== 阶段一 数据看板 = 智能洞察台 =====
-// 前端时间 tab(today/week/month/quarter/all) → 后端 range key(7d/30d/90d/365d)
+// 前端时间 tab(today/week/month/quarter/all) → 后端 range key
 function periodToRangeKey(period) {
   switch (period) {
-    case "today":   return "7d";   // 后端最小窗口
+    case "today":   return "1d";   // P2-4 修:今日真的只看今天,后端 parseRangeDays 已支持 1d
     case "week":    return "7d";
     case "month":   return "30d";
     case "quarter": return "90d";
@@ -2576,9 +2647,9 @@ function renderRiskKpi(insights) {
         <span class="risk-kpi-sub">数值字段超阈值</span>
       </article>
       <article class="risk-kpi ${lazy >= 30 ? "warning" : ""}">
-        <span class="risk-kpi-label">复核惰性</span>
+        <span class="risk-kpi-label">未看图确认率</span>
         <b class="risk-kpi-value">${lazy}<em>%</em></b>
-        <span class="risk-kpi-sub">未看图就确认占比</span>
+        <span class="risk-kpi-sub">人工复核质量信号</span>
       </article>
     </section>
   `;
@@ -2589,26 +2660,35 @@ function renderFocusBoard(insights) {
   if (!insights.items.length) {
     return `<section class="focus-board"><div class="focus-board-head"><h2>今日重点关注</h2><span>暂无需重点关注的资产</span></div></section>`;
   }
+  const items = insights.items || [];
+  const featured = items.find((item) => {
+    const asset = state.assets.find((a) => a.id === item.assetId);
+    return /电梯|elevator/i.test(`${item.assetName || ""} ${item.assetId || ""} ${asset?.assetName || ""} ${asset?.assetType || ""}`);
+  }) || items[0];
+  const remaining = items.filter((item) => item !== featured).slice(0, 4);
   return `
     <section class="focus-board">
       <div class="focus-board-head">
-        <h2>今日重点关注</h2>
-        <small>AI 综合判定 · 后端 risk_score 公式可解释</small>
+        <div><h2>近期重点关注</h2><small>AI 基于历史巡检、异常频次和字段漂移综合判断</small></div>
+        <span class="focus-board-count">${items.length} 台需关注</span>
       </div>
-      <div class="focus-grid">
-        ${insights.items.map((it, idx) => `
+      <article class="focus-feature focus-${featured.riskLevel}" data-asset-select="${escapeHTML(featured.assetId)}">
+        <div class="focus-feature-top"><span>建议优先复核</span><strong>${featured.riskScore}<em>分</em></strong></div>
+        <h3>${escapeHTML(featured.assetName || "—")}</h3>
+        <div class="focus-feature-reasons">${(featured.reasons || []).slice(0, 3).map((reason) => `<span>${escapeHTML(reason)}</span>`).join("")}</div>
+        ${featured.action ? `<p>下一步：${escapeHTML(featured.action)}</p>` : ""}
+      </article>
+      <div class="focus-grid focus-grid-compact">
+        ${remaining.map((it, idx) => `
           <article class="focus-card focus-${it.riskLevel}" data-asset-select="${escapeHTML(it.assetId)}">
-            <div class="focus-card-rank">${idx + 1}</div>
+            <div class="focus-card-rank">${idx + 2}</div>
             <div class="focus-card-body">
               <div class="focus-card-head">
                 <b class="focus-card-name">${escapeHTML(it.assetName || "—")}</b>
                 <span class="focus-card-score">${it.riskScore}<em>分</em></span>
-                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(it.riskLevel === "danger" ? "异常" : (it.riskLevel === "warning" ? "待关注" : "正常"))}</span>
+                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span>
               </div>
-              <ul class="focus-card-reasons">
-                ${(it.reasons || []).slice(0, 3).map((r) => `<li>${escapeHTML(r)}</li>`).join("")}
-              </ul>
-              ${it.action ? `<div class="focus-card-action">建议:${escapeHTML(it.action)}</div>` : ""}
+              <p class="focus-card-summary">${escapeHTML((it.reasons && it.reasons[0]) || "建议查看历史巡检变化")}</p>
             </div>
           </article>
         `).join("")}
@@ -2619,17 +2699,26 @@ function renderFocusBoard(insights) {
 
 // ④ 设备状态时间热力图 — 用户核心诉求"时间维度直观看到设备的各种状态"
 // 客户端从 state.records 聚合(近 30/60d 按日格)。简单可靠;后续可换 asset_snapshots 后端数据。
-function renderStatusHeatmap(periodDef) {
+function renderStatusHeatmap(periodDef, insights = {}) {
   const days = Math.min(periodDef.days, 30); // 阶段一固定显示最近 30 天,避免格子太多
   const today = new Date();
   const dayKeys = Array.from({ length: days }, (_, i) => {
     const d = new Date(today); d.setDate(d.getDate() - (days - 1 - i));
     return d.toISOString().slice(0, 10);
   });
-  const assets = filteredAssets();
-  if (!assets.length) {
+  const allAssets = filteredAssets();
+  if (!allAssets.length) {
     return `<section class="status-heatmap-panel"><div class="panel-head"><h2>设备状态时间轴</h2><small>近 ${days} 天</small></div><div class="empty-state">暂无资产</div></section>`;
   }
+  const focusIds = new Set((insights.items || []).map((item) => item.assetId));
+  const assets = [...allAssets].sort((a, b) => {
+    const focusDiff = Number(focusIds.has(b.id)) - Number(focusIds.has(a.id));
+    if (focusDiff) return focusDiff;
+    const elevatorDiff = Number(/电梯|elevator/i.test(`${b.assetType || ""} ${b.assetName || ""}`))
+      - Number(/电梯|elevator/i.test(`${a.assetType || ""} ${a.assetName || ""}`));
+    if (elevatorDiff) return elevatorDiff;
+    return String(b.lastInspectedAt || "").localeCompare(String(a.lastInspectedAt || ""));
+  }).slice(0, 6);
   // 给每台资产建一个 day → 最严重级别的 map
   const bucket = new Map();
   for (const a of assets) bucket.set(a.id, {});
@@ -2649,7 +2738,7 @@ function renderStatusHeatmap(periodDef) {
       if (!prev || rank[lvl] > rank[prev]) m[k] = lvl;
     }
   }
-  const rows = assets.slice(0, 15).map((a) => {
+  const rows = assets.map((a) => {
     const m = bucket.get(a.id) || {};
     const cells = dayKeys.map((k) => {
       const lvl = m[k];
@@ -2669,7 +2758,7 @@ function renderStatusHeatmap(periodDef) {
   return `
     <section class="status-heatmap-panel">
       <div class="panel-head">
-        <h2>设备状态时间轴</h2>
+        <div><h2>重点资产状态时间轴</h2><small>优先展示风险资产与代表设备，最多 6 台</small></div>
         <small>${escapeHTML(startLabel)} → ${escapeHTML(endLabel)} · ■正常 ▲待复核 ●异常 □未巡</small>
       </div>
       <div class="hm-grid">${rows}</div>
@@ -2910,7 +2999,7 @@ function renderDataPage() {
     ${renderInsightHero(insights, periodDef)}
     ${renderRiskKpi(insights)}
     ${renderFocusBoard(insights)}
-    ${renderStatusHeatmap(periodDef)}
+    ${renderStatusHeatmap(periodDef, insights)}
     ${renderDriftBoard(insights)}
     ${renderInspectorQuality(insights)}
     ${renderPeriodCompare(insights)}
@@ -3511,35 +3600,45 @@ function renderAssetSide(asset) {
   const events = detail && detail.events;
   const eventsHTML = (events && events.inspections > 0) ? renderStatusEventsCard(events) : "";
   return `
-    <div class="detail-head"><h2>资产详情</h2></div>
+    <div class="detail-head asset-detail-head"><span>资产台账</span><h2>资产详情</h2></div>
     ${renderLoadErrorBanner(`assetDetail:${asset.id}`)}
-    <div class="asset-card">
-      <div class="asset-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : ""}</div>
-      <div class="asset-title"><h3>${escapeHTML(asset.assetName || "未命名资产")}</h3><span class="pill ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></div>
-      <div class="kv-list">
-        <div><span>设备编号</span><b>${escapeHTML(assetKey(asset))}</b></div>
-        <div><span>设备类型</span><b>${escapeHTML(asset.assetType || "-")}</b></div>
-        <div><span>安装位置</span><b>${escapeHTML(locationText(asset))}</b></div>
-        <div><span>最近巡检</span><b>${fmtTime(asset.lastInspectedAt)}</b></div>
-      </div>
-      <div class="info-card"><b>台账摘要</b><span>${escapeHTML(asset.lastSummary || "暂无管理摘要。")}</span></div>
+    <div class="asset-card asset-card-v2">
+      <section class="asset-side-hero">
+        <div class="asset-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : ""}</div>
+        <div class="asset-side-intro">
+          <div class="asset-title"><h3>${escapeHTML(asset.assetName || "未命名资产")}</h3><span class="pill ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></div>
+          <div class="kv-list asset-side-kv">
+            <div><span>设备编号</span><b>${escapeHTML(assetKey(asset))}</b></div>
+            <div><span>设备类型</span><b>${escapeHTML(asset.assetType || "-")}</b></div>
+            <div><span>安装位置</span><b>${escapeHTML(locationText(asset))}</b></div>
+            <div><span>最近巡检</span><b>${fmtTime(asset.lastInspectedAt)}</b></div>
+          </div>
+        </div>
+      </section>
+      <div class="info-card asset-summary-card"><b>台账摘要</b><span>${escapeHTML(asset.lastSummary || "暂无管理摘要。")}</span></div>
       ${trendHTML}
       ${eventsHTML}
-      <div class="detail-tabs"><button class="active">巡检记录</button><button class="disabled" disabled title="阶段二开放">字段历史</button><button class="disabled" disabled title="阶段二开放">异常记录</button><button class="disabled" disabled title="阶段二开放">关联文件</button></div>
-      <table class="history-table">
-        <thead><tr><th>巡检时间</th><th>巡检人</th><th>状态</th><th>结果摘要</th></tr></thead>
-        <tbody>${snapshots.slice(0, 5).map((sn) => `
-          <tr><td>${fmtTime(sn.createdAt)}</td><td>${escapeHTML(sn.inspector || "-")}</td><td><span class="status ${statusClass(sn.status)}">${escapeHTML(sn.status || "-")}</span></td><td>${escapeHTML(truncateText(sn.summary, 50))}</td></tr>
-        `).join("") || emptyRow(4, detail ? "暂无历史巡检" : "正在加载历史…")}</tbody>
-      </table>
-      <div class="history-foot">${total > 0 ? `共 <b>${total}</b> 条历史巡检${total > 5 ? "（已显示最近 5 条）" : ""}` : ""}</div>
-      <div class="photo-strip" data-photos='${escapeHTML(JSON.stringify(photos))}'><h3>巡检照片 <small>共 ${photos.length} 张</small>${photos.length > 4 ? `<button class="link-btn photo-all-btn" type="button">查看全部 →</button>` : ""}</h3><div class="photos">${photos.slice(0, 4).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("") || `<div class="empty-photo"></div>`}</div></div>
-      <form class="edit-form" id="assetEditForm">
-        <label>资产名称<input name="assetName" value="${escapeHTML(asset.assetName || "")}"></label>
-        <label>资产状态<select name="lastStatus">${["正常", "异常", "待复核", "待维修"].map((status) => `<option value="${status}" ${asset.lastStatus === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
-        <label>管理摘要<textarea name="lastSummary">${escapeHTML(asset.lastSummary || "")}</textarea></label>
-        <button class="primary" type="submit">保存台账修改</button>
-      </form>
+      <section class="asset-side-section">
+        <div class="asset-side-section-head"><h3>巡检轨迹</h3><span>${total > 0 ? `共 ${total} 条，显示最近 5 条` : "历史记录"}</span></div>
+        <table class="history-table">
+          <thead><tr><th>巡检时间</th><th>巡检人</th><th>状态</th><th>结果摘要</th></tr></thead>
+          <tbody>${snapshots.slice(0, 5).map((sn) => `
+            <tr><td>${fmtTime(sn.createdAt)}</td><td>${escapeHTML(sn.inspector || "-")}</td><td><span class="status ${statusClass(sn.status)}">${escapeHTML(sn.status || "-")}</span></td><td>${escapeHTML(truncateText(sn.summary, 50))}</td></tr>
+          `).join("") || emptyRow(4, detail ? "暂无历史巡检" : "正在加载历史…")}</tbody>
+        </table>
+      </section>
+      <section class="asset-side-section">
+        <div class="photo-strip" data-photos='${escapeHTML(JSON.stringify(photos))}'><h3>巡检照片 <small>共 ${photos.length} 张</small>${photos.length > 4 ? `<button class="link-btn photo-all-btn" type="button">查看全部 →</button>` : ""}</h3><div class="photos">${photos.slice(0, 4).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("") || `<div class="empty-photo"></div>`}</div></div>
+      </section>
+      <section class="asset-side-section asset-maintenance">
+        <div class="asset-side-section-head"><h3>台账维护</h3><span>修改后保留审计记录</span></div>
+        <form class="edit-form" id="assetEditForm">
+          <label>资产名称<input name="assetName" value="${escapeHTML(asset.assetName || "")}"></label>
+          <label>资产状态<select name="lastStatus">${["正常", "异常", "待复核", "待维修"].map((status) => `<option value="${status}" ${asset.lastStatus === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+          <label>管理摘要<textarea name="lastSummary">${escapeHTML(asset.lastSummary || "")}</textarea></label>
+          <button class="primary" type="submit">保存台账修改</button>
+        </form>
+      </section>
     </div>
   `;
 }
