@@ -676,6 +676,9 @@ function render() {
   updateUserBadge();
   const renderer = pageRenderers[state.page] || renderDashboardPage;
   renderer();
+  // 渲染完探测 aside 是否为空,给 body 加 .aside-empty,CSS 收掉 360px 那一列
+  const asideEmpty = !$("#pageAside") || $("#pageAside").innerHTML.trim() === "";
+  document.body.classList.toggle("aside-empty", asideEmpty);
   normalizeButtons();
 }
 

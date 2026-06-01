@@ -28,12 +28,8 @@ body {
   min-width: 0;
   color: var(--text);
   font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
-  background:
-    linear-gradient(rgba(117, 190, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(117, 190, 255, 0.04) 1px, transparent 1px),
-    radial-gradient(circle at 50% -18%, rgba(60, 129, 206, 0.42), transparent 30%),
-    linear-gradient(180deg, #05101d 0%, #0b1f33 48%, #07111d 100%);
-  background-size: 44px 44px, 44px 44px, auto, auto;
+  /* 去外框 grid pattern,跟 monitor-frame 同色无缝,贴边布局 */
+  background: #07111d;
 }
 
 button,
@@ -47,28 +43,35 @@ button {
   cursor: pointer;
 }
 
+/* 外框贴边,去掉 cyan 描边/外 margin/外 padding/inset shadow,直接占满视口 */
 .monitor-frame {
-  width: calc(100vw - 32px);
-  min-width: 1180px;
-  min-height: calc(100vh - 32px);
-  margin: 16px;
-  padding: 18px;
-  border: 1px solid rgba(180, 210, 240, 0.34);
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at 86% 7%, rgba(37, 213, 255, 0.18), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.04)),
-    #02070d;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  width: 100vw;
+  min-width: 0;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #07111d;
+  box-shadow: none;
 }
 
 .admin-shell {
   display: grid;
   grid-template-columns: 196px minmax(0, 1fr) 360px;
   grid-template-rows: 64px minmax(0, 1fr);
-  min-height: calc(100vh - 68px);
+  min-height: 100vh;
   overflow: hidden;
   background: var(--page);
+}
+
+/* 数据看板等 aside 留空的页面:不占 360px 那一列(JS 会给 body 加 .aside-empty) */
+body.aside-empty .admin-shell {
+  grid-template-columns: 196px minmax(0, 1fr) !important;
+}
+body.aside-empty .topbar,
+body.aside-empty .content {
+  grid-column: 2 / -1 !important;
 }
 
 .sidebar {
@@ -2876,17 +2879,10 @@ td i {
   }
 }
 
-/* R1-R10 · 响应式收缩 — 兼容 1280 笔记本 */
+/* R1-R10 · 响应式收缩 — 已统一 frame 贴边,只调内层 grid */
 @media (max-width: 1440px) {
   .admin-shell {
     grid-template-columns: 180px minmax(0, 1fr) 320px;
-  }
-  .monitor-frame {
-    margin: 8px;
-    padding: 12px;
-    width: calc(100vw - 16px);
-    min-height: calc(100vh - 16px);
-    border-radius: 10px;
   }
   .content:has(.ai-hero) {
     padding: 16px 16px 22px !important;
@@ -2922,7 +2918,7 @@ td i {
 
 @media (max-width: 1280px) {
   .admin-shell {
-    grid-template-columns: 168px minmax(0, 1fr) 296px;
+    grid-template-columns: 168px minmax(0, 1fr) 280px;
   }
   .health-grid {
     grid-template-columns: 1fr;
@@ -2934,6 +2930,34 @@ td i {
     font-size: 12px !important;
     padding: 4px 10px !important;
   }
+}
+
+/* < 1180:笔记本/小笔记本 — aside 收起,sidebar 极简 */
+@media (max-width: 1180px) {
+  .admin-shell {
+    grid-template-columns: 160px minmax(0, 1fr) !important;
+  }
+  .detail-panel { display: none !important; }
+  .topbar, .content { grid-column: 2 / -1 !important; }
+}
+
+/* < 1024:窄屏 sidebar 文字隐藏只留 icon */
+@media (max-width: 1024px) {
+  .admin-shell {
+    grid-template-columns: 60px minmax(0, 1fr) !important;
+  }
+  .sidebar { padding: 16px 6px !important; }
+  .nav button {
+    padding: 0 8px !important;
+    justify-content: center;
+    overflow: hidden;
+    text-indent: -9999px;
+    min-width: 0;
+  }
+  .nav button img { text-indent: 0; }
+  .nav span { display: none !important; }
+  .brand span { display: none !important; }
+  .company-select select { width: 160px !important; }
 }
 
 /* ============================================================
