@@ -1766,6 +1766,19 @@ td i {
   background: rgba(255, 255, 255, 0.08); font-weight: 700;
 }
 .insight-hero-points li.is-advice::before { content: "✓"; left: 11px; opacity: 1; color: var(--cyan); }
+
+/* B 卡片层次:数据看板明细卡统一圆角 + 柔和投影,浮起有呼吸;重点关注卡更突出 */
+.content:has(.insight-hero) { gap: 16px; }
+.content:has(.insight-hero) > section:not(.insight-hero) {
+  border-radius: 12px !important;
+  box-shadow: 0 1px 2px rgba(15, 35, 55, 0.04), 0 6px 20px rgba(15, 35, 55, 0.05) !important;
+}
+.content:has(.insight-hero) > .focus-board {
+  box-shadow: 0 2px 5px rgba(15, 35, 55, 0.05), 0 12px 30px rgba(18, 169, 104, 0.09) !important;
+}
+.content:has(.insight-hero) > section:not(.insight-hero):hover {
+  box-shadow: 0 2px 4px rgba(15, 35, 55, 0.05), 0 10px 28px rgba(15, 35, 55, 0.08) !important;
+}
 .trend-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .trend-legend-item i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
 .trend-canvas { width: 100%; margin-top: 4px; }
@@ -2098,20 +2111,27 @@ td i {
 }
 .iq-head h2 { margin: 0; font-size: 16px; font-weight: 800; }
 .iq-head small { color: #94a3b8; font-size: 11px; }
-.iq-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.iq-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .iq-table th {
-  text-align: left;
+  text-align: center;
   font-size: 11px;
-  color: #64748b;
+  color: #94a3b8;
   font-weight: 700;
-  padding: 8px 6px;
+  letter-spacing: 0.03em;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--line);
 }
+.iq-table th:first-child { text-align: left; }
 .iq-table td {
-  padding: 10px 6px;
+  text-align: center;
+  padding: 13px 10px;
   border-bottom: 1px solid #f1f5f9;
   color: #1f2a3d;
+  font-variant-numeric: tabular-nums;
 }
+.iq-table td:first-child { text-align: left; }
+.iq-table tbody tr:hover { background: rgba(15, 35, 55, 0.025); }
+.iq-table td.zero   { color: #cbd5e1; }
 .iq-table td.warn   { color: #b8741a; font-weight: 700; }
 .iq-table td.danger { color: #b91c1c; font-weight: 800; }
 
@@ -8917,10 +8937,10 @@ button.profile-hero-logout,
 /* 数据看板：一个重点结论，辅以可下钻的列表和时间轴。 */
 .insight-hero {
   background:
-    radial-gradient(circle at 92% 12%, rgba(26, 196, 158, 0.18), transparent 26%),
-    linear-gradient(135deg, #07192a 0%, #0a2637 58%, #0b3a3a 100%) !important;
-  border: 1px solid rgba(45, 212, 191, 0.22);
-  box-shadow: 0 14px 28px rgba(7, 25, 42, 0.12);
+    radial-gradient(circle at 90% 8%, rgba(37, 213, 255, 0.14), transparent 30%),
+    linear-gradient(135deg, #07172a 0%, #0b2236 55%, #0d2a40 100%) !important;
+  border: 1px solid rgba(37, 213, 255, 0.16);
+  box-shadow: 0 14px 28px rgba(7, 25, 42, 0.14);
 }
 .insight-hero-summary {
   border-left-color: #2dd4bf !important;

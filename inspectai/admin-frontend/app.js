@@ -2986,12 +2986,12 @@ function renderInspectorQuality(insights) {
           ${rows.slice(0, 10).map((r) => `
             <tr>
               <td><b>${escapeHTML(r.operator)}</b></td>
-              <td>${r.total}</td>
-              <td class="${r.retakeCount > 0 ? "warn" : ""}">${r.retakeCount}</td>
-              <td class="${r.uncertainCount > 0 ? "warn" : ""}">${r.uncertainCount}</td>
-              <td class="${r.noPhotoConfirm > 0 ? "danger" : ""}">${r.noPhotoConfirm}</td>
-              <td class="${r.fastConfirmCount > 0 ? "danger" : ""}">${r.fastConfirmCount}</td>
-              <td>${r.avgDurationMs > 0 ? (r.avgDurationMs / 1000).toFixed(1) + "s" : "—"}</td>
+              <td class="${r.total ? "" : "zero"}">${r.total}</td>
+              <td class="${r.retakeCount > 0 ? "warn" : "zero"}">${r.retakeCount}</td>
+              <td class="${r.uncertainCount > 0 ? "warn" : "zero"}">${r.uncertainCount}</td>
+              <td class="${r.noPhotoConfirm > 0 ? "danger" : "zero"}">${r.noPhotoConfirm}</td>
+              <td class="${r.fastConfirmCount > 0 ? "danger" : "zero"}">${r.fastConfirmCount}</td>
+              <td class="${r.avgDurationMs > 0 ? "" : "zero"}">${r.avgDurationMs > 0 ? (r.avgDurationMs / 1000).toFixed(1) + "s" : "—"}</td>
             </tr>
           `).join("")}
         </tbody>
