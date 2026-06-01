@@ -1712,22 +1712,36 @@ td i {
 .risk-kpi.normal  { border-left-color: #12a968; }
 .risk-kpi.warning { border-left-color: #f59e0b; }
 .risk-kpi.danger  { border-left-color: #ef4b3f; }
-.risk-kpi-label { font-size: 12px; color: #64748b; font-weight: 700; }
+/* 美化批次 1 · 4 KPI 数字/单位/sub 字号统一,横向扫一眼对齐 */
+.risk-kpi-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 .risk-kpi-value {
-  display: block;
-  margin: 4px 0 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  margin: 6px 0 4px;
   font-size: 28px;
   font-weight: 900;
   color: #1f2a3d;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 .risk-kpi-value em {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: #94a3b8;
   font-style: normal;
-  margin-left: 3px;
 }
-.risk-kpi-sub { font-size: 11px; color: #94a3b8; }
+.risk-kpi-sub {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
 
 .focus-board {
   padding: 18px 20px;
@@ -6172,37 +6186,39 @@ td .status,
   animation: aiHeroPulse 2s ease-in-out infinite;
 }
 .ai-chat-body {
-  padding: 20px 24px !important;
+  padding: 14px 20px !important;
+  min-height: 60px !important;
+  max-height: 260px !important;
 }
 .ai-chat-body::-webkit-scrollbar { width: 6px; }
 .ai-chat-body::-webkit-scrollbar-thumb { background: rgba(15, 35, 55, 0.12); border-radius: 3px; }
 .ai-chat-body::-webkit-scrollbar-thumb:hover { background: rgba(36, 107, 254, 0.32); }
+/* 美化批次 1 · 聊天空状态紧凑化:不再撑满 360px 留白,只用 80-100px 提示一行 */
 .ai-chat-empty {
   display: flex !important;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  height: 100%;
-  padding: 32px 20px !important;
+  gap: 10px;
+  height: auto !important;
+  padding: 8px 16px !important;
   color: var(--muted);
   font-size: 13px;
-  text-align: center;
+  text-align: left;
 }
 .ai-chat-empty::before {
   content: "✦";
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.7), transparent 60%),
-    linear-gradient(135deg, var(--blue), #4f7cff);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--blue), #4f7cff);
   color: #ffffff;
-  font-size: 20px;
+  font-size: 14px;
   font-weight: 700;
   display: grid;
   place-items: center;
-  box-shadow: 0 8px 22px rgba(36, 107, 254, 0.30);
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(36, 107, 254, 0.22);
 }
 .ai-chat-bubble {
   font-size: 14px !important;
@@ -8800,6 +8816,11 @@ button.profile-hero-logout,
 .insight-hero-summary {
   border-left-color: #2dd4bf !important;
   background: rgba(3, 12, 24, 0.25) !important;
+  /* 美化批次 1:中文密文需要呼吸感,加大行高+字距,降低字号 */
+  font-size: 13.5px !important;
+  line-height: 1.85 !important;
+  letter-spacing: 0.015em !important;
+  padding: 14px 16px !important;
 }
 .risk-kpi {
   border-radius: 10px !important;
@@ -8837,16 +8858,23 @@ button.profile-hero-logout,
   font-size: 11px;
   font-weight: 800;
 }
+/* 美化批次 1 · Top1 焦点卡:亮卡风格 + featured 角标,跟下面 4 张视觉一致 */
 .focus-feature {
-  margin: 16px 18px 12px;
-  padding: 18px 20px;
-  color: #dffcf4;
-  background:
-    radial-gradient(circle at 92% 15%, rgba(45, 212, 191, 0.2), transparent 28%),
-    #072637;
-  border: 1px solid rgba(45, 212, 191, 0.28);
-  border-radius: 12px;
+  position: relative;
+  margin: 12px 18px 14px;
+  padding: 18px 22px 18px 26px;
+  color: #1f2a3d;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  border: 1px solid #d9e2ec;
+  border-left: 4px solid var(--red);
+  border-radius: 10px;
   cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+  box-shadow: 0 1px 3px rgba(15, 35, 55, 0.04);
+}
+.focus-feature:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(15, 35, 55, 0.08);
 }
 .focus-feature-top,
 .focus-feature-reasons {
@@ -8857,39 +8885,52 @@ button.profile-hero-logout,
 }
 .focus-feature-top {
   justify-content: space-between;
-  color: #7effd2;
+  margin-bottom: 4px;
+}
+.focus-feature-top > span:first-child {
+  padding: 3px 8px;
+  color: var(--red);
+  background: #fef2f2;
+  border-radius: 4px;
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 .focus-feature-top strong {
-  color: #fff;
-  font-size: 24px;
-  letter-spacing: -0.04em;
+  color: var(--red);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
 }
 .focus-feature-top em {
   margin-left: 3px;
-  color: #9cc8cc;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 12px;
   font-style: normal;
+  font-weight: 600;
 }
 .focus-feature h3 {
   margin: 4px 0 10px;
-  color: #fff;
-  font-size: 20px;
+  color: #1f2a3d;
+  font-size: 18px;
+  font-weight: 800;
 }
 .focus-feature-reasons span {
-  padding: 4px 8px;
-  color: #cdeae9;
-  background: rgba(255, 255, 255, 0.07);
+  padding: 3px 8px;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   border-radius: 4px;
   font-size: 11px;
 }
 .focus-feature p {
-  margin: 12px 0 0;
-  color: #a5d8d4;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  color: #064e3b;
+  background: #ecfdf5;
+  border-radius: 6px;
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 .focus-grid-compact {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
