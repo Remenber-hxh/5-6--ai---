@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JADEAST 智巡后台</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=20260527-users" />
+  <link rel="stylesheet" href="./styles.css?v=20260601-cphase-a3" />
 </head>
 <body>
   <div class="monitor-frame">
@@ -14,22 +14,21 @@
         <div class="brand">JADEAST <span>智巡后台</span></div>
         <nav class="nav" aria-label="后台导航">
           <button data-page="dashboard"><img src="./assets/nav-home.svg" alt=""/>首页</button>
-          <span>巡检管理</span>
-          <button data-page="plan"><img src="./assets/nav-plan.svg" alt=""/>巡检计划</button>
-          <button data-page="task"><img src="./assets/nav-task.svg" alt=""/>巡检任务</button>
-          <button data-page="record"><img src="./assets/nav-record.svg" alt=""/>巡检记录</button>
-          <button data-page="ledger"><img src="./assets/nav-asset.svg" alt=""/>资产台账</button>
-          <button data-page="device"><img src="./assets/nav-device.svg" alt=""/>设备管理</button>
-          <span>异常管理</span>
-          <button data-page="exception"><img src="./assets/nav-exception.svg" alt=""/>异常复核</button>
-          <button data-page="approval"><img src="./assets/nav-approval.svg" alt=""/>修改审批</button>
-          <span>数据中心</span>
-          <button data-page="data"><img src="./assets/nav-data.svg" alt=""/>数据看板</button>
-          <span>账号与审计</span>
-          <button data-page="profile"><img src="./assets/nav-profile.svg" alt=""/>个人首页</button>
-          <button data-page="users"><img src="./assets/nav-users.svg" alt=""/>用户与权限</button>
-          <button data-page="logs"><img src="./assets/nav-logs.svg" alt=""/>操作日志</button>
-          <button data-page="system"><img src="./assets/nav-system.svg" alt=""/>系统管理</button>
+          <button data-page="exception"><img src="./assets/nav-exception.svg" alt=""/>待办</button>
+          <button data-page="ledger"><img src="./assets/nav-asset.svg" alt=""/>资产</button>
+          <button data-page="record"><img src="./assets/nav-record.svg" alt=""/>记录</button>
+          <button data-page="data"><img src="./assets/nav-data.svg" alt=""/>洞察台</button>
+          <span data-role-only="admin">管理</span>
+          <button data-page="users" data-role-only="admin"><img src="./assets/nav-users.svg" alt=""/>用户</button>
+          <button data-page="logs" data-role-only="admin"><img src="./assets/nav-logs.svg" alt=""/>操作日志</button>
+          <button data-page="system" data-role-only="admin"><img src="./assets/nav-system.svg" alt=""/>系统</button>
+          <!-- 路由保留,nav 隐藏 -->
+          <button data-page="plan" hidden>巡检计划</button>
+          <button data-page="task" hidden>巡检任务</button>
+          <button data-page="device" hidden>设备管理</button>
+          <button data-page="approval" hidden>修改审批</button>
+          <button data-page="profile" hidden>个人首页</button>
+          <button data-page="report" hidden>统计报表</button>
         </nav>
       </aside>
 
@@ -56,6 +55,6 @@
   </aside>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260527-users"></script>
+  <script src="./app.js?v=20260601-cphase-a"></script>
 </body>
 </html>

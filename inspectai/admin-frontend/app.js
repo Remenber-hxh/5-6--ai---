@@ -226,6 +226,7 @@ async function login(username, password) {
   state.token = data.token || "";
   state.currentUser = data.user || null;
   localStorage.setItem(API_TOKEN_KEY, state.token);
+  applyRoleBodyClass();
   updateUserBadge();
   return data;
 }
@@ -234,8 +235,21 @@ async function loadMe() {
   // F9 修复 · 不再编 legacy_supervisor 假身份，404 直接抛错让上层走登录页
   const data = await api("/api/auth/me");
   state.currentUser = data.user || null;
+  applyRoleBodyClass();
   updateUserBadge();
   return state.currentUser;
+}
+
+// C-Phase A2:根据 user.roleCode 切 body class,控制 nav 哪些项可见。
+// 默认主管视角(5 项);admin / manager 走管理员视角追加 3 项。
+function applyRoleBodyClass() {
+  const role = (state.currentUser && state.currentUser.roleCode) || "supervisor";
+  document.body.classList.remove("role-admin", "role-manager", "role-supervisor", "role-inspector");
+  document.body.classList.add(`role-${role}`);
+  // admin / manager 共享同一套扩展 nav
+  if (role === "admin" || role === "manager") {
+    document.body.classList.add("role-admin");
+  }
 }
 
 async function logout() {
@@ -244,6 +258,7 @@ async function logout() {
   } catch {}
   state.token = "";
   state.currentUser = null;
+  document.body.classList.remove("role-admin", "role-manager", "role-supervisor", "role-inspector");
   localStorage.removeItem(API_TOKEN_KEY);
   renderLogin();
   updateUserBadge();
