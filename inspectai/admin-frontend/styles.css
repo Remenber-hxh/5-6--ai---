@@ -61,7 +61,9 @@ button {
   grid-template-columns: 196px minmax(0, 1fr) 360px;
   grid-template-rows: 64px minmax(0, 1fr);
   min-height: 100vh;
-  overflow: hidden;
+  /* 整页(body)滚动 + sidebar/topbar sticky 钉住:
+     overflow 必须 visible,否则 sticky 会以 shell 为滚动容器而失效 */
+  overflow: visible;
   background: var(--page);
 }
 
@@ -76,6 +78,17 @@ body.aside-empty .content {
 
 .sidebar {
   grid-row: 1 / span 2;
+  /* sticky 钉在视口左侧:整页滚动时不跟随内容滚走;
+     自身超高(导航项多/矮屏)时内部滚动,到底即止(overscroll contain) */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  z-index: 30;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 隐藏滚动条但保留可滚:整页滚动手感下侧栏滚动条显得突兀 */
+  scrollbar-width: none;
   padding: 24px 12px;
   color: #dce9f7;
   background:
@@ -140,6 +153,10 @@ body.aside-empty .content {
 
 .topbar {
   grid-column: 2 / span 2;
+  /* 顶栏跟侧栏同属固定外框:整页滚动时钉在顶部,内容从其下方滚过 */
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1705,6 +1722,72 @@ td i {
   gap: 12px;
   margin: 0 0 18px;
 }
+
+/* ===== 数据趋势图 ===== */
+.trend-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 20px 12px;
+  margin: 0 0 18px;
+}
+.trend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.trend-title { display: flex; align-items: baseline; gap: 14px; }
+.trend-title h2 { margin: 0; font-size: 16px; font-weight: 800; color: var(--text); }
+.trend-total { font-size: 12px; color: var(--muted); }
+.trend-total b { font-size: 18px; color: var(--text); font-weight: 800; }
+.trend-switch { display: flex; gap: 6px; }
+.trend-chip {
+  padding: 5px 12px; border: 1px solid var(--line); border-radius: 7px;
+  background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; transition: 140ms ease;
+}
+.trend-chip:hover { color: var(--text); border-color: #cdd8e6; }
+.trend-chip.active { color: #fff; background: var(--green); border-color: var(--green); }
+.trend-legend { display: flex; gap: 16px; margin: 8px 0 2px; }
+.trend-kpis {
+  display: flex; gap: 30px; flex-wrap: wrap;
+  margin: 10px 0 2px; padding: 12px 2px;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.trend-kpi { display: flex; flex-direction: column; gap: 2px; }
+.trend-kpi .tk-label { font-size: 12px; color: var(--muted); }
+.trend-kpi b { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.trend-kpi b em { font-size: 13px; font-weight: 600; font-style: normal; color: var(--muted); margin-left: 2px; }
+.trend-kpi b.danger { color: var(--red); }
+.trend-kpi b.warning { color: var(--orange); }
+.trend-kpi .tk-sub { font-size: 11px; color: var(--muted); }
+
+/* hero 摘要:一大段拆成要点,领导易扫;建议条高亮 */
+.insight-hero-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.insight-hero-points li { position: relative; padding-left: 16px; line-height: 1.6; }
+.insight-hero-points li::before { content: "›"; position: absolute; left: 3px; opacity: 0.5; }
+.insight-hero-points li.is-advice {
+  margin-top: 3px; padding: 8px 12px 8px 30px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08); font-weight: 700;
+}
+.insight-hero-points li.is-advice::before { content: "✓"; left: 11px; opacity: 1; color: var(--cyan); }
+.trend-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.trend-legend-item i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+.trend-canvas { width: 100%; margin-top: 4px; }
+.trend-svg { width: 100%; height: auto; display: block; }
+.trend-grid { stroke: rgba(15, 35, 55, 0.07); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.trend-ytick { fill: var(--muted); font-size: 9px; text-anchor: end; }
+.trend-xtick { fill: var(--muted); font-size: 9px; text-anchor: middle; }
+
+/* 概览区 / 明细区 分隔 */
+.board-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 26px 2px 6px;
+  color: var(--muted); font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em;
+}
+.board-divider::before, .board-divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+.board-divider span { white-space: nowrap; }
+
+/* 核心指标带:6 指标一行,窄屏塌列。用复合选择器提特异性,盖过 HEAD 给 4-KPI 设的 1180→2列 */
+.risk-kpi-row.core-kpi-row { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1200px) { .risk-kpi-row.core-kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px)  { .risk-kpi-row.core-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.type-bars-wide { display: grid; gap: 10px; padding: 4px 2px 2px; }
 .risk-kpi {
   padding: 14px 18px;
   background: #fff;
@@ -4615,6 +4698,8 @@ button.danger-ghost::before {
 .sidebar::-webkit-scrollbar-thumb:hover {
   background: rgba(126, 255, 210, 0.20);
 }
+/* 侧栏隐藏滚动条:保留可滚,视觉更干净(覆盖上面 8px 宽度) */
+.sidebar::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
 .detail-panel::-webkit-scrollbar-thumb,
 .content::-webkit-scrollbar-thumb,
 .table-wrap::-webkit-scrollbar-thumb,

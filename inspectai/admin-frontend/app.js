@@ -672,6 +672,16 @@ function setLoginScreen(enabled) {
 function render() {
   setLoginScreen(false);
   $$(".nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.page === state.page));
+  // 当前页导航项滚入侧栏可视区(只滚侧栏自身,不带动整页)
+  const activeNav = $(".nav button.active");
+  const navHost = activeNav?.closest(".sidebar");
+  if (activeNav && navHost) {
+    const host = navHost.getBoundingClientRect();
+    const item = activeNav.getBoundingClientRect();
+    const pad = 14;
+    if (item.top < host.top + pad) navHost.scrollTop -= host.top + pad - item.top;
+    else if (item.bottom > host.bottom - pad) navHost.scrollTop += item.bottom - (host.bottom - pad);
+  }
   $("#pendingBadge").textContent = filteredRequests().filter((item) => item.status === "pending").length;
   updateUserBadge();
   const renderer = pageRenderers[state.page] || renderDashboardPage;
@@ -2526,6 +2536,124 @@ function sparkSvg(points, color = "var(--blue)", w = 90, h = 28) {
   </svg>`;
 }
 
+// ===== 数据趋势图:可切换 巡检量&异常量 / 异常率 / 风险走势 =====
+// 客户端按周期聚合 records:≤30天按天,更长按周。
+function buildTrendSeries(records, period) {
+  let totalDays, bucketDays;
+  if (period === "today" || period === "week") { totalDays = 7; bucketDays = 1; }
+  else if (period === "month") { totalDays = 30; bucketDays = 1; }
+  else { totalDays = 84; bucketDays = 7; }
+  const bucketCount = Math.round(totalDays / bucketDays);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const inspect = [], abnormal = [], labels = [];
+  for (let i = 0; i < bucketCount; i++) {
+    const end = new Date(today); end.setDate(end.getDate() - (bucketCount - 1 - i) * bucketDays);
+    const start = new Date(end); start.setDate(start.getDate() - (bucketDays - 1));
+    const s = start.getTime(), e = end.getTime() + 86399999;
+    const inB = records.filter((r) => { const t = new Date(r.createdAt || 0).getTime(); return t >= s && t <= e; });
+    inspect.push(inB.length);
+    abnormal.push(inB.filter((r) => recordLevel(r) !== "normal").length);
+    labels.push((end.getMonth() + 1) + "/" + end.getDate());
+  }
+  const rate = inspect.map((cnt, i) => (cnt ? Math.round((abnormal[i] / cnt) * 100) : 0));
+  return { labels, inspect, abnormal, rate, bucketDays };
+}
+
+const TREND_METRICS = [
+  { key: "volume", label: "巡检量 / 异常量" },
+  { key: "rate",   label: "异常率" },
+  { key: "risk",   label: "风险走势" },
+];
+
+function renderTrendChart(records, period, insights = {}, assets = []) {
+  const metric = state.trendMetric || "volume";
+  const s = buildTrendSeries(records, period);
+  const W = 820, H = 250, padL = 34, padT = 16, padB = 26;
+  const innerH = H - padT - padB;
+  const n = s.labels.length;
+  const stepX = (W - padL - 10) / Math.max(1, n - 1);
+  const xOf = (i) => padL + i * stepX;
+  const yOf = (v, maxV) => padT + innerH - (maxV ? (v / maxV) * innerH : 0);
+
+  let lines, maxV, yFmt, totalLabel, totalVal;
+  if (metric === "volume") {
+    maxV = Math.max(1, ...s.inspect);
+    lines = [
+      { values: s.inspect, color: "#246bfe", name: "巡检量", fill: true },
+      { values: s.abnormal, color: "#ef4b3f", name: "异常量", fill: false },
+    ];
+    yFmt = (v) => String(Math.round(v));
+    totalLabel = "本期巡检"; totalVal = s.inspect.reduce((a, b) => a + b, 0);
+  } else if (metric === "rate") {
+    maxV = Math.max(10, ...s.rate);
+    lines = [{ values: s.rate, color: "#f59e0b", name: "异常率 %", fill: true }];
+    yFmt = (v) => Math.round(v) + "%";
+    const tot = s.inspect.reduce((a, b) => a + b, 0), ab = s.abnormal.reduce((a, b) => a + b, 0);
+    totalLabel = "平均异常率"; totalVal = (tot ? Math.round(ab / tot * 100) : 0) + "%";
+  } else {
+    const risk = s.rate.map((r) => Math.min(100, Math.round(r * 1.2)));
+    maxV = 100;
+    lines = [{ values: risk, color: "#8b5cf6", name: "风险走势", fill: true }];
+    yFmt = (v) => String(Math.round(v));
+    totalLabel = "区间均值"; totalVal = risk.length ? Math.round(risk.reduce((a, b) => a + b, 0) / risk.length) : 0;
+  }
+
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const y = padT + innerH - f * innerH;
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - 10}" y2="${y.toFixed(1)}" class="trend-grid"/>` +
+           `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" class="trend-ytick">${escapeHTML(yFmt(maxV * f))}</text>`;
+  }).join("");
+
+  const xEvery = Math.max(1, Math.ceil(n / 8));
+  const xLabels = s.labels.map((lb, i) => {
+    if (i % xEvery !== 0 && i !== n - 1) return "";
+    return `<text x="${xOf(i).toFixed(1)}" y="${H - 7}" class="trend-xtick">${escapeHTML(lb)}</text>`;
+  }).join("");
+
+  const linesSvg = lines.map((ln, idx) => {
+    const path = ln.values.map((v, i) => (i === 0 ? "M" : "L") + xOf(i).toFixed(1) + "," + yOf(v, maxV).toFixed(1)).join(" ");
+    const gid = `trendFill-${metric}-${idx}`;
+    const area = ln.fill
+      ? `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${ln.color}" stop-opacity="0.18"/><stop offset="100%" stop-color="${ln.color}" stop-opacity="0"/></linearGradient></defs><path d="${path} L${xOf(n - 1).toFixed(1)},${H - padB} L${padL},${H - padB} Z" fill="url(#${gid})"/>`
+      : "";
+    const dots = ln.values.map((v, i) => `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v, maxV).toFixed(1)}" r="2.3" fill="${ln.color}"/>`).join("");
+    return `${area}<path d="${path}" fill="none" stroke="${ln.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${dots}`;
+  }).join("");
+
+  const legend = lines.map((ln) => `<span class="trend-legend-item"><i style="background:${ln.color}"></i>${escapeHTML(ln.name)}</span>`).join("");
+
+  // 核心 KPI 融入趋势图卡片(替代原顶端独立 KPI 带)
+  // 全部取 insights.overview —— 与 hero AI 摘要同源,避免数字打架
+  const ov = insights.overview || {};
+  const focusCount = (insights.items || []).length;
+  const abnDelta = (ov.abnormalRecent != null && ov.abnormalPrev != null)
+    ? (ov.abnormalRecent > ov.abnormalPrev ? `较上期 +${ov.abnormalRecent - ov.abnormalPrev}` :
+       ov.abnormalRecent < ov.abnormalPrev ? `较上期 -${ov.abnormalPrev - ov.abnormalRecent}` : "与上期持平")
+    : "近一周期";
+  const headKpis = [
+    { label: "本期巡检", value: ov.recordRecent != null ? ov.recordRecent : records.length, unit: "次", sub: `${ov.assetTotal != null ? ov.assetTotal : "—"} 个资产`, cls: "" },
+    { label: "异常", value: ov.abnormalRecent != null ? ov.abnormalRecent : 0, unit: "次", sub: abnDelta, cls: (ov.abnormalRecent > 0) ? "danger" : "" },
+    { label: "待复核", value: ov.pendingReviews != null ? ov.pendingReviews : 0, unit: "项", sub: "需人工确认", cls: (ov.pendingReviews > 0) ? "warning" : "" },
+    { label: "重点关注", value: focusCount, unit: "台", sub: "AI 综合判定", cls: (focusCount > 0) ? "warning" : "" },
+  ];
+
+  return `
+    <section class="trend-panel">
+      <div class="trend-head">
+        <h2>数据趋势</h2>
+        <div class="trend-switch" role="tablist">
+          ${TREND_METRICS.map((m) => `<button class="trend-chip ${m.key === metric ? "active" : ""}" data-trend-metric="${m.key}" type="button">${escapeHTML(m.label)}</button>`).join("")}
+        </div>
+      </div>
+      <div class="trend-kpis">
+        ${headKpis.map((k) => `<div class="trend-kpi"><span class="tk-label">${escapeHTML(k.label)}</span><b class="${k.cls}">${escapeHTML(String(k.value))}<em>${escapeHTML(k.unit || "")}</em></b><span class="tk-sub">${escapeHTML(k.sub || "")}</span></div>`).join("")}
+      </div>
+      <div class="trend-legend">${legend}</div>
+      <div class="trend-canvas"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="trend-svg">${grid}${linesSvg}${xLabels}</svg></div>
+    </section>
+  `;
+}
+
 // ===== 阶段一 数据看板 = 智能洞察台 =====
 // 前端时间 tab(today/week/month/quarter/all) → 后端 range key
 function periodToRangeKey(period) {
@@ -2597,6 +2725,8 @@ function renderInsightHero(insights, periodDef) {
   const summary = insights.summary || (insights.items.length === 0
     ? "暂无足够数据生成摘要。先安排一次新巡检 / 提交几条记录,洞察 AI 才有内容可读。"
     : "等待 AI 总结…");
+  // 把一大段摘要按句拆成要点,领导一眼能扫;末句"建议..."单独高亮
+  const summaryPoints = String(summary).split(/[。；]/).map((s) => s.trim()).filter(Boolean);
   return `
     <section class="insight-hero">
       <div class="insight-hero-top">
@@ -2608,7 +2738,10 @@ function renderInsightHero(insights, periodDef) {
         <button class="insight-hero-refresh" data-action="refresh-insights">重新分析</button>
       </div>
       <div class="insight-hero-summary">
-        ${escapeHTML(summary)}
+        <ul class="insight-hero-points">${summaryPoints.map((p) => {
+          const isAdvice = /^建议|^下一步/.test(p);
+          return `<li class="${isAdvice ? "is-advice" : ""}">${escapeHTML(humanizeFieldNames(p))}</li>`;
+        }).join("")}</ul>
       </div>
       <div class="data-period-tabs" role="tablist">
         ${DATA_PERIODS.map((p) => `
@@ -2619,43 +2752,55 @@ function renderInsightHero(insights, periodDef) {
   `;
 }
 
-// ② Risk panorama 4 KPI(AI 综合,不是裸数字)
-function renderRiskKpi(insights) {
+// ② 核心指标带:合并原顶部 AI 综合 + 底部基础统计,一行看全(去重 KPI)
+function renderRiskKpi(insights, records = [], assets = [], requests = []) {
   const ov = insights.overview || {};
   const top = insights.items[0];
   const riskIndex = top ? Math.min(100, top.riskScore) : 0;
   const focusCount = insights.items.length;
-  const drift = ov.driftFieldCount || 0;
-  const lazy = Math.round((ov.lazyConfirmRate || 0) * 100);
+  const counts = statusCounts(assets);
+  const abnormalCnt = counts.warning + counts.danger + counts.repair;
+  const closedPct = closedRate();
+  const acc = aiAccuracy(records);
+  const accTxt = acc.sample < 5 ? "—" : `${acc.value}%`;
+  const riskClass = riskIndex >= 60 ? "danger" : (riskIndex >= 25 ? "warning" : "normal");
   const deltaTxt = (ov.abnormalRecent != null && ov.abnormalPrev != null)
     ? (ov.abnormalRecent > ov.abnormalPrev ? `↑ +${ov.abnormalRecent - ov.abnormalPrev} vs 上期` :
        ov.abnormalRecent < ov.abnormalPrev ? `↓ -${ov.abnormalPrev - ov.abnormalRecent} vs 上期` : `↔ 与上期持平`)
     : "—";
-  const riskClass = riskIndex >= 60 ? "danger" : (riskIndex >= 25 ? "warning" : "normal");
+  const kpis = [
+    { label: "本期巡检", value: records.length, unit: "条", sub: `资产 ${counts.total} 台`, cls: "" },
+    { label: "异常 / 待复核", value: abnormalCnt, unit: "项", sub: abnormalCnt > 0 ? "需处理" : "全清", cls: abnormalCnt > 0 ? "danger" : "" },
+    { label: "风险指数", value: riskIndex, unit: "/100", sub: deltaTxt, cls: riskClass },
+    { label: "重点关注", value: focusCount, unit: "台", sub: "AI 综合判定", cls: focusCount > 0 ? "warning" : "" },
+    { label: "闭环率", value: closedPct, unit: "%", sub: "复核→审批→台账", cls: "" },
+    { label: "AI 识别准确率", value: accTxt, unit: "", sub: acc.sample < 5 ? `样本 ${acc.sample}/5` : `${acc.sample} 字段`, cls: "" },
+  ];
   return `
-    <section class="risk-kpi-row">
-      <article class="risk-kpi ${riskClass}">
-        <span class="risk-kpi-label">风险指数</span>
-        <b class="risk-kpi-value">${riskIndex}<em>/100</em></b>
-        <span class="risk-kpi-sub">${escapeHTML(deltaTxt)}</span>
-      </article>
-      <article class="risk-kpi">
-        <span class="risk-kpi-label">重点关注资产</span>
-        <b class="risk-kpi-value">${focusCount}<em>台</em></b>
-        <span class="risk-kpi-sub">AI 综合判定</span>
-      </article>
-      <article class="risk-kpi ${drift > 0 ? "warning" : ""}">
-        <span class="risk-kpi-label">字段漂移项</span>
-        <b class="risk-kpi-value">${drift}<em>项</em></b>
-        <span class="risk-kpi-sub">数值字段超阈值</span>
-      </article>
-      <article class="risk-kpi ${lazy >= 30 ? "warning" : ""}">
-        <span class="risk-kpi-label">未看图确认率</span>
-        <b class="risk-kpi-value">${lazy}<em>%</em></b>
-        <span class="risk-kpi-sub">人工复核质量信号</span>
-      </article>
+    <section class="risk-kpi-row core-kpi-row">
+      ${kpis.map((k) => `
+        <article class="risk-kpi ${k.cls}">
+          <span class="risk-kpi-label">${escapeHTML(k.label)}</span>
+          <b class="risk-kpi-value">${escapeHTML(String(k.value))}<em>${escapeHTML(k.unit)}</em></b>
+          <span class="risk-kpi-sub">${escapeHTML(k.sub)}</span>
+        </article>
+      `).join("")}
     </section>
   `;
+}
+
+// 把 AI 文本里的字段 code(如 buttons_display)映射成中文 label,避免技术字段名暴露给业务方
+function fieldLabelMap() {
+  const map = {};
+  (state.records || []).forEach((r) => (r.fields || []).forEach((f) => {
+    if (f.code && f.label) map[f.code] = f.label;
+  }));
+  return map;
+}
+function humanizeFieldNames(text) {
+  if (!text) return text;
+  const map = fieldLabelMap();
+  return String(text).replace(/[a-z][a-z0-9]*(?:_[a-z0-9]+)+/g, (tok) => (map[tok] ? `「${map[tok]}」` : tok));
 }
 
 // ③ 重点关注 Top 5
@@ -2678,7 +2823,7 @@ function renderFocusBoard(insights) {
       <article class="focus-feature focus-${featured.riskLevel}" data-asset-select="${escapeHTML(featured.assetId)}">
         <div class="focus-feature-top"><span>建议优先复核</span><strong>${featured.riskScore}<em>分</em></strong></div>
         <h3>${escapeHTML(featured.assetName || "—")}</h3>
-        <div class="focus-feature-reasons">${(featured.reasons || []).slice(0, 3).map((reason) => `<span>${escapeHTML(reason)}</span>`).join("")}</div>
+        <div class="focus-feature-reasons">${(featured.reasons || []).slice(0, 3).map((reason) => `<span>${escapeHTML(humanizeFieldNames(reason))}</span>`).join("")}</div>
         ${featured.action ? `<p>下一步：${escapeHTML(featured.action)}</p>` : ""}
       </article>
       <div class="focus-grid focus-grid-compact">
@@ -2691,7 +2836,7 @@ function renderFocusBoard(insights) {
                 <span class="focus-card-score">${it.riskScore}<em>分</em></span>
                 <span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span>
               </div>
-              <p class="focus-card-summary">${escapeHTML((it.reasons && it.reasons[0]) || "建议查看历史巡检变化")}</p>
+              <p class="focus-card-summary">${escapeHTML(humanizeFieldNames((it.reasons && it.reasons[0]) || "建议查看历史巡检变化"))}</p>
             </div>
           </article>
         `).join("")}
@@ -2897,14 +3042,7 @@ function renderPeriodCompare(insights) {
 
 // ⑧ 辅助区(降级保底):旧 4 KPI / 准确率环 / 闭环率环 / 资产类型分布
 function renderInsightAux(records, assets, requests, periodDef) {
-  const counts = statusCounts(assets);
-  const accuracy = aiAccuracy(records);
-  const closedPct = closedRate();
-  const submittedCnt = records.filter((r) => r.submitted).length;
-  const abnormalCnt = counts.warning + counts.danger + counts.repair;
-  const submittedRate = records.length ? Math.round((submittedCnt / records.length) * 100) : 0;
-  const pendingApprovals = requests.filter((r) => r.status === "pending").length;
-  const closedCnt = requests.filter((r) => r.status === "approved" || r.status === "rejected").length;
+  // 基础统计已并入核心指标带,这里只保留独有的「资产类型分布」
   const typeMap = {};
   assets.forEach((a) => {
     const k = a.assetType || "未分类";
@@ -2913,54 +3051,15 @@ function renderInsightAux(records, assets, requests, periodDef) {
   const typeList = Object.entries(typeMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const typeMax = Math.max(1, ...typeList.map(([, n]) => n));
   const TYPE_COLORS = ["#12a968", "#246bfe", "#f59e0b", "#8b5cf6", "#ef4b3f", "#06b6d4"];
-  const accuracyDisplay = accuracy.sample < 5
-    ? `<div class="ring muted" style="--value:0">—</div><p class="ring-note">样本不足（${accuracy.sample}/5）</p>`
-    : `<div class="ring" style="--value:${accuracy.value}">${accuracy.value}%</div><p class="ring-note">基于 ${accuracy.sample} 个已确认字段</p>`;
   return `
     <section class="insight-aux">
-      <div class="insight-aux-head"><h2>基础指标 <small>规则版 · 降级保底</small></h2></div>
-      <div class="insight-aux-grid">
-        <article class="aux-card">
-          <span class="aux-card-label">资产总数</span>
-          <b class="aux-card-value">${counts.total}</b>
-          <span class="aux-card-sub">正常 ${counts.normal} · 异常 ${counts.danger}</span>
-        </article>
-        <article class="aux-card">
-          <span class="aux-card-label">本期巡检</span>
-          <b class="aux-card-value">${records.length}</b>
-          <span class="aux-card-sub">提交率 ${submittedRate}%</span>
-        </article>
-        <article class="aux-card">
-          <span class="aux-card-label">待复核 / 异常</span>
-          <b class="aux-card-value ${abnormalCnt > 0 ? "danger" : ""}">${abnormalCnt}</b>
-          <span class="aux-card-sub">${abnormalCnt > 0 ? "需关注" : "全清"}</span>
-        </article>
-        <article class="aux-card">
-          <span class="aux-card-label">闭环率</span>
-          <b class="aux-card-value">${closedPct}%</b>
-          <span class="aux-card-sub">${closedCnt} 结案 / ${pendingApprovals} 待审</span>
-        </article>
-      </div>
-      <div class="insight-aux-rings">
-        <article class="ring-card">
-          <div class="ring-head"><h3>AI 识别准确率</h3></div>
-          ${accuracyDisplay}
-        </article>
-        <article class="ring-card">
-          <div class="ring-head"><h3>异常闭环率</h3></div>
-          <div class="ring green" style="--value:${closedPct}">${closedPct}%</div>
-          <p class="ring-note">复核 → 审批 → 写入台账</p>
-        </article>
-        <article class="ring-card aux-type-card">
-          <div class="ring-head"><h3>资产类型 Top ${typeList.length}</h3></div>
-          <div class="type-bars">
-            ${typeList.map(([name, n], i) => {
-              const pct = Math.round((n / typeMax) * 100);
-              const color = TYPE_COLORS[i % TYPE_COLORS.length];
-              return `<div class="type-bar"><span class="type-name">${escapeHTML(name)}</span><div class="type-track"><div class="type-fill" style="width:${pct}%; background:${color}"></div></div><span class="type-num"><b>${n}</b></span></div>`;
-            }).join("") || `<div class="empty-state">暂无</div>`}
-          </div>
-        </article>
+      <div class="insight-aux-head"><h2>资产类型分布 <small>Top ${typeList.length}</small></h2></div>
+      <div class="type-bars type-bars-wide">
+        ${typeList.map(([name, n], i) => {
+          const pct = Math.round((n / typeMax) * 100);
+          const color = TYPE_COLORS[i % TYPE_COLORS.length];
+          return `<div class="type-bar"><span class="type-name">${escapeHTML(name)}</span><div class="type-track"><div class="type-fill" style="width:${pct}%; background:${color}"></div></div><span class="type-num"><b>${n}</b></span></div>`;
+        }).join("") || `<div class="empty-state">暂无</div>`}
       </div>
     </section>
   `;
@@ -2970,16 +3069,14 @@ function renderInsightAux(records, assets, requests, periodDef) {
 function renderInsightFooter(insights) {
   const upd = insights.generatedAt ? fmtTime(insights.generatedAt) : "—";
   // mock 期把 model 显示成「DeepSeek-V4 · 预览」,不暴露 deepseek-v4-pro/flash 的具体名
-  const modelLabel = insights.isMock
-    ? "DeepSeek-V4 · 预览模式"
-    : (insights.model ? `DeepSeek-V4(${insights.model})` : "—");
+  const modelLabel = insights.isMock ? "DeepSeek 大模型 · 预览模式" : "DeepSeek 大模型驱动";
+  const rangeLabel = { "1d": "近 1 天", "7d": "近 7 天", "30d": "近 30 天", "90d": "近 90 天", "365d": "近一年" }[insights.rangeKey] || "";
   return `
     <footer class="insight-footer">
       <span>数据更新 ${escapeHTML(upd)}</span>
       <span>·</span>
       <span>${escapeHTML(modelLabel)}</span>
-      <span>·</span>
-      <span>range ${escapeHTML(insights.rangeKey || "—")}</span>
+      ${rangeLabel ? `<span>·</span><span>${escapeHTML(rangeLabel)}</span>` : ""}
     </footer>
   `;
 }
@@ -3000,19 +3097,24 @@ function renderDataPage() {
   $("#pageMain").innerHTML = `
     ${renderLoadErrorBanner(`dataInsights:${cacheKey}`)}
     ${renderInsightHero(insights, periodDef)}
-    ${renderRiskKpi(insights)}
+    ${renderTrendChart(records, state.dataPeriod, insights, assets)}
+    <div class="board-divider"><span>明细分析</span></div>
     ${renderFocusBoard(insights)}
     ${renderStatusHeatmap(periodDef, insights)}
-    ${renderDriftBoard(insights)}
     ${renderInspectorQuality(insights)}
-    ${renderPeriodCompare(insights)}
-    ${renderInsightAux(records, assets, requests, periodDef)}
+    ${renderDriftBoard(insights)}
     ${renderInsightFooter(insights)}
   `;
   $("#pageAside").innerHTML = "";
   document.querySelectorAll("[data-period]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.dataPeriod = btn.dataset.period;
+      render();
+    });
+  });
+  document.querySelectorAll("[data-trend-metric]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.trendMetric = btn.dataset.trendMetric;
       render();
     });
   });
