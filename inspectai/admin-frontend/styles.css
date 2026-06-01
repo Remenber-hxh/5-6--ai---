@@ -1,69 +1,17 @@
 :root {
-  /* ===== Design tokens · C-Phase A1 极简谷歌风 =====
-     原则:配色压缩到 灰阶 + 1 强调红(异常)+ 1 警示黄(待复核)+ 链接蓝;
-     字体层级 4 级,间距 8px grid,圆角和阴影都极淡。 */
-
-  /* 灰阶 — 主体 */
-  --ds-ink-strong: #111827;     /* 主文字/页面标题 */
-  --ds-ink: #1f2937;            /* 次文字/正文 */
-  --ds-ink-mid: #4b5563;        /* 三级文字 */
-  --ds-ink-soft: #6b7280;       /* 辅助文字 */
-  --ds-ink-faint: #9ca3af;      /* 弱化/占位符 */
-  --ds-line: #e5e7eb;           /* 主分隔线 */
-  --ds-line-strong: #d1d5db;    /* 强分隔线 */
-  --ds-bg: #ffffff;             /* 卡片/主面板底 */
-  --ds-bg-alt: #f9fafb;         /* 浅区分底 */
-  --ds-bg-page: #f3f4f6;        /* 页面底 */
-
-  /* 强调色 — 仅 3 个语义,其余全灰 */
-  --ds-danger: #dc2626;
-  --ds-danger-bg: #fef2f2;
-  --ds-danger-border: #fecaca;
-  --ds-warn: #b45309;
-  --ds-warn-bg: #fef3c7;
-  --ds-warn-border: #fde047;
-  --ds-brand: #2563eb;          /* 链接/重要按钮唯一蓝 */
-  --ds-brand-bg: #eff6ff;
-
-  /* 字体层级 4 级 */
-  --ds-font-1: 22px;
-  --ds-font-2: 16px;
-  --ds-font-3: 14px;
-  --ds-font-4: 12px;
-  --ds-font-5: 11px;            /* 元信息/辅助 */
-
-  /* 8px grid 间距 */
-  --ds-s1: 4px;
-  --ds-s2: 8px;
-  --ds-s3: 12px;
-  --ds-s4: 16px;
-  --ds-s5: 24px;
-  --ds-s6: 32px;
-  --ds-s7: 48px;
-
-  /* 圆角 */
-  --ds-radius-sm: 4px;
-  --ds-radius: 6px;
-  --ds-radius-lg: 10px;
-
-  /* 影子(极淡) */
-  --ds-shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.05);
-  --ds-shadow: 0 2px 8px rgba(17, 24, 39, 0.06);
-
-  /* ===== Legacy 变量 → 重指向新 token(平滑切换,不破坏现有 CSS) ===== */
-  --nav: var(--ds-bg);
-  --nav2: var(--ds-bg-alt);
-  --page: var(--ds-bg-page);
-  --panel: var(--ds-bg);
-  --line: var(--ds-line);
-  --text: var(--ds-ink);
-  --muted: var(--ds-ink-soft);
-  --blue: var(--ds-brand);
-  --green: var(--ds-ink-mid);   /* "正常"不再绿,改灰中性 */
-  --orange: var(--ds-warn);
-  --red: var(--ds-danger);
-  --cyan: var(--ds-ink-mid);
-  --shadow: var(--ds-shadow);
+  --nav: #071827;
+  --nav2: #10283b;
+  --page: #f5f7fb;
+  --panel: #fff;
+  --line: #e7edf4;
+  --text: #162033;
+  --muted: #718093;
+  --blue: #246bfe;
+  --green: #12a968;
+  --orange: #f59e0b;
+  --red: #ef4b3f;
+  --cyan: #25d5ff;
+  --shadow: 0 14px 34px rgba(15, 35, 55, 0.10);
 }
 
 * {
@@ -78,9 +26,14 @@ body {
 
 body {
   min-width: 0;
-  color: var(--ds-ink);
-  font-family: "Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
-  background: var(--ds-bg-page);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  background:
+    linear-gradient(rgba(117, 190, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(117, 190, 255, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 50% -18%, rgba(60, 129, 206, 0.42), transparent 30%),
+    linear-gradient(180deg, #05101d 0%, #0b1f33 48%, #07111d 100%);
+  background-size: 44px 44px, 44px 44px, auto, auto;
 }
 
 button,
@@ -95,15 +48,18 @@ button {
 }
 
 .monitor-frame {
-  width: 100vw;
+  width: calc(100vw - 32px);
   min-width: 1180px;
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: var(--ds-bg-page);
-  box-shadow: none;
+  min-height: calc(100vh - 32px);
+  margin: 16px;
+  padding: 18px;
+  border: 1px solid rgba(180, 210, 240, 0.34);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 86% 7%, rgba(37, 213, 255, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.04)),
+    #02070d;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .admin-shell {
@@ -118,18 +74,19 @@ button {
 .sidebar {
   grid-row: 1 / span 2;
   padding: 24px 12px;
-  color: var(--ds-ink);
-  background: var(--ds-bg);
-  border-right: 1px solid var(--ds-line);
+  color: #dce9f7;
+  background:
+    radial-gradient(circle at 18% 4%, rgba(46, 148, 255, 0.17), transparent 24%),
+    linear-gradient(180deg, #071423, var(--nav2));
 }
 
 .brand {
   position: relative;
   padding: 0 8px 26px;
-  color: var(--ds-ink-strong);
-  font-size: var(--ds-font-2);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: -0.05em;
   white-space: nowrap;
 }
 
@@ -144,94 +101,80 @@ button {
   right: 8px;
   bottom: 14px;
   height: 1px;
-  background: var(--ds-line);
+  background: linear-gradient(90deg, rgba(37, 213, 255, 0.80), transparent);
 }
 
 .nav {
   display: grid;
-  gap: 2px;
+  gap: 5px;
 }
 
 .nav span {
-  margin: 14px 10px 4px;
-  color: var(--ds-ink-faint);
-  font-size: var(--ds-font-5);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  margin: 14px 8px 5px;
+  color: rgba(220, 233, 247, 0.52);
+  font-size: 13px;
 }
 
 .nav button {
   position: relative;
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 0 10px;
   border: 0;
-  border-radius: var(--ds-radius);
-  color: var(--ds-ink-mid);
+  border-radius: 7px;
+  color: rgba(220, 233, 247, 0.86);
   background: transparent;
   text-align: left;
-  font-weight: 500;
-  font-size: var(--ds-font-3);
-  transition: background 140ms ease, color 140ms ease;
+  font-weight: 800;
+  transition: 160ms ease;
 }
 
-.nav button:hover {
-  color: var(--ds-ink-strong);
-  background: var(--ds-bg-alt);
-  box-shadow: none;
-}
-
+.nav button:hover,
 .nav button.active {
-  color: var(--ds-ink-strong);
-  background: var(--ds-bg-alt);
-  font-weight: 700;
-  box-shadow: inset 2px 0 0 var(--ds-ink-strong);
+  color: #fff;
+  background: linear-gradient(90deg, rgba(17, 185, 104, 0.95), rgba(18, 138, 79, 0.76));
+  box-shadow: inset 3px 0 0 rgba(126, 255, 210, 0.95);
 }
-
-/* C-Phase A2 角色化 nav:默认主管视角(5 项);只有 body.role-admin 才显示管理员追加项 */
-.nav [data-role-only="admin"] { display: none !important; }
-body.role-admin .nav [data-role-only="admin"] { display: revert !important; }
-/* hidden 属性兜底:grid 容器子节点对 hidden 不友好,需要强制 */
-.nav [hidden] { display: none !important; }
 
 .topbar {
   grid-column: 2 / span 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--ds-line);
-  background: var(--ds-bg);
+  padding: 0 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(90deg, rgba(37, 213, 255, 0.10), transparent 34%),
+    radial-gradient(circle at 24% 0%, rgba(42, 122, 204, 0.22), transparent 32%),
+    linear-gradient(90deg, #0a1b2b, #0d2134);
 }
 
 .company-select select {
-  width: 220px;
-  height: 32px;
-  padding: 0 30px 0 10px;
-  border: 1px solid var(--ds-line);
-  border-radius: var(--ds-radius);
-  color: var(--ds-ink);
-  background: var(--ds-bg);
+  width: 260px;
+  height: 36px;
+  padding: 0 36px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  color: #dce9f7;
+  background: rgba(255, 255, 255, 0.04);
   outline: none;
-  font-size: var(--ds-font-3);
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
-  color: var(--ds-ink);
+  gap: 20px;
+  color: #dce9f7;
 }
 
 .icon-btn {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border: 0;
   border-radius: 50%;
-  color: var(--ds-ink-mid);
+  color: #dce9f7;
   background: transparent;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .icon-btn em {
@@ -259,26 +202,22 @@ body.role-admin .nav [data-role-only="admin"] { display: revert !important; }
 .admin-user b {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  color: var(--ds-ink-strong);
-  background: var(--ds-bg-alt);
-  border: 1px solid var(--ds-line);
-  font-weight: 700;
-  font-size: var(--ds-font-3);
+  color: var(--blue);
+  background: #fff;
 }
 
 .admin-user span {
-  font-size: var(--ds-font-3);
-  color: var(--ds-ink);
+  font-size: 13px;
 }
 
 .admin-user small {
   display: block;
   margin-top: 2px;
-  color: var(--ds-ink-soft);
-  font-size: var(--ds-font-5);
+  color: rgba(220, 233, 247, 0.58);
+  font-size: 11px;
 }
 
 .content {
@@ -9225,6 +9164,102 @@ button.profile-hero-logout,
   .exception-overview { grid-template-columns: 1fr; }
 }
 
+/* 首页愿景表达：现有闭环 + 未来穿戴扩展，不增加伪功能。 */
+.ai-hero-title {
+  position: relative;
+  z-index: 2;
+  margin: 0;
+  color: #fff;
+  font-size: 27px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+.ai-hero-desc {
+  position: relative;
+  z-index: 2;
+  max-width: 52ch;
+  margin: 8px 0 18px;
+  color: rgba(214, 232, 248, 0.66);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.ai-vision-rail {
+  display: grid !important;
+  align-content: center;
+  gap: 8px !important;
+  flex-basis: 248px !important;
+  max-width: 248px !important;
+}
+.vision-node {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 8px 10px;
+  background: rgba(4, 18, 33, 0.48);
+  border: 1px solid rgba(126, 255, 210, 0.14);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+}
+.vision-node i {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: #7effd2;
+  background: rgba(126, 255, 210, 0.08);
+  border: 1px solid rgba(126, 255, 210, 0.22);
+  border-radius: 50%;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+.vision-node div {
+  display: grid;
+  gap: 2px;
+}
+.vision-node b {
+  color: #f0fffc;
+  font-size: 12px;
+}
+.vision-node span {
+  color: rgba(214, 232, 248, 0.52);
+  font-size: 10px;
+}
+.vision-node.future {
+  border-style: dashed;
+  border-color: rgba(37, 213, 255, 0.32);
+}
+.vision-node.future i {
+  color: #8ddff0;
+  background: rgba(37, 213, 255, 0.07);
+  border-color: rgba(37, 213, 255, 0.24);
+}
+.ai-chat-body:has(.ai-chat-empty) {
+  min-height: 146px !important;
+  max-height: 146px !important;
+  height: 146px !important;
+}
+.ai-chat-empty {
+  gap: 5px !important;
+  padding: 20px !important;
+}
+.ai-chat-empty::before {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 11px !important;
+  font-size: 17px !important;
+}
+.ai-chat-empty b {
+  color: var(--text);
+  font-size: 14px;
+}
+.ai-chat-empty span {
+  color: var(--muted);
+  font-size: 12px;
+}
 .ai-chat-bubble strong {
   color: #0f6d62;
   font-weight: 900;
@@ -9237,252 +9272,3 @@ button.profile-hero-logout,
   font-family: Consolas, "SFMono-Regular", monospace;
   font-size: 0.9em;
 }
-
-/* =============================================================
-   C-Phase A3 · 概念语义统一覆盖层
-   规则:
-   - 正常 → 灰中性,无强调
-   - 待复核 → 轻警示黄
-   - 异常 → 红
-   - 风险/优先级/级别 全部对齐到上述 3 套语义,不再单独发明配色
-   - 大 hero / quick-tiles / 渐变背景 退化成白卡 + 细线
-   ============================================================= */
-
-/* 1) Status & pill — 全 3 状态语义统一 */
-.status, .pill {
-  color: var(--ds-ink-mid) !important;
-  background: var(--ds-bg-alt) !important;
-  border: 1px solid var(--ds-line) !important;
-  font-weight: 600 !important;
-  font-size: var(--ds-font-5) !important;
-}
-.status.normal, .pill.normal {
-  color: var(--ds-ink-mid) !important;
-  background: var(--ds-bg-alt) !important;
-  border-color: var(--ds-line) !important;
-}
-.status.warning, .pill.warning, .status.repair, .pill.repair {
-  color: var(--ds-warn) !important;
-  background: var(--ds-warn-bg) !important;
-  border-color: var(--ds-warn-border) !important;
-}
-.status.danger, .pill.danger {
-  color: var(--ds-danger) !important;
-  background: var(--ds-danger-bg) !important;
-  border-color: var(--ds-danger-border) !important;
-}
-
-/* 2) Hero / data-hero / panels with deep gradients → 退化为白卡 + 浅边 */
-/* 用 body 前缀拉高特异度,赢过已有的 .ai-hero.ai-hero-v2 !important 规则 */
-body .ai-hero,
-body .ai-hero.ai-hero-v2,
-body .ai-hero-v2,
-body .data-hero,
-body .data-hero.data-hero-v3,
-body .data-hero-v3,
-body .login-card {
-  background: var(--ds-bg) !important;
-  border: 1px solid var(--ds-line) !important;
-  color: var(--ds-ink) !important;
-  box-shadow: var(--ds-shadow-sm) !important;
-}
-body .ai-hero h1, body .ai-hero-v2 h1, body .ai-hero-line, body .ai-hero-hi,
-body .data-hero h1, body .data-hero-title h1 {
-  color: var(--ds-ink-strong) !important;
-}
-body .ai-hero p, body .data-hero p, body .ai-hero-line b, body .data-hero-kicker {
-  color: var(--ds-ink-mid) !important;
-}
-body .ai-hero-bg, body .ai-hero-orb, body .data-hero-bg, body .data-hero-orb {
-  display: none !important;
-}
-body .ai-hero-avatar { background: var(--ds-bg-alt) !important; border-color: var(--ds-line) !important; }
-body .ai-hero-cursor { display: none !important; }
-
-/* 3) Quick tiles — 不要花色 */
-.quick-tile {
-  background: var(--ds-bg) !important;
-  border: 1px solid var(--ds-line) !important;
-  box-shadow: var(--ds-shadow-sm) !important;
-  color: var(--ds-ink) !important;
-}
-.quick-tile:hover {
-  background: var(--ds-bg-alt) !important;
-  border-color: var(--ds-line-strong) !important;
-  transform: translateY(-1px) !important;
-  box-shadow: var(--ds-shadow) !important;
-}
-.quick-tile .qt-ico, .quick-tile .qt-ico-glyph {
-  background: var(--ds-bg-alt) !important;
-  color: var(--ds-ink-mid) !important;
-  --tile-color: var(--ds-ink-mid) !important;
-  --tile-color-bg: var(--ds-bg-alt) !important;
-  --tile-color-border: var(--ds-line) !important;
-}
-.quick-tile b { color: var(--ds-ink-strong) !important; }
-.quick-tile small, .quick-tile span { color: var(--ds-ink-soft) !important; }
-.quick-tile:hover .qt-arrow { color: var(--ds-brand) !important; }
-
-/* 4) Risk panorama KPI — 颜色对齐到 3 状态语义 */
-.risk-kpi.normal  { border-left-color: var(--ds-line-strong) !important; }
-.risk-kpi.warning { border-left-color: var(--ds-warn) !important; }
-.risk-kpi.danger  { border-left-color: var(--ds-danger) !important; }
-.risk-kpi-value { color: var(--ds-ink-strong) !important; }
-.risk-kpi.danger .risk-kpi-value { color: var(--ds-danger) !important; }
-
-/* 5) Focus card / Top N — 风险等级 3 套色 */
-.focus-card.focus-normal  { border-left-color: var(--ds-line-strong) !important; }
-.focus-card.focus-warning { border-left-color: var(--ds-warn) !important; }
-.focus-card.focus-danger  { border-left-color: var(--ds-danger) !important; }
-.focus-card-score {
-  background: var(--ds-bg-alt) !important;
-  color: var(--ds-ink-mid) !important;
-}
-.focus-danger .focus-card-score {
-  background: var(--ds-danger-bg) !important;
-  color: var(--ds-danger) !important;
-}
-.focus-card-action {
-  background: var(--ds-bg-alt) !important;
-  color: var(--ds-ink-mid) !important;
-}
-
-/* 6) 字段趋势 / 漂移 / 状态事件 — 变化率徽章对齐 */
-.trend-rate.up    { color: var(--ds-warn) !important; background: var(--ds-warn-bg) !important; }
-.trend-rate.down  { color: var(--ds-ink-mid) !important; background: var(--ds-bg-alt) !important; }
-.trend-rate.danger { color: var(--ds-danger) !important; background: var(--ds-danger-bg) !important; }
-.drift-rate.up    { color: var(--ds-warn) !important; background: var(--ds-warn-bg) !important; }
-.drift-rate.down  { color: var(--ds-ink-mid) !important; background: var(--ds-bg-alt) !important; }
-.drift-rate.danger { color: var(--ds-danger) !important; background: var(--ds-danger-bg) !important; }
-.se-fill.se-normal  { background: var(--ds-ink-mid) !important; }
-.se-fill.se-warning { background: var(--ds-warn) !important; }
-.se-fill.se-danger  { background: var(--ds-danger) !important; }
-.se-repeat-pill { background: var(--ds-warn-bg) !important; color: var(--ds-warn) !important; }
-.se-meta-row b.danger-num { color: var(--ds-danger) !important; }
-
-/* 7) 巡检员质量榜 — 防惰性指标颜色 */
-.iq-table td.warn   { color: var(--ds-warn) !important; }
-.iq-table td.danger { color: var(--ds-danger) !important; }
-
-/* 8) 异常本期 vs 上期 KPI */
-.pc-value.pc-danger, .pc-value.danger { color: var(--ds-danger) !important; }
-.pc-value.pc-ok { color: var(--ds-ink-mid) !important; }
-.pc-value.pc-neutral { color: var(--ds-ink-soft) !important; }
-.pc-ai-line {
-  background: var(--ds-brand-bg) !important;
-  border-left-color: var(--ds-brand) !important;
-  color: var(--ds-ink-strong) !important;
-}
-
-/* 9) 复核留痕条目 */
-.confirm-row { background: var(--ds-bg-alt) !important; border-left-color: var(--ds-line-strong) !important; }
-.confirm-label { color: var(--ds-ink-strong) !important; }
-.confirm-row-body { color: var(--ds-ink-mid) !important; }
-.confirm-row-body code { background: var(--ds-bg) !important; border-color: var(--ds-line) !important; }
-
-/* 10) 加载失败横幅 */
-.load-error-banner {
-  background: var(--ds-danger-bg) !important;
-  border-color: var(--ds-danger-border) !important;
-  color: var(--ds-danger) !important;
-}
-
-/* 11) Insight hero — 数据看板顶部 */
-.insight-hero {
-  background: var(--ds-bg) !important;
-  color: var(--ds-ink) !important;
-  border: 1px solid var(--ds-line) !important;
-  border-radius: var(--ds-radius-lg) !important;
-}
-.insight-hero-title h1 { color: var(--ds-ink-strong) !important; }
-.insight-hero-kicker, .insight-hero-meta { color: var(--ds-ink-soft) !important; }
-.insight-hero-summary {
-  background: var(--ds-bg-alt) !important;
-  border-left-color: var(--ds-brand) !important;
-  color: var(--ds-ink) !important;
-}
-.insight-hero-refresh {
-  background: var(--ds-bg-alt) !important;
-  color: var(--ds-ink) !important;
-  border: 1px solid var(--ds-line) !important;
-}
-.insight-hero .data-period-chip {
-  color: var(--ds-ink-mid) !important;
-  background: transparent !important;
-}
-.insight-hero .data-period-chip.active {
-  color: var(--ds-ink-strong) !important;
-  background: var(--ds-bg) !important;
-}
-.insight-hero .data-period-tabs { background: var(--ds-bg-alt) !important; }
-
-/* 12) AI 聊天面板 hero — 主舞台中心 */
-.ai-chat-model {
-  background: var(--ds-bg-alt) !important;
-  color: var(--ds-ink-mid) !important;
-}
-.ai-chat-chip {
-  background: var(--ds-bg) !important;
-  border: 1px solid var(--ds-line) !important;
-  color: var(--ds-ink) !important;
-}
-.ai-chat-chip:hover { background: var(--ds-bg-alt) !important; }
-
-/* 13) Dashboard aside cards — 历史风险卡 / 待办池 */
-.aside-finding, .dash-aside-card, .health-card { background: var(--ds-bg) !important; border-color: var(--ds-line) !important; }
-.aside-finding.f-high, .aside-finding.f-danger { border-left: 3px solid var(--ds-danger) !important; }
-.aside-finding.f-medium, .aside-finding.f-warning { border-left: 3px solid var(--ds-warn) !important; }
-.aside-finding.f-low { border-left: 3px solid var(--ds-line-strong) !important; }
-
-/* 14) Todo rows on dashboard */
-.todo-row.danger { color: var(--ds-danger) !important; background: var(--ds-danger-bg) !important; }
-.todo-row.warn   { color: var(--ds-warn) !important; background: var(--ds-warn-bg) !important; }
-.todo-row.info   { color: var(--ds-ink) !important; background: var(--ds-bg-alt) !important; }
-
-/* 15) ai-hero gradient text 用了 -webkit-text-fill-color: transparent + background-clip:text
-   极简风下要还原成纯黑文字 */
-body .ai-hero-hi,
-body .ai-hero-line,
-body .ai-hero-line b {
-  color: var(--ds-ink-strong) !important;
-  background: none !important;
-  background-image: none !important;
-  -webkit-background-clip: initial !important;
-  -webkit-text-fill-color: var(--ds-ink-strong) !important;
-  filter: none !important;
-}
-
-/* 16) AI 本月成绩 / 健康环 等 aside 卡(dashboard 右侧)— 退色 */
-body .ai-month-card,
-body .ai-month-pane,
-body .health-card,
-body .dash-aside-card {
-  background: var(--ds-bg) !important;
-  border: 1px solid var(--ds-line) !important;
-  color: var(--ds-ink) !important;
-  box-shadow: var(--ds-shadow-sm) !important;
-}
-body .ai-month-card *,
-body .health-card *,
-body .dash-aside-card * {
-  color: inherit;
-}
-body .ai-month-card h2,
-body .ai-month-card h3,
-body .health-card h2,
-body .dash-aside-card h2 {
-  color: var(--ds-ink-strong) !important;
-}
-body .ai-month-card small,
-body .ai-month-card span,
-body .ai-month-card em,
-body .health-card small,
-body .health-card span {
-  color: var(--ds-ink-soft) !important;
-}
-/* aside 卡内的渐变/光晕一律隐藏 */
-body .ai-month-card::before,
-body .ai-month-card::after,
-body .health-card::before,
-body .health-card::after { display: none !important; }
-
