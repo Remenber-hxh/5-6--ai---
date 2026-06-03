@@ -144,6 +144,7 @@ const state = {
   record: null,
   pollTimer: null,
   forceManual: false,
+  retakePending: false,
   inspector: localStorage.getItem("inspector") || "巡检员",
   userRole: localStorage.getItem("userRole") || "inspector",   // inspector / supervisor
   userName: localStorage.getItem("userName") || (localStorage.getItem("inspector") || "巡检员"),
@@ -355,11 +356,31 @@ function bindFilePicker(inputId) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";  // 允许同一文件重选
     if (!files.length) return;
+    if (state.retakePending && state.record?.id) {
+      await uploadRetakeImages(files);
+      return;
+    }
     await classifyAndProceed(files);
   });
 }
 bindFilePicker("#cameraInput");
 bindFilePicker("#uploadInput");
+
+async function uploadRetakeImages(files) {
+  setScene("loading");
+  $("#loadingMsg").textContent = "正在补充照片…";
+  $("#loadingSub").textContent = `向本次巡检补充 ${files.length} 张图片`;
+  try {
+    const result = await API.uploadImages(state.record.id, files);
+    state.record = result.record || await API.getRecord(state.record.id);
+    state.retakePending = false;
+    await beginAnalysis();
+  } catch (err) {
+    state.retakePending = true;
+    toast(err.message);
+    setScene("camera");
+  }
+}
 
 // 兜底：鼠标/触屏点击走原生 label + file input；键盘操作时手动触发。
 // 不在 click 里 preventDefault，否则企业微信 WebView 可能拦截系统相机唤起。
@@ -556,6 +577,7 @@ async function startRecordWithTemplate(templateId) {
       body.imageIds = state.pendingImageIds;
     }
     state.record = await API.createRecord(body);
+    state.retakePending = false;
     localStorage.setItem("activeRecord", state.record.id);
     if (state.forceManual) {
       state.forceManual = false;
@@ -621,6 +643,7 @@ function pollTask() {
       if (task.status === "succeeded") {
         clearInterval(state.pollTimer);
         state.record = await API.getRecord(state.record.id);
+        state.retakePending = false;
         await renderForm();
         setScene("form");
         toast("识别完成，请逐项确认");
@@ -628,6 +651,7 @@ function pollTask() {
         clearInterval(state.pollTimer);
         state.record = await API.getRecord(state.record.id);
         if (state.record.manualRequired) {
+          state.retakePending = false;
           await renderForm();
           setScene("form");
           showManualHint();
@@ -667,10 +691,12 @@ function hideRetakeModal() { $("#retakeModal").hidden = true; }
 
 $("#retakeAgainBtn").addEventListener("click", () => {
   hideRetakeModal();
+  state.retakePending = true;
   setScene("camera");
 });
 $("#retakeManualBtn").addEventListener("click", async () => {
   hideRetakeModal();
+  state.retakePending = false;
   await setManualMode();
   if (state.record?.id) showManualHint();
 });
@@ -696,14 +722,14 @@ async function renderForm() {
       `).join("")}
     </div>
   ` : "";
-  // P0-4 防惰性闭环:统计还没人工 patch 过的 AI 字段。提交接口对这些字段会拦截。
-  const unconfirmedCount = rec.fields.filter(f => f.source === "ai" && String(f.value || "").trim() !== "").length;
+  // 只统计置信度 <95% 的 AI 字段;≥95% 视为可信,不需人工确认。
+  const unconfirmedCount = rec.fields.filter(f => f.source === "ai" && String(f.value || "").trim() !== "" && (f.confidence || 0) < 0.95).length;
   const confirmAllBanner = unconfirmedCount > 0 ? `
     <div class="confirm-all-banner" id="confirmAllBanner">
       <div class="cab-msg">
-        <b>${unconfirmedCount}</b> 个 AI 识别字段还未确认 · 请逐项核对,或一键确认正常字段(会留痕)
+        <b>${unconfirmedCount}</b> 项识别置信偏低,请核对
       </div>
-      <button type="button" id="confirmAllBtn">一键确认正常 (${unconfirmedCount})</button>
+      <button type="button" id="confirmAllBtn">一键确认 (${unconfirmedCount})</button>
     </div>
   ` : "";
   groups.innerHTML = `
@@ -718,10 +744,6 @@ async function renderForm() {
   groups.querySelectorAll("[data-field-input]").forEach(el => {
     el.addEventListener("focus", () => trackFieldFocus(el.dataset.fieldCode));
     el.addEventListener("change", () => saveField(el.dataset.fieldCode));
-  });
-  // 「我无法判定」按钮 → 标记此字段为 uncertain，等主管复核
-  groups.querySelectorAll("[data-mark-uncertain]").forEach(btn => {
-    btn.addEventListener("click", () => markUncertain(btn.dataset.markUncertain));
   });
   // P0-4 一键确认按钮:批量给所有 source=ai 字段写一条 confirm-batch 留痕,主管能识别"批量过的"
   document.getElementById("confirmAllBtn")?.addEventListener("click", () => confirmAllAIFields());
@@ -840,7 +862,6 @@ function renderField(field) {
       <div class="field block">
         <div class="label">${escapeHTML(field.label)}${reqMark} ${pillText ? `<span class="ai-pill ${pillClass}">${pillText}</span>` : ""}</div>
         <textarea data-field-input data-field-code="${escapeHTML(field.code)}" placeholder="可选填写">${escapeHTML(field.value)}</textarea>
-        <button class="mark-uncertain" type="button" data-mark-uncertain="${escapeHTML(field.code)}">我无法判定</button>
       </div>
     `;
   } else {
@@ -854,7 +875,6 @@ function renderField(field) {
         ${pillText ? `<span class="ai-pill ${pillClass}">${pillText}</span>` : ""}
         ${control}
       </div>
-      <button class="mark-uncertain" type="button" data-mark-uncertain="${escapeHTML(field.code)}">我无法判定</button>
     </div>
   `;
 }
@@ -968,7 +988,7 @@ function pillTextFor(f) {
   if (f.source === "human-confirmed") return "已确认";
   if (f.source === "human-edited") return "已修改";
   if (f.source === "ai" && f.confidence) return `AI ${Math.round(f.confidence * 100)}%`;
-  if (f.source === "ai") return "AI 识别";
+  if (f.source === "ai" && String(f.value || "").trim()) return "AI 识别";
   return "";
 }
 
@@ -1002,13 +1022,13 @@ async function saveField(code) {
 async function confirmAllAIFields() {
   if (!state.record) return;
   const aiFields = state.record.fields.filter(f =>
-    f.source === "ai" && String(f.value || "").trim() !== ""
+    f.source === "ai" && String(f.value || "").trim() !== "" && (f.confidence || 0) < 0.95
   );
   if (aiFields.length === 0) {
-    toast("没有需要确认的 AI 字段");
+    toast("没有需要确认的字段");
     return;
   }
-  if (!confirm(`一键确认 ${aiFields.length} 个 AI 字段为「正常」?\n所有动作会留痕,主管可追溯。`)) return;
+  if (!confirm(`确认这 ${aiFields.length} 项?`)) return;
   const btn = document.getElementById("confirmAllBtn");
   if (btn) { btn.disabled = true; btn.textContent = `处理中… 0/${aiFields.length}`; }
   let ok = 0;
@@ -1030,33 +1050,6 @@ async function confirmAllAIFields() {
   FieldAudit.viewedPhoto = false;
   toast(`已批量确认 ${ok} / ${aiFields.length} 个字段`);
   renderForm(); // 重渲染 -> banner 应消失或更新数量
-}
-
-// §4 mark_uncertain：人工无法判定，保留待复核交主管抽查；后端会写一条 uncertain 留痕。
-async function markUncertain(code) {
-  if (!state.record) return;
-  const field = state.record.fields.find(f => f.code === code);
-  if (!field) return;
-  const el = document.querySelector(`[data-field-input][data-field-code="${CSS.escape(code)}"]`);
-  const currentValue = el ? el.value : (field.value || "");
-  const opts = {
-    action: "uncertain",
-    durationMs: popFieldDurationMs(code),
-    viewedPhoto: FieldAudit.viewedPhoto,
-  };
-  try {
-    const updated = await API.patchField(state.record.id, code, currentValue, field.version, opts);
-    Object.assign(field, updated);
-    FieldAudit.viewedPhoto = false;
-    toast(`${field.label} 已标记为待主管复核`);
-    const fieldEl = el ? el.closest(".field") : null;
-    if (fieldEl) {
-      const pill = fieldEl.querySelector(".ai-pill");
-      if (pill) { pill.className = "ai-pill warn"; pill.textContent = "待主管复核"; }
-    }
-  } catch (err) {
-    toast(err.message);
-  }
 }
 
 async function saveAndPreview() {
@@ -1881,6 +1874,7 @@ function goCamera() {
   state.classifyResult = null;
   state.pendingImageIds = [];
   state.forceManual = false;
+  state.retakePending = false;
   localStorage.removeItem("activeRecord");
   setScene("camera");
 }
@@ -1941,6 +1935,15 @@ async function init() {
       } else if (state.record.recognitionStatus === "recognized" || state.record.manualRequired) {
         await renderForm();
         setScene("form");
+      } else if (state.record.recognitionStatus === "retake_required") {
+        state.retakePending = true;
+        setScene("camera");
+        showRetakeModal(state.record.retakeReason || "识别不稳定，请重拍");
+      } else if (state.record.recognitionStatus === "processing") {
+        setScene("loading");
+        $("#loadingMsg").textContent = "AI 正在识别字段…";
+        $("#loadingSub").textContent = "正在恢复识别任务";
+        pollTask();
       } else {
         localStorage.removeItem("activeRecord");
         state.record = null;

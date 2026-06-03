@@ -73,6 +73,7 @@ type Record struct {
 	TemplateName      string           `json:"templateName"`
 	Type              string           `json:"type"`
 	Inspector         string           `json:"inspector"`
+	InspectorUserID   string           `json:"inspectorUserId,omitempty"`
 	CaptureAttempts   int              `json:"captureAttempts"`
 	ManualRequired    bool             `json:"manualRequired"`
 	RecognitionStatus string           `json:"recognitionStatus"` // not_started / processing / recognized / retake_required / manual_required

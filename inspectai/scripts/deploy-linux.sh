@@ -39,7 +39,7 @@ if [ ! -f ".env.prod" ]; then
 fi
 
 # 防回退：旧版可能把密钥写在 .env.prod 里
-if grep -Eq "^DASHSCOPE_API_KEY=sk-|^MYSQL_PASSWORD=[^[:space:]]+|^MYSQL_ROOT_PASSWORD=[^[:space:]]+|^INSPECTAI_ADMIN_PASSWORD=[^[:space:]]+" .env.prod; then
+if grep -Eq "^DASHSCOPE_API_KEY=[^[:space:]]+|^DEEPSEEK_API_KEY=[^[:space:]]+|^MYSQL_PASSWORD=[^[:space:]]+|^MYSQL_ROOT_PASSWORD=[^[:space:]]+|^INSPECTAI_ADMIN_PASSWORD=[^[:space:]]+" .env.prod; then
   echo "ERROR: .env.prod 含明文密钥，新版方案禁止。" >&2
   echo "       把所有密钥从 .env.prod 移除，改走 secrets/：" >&2
   echo "         bash scripts/prepare-secrets.sh" >&2
@@ -50,6 +50,7 @@ fi
 SECRETS_DIR="$ROOT_DIR/secrets"
 REQUIRED_SECRETS=(
   dashscope_api_key
+  deepseek_api_key
   mysql_password
   mysql_root_password
   mysql_dsn
@@ -84,13 +85,29 @@ echo "  .env.prod 已就位（不含明文密钥）"
 echo "  secrets/ 下 ${#REQUIRED_SECRETS[@]} 个文件齐全"
 echo
 
+# 首次部署还没有证书，必须先用 HTTP-only 配置完成 ACME challenge。
+# 证书安装后再次运行本脚本，会自动切换为 HTTPS 配置。
+HTTPS_CERT="$ROOT_DIR/nginx/ssl/ai-demo.jadeastech.com.crt"
+HTTPS_KEY="$ROOT_DIR/nginx/ssl/ai-demo.jadeastech.com.key"
+if [ -s "$HTTPS_CERT" ] && [ -s "$HTTPS_KEY" ]; then
+  export INSPECTAI_NGINX_CONF="./nginx/nginx.conf"
+  PUBLIC_SCHEME="https"
+  echo "✓ 已检测到 HTTPS 证书，本次启用 nginx HTTPS 配置"
+else
+  export INSPECTAI_NGINX_CONF="./nginx/nginx.bootstrap.conf"
+  PUBLIC_SCHEME="http"
+  echo "WARN: 尚未检测到 HTTPS 证书，本次使用 HTTP-only bootstrap 配置" >&2
+  echo "      服务启动后按 docs/DEPLOY.md 签发证书，再重跑本脚本切换 HTTPS。" >&2
+fi
+echo
+
 # ---------- 拉起 ----------
 
-echo "[1/4] 构建 + 启动容器"
+echo "[1/5] 构建 + 启动容器"
 $COMPOSE up -d --build
 
 echo
-echo "[2/4] 等待 go-backend 健康（最长 120 秒）"
+echo "[2/5] 等待 go-backend 健康（最长 120 秒）"
 for i in $(seq 1 60); do
   if $COMPOSE exec -T go-backend wget -qO- http://127.0.0.1:8080/health 2>/dev/null | grep -q '"status":"ok"'; then
     echo "  ✓ go-backend healthy"
@@ -105,16 +122,29 @@ for i in $(seq 1 60); do
 done
 
 echo
-echo "[3/4] 全部服务状态"
+echo "[3/5] 验证 AI 密钥已被容器加载"
+ai_health="$($COMPOSE exec -T ai-service curl -fsS http://127.0.0.1:9100/health)"
+if ! printf '%s' "$ai_health" | grep -Eq '"hasDashscopeKey"[[:space:]]*:[[:space:]]*true'; then
+  echo "ERROR: ai-service 未加载千问密钥。检查 secrets/dashscope_api_key 的内容和权限。" >&2
+  exit 7
+fi
+if ! printf '%s' "$ai_health" | grep -Eq '"hasDeepSeekKey"[[:space:]]*:[[:space:]]*true'; then
+  echo "ERROR: ai-service 未加载 DeepSeek 密钥。检查 secrets/deepseek_api_key 的内容和权限。" >&2
+  exit 7
+fi
+echo "  ✓ DashScope vision + DeepSeek management AI ready"
+
+echo
+echo "[4/5] 全部服务状态"
 $COMPOSE ps
 
 echo
-echo "[4/4] 完成"
-echo "  移动端：http://<服务器 IP>/"
-echo "  管理端：http://<服务器 IP>/admin/"
-echo "  健康检查：http://<服务器 IP>/health"
+echo "[5/5] 完成"
+echo "  移动端：${PUBLIC_SCHEME}://<服务器 IP>/"
+echo "  管理端：${PUBLIC_SCHEME}://<服务器 IP>/admin/"
+echo "  健康检查：${PUBLIC_SCHEME}://<服务器 IP>/health"
 echo
 echo "下一步建议："
-echo "  - 在云平台安全组开放 80 端口"
-echo "  - 配置 HTTPS（推荐 caddy 或 acme.sh + nginx）"
-echo "  - 安排定期备份：见 docs/DEPLOY.md 第 5 节"
+echo "  - 在云平台安全组开放 80 / 443 端口"
+echo "  - 如果当前是 HTTP bootstrap，按 docs/DEPLOY.md 签发证书后重跑本脚本"
+echo "  - 安排定期备份：见 docs/DEPLOY.md 第 6 节"

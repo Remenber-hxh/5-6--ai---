@@ -12,6 +12,11 @@ services:
       QWEN_VISION_MODEL: ${QWEN_VISION_MODEL:-qwen-vl-plus}
       QWEN_VISION_FALLBACK: ${QWEN_VISION_FALLBACK:-qwen-vl-max}
       QWEN_TEXT_MODEL: ${QWEN_TEXT_MODEL:-qwen-plus}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
+      DEEPSEEK_REPORT_MODEL: ${DEEPSEEK_REPORT_MODEL:-deepseek-chat}
+      DEEPSEEK_TIMEOUT_SECONDS: ${DEEPSEEK_TIMEOUT_SECONDS:-30}
       TMP_IMAGE_TTL_HOURS: ${TMP_IMAGE_TTL_HOURS:-24}
     volumes:
       - ./storage:/app/storage
@@ -73,7 +78,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.bootstrap.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "18088:80"
     depends_on:

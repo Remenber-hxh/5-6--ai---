@@ -26,6 +26,7 @@ type Store interface {
 	GetRecord(id string) (*Record, error)
 	UpdateRecord(rec *Record) error
 	ListRecords(limit int) ([]*Record, error)
+	ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error)
 
 	CreateTask(task *AITask) error
 	GetTask(id string) (*AITask, error)
@@ -169,6 +170,24 @@ func (s *MemStore) ListRecords(limit int) ([]*Record, error) {
 	out := make([]*Record, 0, len(s.records))
 	for _, r := range s.records {
 		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *MemStore) ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Record, 0, len(s.records))
+	for _, rec := range s.records {
+		if recordOwnedBy(rec, inspectorUserID, displayName, username) {
+			out = append(out, rec)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
@@ -487,6 +506,9 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err := store.ensureAssetDisplaySchema(); err != nil {
 		return nil, err
 	}
+	if err := store.ensureRecordOwnershipSchema(); err != nil {
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -512,6 +534,9 @@ func NewMySQLStore(dsn string) (*SQLiteStore, error) {
 	}
 	store := &SQLiteStore{db: db, dialect: "mysql"}
 	if err := store.ensureAssetDisplaySchema(); err != nil {
+		return nil, err
+	}
+	if err := store.ensureRecordOwnershipSchema(); err != nil {
 		return nil, err
 	}
 	return store, nil
@@ -554,6 +579,38 @@ func (s *SQLiteStore) ensureAssetDisplaySchema() error {
 		return err
 	}
 	return s.backfillAssetDisplayColumns()
+}
+
+func (s *SQLiteStore) ensureRecordOwnershipSchema() error {
+	exists, err := s.hasColumn("records", "inspector_user_id")
+	if err != nil {
+		return fmt.Errorf("inspect records.inspector_user_id: %w", err)
+	}
+	if !exists {
+		stmt := "ALTER TABLE records ADD COLUMN inspector_user_id TEXT NOT NULL DEFAULT ''"
+		if s.dialect == "mysql" {
+			stmt = "ALTER TABLE records ADD COLUMN inspector_user_id VARCHAR(64) NOT NULL DEFAULT ''"
+		}
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("add records.inspector_user_id: %w", err)
+		}
+	}
+	const indexName = "idx_records_inspector_user_id"
+	stmt := "CREATE INDEX IF NOT EXISTS " + indexName + " ON records(inspector_user_id, created_at)"
+	if s.dialect == "mysql" {
+		hasIndex, err := s.hasIndex("records", indexName)
+		if err != nil {
+			return fmt.Errorf("inspect index %s: %w", indexName, err)
+		}
+		if hasIndex {
+			return nil
+		}
+		stmt = "CREATE INDEX " + indexName + " ON records(inspector_user_id, created_at)"
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("create index %s: %w", indexName, err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) hasColumn(table, column string) (bool, error) {
@@ -770,14 +827,14 @@ func (s *SQLiteStore) CreateRecord(rec *Record) error {
 	_, err := s.db.Exec(`
 		INSERT INTO records (
 			id, project, point_id, point_name, template_id, template_name,
-			type, inspector, capture_attempts, manual_required,
+			type, inspector, inspector_user_id, capture_attempts, manual_required,
 			recognition_status, retake_reason, task_id,
 			fields_json, images_json, report,
 			ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
 			submitted, submitted_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.ID, rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
-		rec.Type, rec.Inspector, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
+		rec.Type, rec.Inspector, rec.InspectorUserID, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
 		rec.AISummary, string(tagsJSON), string(recosJSON), rec.AISummaryError,
@@ -801,14 +858,14 @@ func updateRecordExec(exec sqlExecutor, rec *Record) error {
 	_, err := exec.Exec(`
 		UPDATE records SET
 			project=?, point_id=?, point_name=?, template_id=?, template_name=?,
-			type=?, inspector=?, capture_attempts=?, manual_required=?,
+			type=?, inspector=?, inspector_user_id=?, capture_attempts=?, manual_required=?,
 			recognition_status=?, retake_reason=?, task_id=?,
 			fields_json=?, images_json=?, report=?,
 			ai_summary=?, ai_summary_tags=?, ai_recommendations=?, ai_summary_error=?,
 			submitted=?, submitted_at=?, updated_at=?
 		WHERE id=?`,
 		rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
-		rec.Type, rec.Inspector, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
+		rec.Type, rec.Inspector, rec.InspectorUserID, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
 		rec.AISummary, string(tagsJSON), string(recosJSON), rec.AISummaryError,
@@ -825,7 +882,7 @@ func (s *SQLiteStore) GetRecord(id string) (*Record, error) {
 func getRecordExec(queryer sqlQueryer, id string) (*Record, error) {
 	row := queryer.QueryRow(`
 		SELECT id, project, point_id, point_name, template_id, template_name,
-		       type, inspector, capture_attempts, manual_required,
+		       type, inspector, inspector_user_id, capture_attempts, manual_required,
 		       recognition_status, retake_reason, task_id,
 		       fields_json, images_json, report,
 		       ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
@@ -840,12 +897,43 @@ func (s *SQLiteStore) ListRecords(limit int) ([]*Record, error) {
 	}
 	rows, err := s.db.Query(`
 		SELECT id, project, point_id, point_name, template_id, template_name,
-		       type, inspector, capture_attempts, manual_required,
+		       type, inspector, inspector_user_id, capture_attempts, manual_required,
 		       recognition_status, retake_reason, task_id,
 		       fields_json, images_json, report,
 		       ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
 		       submitted, submitted_at, created_at, updated_at
 		FROM records ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(`
+		SELECT id, project, point_id, point_name, template_id, template_name,
+		       type, inspector, inspector_user_id, capture_attempts, manual_required,
+		       recognition_status, retake_reason, task_id,
+		       fields_json, images_json, report,
+		       ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
+		       submitted, submitted_at, created_at, updated_at
+		FROM records
+		WHERE (? <> '' AND inspector_user_id = ?)
+		   OR (inspector_user_id = '' AND inspector IN (?, ?))
+		ORDER BY created_at DESC LIMIT ?`,
+		inspectorUserID, inspectorUserID, strings.TrimSpace(displayName), strings.TrimSpace(username), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -873,7 +961,7 @@ func scanRecord(row scanner) (*Record, error) {
 	var manualInt, submittedInt int
 	err := row.Scan(
 		&rec.ID, &rec.Project, &rec.PointID, &rec.PointName, &rec.TemplateID, &rec.TemplateName,
-		&rec.Type, &rec.Inspector, &rec.CaptureAttempts, &manualInt,
+		&rec.Type, &rec.Inspector, &rec.InspectorUserID, &rec.CaptureAttempts, &manualInt,
 		&rec.RecognitionStatus, &rec.RetakeReason, &rec.TaskID,
 		&fieldsJSON, &imagesJSON, &rec.Report,
 		&rec.AISummary, &tagsJSON, &recosJSON, &rec.AISummaryError,

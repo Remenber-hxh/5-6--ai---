@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS records (
     template_name       TEXT NOT NULL,
     type                TEXT NOT NULL,
     inspector           TEXT NOT NULL,
+    inspector_user_id   TEXT NOT NULL DEFAULT '',
     capture_attempts    INTEGER NOT NULL DEFAULT 0,
     manual_required     INTEGER NOT NULL DEFAULT 0,
     recognition_status  TEXT NOT NULL DEFAULT 'not_started',
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS records (
 
 CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_records_template_id ON records(template_id);
+CREATE INDEX IF NOT EXISTS idx_records_inspector_user_id ON records(inspector_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS assets (
     id                  TEXT PRIMARY KEY,

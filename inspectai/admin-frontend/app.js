@@ -333,8 +333,8 @@ function locationText(asset) {
     if (point) {
       const left = point.project || asset.project || "";
       const right = point.name || point.location || "";
-      if (left && right) return `${left} · ${right}`;
-      return right || left || pointId;
+      if (left && right && right !== (asset.assetType || "")) return `${left} · ${right}`;
+      return left || right || pointId;
     }
   }
   return asset.project || asset.projectCode || pointId || "-";
@@ -940,21 +940,14 @@ function renderDashboardPage() {
   const accuracy = aiAccuracy(records);
   const issuesCount = counts.warning + counts.danger + counts.repair;
   const pendingApprovals = requests.filter((item) => item.status === "pending").length;
-  const issues = topIssues(assets);
-  const insights = riskInsights(records, assets);
   const tileCounts = quickAccessCounts(records);
 
   const trendCounts = last7DayAbnormal(records);
   const todayKeyStr = todayKey();
   const todayTaskDone = (state.customTasks || []).filter((t) => t.status === "已完成" && String(t.completedAt || "").startsWith(todayKeyStr)).length;
-  // 阶段一:首页加 Top 3 重点关注 mini 卡(数据看板算好的 risk_score),引流去洞察台
-  const insightKey = `month::${state.selectedProject || ""}`;
-  if (!(insightKey in state.dataInsights)) loadDataInsights("month", state.selectedProject || "");
-  const dashInsights = state.dataInsights[insightKey] || { items: [], summary: "" };
   $("#pageMain").innerHTML = `
     ${aiHeroBanner({ todayRecords: todayRecords.length, todayAuto, todayFlagged, savedHours, issuesCount, accuracy, trendCounts, todayTaskDone })}
     ${quickAccessTiles(tileCounts)}
-    ${dashboardFocusMini(dashInsights)}
     ${aiChatPanel()}
   `;
   $("#pageAside").innerHTML = dashboardAside({
@@ -963,8 +956,6 @@ function renderDashboardPage() {
     pendingApprovals,
     pendingTasks: tileCounts.tasks,
     accuracy,
-    issues,
-    attentionItems: dashInsights.items || [],
   });
   animateDashboardCounts();
   animateHealthRings();
@@ -1006,42 +997,6 @@ function bindHeroCursor() {
   });
 }
 
-// 首页「重点关注 Top 3」mini 卡 —— 引流到数据看板看全部。
-function dashboardFocusMini(insights) {
-  const items = (insights.items || []).slice(0, 3);
-  if (!items.length) {
-    return `
-      <section class="panel focus-mini-panel">
-        <div class="panel-head"><h2>近期重点关注</h2><button class="link-btn" data-page-link="data">去洞察台 →</button></div>
-        <div class="empty-state">AI 正在分析…暂无重点关注资产</div>
-      </section>
-    `;
-  }
-  return `
-    <section class="panel focus-mini-panel">
-      <div class="panel-head">
-        <h2>近期重点关注 <small>基于历史巡检与趋势</small></h2>
-        <button class="link-btn" data-page-link="data">去洞察台看全部 →</button>
-      </div>
-      <div class="focus-mini-grid">
-        ${items.map((it, idx) => `
-          <article class="focus-mini focus-${it.riskLevel}" data-asset-select="${escapeHTML(it.assetId)}">
-            <div class="focus-mini-rank">${idx + 1}</div>
-            <div class="focus-mini-body">
-              <b class="focus-mini-name">${escapeHTML(it.assetName || "—")}</b>
-              <div class="focus-mini-meta">
-                <span class="focus-mini-score">${it.riskScore} 分</span>
-                <span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span>
-              </div>
-              <div class="focus-mini-reason">${escapeHTML((it.reasons && it.reasons[0]) || "—")}</div>
-            </div>
-          </article>
-        `).join("")}
-      </div>
-    </section>
-  `;
-}
-
 const AI_SUGGESTIONS = [
   "最近 30 天有哪些设备需要重点关注？",
   "本周异常比上周增加了吗？",
@@ -1056,7 +1011,7 @@ function aiChatPanel() {
     <section class="panel ai-chat">
       <div class="panel-head">
         <h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 智能问答</h2>
-        <span class="ai-chat-model">DeepSeek-V4 · 台账分析</span>
+        <span class="ai-chat-model">DeepSeek · 台账分析</span>
       </div>
       <div class="ai-chat-body" id="aiChatBody">
         <div class="ai-chat-empty">问 AI 看数据、查异常、要建议；下方点话题即可发起对话。</div>
@@ -1488,7 +1443,7 @@ function monthlyAiStats() {
   };
 }
 
-function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingTasks, accuracy, issues, attentionItems }) {
+function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingTasks, accuracy }) {
   const accText = accuracy.sample ? `${accuracy.value}%` : "—";
   return `
     <div class="aside-stack">
@@ -1517,7 +1472,6 @@ function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingT
           <span>巡检任务</span><b>${pendingTasks}</b><em>查看 →</em>
         </a>
       </div>
-      ${asideFindings(issues || [], attentionItems || [])}
     </div>
   `;
 }
@@ -2310,19 +2264,18 @@ function assetTablePanel(assets, title, desc, withFilters, action = "") {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th></th><th>设备编号</th><th>设备名称</th><th>设备类型</th><th>安装位置</th><th>状态</th><th>最近巡检时间</th><th>操作</th></tr></thead>
+          <thead><tr><th></th><th>资产</th><th>设备类型</th><th>安装位置</th><th>状态</th><th>最近巡检时间</th><th>操作</th></tr></thead>
           <tbody>${assets.map((asset) => `
             <tr data-asset-select="${escapeHTML(asset.id)}" class="${asset.id === state.selectedAssetId ? "selected" : ""}">
               <td><i></i></td>
-              <td>${escapeHTML(assetKey(asset))}</td>
-              <td>${escapeHTML(asset.assetName || "未命名资产")}</td>
+              <td class="asset-cell">${((name, code) => name !== code ? '<b>' + escapeHTML(name) + '</b><span class="asset-code">' + escapeHTML(code) + '</span>' : '<b>' + escapeHTML(code) + '</b>')(asset.assetName || "未命名资产", assetKey(asset))}</td>
               <td>${escapeHTML(asset.assetType || "-")}</td>
               <td>${escapeHTML(locationText(asset))}</td>
               <td><span class="status ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></td>
               <td>${fmtTime(asset.lastInspectedAt)}</td>
-              <td><button class="view-link" data-asset-select="${escapeHTML(asset.id)}">查看</button></td>
+              <td><button class="view-link" data-asset-detail="${escapeHTML(asset.id)}" type="button">查看</button></td>
             </tr>
-          `).join("") || emptyRow(8, "暂无资产数据")}</tbody>
+          `).join("") || emptyRow(7, "暂无资产数据")}</tbody>
         </table>
       </div>
       <div class="pager"><span>共 ${assets.length} 条</span><span>20 条/页</span></div>
@@ -2562,12 +2515,13 @@ function buildTrendSeries(records, period) {
 const TREND_METRICS = [
   { key: "volume", label: "巡检量 / 异常量" },
   { key: "rate",   label: "异常率" },
-  { key: "risk",   label: "风险走势" },
+  { key: "risk",   label: "风险参考" },
 ];
 
 function renderTrendChart(records, period, insights = {}, assets = []) {
   const metric = state.trendMetric || "volume";
   const s = buildTrendSeries(records, period);
+  const ov = insights.overview || {};
   const W = 820, H = 250, padL = 34, padT = 16, padB = 26;
   const innerH = H - padT - padB;
   const n = s.labels.length;
@@ -2575,7 +2529,7 @@ function renderTrendChart(records, period, insights = {}, assets = []) {
   const xOf = (i) => padL + i * stepX;
   const yOf = (v, maxV) => padT + innerH - (maxV ? (v / maxV) * innerH : 0);
 
-  let lines, maxV, yFmt, totalLabel, totalVal;
+  let lines, maxV, yFmt;
   if (metric === "volume") {
     maxV = Math.max(1, ...s.inspect);
     lines = [
@@ -2583,19 +2537,15 @@ function renderTrendChart(records, period, insights = {}, assets = []) {
       { values: s.abnormal, color: "#ef4b3f", name: "异常量", fill: false },
     ];
     yFmt = (v) => String(Math.round(v));
-    totalLabel = "本期巡检"; totalVal = s.inspect.reduce((a, b) => a + b, 0);
   } else if (metric === "rate") {
     maxV = Math.max(10, ...s.rate);
     lines = [{ values: s.rate, color: "#f59e0b", name: "异常率 %", fill: true }];
     yFmt = (v) => Math.round(v) + "%";
-    const tot = s.inspect.reduce((a, b) => a + b, 0), ab = s.abnormal.reduce((a, b) => a + b, 0);
-    totalLabel = "平均异常率"; totalVal = (tot ? Math.round(ab / tot * 100) : 0) + "%";
   } else {
     const risk = s.rate.map((r) => Math.min(100, Math.round(r * 1.2)));
     maxV = 100;
-    lines = [{ values: risk, color: "#8b5cf6", name: "风险走势", fill: true }];
+    lines = [{ values: risk, color: "#f59e0b", name: "风险参考", fill: true }];
     yFmt = (v) => String(Math.round(v));
-    totalLabel = "区间均值"; totalVal = risk.length ? Math.round(risk.reduce((a, b) => a + b, 0) / risk.length) : 0;
   }
 
   const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
@@ -2616,37 +2566,40 @@ function renderTrendChart(records, period, insights = {}, assets = []) {
     const area = ln.fill
       ? `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${ln.color}" stop-opacity="0.18"/><stop offset="100%" stop-color="${ln.color}" stop-opacity="0"/></linearGradient></defs><path d="${path} L${xOf(n - 1).toFixed(1)},${H - padB} L${padL},${H - padB} Z" fill="url(#${gid})"/>`
       : "";
-    const dots = ln.values.map((v, i) => `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v, maxV).toFixed(1)}" r="2.3" fill="${ln.color}"/>`).join("");
-    return `${area}<path d="${path}" fill="none" stroke="${ln.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${dots}`;
+    const dots = ln.values.map((v, i) => `<circle class="trend-dot" cx="${xOf(i).toFixed(1)}" cy="${yOf(v, maxV).toFixed(1)}" r="2.3" fill="${ln.color}"><title>${escapeHTML(s.labels[i])} · ${escapeHTML(ln.name)}：${escapeHTML(yFmt(v))}</title></circle>`).join("");
+    const lastIndex = ln.values.length - 1;
+    const lastY = yOf(ln.values[lastIndex], maxV);
+    const lastLabelY = Math.max(padT + 10, lastY - 8);
+    const latest = `<text class="trend-latest" x="${(xOf(lastIndex) - 4).toFixed(1)}" y="${lastLabelY.toFixed(1)}" fill="${ln.color}">${escapeHTML(yFmt(ln.values[lastIndex]))}</text>`;
+    return `${area}<path class="trend-series" d="${path}" fill="none" stroke="${ln.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${dots}${latest}`;
   }).join("");
 
   const legend = lines.map((ln) => `<span class="trend-legend-item"><i style="background:${ln.color}"></i>${escapeHTML(ln.name)}</span>`).join("");
 
   // 核心 KPI 融入趋势图卡片(替代原顶端独立 KPI 带)
   // 全部取 insights.overview —— 与 hero AI 摘要同源,避免数字打架
-  const ov = insights.overview || {};
   const focusCount = (insights.items || []).length;
-  const abnDelta = (ov.abnormalRecent != null && ov.abnormalPrev != null)
-    ? (ov.abnormalRecent > ov.abnormalPrev ? `较上期 +${ov.abnormalRecent - ov.abnormalPrev}` :
-       ov.abnormalRecent < ov.abnormalPrev ? `较上期 -${ov.abnormalPrev - ov.abnormalRecent}` : "与上期持平")
-    : "近一周期";
   const headKpis = [
-    { label: "本期巡检", value: ov.recordRecent != null ? ov.recordRecent : records.length, unit: "次", sub: `${ov.assetTotal != null ? ov.assetTotal : "—"} 个资产`, cls: "" },
-    { label: "异常", value: ov.abnormalRecent != null ? ov.abnormalRecent : 0, unit: "次", sub: abnDelta, cls: (ov.abnormalRecent > 0) ? "danger" : "" },
-    { label: "待复核", value: ov.pendingReviews != null ? ov.pendingReviews : 0, unit: "项", sub: "需人工确认", cls: (ov.pendingReviews > 0) ? "warning" : "" },
-    { label: "重点关注", value: focusCount, unit: "台", sub: "AI 综合判定", cls: (focusCount > 0) ? "warning" : "" },
+    { label: "本期巡检", value: ov.recordRecent != null ? ov.recordRecent : records.length, unit: "次", cls: "" },
+    { label: "异常", value: ov.abnormalRecent != null ? ov.abnormalRecent : 0, unit: "次", cls: (ov.abnormalRecent > 0) ? "danger" : "" },
+    { label: "待复核", value: ov.pendingReviews != null ? ov.pendingReviews : 0, unit: "项", cls: (ov.pendingReviews > 0) ? "warning" : "" },
+    { label: "重点关注", value: focusCount, unit: "台", cls: (focusCount > 0) ? "warning" : "" },
   ];
 
   return `
     <section class="trend-panel">
       <div class="trend-head">
-        <h2>数据趋势</h2>
+        <div class="trend-title">
+          <div>
+            <h2>巡检趋势</h2>
+          </div>
+        </div>
         <div class="trend-switch" role="tablist">
           ${TREND_METRICS.map((m) => `<button class="trend-chip ${m.key === metric ? "active" : ""}" data-trend-metric="${m.key}" type="button">${escapeHTML(m.label)}</button>`).join("")}
         </div>
       </div>
       <div class="trend-kpis">
-        ${headKpis.map((k) => `<div class="trend-kpi"><span class="tk-label">${escapeHTML(k.label)}</span><b class="${k.cls}">${escapeHTML(String(k.value))}<em>${escapeHTML(k.unit || "")}</em></b><span class="tk-sub">${escapeHTML(k.sub || "")}</span></div>`).join("")}
+        ${headKpis.map((k) => `<div class="trend-kpi"><span class="tk-label">${escapeHTML(k.label)}</span><b class="${k.cls}">${escapeHTML(String(k.value))}<em>${escapeHTML(k.unit || "")}</em></b></div>`).join("")}
       </div>
       <div class="trend-legend">${legend}</div>
       <div class="trend-canvas"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="trend-svg">${grid}${linesSvg}${xLabels}</svg></div>
@@ -2718,30 +2671,19 @@ function renderLoadErrorBanner(scopeKey) {
   `;
 }
 
-// ① Hero(标题 + AI 全局摘要 + 时间 tabs + 项目筛选 + 重新分析)
+// ① 数据看板工具栏:范围、项目和更新时间。
 function renderInsightHero(insights, periodDef) {
-  const project = state.selectedProject || "全部项目";
   const updated = insights.generatedAt ? fmtTime(insights.generatedAt) : "—";
-  const summary = insights.summary || (insights.items.length === 0
-    ? "暂无足够数据生成摘要。先安排一次新巡检 / 提交几条记录,洞察 AI 才有内容可读。"
-    : "等待 AI 总结…");
-  // 把一大段摘要按句拆成要点,领导一眼能扫;末句"建议..."单独高亮
-  const summaryPoints = String(summary).split(/[。；]/).map((s) => s.trim()).filter(Boolean);
   return `
-    <section class="insight-hero">
+    <section class="insight-hero insight-toolbar">
       <div class="insight-hero-top">
         <div class="insight-hero-title">
-          <span class="insight-hero-kicker">智能洞察 · ${escapeHTML(periodDef.label)} · ${escapeHTML(project)}</span>
-          <h1>智能洞察台</h1>
-          <span class="insight-hero-meta">数据更新 ${escapeHTML(updated)} · ${escapeHTML(insights.isMock ? "DeepSeek-V4 · 预览模式" : (insights.model ? "DeepSeek-V4" : "—"))}</span>
+          <h1>趋势分析</h1>
         </div>
-        <button class="insight-hero-refresh" data-action="refresh-insights">重新分析</button>
-      </div>
-      <div class="insight-hero-summary">
-        <ul class="insight-hero-points">${summaryPoints.map((p) => {
-          const isAdvice = /^建议|^下一步/.test(p);
-          return `<li class="${isAdvice ? "is-advice" : ""}">${escapeHTML(humanizeFieldNames(p))}</li>`;
-        }).join("")}</ul>
+        <div class="insight-toolbar-actions">
+          <span class="insight-hero-meta">更新于 ${escapeHTML(updated)}</span>
+          <button class="insight-hero-refresh" data-action="refresh-insights">重新分析</button>
+        </div>
       </div>
       <div class="data-period-tabs" role="tablist">
         ${DATA_PERIODS.map((p) => `
@@ -2752,7 +2694,38 @@ function renderInsightHero(insights, periodDef) {
   `;
 }
 
-// ② 核心指标带:合并原顶部 AI 综合 + 底部基础统计,一行看全(去重 KPI)
+// ② AI 解读:趋势主图右侧仅保留三条结论和一条行动建议。
+function renderTrendInsight(insights) {
+  const summary = insights.summary || (insights.items.length === 0
+    ? "当前暂无重点关注资产。"
+    : "正在生成趋势解读。");
+  const points = String(summary).split(/[。；\n]/).map((s) => s.trim()).filter(Boolean);
+  const conclusions = points.filter((p) => !/^(建议|下一步)/.test(p)).slice(0, 3);
+  const top = insights.items[0] || {};
+  const advice = points.find((p) => /^(建议|下一步)/.test(p))
+    || top.action
+    || "结合重点资产列表安排复核。";
+  return `
+    <aside class="trend-ai-panel">
+      <div class="trend-ai-head">
+        <div><span>AI 解读</span><h2>趋势结论</h2></div>
+      </div>
+      <div class="trend-ai-focus">
+        <span>需关注资产</span>
+        <b>${insights.items.length}<em>台</em></b>
+      </div>
+      <ul class="trend-ai-list">
+        ${(conclusions.length ? conclusions : ["当前数据较少，建议先完成巡检记录积累。"]).map((p) => `<li>${escapeHTML(humanizeFieldNames(p))}</li>`).join("")}
+      </ul>
+      <div class="trend-ai-action">
+        <span>建议动作</span>
+        <p>${escapeHTML(humanizeFieldNames(advice))}</p>
+      </div>
+    </aside>
+  `;
+}
+
+// ③ 核心指标带:合并原顶部 AI 综合 + 底部基础统计,一行看全(去重 KPI)
 function renderRiskKpi(insights, records = [], assets = [], requests = []) {
   const ov = insights.overview || {};
   const top = insights.items[0];
@@ -3097,8 +3070,11 @@ function renderDataPage() {
   $("#pageMain").innerHTML = `
     ${renderLoadErrorBanner(`dataInsights:${cacheKey}`)}
     ${renderInsightHero(insights, periodDef)}
-    ${renderTrendChart(records, state.dataPeriod, insights, assets)}
-    <div class="board-divider"><span>明细分析</span></div>
+    <div class="trend-command-grid">
+      ${renderTrendChart(records, state.dataPeriod, insights, assets)}
+      ${renderTrendInsight(insights)}
+    </div>
+    <div class="board-divider"><span>资产与质量明细</span></div>
     ${renderFocusBoard(insights)}
     ${renderStatusHeatmap(periodDef, insights)}
     ${renderInspectorQuality(insights)}
@@ -3686,14 +3662,37 @@ function selectedRecord() {
   return state.records.find((record) => record.id === state.selectedRecordId) || filteredRecords()[0] || state.records[0] || null;
 }
 
+// 右栏:精简预览 —— 关键信息一屏看完,点"查看完整档案"开抽屉看全部
 function renderAssetSide(asset) {
   if (!asset) return `<div class="detail-head"><h2>资产详情</h2></div><div class="empty-state">暂无资产数据</div>`;
+  const localHist = state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
+  const photos = collectAssetPhotos(asset, localHist);
+  return `
+    <div class="detail-head asset-detail-head"><span>资产台账</span><h2>资产预览</h2></div>
+    <div class="asset-preview">
+      <div class="asset-preview-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : `<div class="asset-preview-noimg">暂无照片</div>`}</div>
+      <div class="asset-preview-title"><h3>${escapeHTML(asset.assetName || "未命名资产")}</h3><span class="pill ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></div>
+      <div class="kv-list asset-preview-kv">
+        <div><span>设备编号</span><b>${escapeHTML(assetKey(asset))}</b></div>
+        <div><span>设备类型</span><b>${escapeHTML(asset.assetType || "-")}</b></div>
+        <div><span>安装位置</span><b>${escapeHTML(locationText(asset))}</b></div>
+        <div><span>最近巡检</span><b>${fmtTime(asset.lastInspectedAt)}</b></div>
+        <div><span>巡检次数</span><b>${asset.inspectionCount || 0} 次</b></div>
+      </div>
+      <div class="asset-preview-summary">${escapeHTML(truncateText(asset.lastSummary || "暂无管理摘要。", 90))}</div>
+      <button class="asset-preview-btn" data-asset-detail="${escapeHTML(asset.id)}" type="button">查看完整档案 →</button>
+    </div>
+  `;
+}
+
+// 完整档案 —— 抽屉弹窗里展示,空间充足
+function renderAssetFull(asset) {
+  if (!asset) return `<div class="empty-state">暂无资产数据</div>`;
   if (!(asset.id in state.assetDetails)) loadAssetDetail(asset.id); // 未命中则后台拉历史+趋势，回来重渲染
   const detail = state.assetDetails[asset.id];
   const snapshots = detail ? detail.history : [];
   const trend = detail ? detail.trend : [];
   const total = detail ? detail.total : 0;
-  // 照片仍从本地 records 集合里取（snapshots 只带元数据不带 images）
   const localHist = state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
   const photos = collectAssetPhotos(asset, localHist);
   const trendHTML = trend.length ? `
@@ -3701,13 +3700,11 @@ function renderAssetSide(asset) {
       <h4>字段趋势 <small>近 90 天 · 后端规则计算</small></h4>
       <div class="trend-cards">${trend.map(renderTrendCard).join("")}</div>
     </div>` : "";
-  // P1-2 电梯等状态类资产没数值趋势时,显示状态事件统计代替
   const events = detail && detail.events;
   const eventsHTML = (events && events.inspections > 0) ? renderStatusEventsCard(events) : "";
   return `
-    <div class="detail-head asset-detail-head"><span>资产台账</span><h2>资产详情</h2></div>
     ${renderLoadErrorBanner(`assetDetail:${asset.id}`)}
-    <div class="asset-card asset-card-v2">
+    <div class="asset-card asset-card-v2 asset-card-full">
       <section class="asset-side-hero">
         <div class="asset-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : ""}</div>
         <div class="asset-side-intro">
@@ -4474,6 +4471,7 @@ function bindEvents() {
     }
     const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;
     const assetId = event.target.closest("[data-asset-select]")?.dataset.assetSelect;
+    const assetDetailId = event.target.closest("[data-asset-detail]")?.dataset.assetDetail;
     const recordId = event.target.closest("[data-record-select]")?.dataset.recordSelect;
     const requestId = event.target.closest("[data-request-open]")?.dataset.requestOpen;
     const drawerType = event.target.closest("[data-drawer]")?.dataset.drawer;
@@ -4508,6 +4506,17 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       setPage("profile");
+      return;
+    }
+    if (assetDetailId) {
+      event.preventDefault();
+      event.stopPropagation();
+      state.selectedAssetId = assetDetailId; // 同步选中,保证抽屉内编辑表单 selectedAsset() 正确
+      const da = state.assets.find((a) => a.id === assetDetailId);
+      if (da) {
+        if (!(da.id in state.assetDetails)) await loadAssetDetail(da.id);
+        openDrawer((da.assetName || "资产") + " · 完整档案", renderAssetFull(da));
+      }
       return;
     }
     if (assetId) {

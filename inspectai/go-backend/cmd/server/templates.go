@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"strings"
@@ -136,22 +136,22 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 3,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "screen_reading",
+            AIPrompt:  "substation",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
 				textField("asset_no", "变电所编号", true, "ai"),
 				choiceField("hv_appearance", "高压柜：外观检查是否良好", true, []string{"是", "否"}),
 				choiceField("meter_abnormal", "高压柜：电度表是否显示异常", true, []string{"否", "是"}),
 				choiceField("voltage_normal", "高压柜：电压是否正常", true, []string{"是", "否"}),
-				choiceField("hv_alarm", "高压柜：是否有报警", false, []string{"否", "是"}),
-				choiceField("temperature_humidity_abnormal", "高压柜：温湿度显示是否异常", false, []string{"否", "是"}),
-				choiceField("hv_smell", "高压柜：有无异常气味", false, []string{"无", "有"}),
+				choiceField("hv_alarm", "高压柜：是否有报警", true, []string{"否", "是"}),
+				choiceField("temperature_humidity_abnormal", "高压柜：温湿度显示是否异常", true, []string{"否", "是"}),
+				choiceField("hv_smell", "高压柜：有无异常气味", true, []string{"无", "有"}),
 				textField("hv_exception", "高压柜异常说明", false, "ai"),
 				textField("transformer_temperature", "变压器：温度及三相温差", false, "ai"),
 				choiceField("transformer_appearance", "变压器：外观检查是否良好", false, []string{"是", "否"}),
-				choiceField("transformer_noise", "变压器：声音是否异常", false, []string{"否", "是"}),
+				choiceField("transformer_noise", "变压器：声音是否异常", true, []string{"否", "是"}),
 				choiceField("room_lighting", "机房照明是否正常", false, []string{"是", "否"}),
-				textField("room_temperature_humidity", "机房温湿度", false, "ai"),
+				textField("room_temperature_humidity", "机房温湿度", true, "manual"),
 				choiceField("room_clean", "机房卫生", false, []string{"正常", "异常"}),
 				textField("note", "备注", false, "ai"),
 			},

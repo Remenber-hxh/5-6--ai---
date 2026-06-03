@@ -29,14 +29,15 @@ curl --noproxy "*" http://127.0.0.1:19100/health
 .\scripts\stop-local.ps1
 ```
 
-## 接入千问 DashScope
+## 接入 AI 密钥
 
 密钥**不能**写在 `.env` 明文，用 DPAPI 加密：
 
 ```powershell
 .\scripts\setup-key.ps1
-# 交互式输入 sk-... ，加密落 .env.secure（绑当前 Windows 用户）
-# 之后 start-local.ps1 启动时会自动解密注入 DASHSCOPE_API_KEY
+# 交互式输入千问 sk-... ，加密落 .env.secure（绑当前 Windows 用户）
+.\scripts\setup-key.ps1 -Name "DEEPSEEK_API_KEY"
+# 再输入 DeepSeek sk-...；start-local.ps1 启动时会自动解密注入两个密钥
 ```
 
 `.env`（非密钥配置）：
@@ -48,9 +49,13 @@ CORS_ALLOWED_ORIGINS=
 TMP_IMAGE_TTL_HOURS=24
 QWEN_VISION_MODEL=qwen-vl-plus
 QWEN_TEXT_MODEL=qwen-plus
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_CHAT_MODEL=deepseek-chat
+DEEPSEEK_REPORT_MODEL=deepseek-chat
+DEEPSEEK_TIMEOUT_SECONDS=30
 ```
 
-AI 调用失败不回退伪造数据，会返回 `retake_required` 让用户重拍或转人工，避免假数据污染台账。
+千问视觉调用失败不回退伪造数据，会返回 `retake_required` 让用户重拍或转人工，避免假数据污染台账。管理端历史分析与问答独立使用 DeepSeek；DeepSeek 未配置或调用失败时只返回规则兜底，不伪造模型结论。
 
 本地默认 `INSPECTAI_AUTH_TOKEN` 为空，方便演示和调试；生产环境必须设置访问令牌。`INSPECTAI_AUTH_TOKEN` 用于移动端巡检用户，`INSPECTAI_SUPERVISOR_TOKEN` 用于后台审批/复核。设置后，前端首次请求业务接口会提示输入令牌，并由后端下发 HttpOnly cookie 保护后续 `/storage/` 图片访问。
 

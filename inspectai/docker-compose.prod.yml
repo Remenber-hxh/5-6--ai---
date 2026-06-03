@@ -5,6 +5,7 @@
 #
 # 部署前先在主机上准备 secret 文件（默认在 ./secrets/ 下）：
 #   ./secrets/dashscope_api_key
+#   ./secrets/deepseek_api_key
 #   ./secrets/mysql_password
 #   ./secrets/mysql_root_password
 #   ./secrets/inspectai_auth_token
@@ -16,6 +17,8 @@
 secrets:
   dashscope_api_key:
     file: ./secrets/dashscope_api_key
+  deepseek_api_key:
+    file: ./secrets/deepseek_api_key
   mysql_password:
     file: ./secrets/mysql_password
   mysql_root_password:
@@ -71,12 +74,19 @@ services:
       QWEN_VISION_MODEL: ${QWEN_VISION_MODEL:-qwen-vl-plus}
       QWEN_VISION_FALLBACK: ${QWEN_VISION_FALLBACK:-qwen-vl-max}
       QWEN_TEXT_MODEL: ${QWEN_TEXT_MODEL:-qwen-plus}
+      # 管理端历史分析与问答独立走 DeepSeek，密钥同样只从 secret 文件读取。
+      DEEPSEEK_API_KEY_FILE: /run/secrets/deepseek_api_key
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
+      DEEPSEEK_REPORT_MODEL: ${DEEPSEEK_REPORT_MODEL:-deepseek-chat}
+      DEEPSEEK_TIMEOUT_SECONDS: ${DEEPSEEK_TIMEOUT_SECONDS:-30}
       TMP_IMAGE_TTL_HOURS: ${TMP_IMAGE_TTL_HOURS:-24}
     secrets:
       # 短格式。非 swarm 模式下 uid/gid/mode 被忽略（Docker 会直接 bind-mount
       # host 文件，owner 跟随 host）。所以正确做法是 host 上把 secret 文件
       # chown 给 uid 10001（容器内 inspectai 用户）— 见 prepare-secrets.sh。
       - dashscope_api_key
+      - deepseek_api_key
     volumes:
       - app_storage:/app/storage:ro
     expose:
@@ -153,7 +163,8 @@ services:
     image: nginx:1.27-alpine
     restart: unless-stopped
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # 首次部署默认走 HTTP-only bootstrap；deploy-linux.sh 检测到证书后自动切 HTTPS。
+      - ${INSPECTAI_NGINX_CONF:-./nginx/nginx.bootstrap.conf}:/etc/nginx/nginx.conf:ro
       # ACME HTTP-01 webroot：acme.sh 把验证文件丢这里，CA 经 nginx 取
       - ./nginx/acme-webroot:/var/www/acme:ro
       # SSL 证书目录：acme.sh 装证书到这里，nginx 加 443 server block 时引用

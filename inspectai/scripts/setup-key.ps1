@@ -1,7 +1,8 @@
-# 加密保存 DashScope API Key 到 .env.secure
+# 加密保存本地 AI API Key 到 .env.secure，默认保存 DashScope 密钥。
 # 用 Windows DPAPI（CurrentUser scope）加密，只有当前 Windows 账号能在本机解密
 # 用法：
 #   .\scripts\setup-key.ps1                  # 交互式输入，输入不回显
+#   .\scripts\setup-key.ps1 -Name "DEEPSEEK_API_KEY"
 #   .\scripts\setup-key.ps1 -Key "sk-xxx"    # 命令行传入（不推荐，会进 PowerShell 历史）
 #   .\scripts\setup-key.ps1 -Remove          # 删除已存的 key
 

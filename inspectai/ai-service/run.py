@@ -53,6 +53,7 @@ TEMPLATE_PROMPT_MAP = {
     "elevator_no_room": "elevator_visual",
     "elevator_machine_room": "elevator_visual",
     "escalator": "elevator_visual",
+    "power_room": "substation",
 }
 
 
@@ -959,10 +960,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
+            has_dashscope_key = bool(get_api_key())
+            has_deepseek_key = bool(get_deepseek_key())
+            degraded_reasons = []
+            if not has_dashscope_key:
+                degraded_reasons.append("dashscope_key_missing")
+            if not has_deepseek_key:
+                degraded_reasons.append("deepseek_key_missing")
             write_json(self, 200, {
                 "status": "ok",
                 "service": "ai-service",
-                "hasKey": bool(get_api_key()),
+                # Keep hasKey for compatibility with the existing local checks.
+                "hasKey": has_dashscope_key,
+                "hasDashscopeKey": has_dashscope_key,
+                "hasVisionKey": has_dashscope_key,
+                "hasDeepSeekKey": has_deepseek_key,
+                "managementAIReady": has_deepseek_key,
+                "managementAI": "deepseek" if has_deepseek_key else "rule_fallback",
+                "degradedReason": ",".join(degraded_reasons),
                 "promptsLoaded": len(TEMPLATE_PROMPT_MAP) + 3,  # +common+scene+summary
             })
             return

@@ -3,6 +3,7 @@
 # 用法：先 export 环境变量，再跑此脚本。
 #
 #   export DASHSCOPE_API_KEY=sk-xxx
+#   export DEEPSEEK_API_KEY=sk-xxx
 #   export MYSQL_PASSWORD=...
 #   export MYSQL_ROOT_PASSWORD=...
 #   export MYSQL_USER=inspectai
@@ -46,8 +47,9 @@ write_secret() {
   echo "✔ wrote $path ($(stat -c '%a %u:%g' "$path"))"
 }
 
-# 必填 5 个
+# 必填凭据
 write_secret dashscope_api_key        "${DASHSCOPE_API_KEY:-}"
+write_secret deepseek_api_key          "${DEEPSEEK_API_KEY:-}"
 write_secret mysql_password           "${MYSQL_PASSWORD:-}"
 write_secret mysql_root_password      "${MYSQL_ROOT_PASSWORD:-}"
 write_secret inspectai_admin_password "${INSPECTAI_ADMIN_PASSWORD:-}"

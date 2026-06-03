@@ -275,6 +275,52 @@ func (s *Server) hasSupervisorAccess(r *http.Request) bool {
 	}
 }
 
+func (s *Server) requireSupervisorAccess(w http.ResponseWriter, r *http.Request) bool {
+	if s.hasSupervisorAccess(r) {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可访问该接口")
+	return false
+}
+
+func recordOwnedBy(rec *Record, inspectorUserID, displayName, username string) bool {
+	if rec == nil {
+		return false
+	}
+	if ownerID := strings.TrimSpace(rec.InspectorUserID); ownerID != "" {
+		return strings.TrimSpace(inspectorUserID) != "" && ownerID == strings.TrimSpace(inspectorUserID)
+	}
+	owner := strings.TrimSpace(rec.Inspector)
+	return owner != "" && (owner == strings.TrimSpace(displayName) || owner == strings.TrimSpace(username))
+}
+
+func (s *Server) canAccessRecord(r *http.Request, rec *Record, write bool) bool {
+	role := s.userRole(r)
+	if role == roleAdmin || (!write && (role == roleManager || role == roleSupervisor)) {
+		return true
+	}
+	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		return recordOwnedBy(rec, user.ID, user.DisplayName, user.Username)
+	}
+	if s.localNoAuthAllowed(r) {
+		return recordOwnedBy(rec, "", userName(r), "")
+	}
+	return false
+}
+
+func (s *Server) requireRecordAccess(w http.ResponseWriter, r *http.Request, recordID string, write bool) (*Record, bool) {
+	rec, err := s.store.GetRecord(recordID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
+		return nil, false
+	}
+	if !s.canAccessRecord(r, rec, write) {
+		writeError(w, http.StatusForbidden, "forbidden", "无权访问该巡检记录")
+		return nil, false
+	}
+	return rec, true
+}
+
 func userName(r *http.Request) string {
 	n := strings.TrimSpace(r.Header.Get("X-User-Name"))
 	if n == "" {
@@ -688,7 +734,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	filtered := filterAssetsForDisplay(assets, r.URL.Query())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"assets":       filtered,
+		"assets":       s.sanitizeAssetsForRequest(r, filtered),
 		"summary":      buildAssetListSummary(filtered),
 		"totalSummary": buildAssetListSummary(assets),
 	})
@@ -780,6 +826,24 @@ func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 			a.LastPhotoPath = img.Path
 		}
 	}
+}
+
+func (s *Server) sanitizeAssetsForRequest(r *http.Request, assets []*AssetEntry) []*AssetEntry {
+	out := make([]*AssetEntry, 0, len(assets))
+	for _, asset := range assets {
+		if asset == nil {
+			continue
+		}
+		clean := *asset
+		if clean.LastRecordID != "" {
+			if rec, err := s.store.GetRecord(clean.LastRecordID); err == nil && !s.canAccessRecord(r, rec, false) {
+				clean.CoverImage = nil
+				clean.LastPhotoPath = ""
+			}
+		}
+		out = append(out, &clean)
+	}
+	return out
 }
 
 func filterAssetsForDisplay(assets []*AssetEntry, q url.Values) []*AssetEntry {
@@ -978,6 +1042,30 @@ func (s *Server) handleAssetRecords(w http.ResponseWriter, r *http.Request, id s
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+	if !s.hasSupervisorAccess(r) {
+		all, listErr := s.store.ListAssetSnapshots(id, total, 0)
+		if listErr != nil {
+			writeError(w, http.StatusInternalServerError, "list_failed", listErr.Error())
+			return
+		}
+		visible := make([]*AssetSnapshot, 0, len(all))
+		for _, snap := range all {
+			rec, recordErr := s.store.GetRecord(snap.RecordID)
+			if recordErr == nil && s.canAccessRecord(r, rec, false) {
+				visible = append(visible, snap)
+			}
+		}
+		total = len(visible)
+		start := (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+		snaps = visible[start:end]
+	}
 	totalPages := 0
 	if pageSize > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
@@ -1011,6 +1099,10 @@ type fieldTrend struct {
 // handleAssetStatusEvents —— P1-2 电梯等状态类资产的"状态事件统计",
 // 字段都是 choice 时数值趋势空白,这里返回 巡检次数/正常/待复核/异常/补拍/无判/未看图/重复异常字段 Top。
 func (s *Server) handleAssetStatusEvents(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可查看资产状态统计")
+		return
+	}
 	rangeKey := firstNonEmpty(r.URL.Query().Get("range"), "30d")
 	stat, err := s.toolGetStatusEvents(id, rangeKey)
 	if err != nil {
@@ -1023,6 +1115,10 @@ func (s *Server) handleAssetStatusEvents(w http.ResponseWriter, r *http.Request,
 // handleAssetReport —— §3/§5 设备健康报告：对数值字段算 本次/上次/近N均值/变化率/超阈值。
 // 趋势由后端规则计算，不依赖大模型；AI 只负责把这些数字转成可读摘要。
 func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可查看资产健康报告")
+		return
+	}
 	if _, err := s.store.GetAsset(id); err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
@@ -1095,7 +1191,7 @@ func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id st
 	})
 }
 
-func (s *Server) handleGetAsset(w http.ResponseWriter, _ *http.Request, id string) {
+func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request, id string) {
 	asset, err := s.store.GetAsset(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
@@ -1103,9 +1199,9 @@ func (s *Server) handleGetAsset(w http.ResponseWriter, _ *http.Request, id strin
 	}
 	s.enrichAssetForDisplay(asset)
 	// 顺带返回该资产历史巡检（最近 20 条）
-	history := s.collectAssetHistory(asset, 20)
+	history := s.collectAssetHistory(r, asset, 20)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"asset":   asset,
+		"asset":   s.sanitizeAssetsForRequest(r, []*AssetEntry{asset})[0],
 		"history": history,
 	})
 }
@@ -1153,7 +1249,7 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 
 // collectAssetHistory 从所有 records 里筛出归到该资产的。
 // 简单实现：遍历最近 200 条 record，过滤 + 排序。
-func (s *Server) collectAssetHistory(asset *AssetEntry, limit int) []*Record {
+func (s *Server) collectAssetHistory(r *http.Request, asset *AssetEntry, limit int) []*Record {
 	all, err := s.store.ListRecords(200)
 	if err != nil {
 		return nil
@@ -1161,6 +1257,9 @@ func (s *Server) collectAssetHistory(asset *AssetEntry, limit int) []*Record {
 	var matched []*Record
 	for _, rec := range all {
 		if !rec.Submitted {
+			continue
+		}
+		if !s.canAccessRecord(r, rec, false) {
 			continue
 		}
 		if recordTouchesAsset(rec, asset) {
@@ -1229,8 +1328,19 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 	return &clean
 }
 
-func (s *Server) handleListRecords(w http.ResponseWriter, _ *http.Request) {
-	records, err := s.store.ListRecords(100)
+func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
+	var records []*Record
+	var err error
+	if s.hasSupervisorAccess(r) {
+		records, err = s.store.ListRecords(100)
+	} else if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		records, err = s.store.ListRecordsByOwner(user.ID, user.DisplayName, user.Username, 100)
+	} else if s.localNoAuthAllowed(r) {
+		records, err = s.store.ListRecordsByOwner("", userName(r), "", 100)
+	} else {
+		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_records_failed", err.Error())
 		return
@@ -1250,6 +1360,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	inspectorUserID := ""
 	// 安全：如果有 session 用户登录，inspector 强制锁定到登录账号，
 	// 不允许前端传别人名字伪造巡检记录归属。
 	// 没 session（兜底 token 模式）仍允许 body 传 inspector。
@@ -1258,6 +1369,10 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		if req.Inspector == "" {
 			req.Inspector = sessionUser.Username
 		}
+		inspectorUserID = sessionUser.ID
+	} else if !s.localNoAuthAllowed(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录后创建记录")
+		return
 	}
 	if req.Inspector == "" {
 		req.Inspector = "巡检员"
@@ -1298,6 +1413,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		TemplateName:      tpl.Name,
 		Type:              point.Type,
 		Inspector:         req.Inspector,
+		InspectorUserID:   inspectorUserID,
 		RecognitionStatus: "not_started",
 		Images:            []ImageInfo{},
 		Fields:            initialFieldValues(tpl, req.Inspector),
@@ -1332,6 +1448,10 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recordID := parts[0]
+	write := r.Method != http.MethodGet
+	if _, ok := s.requireRecordAccess(w, r, recordID, write); !ok {
+		return
+	}
 
 	switch {
 	case len(parts) == 1 && r.Method == http.MethodGet:
@@ -1371,10 +1491,7 @@ func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, reco
 		return
 	}
 	tpl, _ := templateByID(rec.TemplateID)
-	maxImages := tpl.MaxImages
-	if maxImages == 0 {
-		maxImages = 3
-	}
+	maxImages := normalizedMaxImages(tpl.MaxImages)
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_multipart", err.Error())
 		return
@@ -1384,9 +1501,16 @@ func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, reco
 		writeError(w, http.StatusBadRequest, "no_files", "请先选择图片")
 		return
 	}
-	if len(rec.Images)+len(files) > maxImages {
+	// MaxImages 是单轮拍摄上限。识别失败后允许在同一条记录补拍，
+	// 最多保留三轮现场证据，避免重建记录或无限写盘。
+	if len(files) > maxImages {
 		writeError(w, http.StatusBadRequest, "too_many_files",
-			fmt.Sprintf("当前模板单次最多上传 %d 张图片", maxImages))
+			fmt.Sprintf("当前模板每轮最多上传 %d 张图片", maxImages))
+		return
+	}
+	if len(rec.Images)+len(files) > maxImages*3 {
+		writeError(w, http.StatusBadRequest, "too_many_retake_files",
+			fmt.Sprintf("当前模板最多保留 3 轮照片，请转人工填写或重新开始巡检"))
 		return
 	}
 	dir := filepath.Join(s.storageDir, "uploads", recordID)
@@ -1458,6 +1582,21 @@ func (s *Server) handleStartAnalysis(w http.ResponseWriter, _ *http.Request, rec
 	writeJSON(w, http.StatusAccepted, task)
 }
 
+func normalizedMaxImages(maxImages int) int {
+	if maxImages <= 0 {
+		return 3
+	}
+	return maxImages
+}
+
+func recentImagesForAnalysis(images []ImageInfo, maxImages int) []ImageInfo {
+	maxImages = normalizedMaxImages(maxImages)
+	if len(images) <= maxImages {
+		return images
+	}
+	return images[len(images)-maxImages:]
+}
+
 func (s *Server) runAnalysis(taskID, recordID string) {
 	_ = s.store.UpdateTask(taskID, func(t *AITask) {
 		t.Status = "processing"
@@ -1474,9 +1613,11 @@ func (s *Server) runAnalysis(taskID, recordID string) {
 	}
 	tpl, _ := templateByID(rec.TemplateID)
 
-	// 准备图片 path 列表（ai-service 直接读本地文件）
-	imagePayloads := make([]map[string]any, 0, len(rec.Images))
-	for _, img := range rec.Images {
+	// 同一记录会保留最多三轮现场证据，但重新分析优先使用最近一轮照片。
+	// 这样补拍的特写不会被首轮旧图挤出视觉模型输入窗口。
+	imagesForAnalysis := recentImagesForAnalysis(rec.Images, tpl.MaxImages)
+	imagePayloads := make([]map[string]any, 0, len(imagesForAnalysis))
+	for _, img := range imagesForAnalysis {
 		imagePayloads = append(imagePayloads, map[string]any{
 			"id":       img.ID,
 			"fileName": img.FileName,
@@ -1558,6 +1699,9 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	task, err := s.store.GetTask(taskID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "task_not_found", "AI 任务不存在")
+		return
+	}
+	if _, ok := s.requireRecordAccess(w, r, task.RecordID, false); !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
@@ -1646,25 +1790,6 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 // handleListConfirmLogs —— §4 返回某条记录的字段确认留痕，供后台展示"谁确认了什么、AI原值→最终值"。
 // 权限:主管/管理员读全部;巡检员只能读自己提交/经手的记录留痕(防止互相看)。
 func (s *Server) handleListConfirmLogs(w http.ResponseWriter, r *http.Request, recordID string) {
-	if !s.hasSupervisorAccess(r) {
-		// 非主管:校验该记录是否归当前登录用户
-		sessionUser, ok := s.userFromSessionToken(s.tokenFromRequest(r))
-		if !ok {
-			writeError(w, http.StatusForbidden, "forbidden", "需要登录")
-			return
-		}
-		rec, err := s.store.GetRecord(recordID)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
-			return
-		}
-		owner := strings.TrimSpace(rec.Inspector)
-		if owner != strings.TrimSpace(sessionUser.DisplayName) && owner != sessionUser.Username {
-			writeError(w, http.StatusForbidden, "forbidden",
-				"只能查看本人记录的确认留痕")
-			return
-		}
-	}
 	logs, err := s.store.ListFieldConfirmLogs(recordID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
@@ -1741,14 +1866,13 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 	// 必须先「确认全部 AI 识别字段」或逐项 tap,留下 confirm log 后才能提交。
 	var unconfirmed []string
 	for _, f := range rec.Fields {
-		if f.Source == "ai" && strings.TrimSpace(f.Value) != "" {
+		if f.Source == "ai" && strings.TrimSpace(f.Value) != "" && f.Confidence < 0.95 {
 			unconfirmed = append(unconfirmed, f.Label)
 		}
 	}
 	if len(unconfirmed) > 0 {
 		writeError(w, http.StatusBadRequest, "needs_confirmation",
-			"以下 AI 识别字段还未人工确认:"+strings.Join(unconfirmed, "、")+
-				";请逐项检查或点「确认全部 AI 字段」")
+			"以下低置信字段需确认:"+strings.Join(unconfirmed, "、"))
 		return
 	}
 
@@ -1980,6 +2104,12 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(clean, "..") {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
+		}
+		parts := strings.Split(filepath.ToSlash(clean), "/")
+		if len(parts) >= 2 && parts[0] == "uploads" {
+			if _, ok := s.requireRecordAccess(w, r, parts[1], false); !ok {
+				return
+			}
 		}
 		http.ServeFile(w, r, filepath.Join(s.storageDir, clean))
 		return
@@ -2321,13 +2451,13 @@ func normalizeChoiceValue(raw string, options []string) string {
 
 	// 4) 同义词库(精简到正向词,反向词已在第 2 步处理)
 	positiveSynonyms := map[string][]string{
-		"正常":  {"无问题", "无异常", "良好", "ok", "通过", "合格", "完好", "运行正常", "运转正常"},
-		"是":   {"yes", "有", "true"},
-		"否":   {"no", "无", "没有", "未发现", "false"},
-		"无":   {"未发现", "没有", "none"},
-		"有":   {"存在", "发现"},
-		"完好":  {"良好", "无破损", "无损坏"},
-		"良好":  {"完好", "无问题"},
+		"正常": {"无问题", "无异常", "良好", "ok", "通过", "合格", "完好", "运行正常", "运转正常"},
+		"是":  {"yes", "有", "true"},
+		"否":  {"no", "无", "没有", "未发现", "false"},
+		"无":  {"未发现", "没有", "none"},
+		"有":  {"存在", "发现"},
+		"完好": {"良好", "无破损", "无损坏"},
+		"良好": {"完好", "无问题"},
 	}
 	for _, opt := range options {
 		aliases, ok := positiveSynonyms[opt]
@@ -2933,8 +3063,7 @@ func (s *Server) handleCreateChangeRequest(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	case "record":
-		if _, err := s.store.GetRecord(req.TargetID); err != nil {
-			writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
+		if _, ok := s.requireRecordAccess(w, r, req.TargetID, false); !ok {
 			return
 		}
 	}
@@ -2998,6 +3127,10 @@ func (s *Server) handleChangeRequestRoutes(w http.ResponseWriter, r *http.Reques
 		cr, err := s.store.GetChangeRequest(id)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "not_found", "申请不存在")
+			return
+		}
+		if cr.RequestedBy != s.currentUserName(r) && !s.hasSupervisorAccess(r) {
+			writeError(w, http.StatusForbidden, "forbidden", "无权查看该修改申请")
 			return
 		}
 		writeJSON(w, http.StatusOK, cr)
@@ -3128,6 +3261,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 		}
 		if v, ok := cr.Patch["inspector"].(string); ok && strings.TrimSpace(v) != "" && v != rec.Inspector {
 			rec.Inspector = strings.TrimSpace(v)
+			rec.InspectorUserID = ""
 			changed = true
 		}
 		if v, ok := cr.Patch["aiSummary"].(string); ok && v != rec.AISummary {
@@ -3374,6 +3508,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		}
 		if v, ok := cr.Patch["inspector"].(string); ok && strings.TrimSpace(v) != "" && v != rec.Inspector {
 			rec.Inspector = strings.TrimSpace(v)
+			rec.InspectorUserID = ""
 			changed = true
 		}
 		if v, ok := cr.Patch["aiSummary"].(string); ok && v != rec.AISummary {

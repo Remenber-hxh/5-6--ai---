@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS records (
     template_name       VARCHAR(128) NOT NULL,
     type                VARCHAR(64)  NOT NULL,
     inspector           VARCHAR(64)  NOT NULL,
+    inspector_user_id   VARCHAR(64)  NOT NULL DEFAULT '',
     capture_attempts    INT          NOT NULL DEFAULT 0,
     manual_required     TINYINT(1)   NOT NULL DEFAULT 0,
     recognition_status  VARCHAR(32)  NOT NULL DEFAULT 'not_started',
@@ -28,7 +29,8 @@ CREATE TABLE IF NOT EXISTS records (
     created_at          VARCHAR(40)  NOT NULL,
     updated_at          VARCHAR(40)  NOT NULL,
     INDEX idx_records_created_at (created_at),
-    INDEX idx_records_template_id (template_id)
+    INDEX idx_records_template_id (template_id),
+    INDEX idx_records_inspector_user_id (inspector_user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS assets (

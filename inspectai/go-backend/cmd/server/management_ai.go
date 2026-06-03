@@ -1017,6 +1017,9 @@ func (c *AnalyticsClient) post(path string, payload map[string]any) (map[string]
 // GET /api/management-ai/snapshot?project=&range=30d
 // 看板用的聚合数字,不调 AI,纯后端规则。AI 挂了首页和看板照样能展示。
 func (s *Server) handleManagementSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
 	project := r.URL.Query().Get("project")
 	rangeKey := firstNonEmpty(r.URL.Query().Get("range"), "30d")
 	overview, err := s.toolGetOverview(project, rangeKey)
@@ -1041,6 +1044,9 @@ func (s *Server) handleManagementSnapshot(w http.ResponseWriter, r *http.Request
 // GET /api/management-ai/attention?project=&limit=5&refresh=1
 // risk_score 后端算重点关注,顺便把缓存的 AI 摘要塞进去。AI 摘要可空(降级)。
 func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
 	project := r.URL.Query().Get("project")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 20 {
@@ -1124,6 +1130,9 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 // POST /api/management-ai/chat
 // 转发到 ai-service /management/chat,带 snapshot+attention 上下文。
 func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
 	var req struct {
 		Message string           `json:"message"`
 		History []map[string]any `json:"history,omitempty"`

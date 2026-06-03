@@ -15,6 +15,7 @@ $EDITOR .env.prod
 
 # 2. 准备 secrets（密钥/密码 → 文件，不入环境变量）
 export DASHSCOPE_API_KEY=sk-xxx \
+       DEEPSEEK_API_KEY=sk-xxx \
        MYSQL_PASSWORD=alphanum \
        MYSQL_ROOT_PASSWORD=alphanum \
        INSPECTAI_ADMIN_PASSWORD=strong
@@ -23,6 +24,8 @@ bash scripts/prepare-secrets.sh
 # 3. 一键启动
 bash scripts/deploy-linux.sh
 ```
+
+首次没有证书时会先启动 HTTP 引导模式。域名解析完成后，按 [docs/DEPLOY.md](docs/DEPLOY.md) 的 HTTPS 章节签发证书，再重跑部署脚本即可自动切换 HTTPS。
 
 完成后：
 - 移动端 `http://<host>/`
