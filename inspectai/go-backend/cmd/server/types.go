@@ -79,6 +79,7 @@ type Record struct {
 	RecognitionStatus string           `json:"recognitionStatus"` // not_started / processing / recognized / retake_required / manual_required
 	RetakeReason      string           `json:"retakeReason,omitempty"`
 	TaskID            string           `json:"taskId,omitempty"`
+	EngineeringTaskID string           `json:"engineeringTaskId,omitempty"`
 	Images            []ImageInfo      `json:"images"`
 	Fields            []FieldValue     `json:"fields"`
 	Report            string           `json:"report"`
@@ -150,23 +151,23 @@ type FieldConfirmLog struct {
 
 // AttentionItem — Top-N 重点关注列表里的一条(后端 risk_score 算出来,AI 加摘要)。
 type AttentionItem struct {
-	AssetID         string   `json:"assetId"`
-	AssetName       string   `json:"assetName"`
-	AssetType       string   `json:"assetType,omitempty"`
-	Project         string   `json:"project,omitempty"`
-	RiskScore       int      `json:"riskScore"`
-	RiskLevel       string   `json:"riskLevel"` // normal / warning / danger
-	Title           string   `json:"title"`
-	Reasons         []string `json:"reasons"`
-	Action          string   `json:"action,omitempty"`
-	LastRecordID    string   `json:"lastRecordId,omitempty"`
-	LastInspectedAt string   `json:"lastInspectedAt,omitempty"`
+	AssetID         string    `json:"assetId"`
+	AssetName       string    `json:"assetName"`
+	AssetType       string    `json:"assetType,omitempty"`
+	Project         string    `json:"project,omitempty"`
+	RiskScore       int       `json:"riskScore"`
+	RiskLevel       string    `json:"riskLevel"` // normal / warning / danger
+	Title           string    `json:"title"`
+	Reasons         []string  `json:"reasons"`
+	Action          string    `json:"action,omitempty"`
+	LastRecordID    string    `json:"lastRecordId,omitempty"`
+	LastInspectedAt string    `json:"lastInspectedAt,omitempty"`
 	Evidence        []ItemRef `json:"evidence,omitempty"`
 }
 
 // ItemRef — 可跳转的证据引用(资产 / 巡检记录 / 字段观测)。
 type ItemRef struct {
-	Type  string `json:"type"`            // asset / record / observation
+	Type  string `json:"type"` // asset / record / observation
 	ID    string `json:"id"`
 	Label string `json:"label,omitempty"`
 	Time  string `json:"time,omitempty"`
@@ -179,8 +180,8 @@ type OverviewSummary struct {
 	AssetWarning     int     `json:"assetWarning"`
 	AssetDanger      int     `json:"assetDanger"`
 	RecordTotal      int     `json:"recordTotal"`
-	RecordRecent     int     `json:"recordRecent"`     // 本期内
-	RecordPrev       int     `json:"recordPrev"`       // 上期内
+	RecordRecent     int     `json:"recordRecent"` // 本期内
+	RecordPrev       int     `json:"recordPrev"`   // 上期内
 	AbnormalRecent   int     `json:"abnormalRecent"`
 	AbnormalPrev     int     `json:"abnormalPrev"`
 	PendingApprovals int     `json:"pendingApprovals"`
@@ -194,14 +195,14 @@ type OverviewSummary struct {
 
 // InspectorQualityRow — 巡检员质量榜一行(§4 防惰性主管视角)。
 type InspectorQualityRow struct {
-	Operator           string `json:"operator"`
-	Total              int    `json:"total"`
-	RetakeCount        int    `json:"retakeCount"`
-	UncertainCount     int    `json:"uncertainCount"`
-	NoPhotoConfirm     int    `json:"noPhotoConfirm"`
-	FastConfirmCount   int    `json:"fastConfirmCount"`   // 停留 <2s 的确认数
-	AvgDurationMs      int    `json:"avgDurationMs"`
-	Comment            string `json:"comment,omitempty"`  // AI 加,阶段一暂空
+	Operator         string `json:"operator"`
+	Total            int    `json:"total"`
+	RetakeCount      int    `json:"retakeCount"`
+	UncertainCount   int    `json:"uncertainCount"`
+	NoPhotoConfirm   int    `json:"noPhotoConfirm"`
+	FastConfirmCount int    `json:"fastConfirmCount"` // 停留 <2s 的确认数
+	AvgDurationMs    int    `json:"avgDurationMs"`
+	Comment          string `json:"comment,omitempty"` // AI 加,阶段一暂空
 }
 
 // RepeatedIssue — 同一资产/字段重复出现的问题。
@@ -218,20 +219,20 @@ type RepeatedIssue struct {
 // ManagementAIReport — 持久化缓存表行,30 min 刷新一次。
 // summary / attention / recommendations 都是 AI 出的,facts 是后端聚合的事实。
 type ManagementAIReport struct {
-	ID              string    `json:"id"`
-	ReportType      string    `json:"reportType"` // attention / overview-chat
-	Project         string    `json:"project"`
-	RangeKey        string    `json:"rangeKey"`
+	ID              string           `json:"id"`
+	ReportType      string           `json:"reportType"` // attention / overview-chat
+	Project         string           `json:"project"`
+	RangeKey        string           `json:"rangeKey"`
 	Facts           map[string]any   `json:"facts"`
 	Summary         string           `json:"summary"`
 	Attention       []*AttentionItem `json:"attention"`
 	Recommendations []Recommendation `json:"recommendations"`
 	Evidence        []ItemRef        `json:"evidence"`
-	Model           string    `json:"model"`
-	PromptVersion   string    `json:"promptVersion"`
-	DurationMs      int       `json:"durationMs"`
-	GeneratedAt     time.Time `json:"generatedAt"`
-	ExpiresAt       time.Time `json:"expiresAt"`
+	Model           string           `json:"model"`
+	PromptVersion   string           `json:"promptVersion"`
+	DurationMs      int              `json:"durationMs"`
+	GeneratedAt     time.Time        `json:"generatedAt"`
+	ExpiresAt       time.Time        `json:"expiresAt"`
 }
 
 // AITask — AI 分析任务

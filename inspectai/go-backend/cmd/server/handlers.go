@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
@@ -59,6 +60,18 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleListDepartments(w, r)
 	case r.URL.Path == "/api/operation-logs" && r.Method == http.MethodGet:
 		s.handleListOperationLogs(w, r)
+	case r.URL.Path == "/api/wework/message" && r.Method == http.MethodPost:
+		s.handleSendWeWorkMessage(w, r)
+	case r.URL.Path == "/api/engineering/plans" && r.Method == http.MethodGet:
+		s.handleListEngineeringPlans(w, r)
+	case r.URL.Path == "/api/engineering/plans" && r.Method == http.MethodPost:
+		s.handleCreateEngineeringPlan(w, r)
+	case r.URL.Path == "/api/engineering/tasks" && r.Method == http.MethodGet:
+		s.handleListEngineeringTasks(w, r)
+	case r.URL.Path == "/api/engineering/tasks" && r.Method == http.MethodPost:
+		s.handleCreateEngineeringTask(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/engineering/tasks/"):
+		s.handleEngineeringTaskRoutes(w, r)
 	case r.URL.Path == "/api/inspection/points" && r.Method == http.MethodGet:
 		s.handleListPoints(w, r)
 	case r.URL.Path == "/api/report/templates" && r.Method == http.MethodGet:
@@ -344,6 +357,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"service":      "go-backend",
 		"aiServiceUrl": s.aiClient.baseURL,
 		"storeKind":    s.storeKind,
+		"wework":       s.wework != nil && s.wework.Enabled(),
 		"time":         time.Now(),
 	})
 }
@@ -444,6 +458,99 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *Server) handleSendWeWorkMessage(w http.ResponseWriter, r *http.Request) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可发送企业微信消息")
+		return
+	}
+	if s.wework == nil || !s.wework.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "wework_disabled", "企业微信未配置或未启用")
+		return
+	}
+	var req struct {
+		UserIDs       []string `json:"userIds"`
+		WeWorkUserIDs []string `json:"weworkUserIds"`
+		Content       string   `json:"content"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		writeError(w, http.StatusBadRequest, "empty_content", "消息内容不能为空")
+		return
+	}
+	targets, missing, err := s.resolveWeWorkTargets(req.UserIDs, req.WeWorkUserIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolve_targets_failed", err.Error())
+		return
+	}
+	if len(targets) == 0 {
+		msg := "没有可发送的企业微信 UserID"
+		if len(missing) > 0 {
+			msg += "，未绑定用户：" + strings.Join(missing, "、")
+		}
+		writeError(w, http.StatusBadRequest, "empty_targets", msg)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	result, err := s.wework.SendText(ctx, targets, content)
+	if err != nil {
+		status := http.StatusBadGateway
+		if result == nil {
+			result = &WeWorkSendResult{}
+		}
+		writeError(w, status, "wework_send_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "wework.message.send", "wework", strings.Join(targets, "|"), map[string]any{
+		"targetCount": len(targets),
+		"missing":     missing,
+		"invalidUser": result.InvalidUser,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"targets": targets,
+		"missing": missing,
+		"result":  result,
+	})
+}
+
+func (s *Server) resolveWeWorkTargets(userIDs, weworkUserIDs []string) ([]string, []string, error) {
+	targets := normalizeWeWorkIDs(weworkUserIDs)
+	missing := []string{}
+	seen := map[string]bool{}
+	for _, id := range targets {
+		seen[id] = true
+	}
+	for _, userID := range normalizeWeWorkIDs(userIDs) {
+		user, err := s.store.GetUser(userID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				missing = append(missing, userID+"(用户不存在)")
+				continue
+			}
+			return nil, nil, err
+		}
+		weworkID := strings.TrimSpace(user.WeworkUserID)
+		if weworkID == "" {
+			name := strings.TrimSpace(user.DisplayName)
+			if name == "" {
+				name = user.Username
+			}
+			missing = append(missing, name+"(未绑定企业微信 UserID)")
+			continue
+		}
+		if !seen[weworkID] {
+			targets = append(targets, weworkID)
+			seen[weworkID] = true
+		}
+	}
+	return targets, missing, nil
 }
 
 // hasAdminAccess 仅 admin 角色（用户管理操作）。
@@ -1355,6 +1462,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		Inspector  string   `json:"inspector"`
 		TmpDir     string   `json:"tmpDir"`   // 来自场景分类后的临时目录，可选
 		ImageIDs   []string `json:"imageIds"` // tmpDir 里要采纳的图片 ID
+		EngTaskID  string   `json:"engineeringTaskId"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -1402,6 +1510,18 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "template_not_found", "未找到日报模板")
 		return
 	}
+	req.EngTaskID = strings.TrimSpace(req.EngTaskID)
+	if req.EngTaskID != "" {
+		task, err := s.store.GetEngineeringTask(req.EngTaskID)
+		if err != nil || task == nil {
+			writeError(w, http.StatusBadRequest, "engineering_task_not_found", "关联的工程任务不存在")
+			return
+		}
+		if task.Status == engTaskStatusDone || task.Status == engTaskStatusCanceled {
+			writeError(w, http.StatusBadRequest, "engineering_task_closed", "关联的工程任务已关闭，不能继续填报")
+			return
+		}
+	}
 
 	now := time.Now()
 	rec := &Record{
@@ -1414,6 +1534,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		Type:              point.Type,
 		Inspector:         req.Inspector,
 		InspectorUserID:   inspectorUserID,
+		EngineeringTaskID: req.EngTaskID,
 		RecognitionStatus: "not_started",
 		Images:            []ImageInfo{},
 		Fields:            initialFieldValues(tpl, req.Inspector),
@@ -1944,6 +2065,16 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		writeError(w, http.StatusInternalServerError, "submit_failed",
 			"日报提交与台账写入失败，已回滚："+err.Error())
 		return
+	}
+	if err := s.closeEngineeringTaskFromRecord(rec, assets, now); err != nil {
+		s.recordOperation(r, "engineering_task_close_failed", "record", rec.ID, map[string]any{
+			"engineeringTaskId": rec.EngineeringTaskID,
+			"error":             err.Error(),
+		})
+	} else if rec.EngineeringTaskID != "" {
+		s.recordOperation(r, "engineering_task_auto_closed", "engineering_task", rec.EngineeringTaskID, map[string]any{
+			"recordId": rec.ID,
+		})
 	}
 	_ = s.store.CompleteSubmission(recordID, idemKey)
 

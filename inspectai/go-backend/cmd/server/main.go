@@ -17,6 +17,7 @@ type Server struct {
 	storeKind          string // "sqlite" / "mem"
 	aiClient           *AIClient
 	analyticsClient    *AnalyticsClient
+	wework             *WeWorkClient
 	storageDir         string
 	frontendDir        string
 	authToken          string
@@ -37,6 +38,16 @@ func main() {
 	addr := getenv("BACKEND_ADDR", ":18080")
 	authToken := getenvWithSecret("INSPECTAI_AUTH_TOKEN", "")
 	supervisorToken := getenvWithSecret("INSPECTAI_SUPERVISOR_TOKEN", "")
+	weworkClient, err := NewWeWorkClient(WeWorkConfig{
+		BaseURL:   getenv("WEWORK_API_BASE_URL", "https://qyapi.weixin.qq.com"),
+		CorpID:    getenv("WEWORK_CORP_ID", ""),
+		AgentID:   getenv("WEWORK_AGENT_ID", ""),
+		AppSecret: getenvWithSecret("WEWORK_APP_SECRET", ""),
+	})
+	if err != nil {
+		log.Printf("WARN: 企业微信配置无效，消息发送已禁用: %v", err)
+		weworkClient = NewDisabledWeWorkClient()
+	}
 	identitySeed := IdentitySeed{
 		Username:    getenv("INSPECTAI_ADMIN_USER", defaultAdminUser),
 		Password:    getenvWithSecret("INSPECTAI_ADMIN_PASSWORD", defaultAdminPass),
@@ -91,6 +102,9 @@ func main() {
 	if err := store.EnsureIdentitySeed(identitySeed); err != nil {
 		log.Printf("WARN: identity seed failed: %v", err)
 	}
+	if err := ensureEngineeringPlanSeeds(store); err != nil {
+		log.Printf("WARN: engineering plan seed failed: %v", err)
+	}
 
 	server := &Server{
 		store:              store,
@@ -101,6 +115,7 @@ func main() {
 		frontendDir:        frontendDir,
 		authToken:          authToken,
 		supervisorToken:    supervisorToken,
+		wework:             weworkClient,
 		corsAllowedOrigins: corsAllowedOrigins,
 	}
 	if err := server.ensureAssetLedgerFromRecords(); err != nil {
@@ -133,6 +148,7 @@ func main() {
 	} else {
 		log.Printf("  Supervisor token: configured")
 	}
+	log.Printf("  WeCom message: %v", weworkClient.Enabled())
 	log.Printf("  CORS origins: %s", strings.Join(originList(corsAllowedOrigins), ", "))
 
 	srv := &http.Server{

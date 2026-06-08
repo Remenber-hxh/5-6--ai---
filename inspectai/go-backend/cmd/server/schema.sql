@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS records (
     recognition_status  TEXT NOT NULL DEFAULT 'not_started',
     retake_reason       TEXT NOT NULL DEFAULT '',
     task_id             TEXT NOT NULL DEFAULT '',
+    engineering_task_id TEXT NOT NULL DEFAULT '',
     fields_json         TEXT NOT NULL DEFAULT '[]',
     images_json         TEXT NOT NULL DEFAULT '[]',
     report              TEXT NOT NULL DEFAULT '',
@@ -235,3 +236,64 @@ CREATE TABLE IF NOT EXISTS management_ai_reports (
 
 CREATE INDEX IF NOT EXISTS idx_mar_latest ON management_ai_reports(report_type, project, range_key, generated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mar_expires ON management_ai_reports(expires_at);
+
+CREATE TABLE IF NOT EXISTS engineering_plan_items (
+    id             TEXT PRIMARY KEY,
+    source         TEXT NOT NULL DEFAULT '',
+    sequence_no    TEXT NOT NULL DEFAULT '',
+    business_type  TEXT NOT NULL DEFAULT '',
+    project        TEXT NOT NULL DEFAULT '',
+    category       TEXT NOT NULL DEFAULT '',
+    sub_type       TEXT NOT NULL DEFAULT '',
+    work_content   TEXT NOT NULL DEFAULT '',
+    scope_desc     TEXT NOT NULL DEFAULT '',
+    budget_amount  REAL NOT NULL DEFAULT 0,
+    budget_text    TEXT NOT NULL DEFAULT '',
+    plan_start     TEXT NOT NULL DEFAULT '',
+    plan_end       TEXT NOT NULL DEFAULT '',
+    owner_name     TEXT NOT NULL DEFAULT '',
+    cycle_text     TEXT NOT NULL DEFAULT '',
+    remark         TEXT NOT NULL DEFAULT '',
+    status         TEXT NOT NULL DEFAULT '',
+    risk_level     TEXT NOT NULL DEFAULT '',
+    latest_task_id TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_eng_plans_project ON engineering_plan_items(project, category);
+CREATE INDEX IF NOT EXISTS idx_eng_plans_status ON engineering_plan_items(status, plan_end);
+CREATE INDEX IF NOT EXISTS idx_eng_plans_owner ON engineering_plan_items(owner_name);
+
+CREATE TABLE IF NOT EXISTS engineering_tasks (
+    id              TEXT PRIMARY KEY,
+    plan_item_id    TEXT NOT NULL DEFAULT '',
+    source          TEXT NOT NULL DEFAULT '',
+    task_type       TEXT NOT NULL DEFAULT '',
+    title           TEXT NOT NULL DEFAULT '',
+    project         TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL DEFAULT '',
+    work_content    TEXT NOT NULL DEFAULT '',
+    assignee_name   TEXT NOT NULL DEFAULT '',
+    reviewer_name   TEXT NOT NULL DEFAULT '',
+    vendor_name     TEXT NOT NULL DEFAULT '',
+    due_at          TEXT NOT NULL DEFAULT '',
+    started_at      TEXT NOT NULL DEFAULT '',
+    completed_at    TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT '',
+    evidence_status TEXT NOT NULL DEFAULT '',
+    ai_status       TEXT NOT NULL DEFAULT '',
+    record_id       TEXT NOT NULL DEFAULT '',
+    report_id       TEXT NOT NULL DEFAULT '',
+    asset_id        TEXT NOT NULL DEFAULT '',
+    budget_amount   REAL NOT NULL DEFAULT 0,
+    close_result    TEXT NOT NULL DEFAULT '',
+    close_note      TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_eng_tasks_plan ON engineering_tasks(plan_item_id);
+CREATE INDEX IF NOT EXISTS idx_eng_tasks_status ON engineering_tasks(status, due_at);
+CREATE INDEX IF NOT EXISTS idx_eng_tasks_project ON engineering_tasks(project, category);
+CREATE INDEX IF NOT EXISTS idx_eng_tasks_assignee ON engineering_tasks(assignee_name);

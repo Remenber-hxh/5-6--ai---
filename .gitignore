@@ -31,6 +31,8 @@ _recycle_*.ps1
 _recycle_*.tmp
 inspectai/release/
 inspectai/output/
+outputs/
+*.docx
 inspectai/admin-frontend/login-bg-options/
 inspectai/docs/ui-design/
 inspectai/docs/CLAUDE_*.md

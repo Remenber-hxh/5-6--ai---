@@ -83,6 +83,14 @@ fi
 echo "✓ 前置检查通过"
 echo "  .env.prod 已就位（不含明文密钥）"
 echo "  secrets/ 下 ${#REQUIRED_SECRETS[@]} 个文件齐全"
+
+# 可选 secret：compose 会挂载该文件；为空代表相关能力未启用。
+if [ ! -e "$SECRETS_DIR/wework_app_secret" ]; then
+  : > "$SECRETS_DIR/wework_app_secret"
+  chmod 600 "$SECRETS_DIR/wework_app_secret"
+  chown "${INSPECTAI_CONTAINER_UID:-10001}:${INSPECTAI_CONTAINER_GID:-10001}" "$SECRETS_DIR/wework_app_secret" 2>/dev/null || true
+  echo "  已创建可选空 secret：secrets/wework_app_secret"
+fi
 echo
 
 # 首次部署还没有证书，必须先用 HTTP-only 配置完成 ACME challenge。

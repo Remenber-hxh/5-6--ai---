@@ -47,12 +47,29 @@ write_secret() {
   echo "✔ wrote $path ($(stat -c '%a %u:%g' "$path"))"
 }
 
+write_optional_secret() {
+  local name="$1"
+  local value="$2"
+  local path="$SECRETS_DIR/$name"
+  printf '%s' "$value" > "$path"
+  chmod 600 "$path"
+  chown "${CONTAINER_UID}:${CONTAINER_GID}" "$path" 2>/dev/null || true
+  if [[ -z "$value" ]]; then
+    echo "✔ wrote optional empty $path ($(stat -c '%a %u:%g' "$path"))"
+  else
+    echo "✔ wrote optional $path ($(stat -c '%a %u:%g' "$path"))"
+  fi
+}
+
 # 必填凭据
 write_secret dashscope_api_key        "${DASHSCOPE_API_KEY:-}"
 write_secret deepseek_api_key          "${DEEPSEEK_API_KEY:-}"
 write_secret mysql_password           "${MYSQL_PASSWORD:-}"
 write_secret mysql_root_password      "${MYSQL_ROOT_PASSWORD:-}"
 write_secret inspectai_admin_password "${INSPECTAI_ADMIN_PASSWORD:-}"
+
+# 可选凭据：为空时创建空文件，docker compose 仍可挂载，服务会自动禁用相关能力。
+write_optional_secret wework_app_secret "${WEWORK_APP_SECRET:-}"
 
 # 自动生成 token（若未设）
 gen_token() {

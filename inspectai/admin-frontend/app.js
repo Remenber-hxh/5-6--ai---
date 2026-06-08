@@ -45,6 +45,8 @@ const state = {
   templates: [],
   users: [],
   operationLogs: [],
+  engineeringPlans: [],
+  engineeringTasks: [],
   customPlans: loadLocalArray(ADMIN_PLANS_KEY),
   customTasks: loadLocalArray(ADMIN_TASKS_KEY),
   currentUser: null,
@@ -272,6 +274,7 @@ function normalizeStatus(status = "") {
   if (raw.includes("正常") || raw === "normal") return "normal";
   if (raw.includes("异常") || raw === "danger") return "danger";
   if (raw.includes("维修") || raw === "repair") return "repair";
+  if (raw.includes("执行中") || raw.includes("已完成") || raw.includes("启用")) return "normal";
   if (raw.includes("复核") || raw.includes("待") || raw === "warning") return "warning";
   return "unknown";
 }
@@ -279,7 +282,7 @@ function normalizeStatus(status = "") {
 const ASSET_STATUS_OPTIONS = ["正常", "待复核", "异常", "待维修", "未巡检", "未知"];
 const RECORD_RESULT_OPTIONS = ["正常", "待复核", "异常"];
 const RECORD_FLOW_OPTIONS = ["未开始", "识别中", "已识别", "需重拍", "人工填写", "已提交"];
-const PLAN_STATUS_OPTIONS = ["启用", "暂停", "草稿", "已停用"];
+const PLAN_STATUS_OPTIONS = ["启用", "执行中", "待执行", "已完成", "未排期", "暂停", "草稿", "已停用"];
 
 function statusLabel(value = "") {
   const map = {
@@ -402,6 +405,8 @@ function projects() {
     ...state.templates.map((item) => item.project),
     ...state.customPlans.map((item) => item.project),
     ...state.customTasks.map((item) => item.project),
+    ...state.engineeringPlans.map((item) => item.project),
+    ...state.engineeringTasks.map((item) => item.project),
   ].filter(Boolean);
   return [...new Set(names)];
 }
@@ -610,7 +615,7 @@ function collectAssetPhotos(asset, history = []) {
 
 async function loadData(showToast = true) {
   try {
-    const [assets, records, requests, points, templates, health, users, operationLogs] = await Promise.all([
+    const [assets, records, requests, points, templates, health, users, operationLogs, engineeringPlans, engineeringTasks] = await Promise.all([
       api("/api/assets"),
       api("/api/inspection/records"),
       api("/api/change-requests"),
@@ -619,6 +624,8 @@ async function loadData(showToast = true) {
       safeApi("/health", null),
       safeApi("/api/users", { users: [] }),
       safeApi("/api/operation-logs?limit=80", { logs: [] }),
+      safeApi("/api/engineering/plans", { plans: [] }),
+      safeApi("/api/engineering/tasks", { tasks: [] }),
     ]);
     state.assets = assets.assets || [];
     state.records = records.records || [];
@@ -631,6 +638,8 @@ async function loadData(showToast = true) {
     state.health = health;
     state.users = users.users || [];
     state.operationLogs = operationLogs.logs || [];
+    state.engineeringPlans = engineeringPlans.plans || [];
+    state.engineeringTasks = engineeringTasks.tasks || [];
     if (!state.selectedAssetId || !state.assets.some((asset) => asset.id === state.selectedAssetId)) {
       state.selectedAssetId = latest(filteredAssets(), "updatedAt")?.id || state.assets[0]?.id || "";
     }
@@ -1535,16 +1544,18 @@ function asideFindings(issues, attentionItems = []) {
 
 function renderPlanPage() {
   const rows = filteredPlanRows();
-  const todayPlans = rows.filter((row) => row.frequency.includes("每日"));
+  const activePlans = rows.filter((row) => !["暂停", "已停用", "已完成"].includes(row.status));
+  const engineeringCount = rows.filter((row) => row.source === "engineering").length;
+  const budgetTotal = rows.reduce((sum, row) => sum + Number(row.budgetAmount || 0), 0);
   if (!state.selectedPlanId || !rows.some((r) => r.id === state.selectedPlanId)) {
     state.selectedPlanId = rows[0]?.id || "";
   }
   $("#pageMain").innerHTML = `
     ${metrics([
-      { label: "计划数量", value: rows.length, sub: "来自点位与模板" },
-      { label: "启用计划", value: rows.filter((row) => row.status === "启用").length, sub: "当前有效", good: true },
-      { label: "今日执行", value: todayPlans.length, sub: "每日计划" },
-      { label: "AI 模板", value: state.templates.filter((tpl) => tpl.hasAI).length, sub: "已配置视觉识别", good: true },
+      { label: "工程计划", value: engineeringCount || rows.length, sub: "年度事项" },
+      { label: "执行中", value: rows.filter((row) => row.status === "执行中").length, sub: "当前有效", good: true },
+      { label: "待执行", value: activePlans.filter((row) => row.status === "待执行" || row.status === "启用").length, sub: "需派发 / 跟踪" },
+      { label: "预算合计", value: budgetTotal ? `${Math.round(budgetTotal / 10000)}万` : "-", sub: "计划口径", good: true },
     ])}
     <section class="panel plan-table-panel">
       <div class="panel-head plan-panel-head">
@@ -1553,7 +1564,7 @@ function renderPlanPage() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>计划名称</th><th>项目</th><th>巡检点位</th><th>频次</th><th>责任人</th><th>下次执行</th><th>状态</th></tr></thead>
+          <thead><tr><th>计划名称</th><th>项目</th><th>类型 / 点位</th><th>周期</th><th>责任人</th><th>计划节点</th><th>状态</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr class="plan-row ${row.id === state.selectedPlanId ? "selected" : ""}" data-plan-id="${escapeHTML(row.id)}">
               <td>${escapeHTML(row.name)}</td><td>${escapeHTML(row.project)}</td><td>${escapeHTML(row.point)}</td>
@@ -1587,6 +1598,30 @@ function planEditCard(plan) {
       <div class="plan-edit-card empty">
         <div class="plan-edit-head"><b>计划详情</b></div>
         <div class="plan-edit-empty">点击左侧计划行查看 / 修改</div>
+      </div>`;
+  }
+  if (plan.source === "engineering") {
+    return `
+      <div class="plan-edit-card">
+        <div class="plan-edit-head">
+          <b>工程计划详情</b>
+          <span class="plan-edit-tag custom">${escapeHTML(plan.status || "待执行")}</span>
+        </div>
+        <div class="td-title">${escapeHTML(plan.name)}</div>
+        <div class="td-meta-list">
+          <div><span>项目</span><b>${escapeHTML(plan.project)}</b></div>
+          <div><span>类别</span><b>${escapeHTML(plan.category || plan.point || "-")}</b></div>
+          <div><span>责任人</span><b>${escapeHTML(plan.owner)}</b></div>
+          <div><span>周期</span><b>${escapeHTML(plan.frequency)}</b></div>
+          <div><span>计划节点</span><b>${escapeHTML([plan.planStart, plan.planEnd].filter(Boolean).join(" 至 ") || plan.next)}</b></div>
+          <div><span>预算</span><b>${escapeHTML(plan.budgetAmount ? `${Number(plan.budgetAmount).toLocaleString()} 元` : "-")}</b></div>
+        </div>
+        ${plan.desc ? `<div class="td-remark"><span>工作内容</span><p>${escapeHTML(plan.desc)}</p></div>` : ""}
+        ${plan.remark ? `<div class="td-remark"><span>备注</span><p>${escapeHTML(plan.remark)}</p></div>` : ""}
+        <div class="td-actions">
+          <button class="td-btn primary" data-eng-plan-dispatch="${escapeHTML(plan.backendId || plan.id)}">派发执行任务</button>
+          ${plan.latestTaskId ? `<button class="td-btn ghost" data-eng-task-link="${escapeHTML(plan.latestTaskId)}">查看最近任务</button>` : ""}
+        </div>
       </div>`;
   }
   const isSeed = String(plan.id).startsWith("seed_");
@@ -1680,6 +1715,34 @@ function planEditCard(plan) {
 }
 
 function bindPlanEditForm() {
+  document.querySelectorAll("[data-eng-plan-dispatch]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const planId = btn.dataset.engPlanDispatch;
+      const plan = state.engineeringPlans.find((item) => item.id === planId);
+      if (!plan) return;
+      try {
+        await api("/api/engineering/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            planItemId: plan.id,
+            title: `${plan.workContent || "工程计划"} 执行任务`,
+            status: "待执行",
+          }),
+        });
+        toast("执行任务已派发");
+        await loadData(false);
+        setPage("task", false);
+      } catch (error) {
+        toast(error.message || "任务派发失败");
+      }
+    });
+  });
+  document.querySelectorAll("[data-eng-task-link]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.selectedTaskId = btn.dataset.engTaskLink;
+      setPage("task");
+    });
+  });
   const form = document.getElementById("planEditForm");
   if (!form) return;
   form.addEventListener("submit", (e) => {
@@ -1785,8 +1848,38 @@ function syncPlanTask(plan) {
   saveLocalArray(ADMIN_TASKS_KEY, state.customTasks);
 }
 
+function engineeringPlanRows() {
+  return (state.engineeringPlans || [])
+    .filter((plan) => !state.selectedProject || plan.project === state.selectedProject)
+    .map((plan) => ({
+      id: plan.id,
+      backendId: plan.id,
+      name: plan.workContent || "工程计划事项",
+      project: plan.project || "-",
+      point: plan.category || "-",
+      pointId: "",
+      templateId: "",
+      templateName: plan.category || "工程计划",
+      frequency: plan.cycleText || [plan.planStart, plan.planEnd].filter(Boolean).join(" 至 ") || "-",
+      owner: plan.ownerName || "-",
+      next: plan.planEnd || "-",
+      status: plan.status || "待执行",
+      aiPolicy: "工程计划闭环 + AI 资料分析",
+      desc: plan.scopeDesc || plan.remark || "",
+      remark: plan.remark || "",
+      source: "engineering",
+      category: plan.category || "",
+      budgetAmount: plan.budgetAmount || 0,
+      planStart: plan.planStart || "",
+      planEnd: plan.planEnd || "",
+      riskLevel: plan.riskLevel || "normal",
+      latestTaskId: plan.latestTaskId || "",
+    }));
+}
+
 function planRows() {
   const templateById = new Map(state.templates.map((tpl) => [tpl.id, tpl]));
+  const engineeringRows = engineeringPlanRows();
   const customRows = (state.customPlans || [])
     .filter((plan) => !state.selectedProject || plan.project === state.selectedProject)
     .map((plan) => ({
@@ -1838,7 +1931,7 @@ function planRows() {
         source: "seed",
       };
     });
-  return [...customRows, ...seedRows];
+  return [...engineeringRows, ...customRows, ...seedRows];
 }
 
 function planSearchText(row) {
@@ -1967,7 +2060,8 @@ function taskDetailCard(task) {
         <div class="task-detail-empty">点击左侧任意任务卡查看详情</div>
       </div>`;
   }
-  const isPlanTask = String(task.id).startsWith("task_from_") || task.source === "plan";
+  const isPlanTask = String(task.id).startsWith("task_from_") || task.source === "plan" || task.source === "engineering";
+  const editableTask = state.customTasks?.some((t) => t.id === task.id) || task.source === "engineering";
   const statusFlow = ["待执行", "进行中", "已完成"];
   const curIdx = statusFlow.indexOf(task.status);
   return `
@@ -1988,6 +2082,7 @@ function taskDetailCard(task) {
         ${task.frequency ? `<div><span>频次</span><b>${escapeHTML(task.frequency)}</b></div>` : ""}
         ${task.dueAt ? `<div><span>截止</span><b>${escapeHTML(task.dueAt)}</b></div>` : ""}
         ${task.aiPolicy ? `<div><span>AI 策略</span><b>${escapeHTML(task.aiPolicy)}</b></div>` : ""}
+        ${task.recordId ? `<div><span>关联记录</span><b>${escapeHTML(task.recordId)}</b></div>` : ""}
       </div>
       ${task.remark ? `<div class="td-remark"><span>说明</span><p>${escapeHTML(task.remark)}</p></div>` : ""}
       ${task.completedAt ? `
@@ -1999,10 +2094,15 @@ function taskDetailCard(task) {
           </div>
         </div>
       ` : ""}
+      ${task.recordId ? `
+        <div class="td-actions">
+          <button class="td-btn ghost" data-record-link="${escapeHTML(task.recordId)}">查看关联巡检记录</button>
+        </div>
+      ` : ""}
       <div class="td-flow">
         ${statusFlow.map((s, i) => `<div class="td-step ${i <= curIdx ? "done" : ""} ${i === curIdx ? "current" : ""}"><i></i><span>${s}</span></div>`).join("")}
       </div>
-      ${state.customTasks?.some((t) => t.id === task.id) ? `
+      ${editableTask ? `
         <div class="td-actions">
           ${task.status === "待执行" ? `<button class="td-btn primary" data-task-action="start">开始执行</button>` : ""}
           ${task.status === "进行中" ? `<button class="td-btn primary" data-task-action="done">标记完成</button>` : ""}
@@ -2022,12 +2122,28 @@ function taskStatusTone(status) {
 
 function bindTaskDetailActions() {
   document.querySelectorAll("[data-task-action]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = state.selectedTaskId;
       const action = btn.dataset.taskAction;
+      const map = { start: "进行中", done: "已完成", cancel: "已取消", reopen: "待执行" };
+      const grouped = taskGroups();
+      const current = [...grouped.pending, ...grouped.processing, ...grouped.done, ...grouped.overdue].find((t) => t.id === id);
+      if (current?.source === "engineering") {
+        const newStatus = map[action] || current.status;
+        try {
+          await api(`/api/engineering/tasks/${encodeURIComponent(id)}/status`, {
+            method: "POST",
+            body: JSON.stringify({ status: newStatus }),
+          });
+          toast(`任务已${newStatus}`);
+          await loadData(false);
+        } catch (error) {
+          toast(error.message || "任务状态更新失败");
+        }
+        return;
+      }
       const idx = state.customTasks.findIndex((t) => t.id === id);
       if (idx < 0) return;
-      const map = { start: "进行中", done: "已完成", cancel: "已取消", reopen: "待执行" };
       const newStatus = map[action] || state.customTasks[idx].status;
       const task = state.customTasks[idx];
       task.status = newStatus;
@@ -2062,11 +2178,44 @@ function bindTaskDetailActions() {
       setPage("plan");
     });
   });
+  document.querySelectorAll("[data-record-link]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const recordId = btn.dataset.recordLink;
+      if (recordId) state.selectedRecordId = recordId;
+      setPage("record");
+    });
+  });
+}
+
+function engineeringTaskRows() {
+  return (state.engineeringTasks || [])
+    .filter((task) => !state.selectedProject || task.project === state.selectedProject)
+    .map((task) => ({
+      id: task.id,
+      title: task.title || task.workContent || "工程执行任务",
+      planId: task.planItemId || "",
+      planName: task.workContent || "",
+      project: task.project || "-",
+      pointName: task.category || "-",
+      templateName: task.workContent || "",
+      owner: task.assigneeName || "-",
+      frequency: task.taskType || "工程计划执行",
+      dueAt: task.dueAt || "-",
+      aiPolicy: [task.evidenceStatus, task.aiStatus].filter(Boolean).join(" / ") || "待分析",
+      remark: task.closeNote || "",
+      priority: task.status === "逾期" ? "紧急" : "普通",
+      source: "engineering",
+      recordId: task.recordId || "",
+      assetId: task.assetId || "",
+      meta: `${task.project || "-"} · ${task.category || "-"} · ${task.assigneeName || "-"} · 截止 ${task.dueAt || "-"}`,
+      status: task.status || "待执行",
+      completedAt: task.completedAt || null,
+      completedBy: task.reviewerName || task.assigneeName || "",
+    }));
 }
 
 function taskGroups() {
   const records = filteredRecords();
-  const today = todayKey();
   const manualTasks = (state.customTasks || [])
     .filter((task) => !state.selectedProject || task.project === state.selectedProject)
     .map((task) => ({
@@ -2077,6 +2226,7 @@ function taskGroups() {
       id: task.id,
       source: "manual",
     }));
+  const engineeringTasks = engineeringTaskRows();
   const done = records.filter((record) => record.submitted).slice(0, 4).map(recordToTask);
   const processing = records.filter((record) => !record.submitted && record.recognitionStatus !== "not_started").slice(0, 4).map(recordToTask);
   // F5 修复 · 待执行不再用 points 假造，只接 manualTasks。无数据时给一条引导。
@@ -2086,6 +2236,12 @@ function taskGroups() {
     .slice(0, 3)
     .map((asset) => ({ title: asset.assetName, meta: `${assetKey(asset)} · ${fmtTime(asset.lastInspectedAt)} · 需复核`, status: "逾期" }));
   manualTasks.forEach((task) => {
+    if (task.status === "进行中") processing.unshift(task);
+    else if (task.status === "已完成") done.unshift(task);
+    else if (task.status === "逾期") overdue.unshift(task);
+    else pending.unshift(task);
+  });
+  engineeringTasks.forEach((task) => {
     if (task.status === "进行中") processing.unshift(task);
     else if (task.status === "已完成") done.unshift(task);
     else if (task.status === "逾期") overdue.unshift(task);
@@ -2238,13 +2394,8 @@ function renderLedgerPage() {
   const assets = filteredAssets();
   const counts = statusCounts(assets);
   $("#pageMain").innerHTML = `
-    ${metrics([
-      { label: "资产总数", value: counts.total, sub: "台/套" },
-      { label: "正常资产", value: counts.normal, sub: `${ratio(counts.normal, counts.total)}%`, good: true },
-      { label: "异常资产", value: counts.danger, sub: "需处理", bad: counts.danger > 0 },
-      { label: "待复核", value: counts.warning + counts.repair, sub: "人工确认" },
-    ])}
-    ${assetTablePanel(assets, "资产台账", "点击任意资产查看详情并维护台账。", true, `<button id="exportAssetsBtn">导出台账</button>`)}
+    ${ledgerStatsBar(counts)}
+    ${assetTablePanel(assets, "资产台账", "", true, `<button id="exportAssetsBtn">导出台账</button>`)}
   `;
   $("#pageAside").innerHTML = renderAssetSide(selectedAsset() || assets[0]);
   $("#exportAssetsBtn").addEventListener("click", (event) => {
@@ -2255,11 +2406,31 @@ function renderLedgerPage() {
   bindAssetFilters();
 }
 
+function ledgerStatsBar(counts) {
+  const items = [
+    { label: "资产总数", value: counts.total, sub: "台/套" },
+    { label: "正常资产", value: counts.normal, sub: `${ratio(counts.normal, counts.total)}%`, tone: "good" },
+    { label: "异常资产", value: counts.danger, sub: "需处理", tone: counts.danger > 0 ? "danger" : "good" },
+    { label: "待复核", value: counts.warning + counts.repair, sub: "人工确认", tone: (counts.warning + counts.repair) > 0 ? "warn" : "" },
+  ];
+  return `
+    <section class="ledger-stat-strip">
+      ${items.map((item) => `
+        <article class="ledger-stat ${item.tone || ""}">
+          <span>${escapeHTML(item.label)}</span>
+          <b>${escapeHTML(item.value)}</b>
+          <small>${escapeHTML(item.sub || "")}</small>
+        </article>
+      `).join("")}
+    </section>
+  `;
+}
+
 function assetTablePanel(assets, title, desc, withFilters, action = "") {
   return `
     <section class="panel asset-table-panel">
       <div class="panel-head asset-panel-head">
-        <div class="panel-title-block"><h2>${escapeHTML(title)}</h2><p>${escapeHTML(desc)}</p></div>
+        <div class="panel-title-block"><h2>${escapeHTML(title)}</h2>${desc ? `<p>${escapeHTML(desc)}</p>` : ""}</div>
         <div class="panel-actions asset-toolbar">${withFilters ? assetFiltersHTML() : `<button class="link-btn" data-page-link="ledger">全部台账</button>`}${action}</div>
       </div>
       <div class="table-wrap">
@@ -3668,7 +3839,7 @@ function renderAssetSide(asset) {
   const localHist = state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
   const photos = collectAssetPhotos(asset, localHist);
   return `
-    <div class="detail-head asset-detail-head"><span>资产台账</span><h2>资产预览</h2></div>
+    <div class="detail-head asset-detail-head"><h2>资产预览</h2></div>
     <div class="asset-preview">
       <div class="asset-preview-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : `<div class="asset-preview-noimg">暂无照片</div>`}</div>
       <div class="asset-preview-title"><h3>${escapeHTML(asset.assetName || "未命名资产")}</h3><span class="pill ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></div>
@@ -3682,6 +3853,32 @@ function renderAssetSide(asset) {
       <div class="asset-preview-summary">${escapeHTML(truncateText(asset.lastSummary || "暂无管理摘要。", 90))}</div>
       <button class="asset-preview-btn" data-asset-detail="${escapeHTML(asset.id)}" type="button">查看完整档案 →</button>
     </div>
+  `;
+}
+
+function renderAssetSummaryCard(asset) {
+  const raw = String(asset.lastSummary || "").trim();
+  const sentences = raw.split(/[。；;]/).map((item) => item.trim()).filter(Boolean);
+  const main = sentences[0] || "暂无管理摘要";
+  const key = sentences.find((item) => item !== main && /关键|数据|巡检|编号|温度|电压|电流|读数|状态|记录/.test(item))
+    || `最近巡检 ${fmtTime(asset.lastInspectedAt)}，累计 ${asset.inspectionCount || 0} 次`;
+  const isNormal = normalizeStatus(asset.lastStatus) === "normal";
+  const focus = isNormal ? "当前台账状态正常" : `当前状态：${asset.lastStatus || "未巡检"}`;
+  return `
+    <section class="asset-summary-card asset-summary-grid">
+      <article>
+        <span>当前结论</span>
+        <p>${escapeHTML(main)}</p>
+      </article>
+      <article>
+        <span>关键数据</span>
+        <p>${escapeHTML(key)}</p>
+      </article>
+      <article>
+        <span>关注点</span>
+        <p>${escapeHTML(focus)}</p>
+      </article>
+    </section>
   `;
 }
 
@@ -3717,7 +3914,7 @@ function renderAssetFull(asset) {
           </div>
         </div>
       </section>
-      <div class="info-card asset-summary-card"><b>台账摘要</b><span>${escapeHTML(asset.lastSummary || "暂无管理摘要。")}</span></div>
+      ${renderAssetSummaryCard(asset)}
       ${trendHTML}
       ${eventsHTML}
       <section class="asset-side-section">
@@ -4147,9 +4344,27 @@ function createAdminPlan(form) {
   toast("巡检计划已保存");
 }
 
-function createAdminTask(form) {
+async function createAdminTask(form) {
   const plans = planRows();
   const plan = plans[Number(form.get("planIndex"))] || {};
+  if (plan.source === "engineering") {
+    await api("/api/engineering/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        planItemId: plan.backendId || plan.id,
+        title: String(form.get("title") || `${plan.name || "工程计划"}执行任务`).trim(),
+        assigneeName: String(form.get("owner") || plan.owner || "巡检员"),
+        dueAt: displayDateTimeInput(form.get("dueAt")),
+        status: String(form.get("status") || "待执行"),
+        closeNote: String(form.get("remark") || "").trim(),
+      }),
+    });
+    closeDrawer();
+    await loadData(false);
+    setPage("task", false);
+    toast("工程任务已派发");
+    return;
+  }
   const task = {
     id: clientId("task"),
     title: String(form.get("title") || `${plan.name || "巡检"}任务`).trim(),
@@ -4562,7 +4777,11 @@ function bindEvents() {
     }
     if (event.target.id === "adminTaskForm") {
       event.preventDefault();
-      createAdminTask(new FormData(event.target));
+      try {
+        await createAdminTask(new FormData(event.target));
+      } catch (error) {
+        toast(error.message || "任务派发失败");
+      }
       return;
     }
     if (event.target.id !== "assetEditForm") return;
