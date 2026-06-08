@@ -18,6 +18,7 @@ type Server struct {
 	aiClient           *AIClient
 	analyticsClient    *AnalyticsClient
 	wework             *WeWorkClient
+	weworkBot          *WeWorkBotClient
 	storageDir         string
 	frontendDir        string
 	authToken          string
@@ -48,6 +49,7 @@ func main() {
 		log.Printf("WARN: 企业微信配置无效，消息发送已禁用: %v", err)
 		weworkClient = NewDisabledWeWorkClient()
 	}
+	weworkBotClient := NewWeWorkBotClient(getenvWithSecret("WEWORK_BOT_WEBHOOK", ""))
 	identitySeed := IdentitySeed{
 		Username:    getenv("INSPECTAI_ADMIN_USER", defaultAdminUser),
 		Password:    getenvWithSecret("INSPECTAI_ADMIN_PASSWORD", defaultAdminPass),
@@ -116,6 +118,7 @@ func main() {
 		authToken:          authToken,
 		supervisorToken:    supervisorToken,
 		wework:             weworkClient,
+		weworkBot:          weworkBotClient,
 		corsAllowedOrigins: corsAllowedOrigins,
 	}
 	if err := server.ensureAssetLedgerFromRecords(); err != nil {
@@ -149,6 +152,7 @@ func main() {
 		log.Printf("  Supervisor token: configured")
 	}
 	log.Printf("  WeCom message: %v", weworkClient.Enabled())
+	log.Printf("  WeCom bot message: %v", weworkBotClient.Enabled())
 	log.Printf("  CORS origins: %s", strings.Join(originList(corsAllowedOrigins), ", "))
 
 	srv := &http.Server{

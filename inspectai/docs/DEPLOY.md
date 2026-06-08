@@ -75,6 +75,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T ai-servic
 
 企业微信走“自建应用发送消息”，用于异常复核、审批、任务提醒等通知。后台用户表已有 `企业微信 UserID` 字段，后端已提供发送接口。
 
+如果自建应用被可信 IP / 域名主体校验挡住，可先启用“企业微信群机器人 Webhook”。群机器人不需要 `CorpID / AgentSecret / 可信 IP`，适合作为通知兜底通道。
+
 企业微信后台准备：
 
 1. 在企业微信管理后台创建自建应用，记录 `AgentId` 和 `Secret`。
@@ -120,6 +122,51 @@ curl -X POST "https://ai-demo.jadeastech.com/api/wework/message" \
 ```
 
 接口返回 `invaliduser` 时，优先检查：系统内填写的 UserID 是否为企业微信通讯录里的成员账号、该成员是否在应用可见范围内。
+
+### 群机器人兜底通知
+
+企业微信群里添加机器人后，复制 Webhook URL，写入 secret：
+
+```bash
+echo -n 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' \
+  > secrets/wework_bot_webhook
+chmod 600 secrets/wework_bot_webhook
+
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-deps --force-recreate go-backend
+```
+
+检查是否启用：
+
+```bash
+curl -fsS https://ai-demo.jadeastech.com/health
+# 应包含："weworkBot": true
+```
+
+发送文本消息：
+
+```bash
+TOKEN="$(cat secrets/inspectai_supervisor_token)"
+
+curl -X POST "https://ai-demo.jadeastech.com/api/wework/group-message" \
+  -H "Content-Type: application/json" \
+  -H "X-InspectAI-Token: $TOKEN" \
+  -d '{
+    "msgtype": "text",
+    "content": "智巡测试消息：企业微信群机器人通知已打通。"
+  }'
+```
+
+发送 Markdown 消息：
+
+```bash
+curl -X POST "https://ai-demo.jadeastech.com/api/wework/group-message" \
+  -H "Content-Type: application/json" \
+  -H "X-InspectAI-Token: $TOKEN" \
+  -d '{
+    "msgtype": "markdown",
+    "content": "### 智巡异常提醒\n> 设备：无机房电梯\n> 状态：待复核"
+  }'
+```
 
 ## 5. 首次部署签发 HTTPS 证书
 
@@ -240,3 +287,4 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | `inspectai_supervisor_token` | go-backend | 主管 token |
 | `inspectai_admin_password` | go-backend | 管理后台登录密码 |
 | `wework_app_secret` | go-backend | 企业微信自建应用 Secret；为空则消息能力禁用 |
+| `wework_bot_webhook` | go-backend | 企业微信群机器人 Webhook；为空则群机器人通知禁用 |

@@ -62,6 +62,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleListOperationLogs(w, r)
 	case r.URL.Path == "/api/wework/message" && r.Method == http.MethodPost:
 		s.handleSendWeWorkMessage(w, r)
+	case r.URL.Path == "/api/wework/group-message" && r.Method == http.MethodPost:
+		s.handleSendWeWorkGroupMessage(w, r)
 	case r.URL.Path == "/api/engineering/plans" && r.Method == http.MethodGet:
 		s.handleListEngineeringPlans(w, r)
 	case r.URL.Path == "/api/engineering/plans" && r.Method == http.MethodPost:
@@ -358,6 +360,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"aiServiceUrl": s.aiClient.baseURL,
 		"storeKind":    s.storeKind,
 		"wework":       s.wework != nil && s.wework.Enabled(),
+		"weworkBot":    s.weworkBot != nil && s.weworkBot.Enabled(),
 		"time":         time.Now(),
 	})
 }
@@ -516,6 +519,68 @@ func (s *Server) handleSendWeWorkMessage(w http.ResponseWriter, r *http.Request)
 		"ok":      true,
 		"targets": targets,
 		"missing": missing,
+		"result":  result,
+	})
+}
+
+func (s *Server) handleSendWeWorkGroupMessage(w http.ResponseWriter, r *http.Request) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可发送企业微信群机器人消息")
+		return
+	}
+	if s.weworkBot == nil || !s.weworkBot.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "wework_bot_disabled", "企业微信群机器人 Webhook 未配置或未启用")
+		return
+	}
+	var req struct {
+		MsgType             string   `json:"msgtype"`
+		Content             string   `json:"content"`
+		MentionedList       []string `json:"mentionedList"`
+		MentionedMobileList []string `json:"mentionedMobileList"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	msgType := strings.ToLower(strings.TrimSpace(req.MsgType))
+	if msgType == "" {
+		msgType = "text"
+	}
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		writeError(w, http.StatusBadRequest, "empty_content", "消息内容不能为空")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	var (
+		result *WeWorkBotSendResult
+		err    error
+	)
+	switch msgType {
+	case "text":
+		result, err = s.weworkBot.SendText(ctx, content, req.MentionedList, req.MentionedMobileList)
+	case "markdown":
+		result, err = s.weworkBot.SendMarkdown(ctx, content)
+	default:
+		writeError(w, http.StatusBadRequest, "bad_msgtype", "msgtype 仅支持 text / markdown")
+		return
+	}
+	if err != nil {
+		if result == nil {
+			result = &WeWorkBotSendResult{}
+		}
+		writeError(w, http.StatusBadGateway, "wework_bot_send_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "wework.bot_message.send", "wework_bot", msgType, map[string]any{
+		"msgtype":             msgType,
+		"mentionedList":       normalizeWeWorkIDs(req.MentionedList),
+		"mentionedMobileList": normalizeWeWorkIDs(req.MentionedMobileList),
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"msgtype": msgType,
 		"result":  result,
 	})
 }

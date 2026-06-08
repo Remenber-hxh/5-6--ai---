@@ -91,6 +91,12 @@ if [ ! -e "$SECRETS_DIR/wework_app_secret" ]; then
   chown "${INSPECTAI_CONTAINER_UID:-10001}:${INSPECTAI_CONTAINER_GID:-10001}" "$SECRETS_DIR/wework_app_secret" 2>/dev/null || true
   echo "  已创建可选空 secret：secrets/wework_app_secret"
 fi
+if [ ! -e "$SECRETS_DIR/wework_bot_webhook" ]; then
+  : > "$SECRETS_DIR/wework_bot_webhook"
+  chmod 600 "$SECRETS_DIR/wework_bot_webhook"
+  chown "${INSPECTAI_CONTAINER_UID:-10001}:${INSPECTAI_CONTAINER_GID:-10001}" "$SECRETS_DIR/wework_bot_webhook" 2>/dev/null || true
+  echo "  已创建可选空 secret：secrets/wework_bot_webhook"
+fi
 echo
 
 # 首次部署还没有证书，必须先用 HTTP-only 配置完成 ACME challenge。

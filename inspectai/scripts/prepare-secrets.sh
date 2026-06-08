@@ -70,6 +70,7 @@ write_secret inspectai_admin_password "${INSPECTAI_ADMIN_PASSWORD:-}"
 
 # 可选凭据：为空时创建空文件，docker compose 仍可挂载，服务会自动禁用相关能力。
 write_optional_secret wework_app_secret "${WEWORK_APP_SECRET:-}"
+write_optional_secret wework_bot_webhook "${WEWORK_BOT_WEBHOOK:-}"
 
 # 自动生成 token（若未设）
 gen_token() {

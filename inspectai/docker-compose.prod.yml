@@ -12,6 +12,7 @@
 #   ./secrets/inspectai_supervisor_token
 #   ./secrets/inspectai_admin_password
 #   ./secrets/wework_app_secret          # 可选：启用企业微信消息时填写
+#   ./secrets/wework_bot_webhook         # 可选：启用企业微信群机器人时填写
 #
 # 详细操作见 docs/DEPLOY.md（生成 secret + 权限收紧 + 备份策略）。
 
@@ -34,6 +35,8 @@ secrets:
     file: ./secrets/mysql_dsn
   wework_app_secret:
     file: ./secrets/wework_app_secret
+  wework_bot_webhook:
+    file: ./secrets/wework_bot_webhook
 
 services:
   mysql:
@@ -128,12 +131,14 @@ services:
       WEWORK_CORP_ID: ${WEWORK_CORP_ID:-}
       WEWORK_AGENT_ID: ${WEWORK_AGENT_ID:-}
       WEWORK_APP_SECRET_FILE: /run/secrets/wework_app_secret
+      WEWORK_BOT_WEBHOOK_FILE: /run/secrets/wework_bot_webhook
     secrets:
       - mysql_dsn
       - inspectai_auth_token
       - inspectai_supervisor_token
       - inspectai_admin_password
       - wework_app_secret
+      - wework_bot_webhook
     volumes:
       - app_storage:/app/storage
     depends_on:

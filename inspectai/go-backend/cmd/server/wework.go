@@ -43,6 +43,16 @@ type WeWorkSendResult struct {
 	ResponseCode string `json:"response_code,omitempty"`
 }
 
+type WeWorkBotClient struct {
+	webhook string
+	http    *http.Client
+}
+
+type WeWorkBotSendResult struct {
+	ErrCode int    `json:"errcode"`
+	ErrMsg  string `json:"errmsg"`
+}
+
 type weWorkTokenResp struct {
 	ErrCode     int    `json:"errcode"`
 	ErrMsg      string `json:"errmsg"`
@@ -52,6 +62,13 @@ type weWorkTokenResp struct {
 
 func NewDisabledWeWorkClient() *WeWorkClient {
 	return &WeWorkClient{http: &http.Client{Timeout: 10 * time.Second}}
+}
+
+func NewWeWorkBotClient(webhook string) *WeWorkBotClient {
+	return &WeWorkBotClient{
+		webhook: strings.TrimSpace(webhook),
+		http:    &http.Client{Timeout: 15 * time.Second},
+	}
 }
 
 func NewWeWorkClient(cfg WeWorkConfig) (*WeWorkClient, error) {
@@ -79,6 +96,10 @@ func NewWeWorkClient(cfg WeWorkConfig) (*WeWorkClient, error) {
 
 func (c *WeWorkClient) Enabled() bool {
 	return c != nil && c.corpID != "" && c.agentID > 0 && c.appSecret != ""
+}
+
+func (c *WeWorkBotClient) Enabled() bool {
+	return c != nil && c.webhook != ""
 }
 
 func (c *WeWorkClient) SendText(ctx context.Context, toUsers []string, content string) (*WeWorkSendResult, error) {
@@ -119,6 +140,69 @@ func (c *WeWorkClient) SendText(ctx context.Context, toUsers []string, content s
 		return result, fmt.Errorf("企业微信发送失败: errcode=%d errmsg=%s", result.ErrCode, result.ErrMsg)
 	}
 	return result, nil
+}
+
+func (c *WeWorkBotClient) SendText(ctx context.Context, content string, mentionedList, mentionedMobileList []string) (*WeWorkBotSendResult, error) {
+	if !c.Enabled() {
+		return nil, errors.New("企业微信群机器人未配置：需要 WEWORK_BOT_WEBHOOK")
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, errors.New("消息内容不能为空")
+	}
+	payload := map[string]any{
+		"msgtype": "text",
+		"text": map[string]any{
+			"content": content,
+		},
+	}
+	text := payload["text"].(map[string]any)
+	if ids := normalizeWeWorkIDs(mentionedList); len(ids) > 0 {
+		text["mentioned_list"] = ids
+	}
+	if phones := normalizeWeWorkIDs(mentionedMobileList); len(phones) > 0 {
+		text["mentioned_mobile_list"] = phones
+	}
+	return c.send(ctx, payload)
+}
+
+func (c *WeWorkBotClient) SendMarkdown(ctx context.Context, content string) (*WeWorkBotSendResult, error) {
+	if !c.Enabled() {
+		return nil, errors.New("企业微信群机器人未配置：需要 WEWORK_BOT_WEBHOOK")
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, errors.New("消息内容不能为空")
+	}
+	return c.send(ctx, map[string]any{
+		"msgtype":  "markdown",
+		"markdown": map[string]string{"content": content},
+	})
+}
+
+func (c *WeWorkBotClient) send(ctx context.Context, payload map[string]any) (*WeWorkBotSendResult, error) {
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.webhook, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result WeWorkBotSendResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &result, fmt.Errorf("企业微信群机器人发送请求失败: status=%d", resp.StatusCode)
+	}
+	if result.ErrCode != 0 {
+		return &result, fmt.Errorf("企业微信群机器人发送失败: errcode=%d errmsg=%s", result.ErrCode, result.ErrMsg)
+	}
+	return &result, nil
 }
 
 func (c *WeWorkClient) accessTokenFor(ctx context.Context, forceRefresh bool) (string, error) {
