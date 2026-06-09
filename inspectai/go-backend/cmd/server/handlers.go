@@ -2142,6 +2142,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		})
 	}
 	_ = s.store.CompleteSubmission(recordID, idemKey)
+	s.notifyInspectionSubmitted(rec, assets)
 
 	writeJSON(w, http.StatusOK, sanitizeRecordForCurrentTemplate(rec))
 }
@@ -3286,6 +3287,7 @@ func (s *Server) handleCreateChangeRequest(w http.ResponseWriter, r *http.Reques
 		"reason":    cr.Reason,
 		"patch":     cr.Patch,
 	})
+	s.notifyChangeRequestCreated(cr)
 	writeJSON(w, http.StatusCreated, cr)
 }
 
@@ -3547,6 +3549,7 @@ func (s *Server) handleApproveChangeRequest(w http.ResponseWriter, r *http.Reque
 		"requestId": cr.ID,
 		"note":      req.ReviewNote,
 	})
+	s.notifyChangeRequestReviewed(cr, "已通过")
 	writeJSON(w, http.StatusOK, cr)
 }
 
@@ -3585,6 +3588,7 @@ func (s *Server) handleRejectChangeRequest(w http.ResponseWriter, r *http.Reques
 		"requestId": cr.ID,
 		"note":      req.ReviewNote,
 	})
+	s.notifyChangeRequestReviewed(cr, "已驳回")
 	writeJSON(w, http.StatusOK, cr)
 }
 

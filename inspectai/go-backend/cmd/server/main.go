@@ -19,6 +19,7 @@ type Server struct {
 	analyticsClient    *AnalyticsClient
 	wework             *WeWorkClient
 	weworkBot          *WeWorkBotClient
+	publicBaseURL      string
 	storageDir         string
 	frontendDir        string
 	authToken          string
@@ -39,6 +40,14 @@ func main() {
 	addr := getenv("BACKEND_ADDR", ":18080")
 	authToken := getenvWithSecret("INSPECTAI_AUTH_TOKEN", "")
 	supervisorToken := getenvWithSecret("INSPECTAI_SUPERVISOR_TOKEN", "")
+	weworkTrustedDomain := getenv("WEWORK_TRUSTED_DOMAIN", "")
+	publicBaseURL := strings.TrimRight(getenv("PUBLIC_BASE_URL", ""), "/")
+	if publicBaseURL == "" && strings.TrimSpace(weworkTrustedDomain) != "" {
+		publicBaseURL = "https://" + strings.TrimRight(strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(weworkTrustedDomain), "https://"), "http://"), "/")
+	}
+	if publicBaseURL == "" {
+		publicBaseURL = "https://ai-demo.jadeastech.com"
+	}
 	weworkClient, err := NewWeWorkClient(WeWorkConfig{
 		BaseURL:   getenv("WEWORK_API_BASE_URL", "https://qyapi.weixin.qq.com"),
 		CorpID:    getenv("WEWORK_CORP_ID", ""),
@@ -57,7 +66,7 @@ func main() {
 	}
 	corsAllowedOrigins := parseAllowedOrigins(
 		getenv("CORS_ALLOWED_ORIGINS", ""),
-		getenv("WEWORK_TRUSTED_DOMAIN", ""),
+		weworkTrustedDomain,
 	)
 
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
@@ -119,6 +128,7 @@ func main() {
 		supervisorToken:    supervisorToken,
 		wework:             weworkClient,
 		weworkBot:          weworkBotClient,
+		publicBaseURL:      publicBaseURL,
 		corsAllowedOrigins: corsAllowedOrigins,
 	}
 	if err := server.ensureAssetLedgerFromRecords(); err != nil {
@@ -153,6 +163,7 @@ func main() {
 	}
 	log.Printf("  WeCom message: %v", weworkClient.Enabled())
 	log.Printf("  WeCom bot message: %v", weworkBotClient.Enabled())
+	log.Printf("  Public base URL: %s", publicBaseURL)
 	log.Printf("  CORS origins: %s", strings.Join(originList(corsAllowedOrigins), ", "))
 
 	srv := &http.Server{
