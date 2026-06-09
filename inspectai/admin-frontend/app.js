@@ -12,7 +12,7 @@ const pageLabels = {
   ledger: "资产台账",
   device: "设备管理",
   exception: "异常复核",
-  approval: "修改审批",
+  approval: "审批中心",
   data: "数据看板",
   report: "统计报表",
   users: "用户与权限",
@@ -59,6 +59,7 @@ const state = {
   dataInsights: {}, // 阶段一 数据看板缓存：{ key → { overview, items, summary, model, generatedAt } }
   loadErrors: {},   // P1-4 接口失败留痕：{ "scope:id" → 错误消息 }；为空表示无错
   handledDeepLink: "",
+  approvalStatus: new URLSearchParams(location.search).get("approvalStatus") || "pending",
   recordPage: 0,
   filters: {
     assetType: "",
@@ -299,7 +300,7 @@ function statusLabel(value = "") {
     manual_required: "人工填写",
     pending: "待复核",
     approved: "已通过",
-    rejected: "已拒绝",
+    rejected: "已驳回",
     withdrawn: "已撤回",
     asset: "资产",
     record: "巡检记录",
@@ -688,6 +689,7 @@ function applyDeepLink() {
     const request = state.requests.find((item) => item.id === requestId);
     if (!request) return;
     state.handledDeepLink = key;
+    state.approvalStatus = request.status || "all";
     if (state.page !== "approval") {
       state.page = "approval";
       render();
@@ -741,7 +743,11 @@ function render() {
     if (item.top < host.top + pad) navHost.scrollTop -= host.top + pad - item.top;
     else if (item.bottom > host.bottom - pad) navHost.scrollTop += item.bottom - (host.bottom - pad);
   }
-  $("#pendingBadge").textContent = filteredRequests().filter((item) => item.status === "pending").length;
+  const pendingApprovalCount = filteredRequests().filter((item) => item.status === "pending").length;
+  $("#pendingBadge").textContent = pendingApprovalCount;
+  $("#pendingBadge").hidden = pendingApprovalCount <= 0;
+  const approvalShortcutCount = $("#approvalShortcutCount");
+  if (approvalShortcutCount) approvalShortcutCount.textContent = pendingApprovalCount;
   updateUserBadge();
   const renderer = pageRenderers[state.page] || renderDashboardPage;
   renderer();
@@ -1453,6 +1459,7 @@ function quickAccessCounts(records) {
     plans: planRows().length,
     tasks: (typeof taskGroups === "function" ? taskGroups() : { pending: [] }).pending?.length || state.tasks?.filter?.((t) => t.status !== "completed").length || 0,
     records: records.length,
+    approvals: filteredRequests().filter((item) => item.status === "pending").length,
     assets: state.assets.length,
     devices: new Set(state.assets.map((a) => a.assetType).filter(Boolean)).size,
   };
@@ -1463,6 +1470,7 @@ function quickAccessTiles(c) {
     { key: "plan",   label: "巡检计划", num: c.plans,   unit: "项启用", sub: "巡检与配置", page: "plan",   icon: "icon-plan.svg",   color: "#4f7cff" },
     { key: "task",   label: "派发任务", num: c.tasks,   unit: "项待派", sub: "今日待派发", page: "task",   icon: "icon-task.svg",   color: "#12a968" },
     { key: "record", label: "巡检记录", num: c.records, unit: "条记录", sub: "本周累计",   page: "record", icon: "icon-record.svg", color: "#f59e0b" },
+    { key: "approval", label: "审批中心", num: c.approvals, unit: "项待审", sub: "修改申请", page: "approval", icon: "nav-approval.svg", color: "#ef4b3f" },
     { key: "asset",  label: "资产台账", num: c.assets,  unit: "项资产", sub: "全量资产",   page: "ledger", icon: "icon-asset.svg",  color: "#8b5cf6" },
     { key: "device", label: "设备管理", num: c.devices, unit: "类设备", sub: "设备类型",   page: "device", icon: "icon-device.svg", color: "#0ea5e9" },
     { key: "board",  label: "数据看板", num: null,       unit: "", sub: "报表与分析", page: "data",   icon: "icon-board.svg",  color: "#06b6d4" },
@@ -1524,7 +1532,7 @@ function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingT
         </a>
         <a class="todo-row warn" data-page-link="approval">
           <img src="./assets/icon-bulb.svg" alt=""/>
-          <span>修改审批</span><b>${pendingApprovals}</b><em>去审批 →</em>
+          <span>审批中心</span><b>${pendingApprovals}</b><em>去审批 →</em>
         </a>
         <a class="todo-row info"  data-page-link="task">
           <img src="./assets/icon-task.svg" alt=""/>
@@ -2639,32 +2647,127 @@ function renderExceptionPage() {
   $("#pageAside").innerHTML = "";
 }
 
+function approvalCounts(requests) {
+  return requests.reduce((acc, request) => {
+    acc.total += 1;
+    acc[request.status || "unknown"] = (acc[request.status || "unknown"] || 0) + 1;
+    return acc;
+  }, { total: 0, pending: 0, approved: 0, rejected: 0, withdrawn: 0, unknown: 0 });
+}
+
+function approvalRows() {
+  const status = state.approvalStatus || "pending";
+  return filteredRequests()
+    .filter((request) => status === "all" || request.status === status)
+    .sort((a, b) => {
+      const weight = (request) => request.status === "pending" ? 0 : 1;
+      return weight(a) - weight(b) || new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0);
+    });
+}
+
+function approvalTargetSummary(request) {
+  if (request.targetType === "asset") {
+    const asset = state.assets.find((item) => item.id === request.targetId);
+    if (asset) {
+      return {
+        title: asset.assetName || "资产台账",
+        meta: `设备编号 ${assetKey(asset)} · ${locationText(asset)}`,
+      };
+    }
+    return { title: "资产台账", meta: request.targetId || "-" };
+  }
+  const record = state.records.find((item) => item.id === request.targetId);
+  if (record) {
+    return {
+      title: record.templateName || record.pointName || "巡检记录",
+      meta: `${record.pointName || record.project || "-"} · ${fmtTime(record.createdAt)}`,
+    };
+  }
+  return { title: "巡检记录", meta: request.targetId || "-" };
+}
+
+function approvalPatchSummary(request) {
+  const patch = request.patch || {};
+  const parts = [];
+  if (Array.isArray(patch.fields)) {
+    const names = patch.fields.map((field) => field.label || field.code).filter(Boolean).slice(0, 4);
+    if (names.length) parts.push(`字段修正：${names.join("、")}`);
+  }
+  if (Array.isArray(patch.images) || Array.isArray(patch.photos) || Array.isArray(patch.photoIds)) {
+    const n = (patch.images || patch.photos || patch.photoIds || []).length;
+    parts.push(`补交照片：${n} 张`);
+  }
+  const labelMap = {
+    assetName: "资产名称",
+    lastStatus: "资产状态",
+    lastSummary: "台账摘要",
+    inspector: "巡检人",
+    aiSummary: "AI 总结",
+    report: "日报内容",
+  };
+  Object.keys(patch).forEach((key) => {
+    if (["fields", "images", "photos", "photoIds"].includes(key)) return;
+    parts.push(labelMap[key] || key);
+  });
+  return parts.join("；") || "查看申请详情确认变更内容";
+}
+
+function approvalCardHTML(request) {
+  const target = approvalTargetSummary(request);
+  const status = request.status || "unknown";
+  const pending = status === "pending";
+  return `
+    <article class="approval-card approval-${escapeHTML(status)}" data-request-open="${escapeHTML(request.id)}">
+      <div class="approval-card-main">
+        <div class="approval-card-top">
+          <span class="status ${status === "approved" ? "normal" : status === "rejected" ? "danger" : "warning"}">${escapeHTML(statusLabel(status))}</span>
+          <em>${escapeHTML(shortId(request.id))}</em>
+        </div>
+        <b>${escapeHTML(target.title)}</b>
+        <p>${escapeHTML(target.meta)}</p>
+        <div class="approval-reason">申请原因：${escapeHTML(request.reason || "未填写")}</div>
+        <div class="approval-patch">${escapeHTML(approvalPatchSummary(request))}</div>
+      </div>
+      <footer>
+        <button class="btn-ghost" data-request-open="${escapeHTML(request.id)}">查看详情</button>
+        ${pending ? `<button data-request-review="${escapeHTML(request.id)}" data-action="approve">通过申请</button><button class="danger" data-request-review="${escapeHTML(request.id)}" data-action="reject">驳回申请</button>` : ""}
+      </footer>
+    </article>
+  `;
+}
+
 function renderApprovalPage() {
-  const requests = filteredRequests();
+  const all = filteredRequests();
+  const counts = approvalCounts(all);
+  const rows = approvalRows();
+  const filters = [
+    ["pending", "待审批", counts.pending],
+    ["all", "全部", counts.total],
+    ["approved", "已通过", counts.approved],
+    ["rejected", "已驳回", counts.rejected],
+  ];
   $("#pageMain").innerHTML = `
-    <section class="panel">
-      <div class="panel-head">
-        <div><h2>修改审批</h2><p>人工修正必须留痕，审批后更新最终字段并保留 AI 原始识别。</p></div>
+    <section class="panel approval-workbench">
+      <div class="panel-head approval-head">
+        <div><h2>审批中心</h2><p>处理巡检员提交的补图、字段修正和台账修改申请。</p></div>
         <button data-drawer="approval">审批设置</button>
       </div>
-      <div class="approval-list panel-body-grid">
-        ${requests.map((request) => `
-          <article>
-            <div>
-              <span>申请人：${escapeHTML(request.requestedBy || "-")} · ${fmtTime(request.requestedAt)}</span>
-              <b>${escapeHTML(statusLabel(request.targetType))}数据修改</b>
-              <p>${escapeHTML(request.reason || "未填写申请原因")}</p>
-            </div>
-            <div class="diff"><em>${escapeHTML(statusLabel(request.status))}</em><strong>${escapeHTML(request.targetId || "-")}</strong></div>
-            <footer>
-              ${request.status === "pending" ? `<button data-request-review="${escapeHTML(request.id)}" data-action="approve">通过</button><button class="danger" data-request-review="${escapeHTML(request.id)}" data-action="reject">驳回</button>` : `<button data-request-open="${escapeHTML(request.id)}">查看</button>`}
-            </footer>
-          </article>
-        `).join("") || `<div class="empty-state">暂无修改申请</div>`}
+      <div class="approval-summary">
+        <article class="${counts.pending ? "hot" : ""}"><span>待审批</span><b>${counts.pending}</b><em>需要处理</em></article>
+        <article><span>已通过</span><b>${counts.approved}</b><em>已落库</em></article>
+        <article><span>已驳回</span><b>${counts.rejected}</b><em>保留记录</em></article>
+        <article><span>申请总数</span><b>${counts.total}</b><em>全部留痕</em></article>
+      </div>
+      <div class="approval-filter-bar">
+        ${filters.map(([key, label, count]) => `<button class="${state.approvalStatus === key ? "active" : ""}" data-approval-filter="${key}">${label}<b>${count}</b></button>`).join("")}
+      </div>
+      <div class="approval-list approval-list-modern">
+        ${rows.map(approvalCardHTML).join("") || `<div class="empty-state">当前筛选下暂无审批申请</div>`}
       </div>
     </section>
   `;
-  $("#pageAside").innerHTML = "";
+  $("#pageAside").innerHTML = asideStack(liveActivityCard({ limit: 6 }));
+  bindLiveActivity();
 }
 
 const DATA_PERIODS = [
@@ -3630,7 +3733,7 @@ function renderProfilePage() {
         <div class="permission-list profile-permissions">
           ${permissionItem("资产台账", "查看 / 修改 / 追踪状态", true)}
           ${permissionItem("异常复核", "处理异常复核闭环", user.roleCode !== "inspector")}
-          ${permissionItem("修改审批", "审批字段修正与台账修改", user.roleCode === "admin" || user.roleCode === "manager" || user.roleCode === "supervisor")}
+          ${permissionItem("审批中心", "审批字段修正与台账修改", user.roleCode === "admin" || user.roleCode === "manager" || user.roleCode === "supervisor")}
           ${permissionItem("用户管理", "后台账号 / 角色 / 部门", user.roleCode === "admin")}
         </div>
       </article>
@@ -3699,7 +3802,7 @@ function renderProfilePage() {
         <div class="todo-head"><b>快速入口</b></div>
         <a class="todo-row info" data-page-link="approval">
           <img src="./assets/icon-bulb.svg" alt=""/>
-          <span>修改审批</span><b>${pending}</b><em>去审批 →</em>
+          <span>审批中心</span><b>${pending}</b><em>去审批 →</em>
         </a>
         <a class="todo-row info" data-page-link="ledger">
           <img src="./assets/nav-asset.svg" alt=""/>
@@ -4682,6 +4785,10 @@ function bindEvents() {
     render();
   });
   $("#refreshBtn").addEventListener("click", () => loadData());
+  $("#approvalShortcut")?.addEventListener("click", () => {
+    state.approvalStatus = "pending";
+    setPage("approval");
+  });
   $("#systemConfigBtn").addEventListener("click", () => setPage("system"));
   $("#drawerClose").addEventListener("click", closeDrawer);
   $("#drawerMask").addEventListener("click", closeDrawer);
@@ -4736,6 +4843,7 @@ function bindEvents() {
       return;
     }
     const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;
+    const approvalFilter = event.target.closest("[data-approval-filter]")?.dataset.approvalFilter;
     const assetId = event.target.closest("[data-asset-select]")?.dataset.assetSelect;
     const assetDetailId = event.target.closest("[data-asset-detail]")?.dataset.assetDetail;
     const recordId = event.target.closest("[data-record-select]")?.dataset.recordSelect;
@@ -4766,6 +4874,17 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       setPage(pageLink);
+      return;
+    }
+    if (approvalFilter) {
+      event.preventDefault();
+      event.stopPropagation();
+      state.approvalStatus = approvalFilter;
+      const url = new URL(location.href);
+      url.searchParams.set("page", "approval");
+      url.searchParams.set("approvalStatus", approvalFilter);
+      history.replaceState({ page: "approval" }, "", url);
+      render();
       return;
     }
     if (userBadge) {

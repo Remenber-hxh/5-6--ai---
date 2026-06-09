@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JADEAST 智巡后台</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=20260602-trend-cockpit-4" />
+  <link rel="stylesheet" href="./styles.css?v=20260609-approval-center-1" />
 </head>
 <body>
   <div class="monitor-frame">
@@ -22,7 +22,7 @@
           <button data-page="device"><img src="./assets/nav-device.svg" alt=""/>设备管理</button>
           <span>异常管理</span>
           <button data-page="exception"><img src="./assets/nav-exception.svg" alt=""/>异常复核</button>
-          <button data-page="approval"><img src="./assets/nav-approval.svg" alt=""/>修改审批</button>
+          <button data-page="approval"><img src="./assets/nav-approval.svg" alt=""/>审批中心</button>
           <span>数据中心</span>
           <button data-page="data"><img src="./assets/nav-data.svg" alt=""/>数据看板</button>
           <span>账号与审计</span>
@@ -39,6 +39,7 @@
         </label>
         <div class="topbar-actions">
           <button class="icon-btn" id="refreshBtn" title="刷新"><img src="./assets/icon-refresh.svg" alt="" /><em id="pendingBadge">0</em></button>
+          <button class="approval-shortcut" id="approvalShortcut" type="button" title="进入审批中心">待审批 <b id="approvalShortcutCount">0</b></button>
           <button class="icon-btn" id="systemConfigBtn" title="系统配置"><img src="./assets/icon-settings.svg" alt="" /></button>
           <div class="admin-user"><b>张</b><span>张管理员</span></div>
         </div>
@@ -56,6 +57,6 @@
   </aside>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260605-engineering-loop-2"></script>
+  <script src="./app.js?v=20260609-approval-center-1"></script>
 </body>
 </html>
