@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -29,7 +30,7 @@ func (s *Server) notifyInspectionSubmitted(rec *Record, assets []*AssetEntry) {
 		fmt.Sprintf("> 巡检人：%s", firstNonEmpty(rec.Inspector, "未填写")),
 		fmt.Sprintf("> 状态：%s", status),
 		fmt.Sprintf("> AI建议：%s", truncate(advice, 90)),
-		fmt.Sprintf("> 处理入口：%s", s.adminURL()),
+		fmt.Sprintf("> 处理入口：%s", markdownLink("查看巡检记录", s.adminRecordURL(rec.ID))),
 	}, "\n")
 	s.sendWeWorkBotMarkdownAsync("inspection.submitted", content)
 }
@@ -43,7 +44,7 @@ func (s *Server) notifyChangeRequestCreated(cr *ChangeRequest) {
 		fmt.Sprintf("> 申请人：%s", firstNonEmpty(cr.RequestedBy, "未填写")),
 		fmt.Sprintf("> 对象：%s", changeTargetLabel(cr.TargetType, cr.TargetID)),
 		fmt.Sprintf("> 原因：%s", truncate(cr.Reason, 100)),
-		fmt.Sprintf("> 处理入口：%s", s.adminURL()),
+		fmt.Sprintf("> 审批入口：%s", markdownLink("进入审批详情", s.adminChangeRequestURL(cr.ID))),
 	}, "\n")
 	s.sendWeWorkBotMarkdownAsync("change_request.created", content)
 }
@@ -59,7 +60,7 @@ func (s *Server) notifyChangeRequestReviewed(cr *ChangeRequest, resultText strin
 		fmt.Sprintf("> 结果：%s", resultText),
 		fmt.Sprintf("> 处理人：%s", firstNonEmpty(cr.ReviewedBy, "未填写")),
 		fmt.Sprintf("> 说明：%s", truncate(firstNonEmpty(cr.ReviewNote, "无"), 100)),
-		fmt.Sprintf("> 后台入口：%s", s.adminURL()),
+		fmt.Sprintf("> 查看结果：%s", markdownLink("打开审批记录", s.adminChangeRequestURL(cr.ID))),
 	}, "\n")
 	s.sendWeWorkBotMarkdownAsync("change_request.reviewed", content)
 }
@@ -78,8 +79,51 @@ func (s *Server) sendWeWorkBotMarkdownAsync(event, content string) {
 }
 
 func (s *Server) adminURL() string {
+	return s.adminPageURL("", nil)
+}
+
+func (s *Server) adminChangeRequestURL(id string) string {
+	return s.adminPageURL("approval", map[string]string{"requestId": id})
+}
+
+func (s *Server) adminRecordURL(id string) string {
+	return s.adminPageURL("record", map[string]string{"recordId": id})
+}
+
+func (s *Server) adminAssetURL(id string) string {
+	return s.adminPageURL("ledger", map[string]string{"assetId": id})
+}
+
+func (s *Server) adminPageURL(page string, params map[string]string) string {
 	base := strings.TrimRight(firstNonEmpty(s.publicBaseURL, "https://ai-demo.jadeastech.com"), "/")
+	values := url.Values{}
+	page = strings.TrimSpace(page)
+	if page != "" {
+		values.Set("page", page)
+	}
+	for key, value := range params {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key != "" && value != "" {
+			values.Set(key, value)
+		}
+	}
+	if encoded := values.Encode(); encoded != "" {
+		return base + "/admin/?" + encoded
+	}
 	return base + "/admin/"
+}
+
+func markdownLink(text, href string) string {
+	text = strings.TrimSpace(text)
+	href = strings.TrimSpace(href)
+	if text == "" {
+		text = href
+	}
+	if href == "" {
+		return text
+	}
+	return fmt.Sprintf("[%s](%s)", strings.ReplaceAll(text, "]", "］"), href)
 }
 
 func assetsNeedingAttention(assets []*AssetEntry) []*AssetEntry {

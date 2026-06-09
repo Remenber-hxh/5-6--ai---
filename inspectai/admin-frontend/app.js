@@ -58,6 +58,7 @@ const state = {
   confirmLogs: {},  // §4 记录的字段确认留痕：{ recordId → [log,...] }
   dataInsights: {}, // 阶段一 数据看板缓存：{ key → { overview, items, summary, model, generatedAt } }
   loadErrors: {},   // P1-4 接口失败留痕：{ "scope:id" → 错误消息 }；为空表示无错
+  handledDeepLink: "",
   recordPage: 0,
   filters: {
     assetType: "",
@@ -648,6 +649,7 @@ async function loadData(showToast = true) {
     }
     renderProjectOptions();
     render();
+    applyDeepLink();
     if (showToast) toast("后台数据已刷新");
   } catch (error) {
     renderError(error.message);
@@ -672,6 +674,54 @@ function setPage(page, push = true) {
     history.pushState({ page: state.page }, "", url);
   }
   render();
+}
+
+function applyDeepLink() {
+  const params = new URLSearchParams(location.search);
+  const requestId = params.get("requestId") || params.get("approvalId");
+  const recordId = params.get("recordId");
+  const assetId = params.get("assetId");
+  const key = `${requestId || ""}|${recordId || ""}|${assetId || ""}`;
+  if (!key.replaceAll("|", "") || state.handledDeepLink === key) return;
+
+  if (requestId) {
+    const request = state.requests.find((item) => item.id === requestId);
+    if (!request) return;
+    state.handledDeepLink = key;
+    if (state.page !== "approval") {
+      state.page = "approval";
+      render();
+    }
+    openRequestDrawer(requestId);
+    return;
+  }
+
+  if (recordId) {
+    const record = state.records.find((item) => item.id === recordId);
+    if (!record) return;
+    state.handledDeepLink = key;
+    state.selectedRecordId = recordId;
+    if (state.page !== "record") {
+      state.page = "record";
+      render();
+    } else {
+      render();
+    }
+    return;
+  }
+
+  if (assetId) {
+    const asset = state.assets.find((item) => item.id === assetId);
+    if (!asset) return;
+    state.handledDeepLink = key;
+    state.selectedAssetId = assetId;
+    if (state.page !== "ledger") {
+      state.page = "ledger";
+      render();
+    } else {
+      render();
+    }
+  }
 }
 
 function setLoginScreen(enabled) {
@@ -4638,6 +4688,7 @@ function bindEvents() {
   window.addEventListener("popstate", () => {
     state.page = new URLSearchParams(location.search).get("page") || "dashboard";
     render();
+    applyDeepLink();
   });
 
   document.addEventListener("click", async (event) => {
