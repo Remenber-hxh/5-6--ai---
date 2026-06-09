@@ -4,6 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS records (
     id                  VARCHAR(64)  NOT NULL PRIMARY KEY,
+    record_no           VARCHAR(64)  NOT NULL DEFAULT '',
     project             VARCHAR(128) NOT NULL,
     point_id            VARCHAR(64)  NOT NULL,
     point_name          VARCHAR(128) NOT NULL,
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS records (
     created_at          VARCHAR(40)  NOT NULL,
     updated_at          VARCHAR(40)  NOT NULL,
     INDEX idx_records_created_at (created_at),
+    INDEX idx_records_record_no (record_no),
     INDEX idx_records_template_id (template_id),
     INDEX idx_records_inspector_user_id (inspector_user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -152,6 +152,9 @@ func NewMemStore() *MemStore {
 func (s *MemStore) CreateRecord(rec *Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if strings.TrimSpace(rec.RecordNo) == "" {
+		rec.RecordNo = businessRecordNo(rec.ID, rec.Project, rec.PointID, rec.PointName, rec.CreatedAt)
+	}
 	s.records[rec.ID] = rec
 	return nil
 }
@@ -606,6 +609,11 @@ func (s *SQLiteStore) ensureRecordOwnershipSchema() error {
 			mysql:  "ALTER TABLE records ADD COLUMN inspector_user_id VARCHAR(64) NOT NULL DEFAULT ''",
 		},
 		{
+			name:   "record_no",
+			sqlite: "ALTER TABLE records ADD COLUMN record_no TEXT NOT NULL DEFAULT ''",
+			mysql:  "ALTER TABLE records ADD COLUMN record_no VARCHAR(64) NOT NULL DEFAULT ''",
+		},
+		{
 			name:   "engineering_task_id",
 			sqlite: "ALTER TABLE records ADD COLUMN engineering_task_id TEXT NOT NULL DEFAULT ''",
 			mysql:  "ALTER TABLE records ADD COLUMN engineering_task_id VARCHAR(64) NOT NULL DEFAULT ''",
@@ -634,12 +642,33 @@ func (s *SQLiteStore) ensureRecordOwnershipSchema() error {
 			return fmt.Errorf("inspect index %s: %w", indexName, err)
 		}
 		if hasIndex {
-			return nil
+			stmt = ""
+		} else {
+			stmt = "CREATE INDEX " + indexName + " ON records(inspector_user_id, created_at)"
 		}
-		stmt = "CREATE INDEX " + indexName + " ON records(inspector_user_id, created_at)"
 	}
-	if _, err := s.db.Exec(stmt); err != nil {
-		return fmt.Errorf("create index %s: %w", indexName, err)
+	if stmt != "" {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("create index %s: %w", indexName, err)
+		}
+	}
+	recordNoIndex := "idx_records_record_no"
+	recordNoStmt := "CREATE INDEX IF NOT EXISTS " + recordNoIndex + " ON records(record_no)"
+	if s.dialect == "mysql" {
+		hasIndex, err := s.hasIndex("records", recordNoIndex)
+		if err != nil {
+			return fmt.Errorf("inspect index %s: %w", recordNoIndex, err)
+		}
+		if hasIndex {
+			recordNoStmt = ""
+		} else {
+			recordNoStmt = "CREATE INDEX " + recordNoIndex + " ON records(record_no)"
+		}
+	}
+	if recordNoStmt != "" {
+		if _, err := s.db.Exec(recordNoStmt); err != nil {
+			return fmt.Errorf("create index %s: %w", recordNoIndex, err)
+		}
 	}
 	return nil
 }
@@ -857,14 +886,14 @@ func (s *SQLiteStore) CreateRecord(rec *Record) error {
 	}
 	_, err := s.db.Exec(`
 		INSERT INTO records (
-			id, project, point_id, point_name, template_id, template_name,
+			id, record_no, project, point_id, point_name, template_id, template_name,
 			type, inspector, inspector_user_id, capture_attempts, manual_required,
 			recognition_status, retake_reason, task_id, engineering_task_id,
 			fields_json, images_json, report,
 			ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
 			submitted, submitted_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rec.ID, rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rec.ID, rec.RecordNo, rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
 		rec.Type, rec.Inspector, rec.InspectorUserID, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID, rec.EngineeringTaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
@@ -888,14 +917,14 @@ func updateRecordExec(exec sqlExecutor, rec *Record) error {
 	rec.UpdatedAt = updatedAt
 	_, err := exec.Exec(`
 		UPDATE records SET
-			project=?, point_id=?, point_name=?, template_id=?, template_name=?,
+			record_no=?, project=?, point_id=?, point_name=?, template_id=?, template_name=?,
 			type=?, inspector=?, inspector_user_id=?, capture_attempts=?, manual_required=?,
 			recognition_status=?, retake_reason=?, task_id=?, engineering_task_id=?,
 			fields_json=?, images_json=?, report=?,
 			ai_summary=?, ai_summary_tags=?, ai_recommendations=?, ai_summary_error=?,
 			submitted=?, submitted_at=?, updated_at=?
 		WHERE id=?`,
-		rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
+		rec.RecordNo, rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
 		rec.Type, rec.Inspector, rec.InspectorUserID, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID, rec.EngineeringTaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
@@ -912,7 +941,7 @@ func (s *SQLiteStore) GetRecord(id string) (*Record, error) {
 
 func getRecordExec(queryer sqlQueryer, id string) (*Record, error) {
 	row := queryer.QueryRow(`
-		SELECT id, project, point_id, point_name, template_id, template_name,
+		SELECT id, record_no, project, point_id, point_name, template_id, template_name,
 		       type, inspector, inspector_user_id, capture_attempts, manual_required,
 		       recognition_status, retake_reason, task_id, engineering_task_id,
 		       fields_json, images_json, report,
@@ -927,7 +956,7 @@ func (s *SQLiteStore) ListRecords(limit int) ([]*Record, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(`
-		SELECT id, project, point_id, point_name, template_id, template_name,
+		SELECT id, record_no, project, point_id, point_name, template_id, template_name,
 		       type, inspector, inspector_user_id, capture_attempts, manual_required,
 		       recognition_status, retake_reason, task_id, engineering_task_id,
 		       fields_json, images_json, report,
@@ -954,7 +983,7 @@ func (s *SQLiteStore) ListRecordsByOwner(inspectorUserID, displayName, username 
 		limit = 100
 	}
 	rows, err := s.db.Query(`
-		SELECT id, project, point_id, point_name, template_id, template_name,
+		SELECT id, record_no, project, point_id, point_name, template_id, template_name,
 		       type, inspector, inspector_user_id, capture_attempts, manual_required,
 		       recognition_status, retake_reason, task_id, engineering_task_id,
 		       fields_json, images_json, report,
@@ -991,7 +1020,7 @@ func scanRecord(row scanner) (*Record, error) {
 	var createdStr, updatedStr string
 	var manualInt, submittedInt int
 	err := row.Scan(
-		&rec.ID, &rec.Project, &rec.PointID, &rec.PointName, &rec.TemplateID, &rec.TemplateName,
+		&rec.ID, &rec.RecordNo, &rec.Project, &rec.PointID, &rec.PointName, &rec.TemplateID, &rec.TemplateName,
 		&rec.Type, &rec.Inspector, &rec.InspectorUserID, &rec.CaptureAttempts, &manualInt,
 		&rec.RecognitionStatus, &rec.RetakeReason, &rec.TaskID, &rec.EngineeringTaskID,
 		&fieldsJSON, &imagesJSON, &rec.Report,
@@ -1009,6 +1038,9 @@ func scanRecord(row scanner) (*Record, error) {
 	_ = json.Unmarshal([]byte(recosJSON), &rec.AIRecommendations)
 	rec.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdStr)
 	rec.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedStr)
+	if strings.TrimSpace(rec.RecordNo) == "" {
+		rec.RecordNo = businessRecordNo(rec.ID, rec.Project, rec.PointID, rec.PointName, rec.CreatedAt)
+	}
 	if submittedAt.Valid {
 		t, _ := time.Parse(time.RFC3339Nano, submittedAt.String)
 		rec.SubmittedAt = &t

@@ -18,6 +18,90 @@ func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d_%s", prefix, time.Now().UnixNano(), hex.EncodeToString(buf))
 }
 
+func businessRecordNo(id, project, pointID, pointName string, createdAt time.Time) string {
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	return fmt.Sprintf("ZX-%s-%s-%s-%s",
+		createdAt.Format("20060102"),
+		businessProjectCode(project),
+		businessPointCode(pointID, pointName),
+		businessIDSuffix(id),
+	)
+}
+
+func businessProjectCode(project string) string {
+	switch strings.TrimSpace(project) {
+	case "会议中心":
+		return "HYZX"
+	case "国会中心":
+		return "GHZX"
+	case "紫涵雅集":
+		return "ZHYJ"
+	default:
+		return businessCode(project, "PROJ")
+	}
+}
+
+func businessPointCode(pointID, pointName string) string {
+	switch strings.TrimSpace(pointID) {
+	case "p_elevator_no_room":
+		return "WJDT"
+	case "p_elevator_machine_room":
+		return "YJDT"
+	case "p_escalator":
+		return "FT"
+	case "p_power_room":
+		return "BDS"
+	case "p_ups":
+		return "UPS"
+	case "p_fire_pump":
+		return "XFBF"
+	case "p_water_pump":
+		return "SHSB"
+	case "p_hot_water":
+		return "RSJF"
+	case "p_zihan_energy":
+		return "NHCB"
+	case "p_zihan_daily":
+		return "ZHXJ"
+	default:
+		return businessCode(firstNonEmpty(pointID, pointName), "POINT")
+	}
+}
+
+func businessIDSuffix(id string) string {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	if id == "" {
+		return "0000"
+	}
+	parts := strings.Split(id, "_")
+	id = parts[len(parts)-1]
+	id = businessCode(id, "0000")
+	if len(id) > 4 {
+		return id[len(id)-4:]
+	}
+	return fmt.Sprintf("%04s", id)
+}
+
+func businessCode(value, fallback string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	var b strings.Builder
+	for _, r := range value {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	if out == "" {
+		out = fallback
+	}
+	if len(out) > 12 {
+		out = out[:12]
+	}
+	return out
+}
+
 func sanitizeFileName(name string) string {
 	name = filepath.Base(name)
 	replacer := strings.NewReplacer(

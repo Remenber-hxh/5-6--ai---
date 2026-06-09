@@ -1589,8 +1589,10 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
+	recordID := newID("rec")
 	rec := &Record{
-		ID:                newID("rec"),
+		ID:                recordID,
+		RecordNo:          businessRecordNo(recordID, point.Project, point.ID, point.Name, now),
 		Project:           point.Project,
 		PointID:           point.ID,
 		PointName:         point.Name,

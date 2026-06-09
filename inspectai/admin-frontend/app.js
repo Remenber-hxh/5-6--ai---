@@ -7,11 +7,8 @@ const pageLabels = {
   dashboard: "首页",
   profile: "个人首页",
   plan: "巡检计划",
-  task: "巡检任务",
   record: "巡检记录",
   ledger: "资产台账",
-  device: "设备管理",
-  exception: "异常复核",
   approval: "审批中心",
   data: "数据看板",
   report: "统计报表",
@@ -19,6 +16,13 @@ const pageLabels = {
   logs: "操作日志",
   system: "系统管理",
 };
+
+function normalizedPage(page) {
+  if (page === "task") return "plan";
+  if (page === "exception") return "approval";
+  if (page === "device") return "ledger";
+  return pageLabels[page] ? page : "dashboard";
+}
 
 function defaultApiBase() {
   // 生产场景：浏览器从 nginx 反代进来（80/443），后端在容器内，
@@ -37,7 +41,7 @@ function defaultApiBase() {
 const state = {
   apiBase: localStorage.getItem(API_BASE_KEY) || defaultApiBase(),
   token: localStorage.getItem(API_TOKEN_KEY) || "",
-  page: new URLSearchParams(location.search).get("page") || "dashboard",
+  page: normalizedPage(new URLSearchParams(location.search).get("page") || "dashboard"),
   assets: [],
   records: [],
   requests: [],
@@ -124,6 +128,42 @@ function fmtTime(value, mode = "minute") {
     ? { year: "numeric", month: "2-digit", day: "2-digit" }
     : { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
   return date.toLocaleString("zh-CN", options).replace(/\//g, "-");
+}
+
+function businessCode(value = "", fallback = "NA") {
+  const code = String(value).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return (code || fallback).slice(0, 12);
+}
+
+function recordProjectCode(project = "") {
+  const map = { "会议中心": "HYZX", "国会中心": "GHZX", "紫涵雅集": "ZHYJ" };
+  return map[project] || businessCode(project, "PROJ");
+}
+
+function recordPointCode(record = {}) {
+  const map = {
+    p_elevator_no_room: "WJDT",
+    p_elevator_machine_room: "YJDT",
+    p_escalator: "FT",
+    p_power_room: "BDS",
+    p_ups: "UPS",
+    p_fire_pump: "XFBF",
+    p_water_pump: "SHSB",
+    p_hot_water: "RSJF",
+    p_zihan_energy: "NHCB",
+    p_zihan_daily: "ZHXJ",
+  };
+  return map[record.pointId] || businessCode(record.pointId || record.pointName || record.templateId, "POINT");
+}
+
+function recordNo(record = {}) {
+  if (record.recordNo) return record.recordNo;
+  const date = new Date(record.createdAt || Date.now());
+  const day = Number.isNaN(date.getTime())
+    ? "00000000"
+    : `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  const suffix = businessCode(String(record.id || "").split("_").pop(), "0000").slice(-4).padStart(4, "0");
+  return `ZX-${day}-${recordProjectCode(record.project)}-${recordPointCode(record)}-${suffix}`;
 }
 
 function todayKey() {
@@ -277,13 +317,12 @@ function normalizeStatus(status = "") {
   if (raw.includes("异常") || raw === "danger") return "danger";
   if (raw.includes("维修") || raw === "repair") return "repair";
   if (raw.includes("执行中") || raw.includes("已完成") || raw.includes("启用")) return "normal";
-  if (raw.includes("复核") || raw.includes("待") || raw === "warning") return "warning";
+  if (raw.includes("复核") || raw.includes("补图") || raw.includes("人工填写") || raw.includes("待") || raw === "warning") return "warning";
   return "unknown";
 }
 
 const ASSET_STATUS_OPTIONS = ["正常", "待复核", "异常", "待维修", "未巡检", "未知"];
-const RECORD_RESULT_OPTIONS = ["正常", "待复核", "异常"];
-const RECORD_FLOW_OPTIONS = ["未开始", "识别中", "已识别", "需重拍", "人工填写", "已提交"];
+const RECORD_STATUS_OPTIONS = ["正常", "异常", "待复核", "需补图", "人工填写", "已完成"];
 const PLAN_STATUS_OPTIONS = ["启用", "执行中", "待执行", "已完成", "未排期", "暂停", "草稿", "已停用"];
 
 function statusLabel(value = "") {
@@ -293,10 +332,10 @@ function statusLabel(value = "") {
     danger: "异常",
     repair: "待维修",
     unknown: "未知",
-    not_started: "未开始",
-    processing: "识别中",
-    recognized: "已识别",
-    retake_required: "需重拍",
+    not_started: "待复核",
+    processing: "待复核",
+    recognized: "正常",
+    retake_required: "需补图",
     manual_required: "人工填写",
     pending: "待复核",
     approved: "已通过",
@@ -360,43 +399,45 @@ const ABNORMAL_VALUE_RE = /异常|告警|故障|离线|不合格|超标|漏水|�
 function recordLevel(record) {
   // 异常只认「人工确认后的字段值」，不扫 AI 总结 / 报告 / 解释文本：
   // 旧实现会把总结里的"未发现异常"、报告里的"需人工复核"误判成异常/待复核，
-  // 导致正常的已提交记录全被标成异常或待复核、normal 一条都露不出来。
+  // 导致正常闭环记录全被标成异常或待复核、normal 一条都露不出来。
   const valueText = (record.fields || []).map((field) => String(field.value || "")).join(" ");
   if (ABNORMAL_VALUE_RE.test(valueText)) return "danger";
-  // 已提交：提交时已拦截所有 needsReview / 必填缺失，无异常值即视为正常。
+  // 闭环记录：提交时已拦截所有 needsReview / 必填缺失，无异常值即视为正常。
   if (record.submitted) return "normal";
-  // 未提交：仍需人工介入的（低置信待确认 / 需重拍）标为待复核，其余按识别流程状态展示。
+  // 未闭环：仍需人工介入的（低置信待确认 / 需补图）标为待复核，其余按识别结果展示。
   if ((record.fields || []).some((field) => field.needsReview)) return "warning";
   if (record.recognitionStatus === "retake_required") return "warning";
   return "normal";
 }
 
-// 是否已产出可判定结果（已提交 / AI 已识别 / 已有字段值）。未到结果阶段不强标"正常"。
+// 是否已产出可判定结果（闭环完成 / AI 有结果 / 已有字段值）。未到结果阶段不强标"正常"。
 function hasInspectionResult(record) {
   if (record.submitted || record.recognitionStatus === "recognized") return true;
   return (record.fields || []).some((field) => String(field.value || "").trim());
 }
 
-// 业务结果状态：正常 / 待复核 / 异常 / ""（尚无结果）。主管真正关心的是这一轴。
-function recordResultStatus(record) {
-  if (!hasInspectionResult(record)) return "";
+function recordBusinessStatus(record) {
+  if (record.manualRequired || record.recognitionStatus === "manual_required") return "人工填写";
+  if (record.recognitionStatus === "retake_required") return "需补图";
   const level = recordLevel(record);
   if (level === "danger") return "异常";
   if (level === "warning") return "待复核";
-  return "正常";
+  if (record.submitted) return "已完成";
+  if (hasInspectionResult(record)) return "正常";
+  return "待复核";
 }
 
-// 流程状态：AI 识别 / 提交流程走到哪一步，与结果无关。
+// 兼容旧调用：记录对外只展示业务状态，不再拆成“识别流程状态”。
+function recordResultStatus(record) {
+  return recordBusinessStatus(record);
+}
+
 function recordFlowStatus(record) {
-  if (record.submitted) return "已提交";
-  if (record.manualRequired || record.recognitionStatus === "manual_required") return "人工填写";
-  const map = { not_started: "未开始", queued: "识别中", processing: "识别中", recognized: "已识别", retake_required: "需重拍" };
-  return map[record.recognitionStatus] || "未开始";
+  return recordBusinessStatus(record);
 }
 
-// 主状态（单标签展示位复用）：结果优先，无结果时回退流程状态。
 function recordStatus(record) {
-  return recordResultStatus(record) || recordFlowStatus(record);
+  return recordBusinessStatus(record);
 }
 
 function projects() {
@@ -446,6 +487,7 @@ function filteredRecords() {
 
 function recordSearchText(record) {
   return [
+    recordNo(record),
     record.id,
     record.project,
     record.pointName,
@@ -474,15 +516,13 @@ function filteredRecordRows() {
   const filters = state.recordFilters;
   const project = filters.project.trim();
   const template = filters.template.trim();
-  const result = filters.status.trim();                 // 结果状态筛选：正常 / 待复核 / 异常
-  const flowStatus = (filters.flowStatus || "").trim();  // 流程状态筛选：未开始 … 已提交
+  const result = filters.status.trim();
   const keyword = filters.keyword.trim().toLowerCase();
   return state.records.filter((record) => {
     if (state.selectedProject && !project && record.project !== state.selectedProject) return false;
     if (project && record.project !== project) return false;
     if (template && record.templateName !== template && record.templateId !== template) return false;
-    if (result && recordResultStatus(record) !== result) return false;
-    if (flowStatus && recordFlowStatus(record) !== flowStatus) return false;
+    if (result && recordBusinessStatus(record) !== result) return false;
     if (!keyword) return true;
     return recordSearchText(record).includes(keyword);
   });
@@ -668,7 +708,7 @@ function renderProjectOptions() {
 }
 
 function setPage(page, push = true) {
-  state.page = pageLabels[page] ? page : "dashboard";
+  state.page = normalizedPage(page);
   if (push) {
     const url = new URL(location.href);
     url.searchParams.set("page", state.page);
@@ -1351,7 +1391,7 @@ function aiFindingsPanel(issues) {
     <section class="panel ai-findings">
       <div class="panel-head">
         <h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 关键发现</h2>
-        <button class="link-btn" data-page-link="exception">全部 →</button>
+        <button class="link-btn" data-page-link="approval">全部 →</button>
       </div>
       <div class="finding-list">
         ${issues.map((it) => `
@@ -1461,18 +1501,15 @@ function quickAccessCounts(records) {
     records: records.length,
     approvals: filteredRequests().filter((item) => item.status === "pending").length,
     assets: state.assets.length,
-    devices: new Set(state.assets.map((a) => a.assetType).filter(Boolean)).size,
   };
 }
 
 function quickAccessTiles(c) {
   const tiles = [
-    { key: "plan",   label: "巡检计划", num: c.plans,   unit: "项启用", sub: "巡检与配置", page: "plan",   icon: "icon-plan.svg",   color: "#4f7cff" },
-    { key: "task",   label: "派发任务", num: c.tasks,   unit: "项待派", sub: "今日待派发", page: "task",   icon: "icon-task.svg",   color: "#12a968" },
+    { key: "plan",   label: "巡检计划", num: c.plans,   unit: "项计划", sub: c.tasks ? `${c.tasks} 项待执行` : "计划与任务", page: "plan",   icon: "icon-plan.svg",   color: "#4f7cff" },
     { key: "record", label: "巡检记录", num: c.records, unit: "条记录", sub: "本周累计",   page: "record", icon: "icon-record.svg", color: "#f59e0b" },
     { key: "approval", label: "审批中心", num: c.approvals, unit: "项待审", sub: "修改申请", page: "approval", icon: "nav-approval.svg", color: "#ef4b3f" },
     { key: "asset",  label: "资产台账", num: c.assets,  unit: "项资产", sub: "全量资产",   page: "ledger", icon: "icon-asset.svg",  color: "#8b5cf6" },
-    { key: "device", label: "设备管理", num: c.devices, unit: "类设备", sub: "设备类型",   page: "device", icon: "icon-device.svg", color: "#0ea5e9" },
     { key: "board",  label: "数据看板", num: null,       unit: "", sub: "报表与分析", page: "data",   icon: "icon-board.svg",  color: "#06b6d4" },
   ];
   return `
@@ -1526,17 +1563,17 @@ function dashboardAside({ monthly, pendingExceptions, pendingApprovals, pendingT
       </div>
       <div class="todo-card">
         <div class="todo-head"><b>你的待办</b></div>
-        <a class="todo-row danger"  data-page-link="exception">
+        <a class="todo-row danger" data-page-link="approval">
           <img src="./assets/icon-warning.svg" alt=""/>
-          <span>异常复核</span><b>${pendingExceptions}</b><em>立即处理 →</em>
+          <span>异常待处理</span><b>${pendingExceptions}</b><em>进审批 →</em>
         </a>
         <a class="todo-row warn" data-page-link="approval">
           <img src="./assets/icon-bulb.svg" alt=""/>
           <span>审批中心</span><b>${pendingApprovals}</b><em>去审批 →</em>
         </a>
-        <a class="todo-row info"  data-page-link="task">
+        <a class="todo-row info" data-page-link="plan">
           <img src="./assets/icon-task.svg" alt=""/>
-          <span>巡检任务</span><b>${pendingTasks}</b><em>查看 →</em>
+          <span>计划执行</span><b>${pendingTasks}</b><em>看计划 →</em>
         </a>
       </div>
     </div>
@@ -1602,6 +1639,7 @@ function asideFindings(issues, attentionItems = []) {
 
 function renderPlanPage() {
   const rows = filteredPlanRows();
+  const tasks = taskGroups();
   const activePlans = rows.filter((row) => !["暂停", "已停用", "已完成"].includes(row.status));
   const engineeringCount = rows.filter((row) => row.source === "engineering").length;
   const budgetTotal = rows.reduce((sum, row) => sum + Number(row.budgetAmount || 0), 0);
@@ -1633,12 +1671,31 @@ function renderPlanPage() {
         </table>
       </div>
     </section>
+    ${planExecutionBoard(tasks)}
   `;
   const selected = rows.find((r) => r.id === state.selectedPlanId) || null;
   $("#pageAside").innerHTML = asideStack(planEditCard(selected));
   bindPlanFilters();
   bindPlanRowClicks();
   bindPlanEditForm();
+  bindTaskCardClicks();
+  bindTaskDetailActions();
+}
+
+function planExecutionBoard(tasks) {
+  return `
+    <section class="panel plan-execution-panel">
+      <div class="panel-head">
+        <div><h2>计划执行情况</h2><p>任务已并入计划，按执行状态跟踪，不再单独拆一个任务入口。</p></div>
+      </div>
+      <div class="task-board plan-task-board">
+        ${taskColumn("待执行", tasks.pending, "warning")}
+        ${taskColumn("进行中", tasks.processing, "normal")}
+        ${taskColumn("已完成", tasks.done, "normal")}
+        ${taskColumn("需跟进", tasks.overdue, "danger")}
+      </div>
+    </section>
+  `;
 }
 
 function bindPlanRowClicks() {
@@ -1789,7 +1846,7 @@ function bindPlanEditForm() {
         });
         toast("执行任务已派发");
         await loadData(false);
-        setPage("task", false);
+        setPage("plan", false);
       } catch (error) {
         toast(error.message || "任务派发失败");
       }
@@ -1798,7 +1855,7 @@ function bindPlanEditForm() {
   document.querySelectorAll("[data-eng-task-link]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.selectedTaskId = btn.dataset.engTaskLink;
-      setPage("task");
+      setPage("plan");
     });
   });
   const form = document.getElementById("planEditForm");
@@ -2311,8 +2368,8 @@ function taskGroups() {
 function recordToTask(record) {
   return {
     title: record.templateName || record.pointName || "巡检任务",
-    meta: `${record.pointName || "-"} · ${fmtTime(record.createdAt)} · ${statusLabel(record.recognitionStatus)}`,
-    status: record.submitted ? "完成" : statusLabel(record.recognitionStatus),
+    meta: `${record.pointName || "-"} · ${fmtTime(record.createdAt)} · ${recordBusinessStatus(record)}`,
+    status: recordBusinessStatus(record),
   };
 }
 
@@ -2349,14 +2406,12 @@ function renderRecordPage() {
       </div>
       <div class="record-list">
         ${records.map((record) => {
-          const result = recordResultStatus(record);
-          const flow = recordFlowStatus(record);
-          const main = result || flow;
+          const main = recordBusinessStatus(record);
           return `
           <article data-record-select="${escapeHTML(record.id)}" class="${record.id === state.selectedRecordId ? "selected-card" : ""}">
             <time>${fmtTime(record.createdAt)}</time>
-            <div><b>${escapeHTML(record.pointName || record.templateName || "巡检记录")}</b><span>${escapeHTML(primaryReading(record) || record.aiSummary || record.report || "-")}</span></div>
-            <div class="status-col"><em class="status ${statusClass(main)}">${escapeHTML(main)}</em>${result ? `<small class="flow-tag">${escapeHTML(flow)}</small>` : ""}</div>
+            <div><b>${escapeHTML(record.pointName || record.templateName || "巡检记录")}</b><span>${escapeHTML(recordNo(record))} · ${escapeHTML(primaryReading(record) || record.aiSummary || record.report || "-")}</span></div>
+            <div class="status-col"><em class="status ${statusClass(main)}">${escapeHTML(main)}</em></div>
           </article>`;
         }).join("") || `<div class="empty-state">暂无巡检记录</div>`}
       </div>
@@ -2403,8 +2458,7 @@ function recordFiltersHTML() {
     <div class="filters">
       <select id="recordProjectFilter"><option value="">全部项目</option>${projectOptions.map((project) => `<option value="${escapeHTML(project)}" ${state.recordFilters.project === project ? "selected" : ""}>${escapeHTML(project)}</option>`).join("")}</select>
       <select id="recordTemplateFilter"><option value="">全部模板</option>${Array.from(templateMap.entries()).map(([value, label]) => `<option value="${escapeHTML(value)}" ${state.recordFilters.template === value ? "selected" : ""}>${escapeHTML(label)}</option>`).join("")}</select>
-      <select id="recordStatusFilter"><option value="">全部结果</option>${RECORD_RESULT_OPTIONS.map((s) => opt(s, state.recordFilters.status)).join("")}</select>
-      <select id="recordFlowFilter"><option value="">全部流程</option>${RECORD_FLOW_OPTIONS.map((s) => opt(s, state.recordFilters.flowStatus)).join("")}</select>
+      <select id="recordStatusFilter"><option value="">全部状态</option>${RECORD_STATUS_OPTIONS.map((s) => opt(s, state.recordFilters.status)).join("")}</select>
       <input id="recordKeywordInput" type="search" placeholder="搜索巡检人 / 点位" value="${escapeHTML(state.recordFilters.keyword)}" />
     </div>
   `;
@@ -2426,10 +2480,6 @@ function bindRecordFilters() {
   });
   $("#recordStatusFilter")?.addEventListener("change", (event) => {
     state.recordFilters.status = event.target.value;
-    refresh();
-  });
-  $("#recordFlowFilter")?.addEventListener("change", (event) => {
-    state.recordFilters.flowStatus = event.target.value;
     refresh();
   });
   $("#recordKeywordInput")?.addEventListener("input", (event) => {
@@ -2680,7 +2730,7 @@ function approvalTargetSummary(request) {
   if (record) {
     return {
       title: record.templateName || record.pointName || "巡检记录",
-      meta: `${record.pointName || record.project || "-"} · ${fmtTime(record.createdAt)}`,
+      meta: `${recordNo(record)} · ${record.pointName || record.project || "-"} · ${fmtTime(record.createdAt)}`,
     };
   }
   return { title: "巡检记录", meta: request.targetId || "-" };
@@ -2736,10 +2786,33 @@ function approvalCardHTML(request) {
   `;
 }
 
+function approvalAssetExceptionHTML(asset) {
+  return `
+    <article class="approval-card approval-asset-exception" data-asset-select="${escapeHTML(asset.id)}">
+      <div class="approval-card-main">
+        <div class="approval-card-top">
+          <span class="status ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "待复核")}</span>
+          <em>${escapeHTML(assetKey(asset))}</em>
+        </div>
+        <b>${escapeHTML(asset.assetName || "异常资产")}</b>
+        <p>${escapeHTML(locationText(asset))} · ${fmtTime(asset.lastInspectedAt)}</p>
+        <div class="approval-reason">异常摘要：${escapeHTML(asset.lastSummary || "该资产需要主管复核。")}</div>
+        <div class="approval-patch">处理方式：查看证据后确认是否标记正常，或要求一线补图 / 修改字段。</div>
+      </div>
+      <footer>
+        <button class="btn-ghost" data-asset-select="${escapeHTML(asset.id)}">查看证据</button>
+        <button data-asset-normal="${escapeHTML(asset.id)}">标记正常</button>
+      </footer>
+    </article>
+  `;
+}
+
 function renderApprovalPage() {
   const all = filteredRequests();
   const counts = approvalCounts(all);
   const rows = approvalRows();
+  const exceptionAssets = filteredAssets().filter((asset) => ["warning", "danger", "repair"].includes(asset.statusLevel || normalizeStatus(asset.lastStatus)));
+  const showExceptions = state.approvalStatus === "pending" || state.approvalStatus === "all";
   const filters = [
     ["pending", "待审批", counts.pending],
     ["all", "全部", counts.total],
@@ -2753,7 +2826,7 @@ function renderApprovalPage() {
         <button data-drawer="approval">审批设置</button>
       </div>
       <div class="approval-summary">
-        <article class="${counts.pending ? "hot" : ""}"><span>待审批</span><b>${counts.pending}</b><em>需要处理</em></article>
+        <article class="${counts.pending || exceptionAssets.length ? "hot" : ""}"><span>待处理</span><b>${counts.pending + exceptionAssets.length}</b><em>审批 + 异常</em></article>
         <article><span>已通过</span><b>${counts.approved}</b><em>已落库</em></article>
         <article><span>已驳回</span><b>${counts.rejected}</b><em>保留记录</em></article>
         <article><span>申请总数</span><b>${counts.total}</b><em>全部留痕</em></article>
@@ -2762,7 +2835,9 @@ function renderApprovalPage() {
         ${filters.map(([key, label, count]) => `<button class="${state.approvalStatus === key ? "active" : ""}" data-approval-filter="${key}">${label}<b>${count}</b></button>`).join("")}
       </div>
       <div class="approval-list approval-list-modern">
-        ${rows.map(approvalCardHTML).join("") || `<div class="empty-state">当前筛选下暂无审批申请</div>`}
+        ${showExceptions ? exceptionAssets.map(approvalAssetExceptionHTML).join("") : ""}
+        ${rows.map(approvalCardHTML).join("")}
+        ${(!rows.length && (!showExceptions || !exceptionAssets.length)) ? `<div class="empty-state">当前筛选下暂无待处理事项</div>` : ""}
       </div>
     </section>
   `;
@@ -3724,7 +3799,7 @@ function renderProfilePage() {
     ${metrics([
       { label: "待审批", value: pending, sub: "修改申请", bad: pending > 0 },
       { label: "今日巡检", value: todayRecords, sub: "移动端记录" },
-      { label: "异常复核", value: abnormal, sub: "资产状态", bad: abnormal > 0 },
+      { label: "异常待处理", value: abnormal, sub: "资产状态", bad: abnormal > 0 },
       { label: "操作日志", value: logs.length, sub: "本人动作" },
     ])}
     <section class="page-grid two profile-grid">
@@ -3732,7 +3807,7 @@ function renderProfilePage() {
         <div class="panel-head"><h2>权限范围</h2></div>
         <div class="permission-list profile-permissions">
           ${permissionItem("资产台账", "查看 / 修改 / 追踪状态", true)}
-          ${permissionItem("异常复核", "处理异常复核闭环", user.roleCode !== "inspector")}
+          ${permissionItem("审批中心", "处理异常与修改申请", user.roleCode !== "inspector")}
           ${permissionItem("审批中心", "审批字段修正与台账修改", user.roleCode === "admin" || user.roleCode === "manager" || user.roleCode === "supervisor")}
           ${permissionItem("用户管理", "后台账号 / 角色 / 部门", user.roleCode === "admin")}
         </div>
@@ -3966,11 +4041,11 @@ const pageRenderers = {
   dashboard: renderDashboardPage,
   profile: renderProfilePage,
   plan: renderPlanPage,
-  task: renderTaskPage,
+  task: renderPlanPage,
   record: renderRecordPage,
   ledger: renderLedgerPage,
-  device: renderDevicePage,
-  exception: renderExceptionPage,
+  device: renderLedgerPage,
+  exception: renderApprovalPage,
   approval: renderApprovalPage,
   data: renderDataPage,
   users: renderUsersPage,
@@ -4110,6 +4185,7 @@ function renderRecordSide(record) {
     <div class="detail-head"><h2>记录详情</h2></div>
     ${renderLoadErrorBanner(`confirmLogs:${record.id}`)}
     <div class="side-stack">
+      <div class="info-card"><b>记录编号</b><span>${escapeHTML(recordNo(record))}</span></div>
       <div class="info-card"><b>AI 总结</b><span>${escapeHTML(record.aiSummary || record.report || "暂无总结")}</span></div>
       <div class="photo-row">${photos.slice(0, 2).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("")}</div>
       <table class="history-table"><thead><tr><th>字段</th><th>值</th><th>置信度</th></tr></thead><tbody>${(record.fields || []).slice(0, 8).map((field) => `<tr><td>${escapeHTML(field.label || field.code)}</td><td>${escapeHTML(field.value || field.aiValue || "-")}</td><td>${Math.round((field.confidence || 0) * 100)}%</td></tr>`).join("") || emptyRow(3, "暂无字段")}</tbody></table>
@@ -4222,8 +4298,8 @@ function exceptionQueuePanel(assets, requests) {
   ].slice(0, 5);
   return `
     <section class="panel queue-panel">
-      <div class="panel-head"><h2>异常复核队列</h2><button class="link-btn" data-page-link="exception">全部</button></div>
-      <div class="queue-list">${items.map((item) => `<div class="queue-item" ${item.assetId ? `data-asset-select="${escapeHTML(item.assetId)}"` : ""} ${item.requestId ? `data-request-open="${escapeHTML(item.requestId)}"` : ""}><i class="dot ${item.level === "danger" ? "danger" : "warning"}"></i><div><span class="queue-title">${escapeHTML(item.title)}</span><span class="queue-meta">${escapeHTML(item.meta)}</span></div><button class="queue-action">待复核</button></div>`).join("") || `<div class="empty-state">暂无异常复核任务</div>`}</div>
+      <div class="panel-head"><h2>待处理队列</h2><button class="link-btn" data-page-link="approval">全部</button></div>
+      <div class="queue-list">${items.map((item) => `<div class="queue-item" ${item.assetId ? `data-asset-select="${escapeHTML(item.assetId)}"` : ""} ${item.requestId ? `data-request-open="${escapeHTML(item.requestId)}"` : ""}><i class="dot ${item.level === "danger" ? "danger" : "warning"}"></i><div><span class="queue-title">${escapeHTML(item.title)}</span><span class="queue-meta">${escapeHTML(item.meta)}</span></div><button class="queue-action">待处理</button></div>`).join("") || `<div class="empty-state">暂无待处理事项</div>`}</div>
     </section>
   `;
 }
@@ -4405,7 +4481,7 @@ function openPlanDrawer() {
           <label>首次执行<input name="firstRun" type="datetime-local" value="${defaultDateTimeInput(18)}" required></label>
           <label>责任人<select name="owner">${ownerOptions(state.currentUser?.displayName || "张三")}</select></label>
           <label>AI 策略<select name="aiPolicy">
-            ${["视觉识别 + 人工确认", "视觉识别 + 异常复核", "仅人工填写", "先识别失败再人工兜底"].map((item) => optionHTML(item, item)).join("")}
+            ${["视觉识别 + 人工确认", "视觉识别 + 审批闭环", "仅人工填写", "先识别失败再人工兜底"].map((item) => optionHTML(item, item)).join("")}
           </select></label>
         </div>
       </section>
@@ -4426,7 +4502,7 @@ function openPlanDrawer() {
 
 function openTaskDrawer() {
   const plans = planRows();
-  openDrawer("派发巡检任务", `
+  openDrawer("新增计划执行项", `
     <form class="drawer-form" id="adminTaskForm">
       <section class="drawer-section">
         <h3>任务来源</h3>
@@ -4514,8 +4590,8 @@ async function createAdminTask(form) {
     });
     closeDrawer();
     await loadData(false);
-    setPage("task", false);
-    toast("工程任务已派发");
+    setPage("plan", false);
+    toast("执行项已加入计划");
     return;
   }
   const task = {
@@ -4537,8 +4613,8 @@ async function createAdminTask(form) {
   state.customTasks.unshift(task);
   saveLocalArray(ADMIN_TASKS_KEY, state.customTasks);
   closeDrawer();
-  setPage("task", false);
-  toast("巡检任务已派发");
+  setPage("plan", false);
+  toast("执行项已加入计划");
 }
 
 function fieldSummary(record) {
@@ -4751,17 +4827,16 @@ function exportRecordsWorkbook() {
   exportExcel(
     "智巡-巡检记录",
     "JADEAST 智巡巡检记录",
-    ["序号", "记录ID", "巡检时间", "所属项目", "巡检点位", "日报模板", "巡检人", "识别状态", "提交状态", "拍照次数", "主要识别", "字段明细", "AI 总结", "AI 建议"],
+    ["序号", "记录编号", "巡检时间", "所属项目", "巡检点位", "日报模板", "巡检人", "业务状态", "拍照次数", "主要识别", "字段明细", "AI 总结", "AI 建议"],
     rows.map((record, index) => [
       index + 1,
-      record.id,
+      recordNo(record),
       fmtTime(record.createdAt),
       record.project,
       record.pointName,
       record.templateName,
       record.inspector,
-      statusLabel(record.recognitionStatus),
-      record.submitted ? "已提交" : "未提交",
+      recordBusinessStatus(record),
       record.captureAttempts || 0,
       primaryReading(record),
       fieldSummary(record),
@@ -4793,7 +4868,7 @@ function bindEvents() {
   $("#drawerClose").addEventListener("click", closeDrawer);
   $("#drawerMask").addEventListener("click", closeDrawer);
   window.addEventListener("popstate", () => {
-    state.page = new URLSearchParams(location.search).get("page") || "dashboard";
+    state.page = normalizedPage(new URLSearchParams(location.search).get("page") || "dashboard");
     render();
     applyDeepLink();
   });

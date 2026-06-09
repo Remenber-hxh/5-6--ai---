@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS records (
     id                  TEXT PRIMARY KEY,
+    record_no           TEXT NOT NULL DEFAULT '',
     project             TEXT NOT NULL,
     point_id            TEXT NOT NULL,
     point_name          TEXT NOT NULL,
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_records_record_no ON records(record_no);
 CREATE INDEX IF NOT EXISTS idx_records_template_id ON records(template_id);
 CREATE INDEX IF NOT EXISTS idx_records_inspector_user_id ON records(inspector_user_id, created_at DESC);
 
