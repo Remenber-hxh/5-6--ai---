@@ -148,7 +148,7 @@ func (s *Server) applyCORS(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	w.Header().Set("Vary", "Origin")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
-	w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Idempotency-Key,Authorization,X-User-Role,X-User-Name,X-InspectAI-Token")
 	return true
 }
@@ -1416,6 +1416,10 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 		"lastStatus":  req.LastStatus,
 		"lastSummary": req.LastSummary,
 	})
+	// 资产被标记为"正常" → 异常闭环回写：清掉对应任务的待整改态、重算计划
+	if asset != nil && asset.LastStatus == "正常" {
+		s.onAssetResolvedNormal(id)
+	}
 	writeJSON(w, http.StatusOK, asset)
 }
 
@@ -2702,7 +2706,19 @@ func buildFallbackSummary(rec *Record) string {
 	abnormal := []string{}
 	for _, f := range rec.Fields {
 		v := strings.TrimSpace(f.Value)
-		if v == "异常" || v == "是" && strings.Contains(f.Label, "报警") {
+		if v == "" {
+			continue
+		}
+		bad := false
+		switch {
+		case v == "异常" || v == "缺失" || v == "破损" || v == "故障":
+			bad = true
+		case v == "否": // 正向合规问答"否"=不合格（负向问的"否"=正常）
+			bad = !isOccurrenceLabel(f.Label)
+		case v == "是" || v == "有": // 负向问（是否有异响/漏水/报警发生）答"是/有"=异常
+			bad = isOccurrenceLabel(f.Label)
+		}
+		if bad {
 			abnormal = append(abnormal, f.Label)
 		}
 	}
@@ -3175,11 +3191,21 @@ func inferOverallStatus(rec *Record) string {
 			}
 			continue
 		}
-		if v == "异常" || v == "缺失" || v == "破损" || v == "故障" {
+		switch {
+		case v == "异常" || v == "缺失" || v == "破损" || v == "故障":
 			hasAbnormal = true
-		}
-		if (strings.Contains(f.Label, "报警") || strings.Contains(f.Label, "异常") || strings.Contains(f.Label, "漏水")) && (v == "是" || v == "有") {
-			hasAbnormal = true
+		case v == "否":
+			// 正向合规问（……完好/正常/有效/齐全/牢固/未过期）答"否" = 不合格；
+			// 负向问（是否有异响…）答"否" = 正常，不算异常
+			if !isOccurrenceLabel(f.Label) {
+				hasAbnormal = true
+			}
+		case v == "是" || v == "有":
+			// 负向问（是否有异响/有无异味/是否漏水报警）答"是/有" = 发生异常；
+			// 正向合规问答"是"(完好/有效) = 正常
+			if isOccurrenceLabel(f.Label) {
+				hasAbnormal = true
+			}
 		}
 	}
 	if hasAbnormal {
@@ -3189,6 +3215,24 @@ func inferOverallStatus(rec *Record) string {
 		return "待复核"
 	}
 	return "正常"
+}
+
+// isOccurrenceLabel 判断字段是否为"发生即异常"的负向问（如"是否有异响""电箱内有无异味"
+// "是否漏水/报警"），这类答"是/有"才是异常；返回 false 表示正向合规问（"……完好/正常/有效/
+// 齐全"），这类答"否"才是异常。注意区分"设备无异响"(正向)与"有无异味"(负向)。
+func isOccurrenceLabel(label string) bool {
+	if strings.Contains(label, "有无") || strings.Contains(label, "是否有") {
+		return true
+	}
+	if strings.Contains(label, "无异") || strings.Contains(label, "无报警") || strings.Contains(label, "无漏") || strings.Contains(label, "无故障") {
+		return false
+	}
+	for _, kw := range []string{"异常", "是否漏水", "是否报警", "有异响", "有异味"} {
+		if strings.Contains(label, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func analysisToMap(resp *AnalyzeResponse) map[string]any {
@@ -3676,6 +3720,10 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 			return fmt.Errorf("asset patch 为空")
 		}
 		_, err := s.store.UpdateAssetMeta(cr.TargetID, name, status, summary)
+		if err == nil && status == "正常" {
+			// 修改审批通过、资产改回正常 → 异常闭环回写
+			s.onAssetResolvedNormal(cr.TargetID)
+		}
 		return err
 	case "record":
 		rec, err := s.store.GetRecord(cr.TargetID)

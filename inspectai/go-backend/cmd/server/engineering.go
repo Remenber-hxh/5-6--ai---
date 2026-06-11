@@ -22,6 +22,7 @@ const (
 	engTaskStatusDone       = "已完成"
 	engTaskStatusOverdue    = "逾期"
 	engTaskStatusCanceled   = "已取消"
+	engTaskStatusRectify    = "待整改" // 执行已完成但资产异常，待整改闭环
 )
 
 // EngineeringPlanItem 是工程年度计划事项，不等同于每日巡检点位。
@@ -125,18 +126,18 @@ func ensureEngineeringPlanSeeds(store Store) error {
 func engineeringPlanSeeds() []*EngineeringPlanItem {
 	now := time.Now()
 	rows := []EngineeringPlanItem{
-		{ID: "eng_plan_gh_001", SequenceNo: "1", Project: "国会中心", Category: "强制检测", WorkContent: "建筑消防设施检验报告", ScopeDesc: "年度消防设施检测与报告归档", BudgetAmount: 57456, BudgetText: "57456", PlanStart: "2026-12-01", PlanEnd: "2026-12-31", OwnerName: "丛洪忠", CycleText: "每年一次", Status: engPlanStatusPending, RiskLevel: "normal"},
-		{ID: "eng_plan_gh_002", SequenceNo: "2", Project: "国会中心", Category: "强制检测", WorkContent: "水质检测报告", ScopeDesc: "生活水质检测与报告留档", BudgetAmount: 4500, BudgetText: "4500", PlanStart: "2026-01", PlanEnd: "2026-07", OwnerName: "董圣军", CycleText: "每年1月、7月检测", Status: engPlanStatusRunning, RiskLevel: "warning"},
-		{ID: "eng_plan_gh_003", SequenceNo: "3", Project: "国会中心", Category: "强制检测", WorkContent: "军团菌检测", ScopeDesc: "重点涉水系统军团菌检测", BudgetAmount: 6400, BudgetText: "6400", PlanStart: "2026-07", PlanEnd: "2027-07", OwnerName: "丛洪忠", CycleText: "每年1月、4月、7月、10月检测", Status: engPlanStatusPending, RiskLevel: "warning"},
-		{ID: "eng_plan_gh_004", SequenceNo: "4", Project: "国会中心", Category: "强制检测", WorkContent: "电梯安全年度检验报告", ScopeDesc: "电梯年度安全检验、问题整改与报告归档", BudgetAmount: 23000, BudgetText: "23000", PlanStart: "2026-04", PlanEnd: "2026-10", OwnerName: "朱佳伟", CycleText: "每年4月、7月检测", Status: engPlanStatusRunning, RiskLevel: "warning"},
-		{ID: "eng_plan_gh_005", SequenceNo: "5", Project: "国会中心", Category: "强制检测", WorkContent: "绝缘工器具检验报告", ScopeDesc: "高压操作工具、验电器、绝缘用品检测", BudgetAmount: 12000, BudgetText: "12000", PlanStart: "2026-06", PlanEnd: "2026-12", OwnerName: "新博", CycleText: "半年/年度检测", Status: engPlanStatusRunning, RiskLevel: "normal"},
-		{ID: "eng_plan_gh_006", SequenceNo: "6", Project: "国会中心", Category: "强制检测", WorkContent: "防雷装置定期检查报告", ScopeDesc: "防雷装置检测与隐患整改跟踪", BudgetAmount: 30000, BudgetText: "30000", PlanStart: "2026-09", PlanEnd: "2026-11", OwnerName: "杜宪奎", CycleText: "每年一次", Status: engPlanStatusPending, RiskLevel: "normal"},
-		{ID: "eng_plan_gh_007", SequenceNo: "7", Project: "国会中心", Category: "强制检测", WorkContent: "排水系统排污检测", ScopeDesc: "排污许可证有效期、排放检测与资料归档", BudgetAmount: 0, BudgetText: "", PlanStart: "2024-06-19", PlanEnd: "2029-06-18", OwnerName: "董圣军", CycleText: "关注许可证到期", Status: engPlanStatusRunning, RiskLevel: "normal"},
-		{ID: "eng_plan_gh_008", SequenceNo: "8", Project: "国会中心", Category: "重点外委", WorkContent: "电梯维保", ScopeDesc: "电梯维保、故障响应与年度资料闭环", BudgetAmount: 196920, BudgetText: "196920", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "朱佳伟", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "warning"},
-		{ID: "eng_plan_gh_009", SequenceNo: "9", Project: "国会中心", Category: "重点外委", WorkContent: "中央空调主机维保", ScopeDesc: "中央空调主机年度维保与运行保障", BudgetAmount: 180000, BudgetText: "180000", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "新博", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "normal"},
-		{ID: "eng_plan_gh_010", SequenceNo: "10", Project: "国会中心", Category: "重点外委", WorkContent: "智能化系统维保", ScopeDesc: "网络、信息发布、灯光投影等智能化软硬件维保", BudgetAmount: 290000, BudgetText: "290000", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "汪佳澜", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "normal"},
-		{ID: "eng_plan_gh_011", SequenceNo: "11", Project: "国会中心", Category: "重点外委", WorkContent: "消防系统维保合同", ScopeDesc: "消防系统维保、报警联动与故障闭环", BudgetAmount: 220428.44, BudgetText: "220428.44", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "杜宪奎", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "warning"},
-		{ID: "eng_plan_gh_012", SequenceNo: "12", Project: "国会中心", Category: "重点外委", WorkContent: "锅炉维保", ScopeDesc: "锅炉设备维保、巡检和运行保障", BudgetAmount: 110000, BudgetText: "110000", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "新博", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_001", SequenceNo: "1", Project: "会议中心", Category: "强制检测", WorkContent: "建筑消防设施检验报告", ScopeDesc: "年度消防设施检测与报告归档", BudgetAmount: 57456, BudgetText: "57456", PlanStart: "2026-12-01", PlanEnd: "2026-12-31", OwnerName: "丛洪忠", CycleText: "每年一次", Status: engPlanStatusPending, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_002", SequenceNo: "2", Project: "会议中心", Category: "强制检测", WorkContent: "水质检测报告", ScopeDesc: "生活水质检测与报告留档", BudgetAmount: 4500, BudgetText: "4500", PlanStart: "2026-01", PlanEnd: "2026-07", OwnerName: "董圣军", CycleText: "每年1月、7月检测", Status: engPlanStatusRunning, RiskLevel: "warning"},
+		{ID: "eng_plan_gh_003", SequenceNo: "3", Project: "会议中心", Category: "强制检测", WorkContent: "军团菌检测", ScopeDesc: "重点涉水系统军团菌检测", BudgetAmount: 6400, BudgetText: "6400", PlanStart: "2026-07", PlanEnd: "2027-07", OwnerName: "丛洪忠", CycleText: "每年1月、4月、7月、10月检测", Status: engPlanStatusPending, RiskLevel: "warning"},
+		{ID: "eng_plan_gh_004", SequenceNo: "4", Project: "会议中心", Category: "强制检测", WorkContent: "电梯安全年度检验报告", ScopeDesc: "电梯年度安全检验、问题整改与报告归档", BudgetAmount: 23000, BudgetText: "23000", PlanStart: "2026-04", PlanEnd: "2026-10", OwnerName: "朱佳伟", CycleText: "每年4月、7月检测", Status: engPlanStatusRunning, RiskLevel: "warning"},
+		{ID: "eng_plan_gh_005", SequenceNo: "5", Project: "会议中心", Category: "强制检测", WorkContent: "绝缘工器具检验报告", ScopeDesc: "高压操作工具、验电器、绝缘用品检测", BudgetAmount: 12000, BudgetText: "12000", PlanStart: "2026-06", PlanEnd: "2026-12", OwnerName: "新博", CycleText: "半年/年度检测", Status: engPlanStatusRunning, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_006", SequenceNo: "6", Project: "会议中心", Category: "强制检测", WorkContent: "防雷装置定期检查报告", ScopeDesc: "防雷装置检测与隐患整改跟踪", BudgetAmount: 30000, BudgetText: "30000", PlanStart: "2026-09", PlanEnd: "2026-11", OwnerName: "杜宪奎", CycleText: "每年一次", Status: engPlanStatusPending, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_007", SequenceNo: "7", Project: "会议中心", Category: "强制检测", WorkContent: "排水系统排污检测", ScopeDesc: "排污许可证有效期、排放检测与资料归档", BudgetAmount: 0, BudgetText: "", PlanStart: "2024-06-19", PlanEnd: "2029-06-18", OwnerName: "董圣军", CycleText: "关注许可证到期", Status: engPlanStatusRunning, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_008", SequenceNo: "8", Project: "会议中心", Category: "重点外委", WorkContent: "电梯维保", ScopeDesc: "电梯维保、故障响应与年度资料闭环", BudgetAmount: 196920, BudgetText: "196920", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "朱佳伟", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "warning"},
+		{ID: "eng_plan_gh_009", SequenceNo: "9", Project: "会议中心", Category: "重点外委", WorkContent: "中央空调主机维保", ScopeDesc: "中央空调主机年度维保与运行保障", BudgetAmount: 180000, BudgetText: "180000", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "新博", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_010", SequenceNo: "10", Project: "会议中心", Category: "重点外委", WorkContent: "智能化系统维保", ScopeDesc: "网络、信息发布、灯光投影等智能化软硬件维保", BudgetAmount: 290000, BudgetText: "290000", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "汪佳澜", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "normal"},
+		{ID: "eng_plan_gh_011", SequenceNo: "11", Project: "会议中心", Category: "重点外委", WorkContent: "消防系统维保合同", ScopeDesc: "消防系统维保、报警联动与故障闭环", BudgetAmount: 220428.44, BudgetText: "220428.44", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "杜宪奎", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "warning"},
+		{ID: "eng_plan_gh_012", SequenceNo: "12", Project: "会议中心", Category: "重点外委", WorkContent: "锅炉维保", ScopeDesc: "锅炉设备维保、巡检和运行保障", BudgetAmount: 110000, BudgetText: "110000", PlanStart: "2026-01-01", PlanEnd: "2026-12-31", OwnerName: "新博", CycleText: "全年维保", Status: engPlanStatusRunning, RiskLevel: "normal"},
 	}
 	out := make([]*EngineeringPlanItem, 0, len(rows))
 	for i := range rows {
@@ -152,10 +153,10 @@ func engineeringPlanSeeds() []*EngineeringPlanItem {
 func engineeringTaskSeeds() []*EngineeringTask {
 	now := time.Now()
 	rows := []EngineeringTask{
-		{ID: "eng_task_gh_002_202607", PlanItemID: "eng_plan_gh_002", Title: "水质检测报告 7 月执行", Project: "国会中心", Category: "强制检测", WorkContent: "水质检测报告", AssigneeName: "董圣军", DueAt: "2026-07-31", Status: engTaskStatusPending, EvidenceStatus: "待上传", AIStatus: "待分析", BudgetAmount: 4500},
-		{ID: "eng_task_gh_004_202607", PlanItemID: "eng_plan_gh_004", Title: "电梯安全年度检验 7 月跟踪", Project: "国会中心", Category: "强制检测", WorkContent: "电梯安全年度检验报告", AssigneeName: "朱佳伟", DueAt: "2026-07-31", Status: engTaskStatusProcessing, EvidenceStatus: "待补充", AIStatus: "待分析", BudgetAmount: 23000},
-		{ID: "eng_task_gh_008_202606", PlanItemID: "eng_plan_gh_008", Title: "电梯维保月度资料复核", Project: "国会中心", Category: "重点外委", WorkContent: "电梯维保", AssigneeName: "朱佳伟", DueAt: "2026-06-30", Status: engTaskStatusProcessing, EvidenceStatus: "部分上传", AIStatus: "待分析", BudgetAmount: 196920},
-		{ID: "eng_task_gh_010_202606", PlanItemID: "eng_plan_gh_010", Title: "智能化系统维保月度跟踪", Project: "国会中心", Category: "重点外委", WorkContent: "智能化系统维保", AssigneeName: "汪佳澜", DueAt: "2026-06-30", Status: engTaskStatusPending, EvidenceStatus: "待上传", AIStatus: "待分析", BudgetAmount: 290000},
+		{ID: "eng_task_gh_002_202607", PlanItemID: "eng_plan_gh_002", Title: "水质检测报告 7 月执行", Project: "会议中心", Category: "强制检测", WorkContent: "水质检测报告", AssigneeName: "董圣军", DueAt: "2026-07-31", Status: engTaskStatusPending, EvidenceStatus: "待上传", AIStatus: "待分析", BudgetAmount: 4500},
+		{ID: "eng_task_gh_004_202607", PlanItemID: "eng_plan_gh_004", Title: "电梯安全年度检验 7 月跟踪", Project: "会议中心", Category: "强制检测", WorkContent: "电梯安全年度检验报告", AssigneeName: "朱佳伟", DueAt: "2026-07-31", Status: engTaskStatusProcessing, EvidenceStatus: "待补充", AIStatus: "待分析", BudgetAmount: 23000},
+		{ID: "eng_task_gh_008_202606", PlanItemID: "eng_plan_gh_008", Title: "电梯维保月度资料复核", Project: "会议中心", Category: "重点外委", WorkContent: "电梯维保", AssigneeName: "朱佳伟", DueAt: "2026-06-30", Status: engTaskStatusProcessing, EvidenceStatus: "部分上传", AIStatus: "待分析", BudgetAmount: 196920},
+		{ID: "eng_task_gh_010_202606", PlanItemID: "eng_plan_gh_010", Title: "智能化系统维保月度跟踪", Project: "会议中心", Category: "重点外委", WorkContent: "智能化系统维保", AssigneeName: "汪佳澜", DueAt: "2026-06-30", Status: engTaskStatusPending, EvidenceStatus: "待上传", AIStatus: "待分析", BudgetAmount: 290000},
 	}
 	out := make([]*EngineeringTask, 0, len(rows))
 	for i := range rows {
@@ -826,10 +827,24 @@ func (s *Server) handleUpdateEngineeringTaskStatus(w http.ResponseWriter, r *htt
 		return
 	}
 	task, _ := s.store.GetEngineeringTask(id)
+	// 后台手动改任务状态后，同步重算挂钩计划状态（完成→已完成 / 重开→执行中等）。
+	// 注意：手动操作不触发循环滚动，避免点一下就凭空多出下期任务；滚动只在移动端提交闭环时发生。
+	if task != nil && task.PlanItemID != "" {
+		s.recomputeEngineeringPlanStatus(task.PlanItemID, id)
+	}
 	s.recordOperation(r, "engineering_task_status", "engineering_task", id, map[string]any{
 		"status": status,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"task": task})
+}
+
+// isAnomalyAssetStatus 判定资产是否处于"未闭环异常"状态。
+func isAnomalyAssetStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "异常", "待复核", "待维修":
+		return true
+	}
+	return false
 }
 
 func (s *Server) closeEngineeringTaskFromRecord(rec *Record, assets []*AssetEntry, closedAt time.Time) error {
@@ -837,17 +852,35 @@ func (s *Server) closeEngineeringTaskFromRecord(rec *Record, assets []*AssetEntr
 		return nil
 	}
 	taskID := strings.TrimSpace(rec.EngineeringTaskID)
+	// 选定关联资产与闭环结果：优先指向第一个异常资产，否则取第一个资产。
 	assetID := ""
-	if len(assets) > 0 && assets[0] != nil {
-		assetID = assets[0].ID
-	}
 	closeResult := "完成"
-	if len(assets) > 0 && assets[0] != nil && assets[0].LastStatus != "" {
-		closeResult = assets[0].LastStatus
+	anomaly := false
+	for _, a := range assets {
+		if a == nil {
+			continue
+		}
+		if assetID == "" {
+			assetID = a.ID
+			if a.LastStatus != "" {
+				closeResult = a.LastStatus
+			}
+		}
+		if isAnomalyAssetStatus(a.LastStatus) {
+			anomaly = true
+			assetID = a.ID
+			closeResult = a.LastStatus
+			break
+		}
+	}
+	// 正常 → 已完成；异常 → 待整改（执行已完成，但异常未闭环）
+	finalStatus := engTaskStatusDone
+	if anomaly {
+		finalStatus = engTaskStatusRectify
 	}
 	closeNote := firstNonEmpty(rec.AISummary, rec.Report, "巡检记录已提交，工程任务自动闭环")
 	err := s.store.UpdateEngineeringTask(taskID, func(task *EngineeringTask) {
-		task.Status = engTaskStatusDone
+		task.Status = finalStatus
 		task.RecordID = rec.ID
 		task.AssetID = assetID
 		task.CompletedAt = closedAt.Format(time.RFC3339Nano)
@@ -862,11 +895,191 @@ func (s *Server) closeEngineeringTaskFromRecord(rec *Record, assets []*AssetEntr
 	if err != nil {
 		return err
 	}
-	task, err := s.store.GetEngineeringTask(taskID)
-	if err == nil && task != nil && task.PlanItemID != "" {
-		_ = s.store.UpdateEngineeringPlanLatestTask(task.PlanItemID, task.ID)
+	if task, err := s.store.GetEngineeringTask(taskID); err == nil && task != nil && task.PlanItemID != "" {
+		s.afterEngineeringTaskDone(task.PlanItemID, task.ID)
 	}
 	return nil
+}
+
+// recomputeEngineeringPlanStatus 任务状态变化后，按该计划下所有任务重算计划状态。
+// 规则：有待整改 → 执行中(留异常)；任务都已闭环且无在途 → 已完成；有在途 → 执行中；否则待执行。
+func (s *Server) recomputeEngineeringPlanStatus(planID, latestTaskID string) {
+	if strings.TrimSpace(planID) == "" {
+		return
+	}
+	plan, err := s.store.GetEngineeringPlan(planID)
+	if err != nil || plan == nil {
+		return
+	}
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{PlanItemID: planID})
+	openAnomaly, hasDone, hasActive := 0, false, false
+	for _, t := range tasks {
+		switch t.Status {
+		case engTaskStatusRectify:
+			openAnomaly++
+			hasActive = true
+		case engTaskStatusDone:
+			hasDone = true
+		case engTaskStatusProcessing, engTaskStatusPending, engTaskStatusOverdue:
+			hasActive = true
+		}
+	}
+	var status string
+	switch {
+	case openAnomaly > 0:
+		status = engPlanStatusRunning
+	case hasDone && !hasActive:
+		status = engPlanStatusDone
+	case hasDone || hasActive:
+		status = engPlanStatusRunning
+	default:
+		status = engPlanStatusPending
+	}
+	plan.Status = status
+	if strings.TrimSpace(latestTaskID) != "" {
+		plan.LatestTaskID = latestTaskID
+	}
+	plan.UpdatedAt = time.Now()
+	_ = s.store.UpsertEngineeringPlan(plan)
+}
+
+// onAssetResolvedNormal 资产被改回"正常"（标记正常 / 修改审批通过）后，
+// 把指向该资产、仍处于"待整改"的任务闭环，并重算其计划状态——异常闭环回写。
+func (s *Server) onAssetResolvedNormal(assetID string) {
+	if strings.TrimSpace(assetID) == "" {
+		return
+	}
+	tasks, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{})
+	if err != nil {
+		return
+	}
+	for _, t := range tasks {
+		if t == nil || t.AssetID != assetID || t.Status != engTaskStatusRectify {
+			continue
+		}
+		planID := t.PlanItemID
+		_ = s.store.UpdateEngineeringTask(t.ID, func(task *EngineeringTask) {
+			task.Status = engTaskStatusDone
+			task.CloseResult = "整改闭环"
+		})
+		if planID != "" {
+			s.afterEngineeringTaskDone(planID, t.ID)
+		}
+	}
+}
+
+// afterEngineeringTaskDone 任务转为已完成后：循环计划生成下期任务，然后重算计划状态。
+func (s *Server) afterEngineeringTaskDone(planID, taskID string) {
+	if strings.TrimSpace(planID) == "" {
+		return
+	}
+	if plan, err := s.store.GetEngineeringPlan(planID); err == nil && plan != nil {
+		if task, e := s.store.GetEngineeringTask(taskID); e == nil && task != nil && task.Status == engTaskStatusDone {
+			s.maybeRolloverPlanTask(plan, task)
+		}
+	}
+	s.recomputeEngineeringPlanStatus(planID, taskID)
+}
+
+// inferCycleIntervalMonths 从计划周期自由文本粗推间隔月数；0 表示一次性（不滚动）。
+func inferCycleIntervalMonths(cycle string) int {
+	c := strings.TrimSpace(cycle)
+	if c == "" {
+		return 0
+	}
+	switch {
+	case strings.Contains(c, "每月") || strings.Contains(c, "全年"):
+		return 1
+	case strings.Contains(c, "每季") || strings.Contains(c, "季度"):
+		return 3
+	case strings.Contains(c, "半年"):
+		return 6
+	}
+	// 列出多个检测月份 → 按年内次数推间隔（如“每年1月、7月”=2次=半年）
+	switch n := strings.Count(c, "月"); {
+	case n >= 4:
+		return 3
+	case n >= 2:
+		return 6
+	}
+	// “每年一次” / “关注许可证到期” / 无法识别 → 一次性
+	return 0
+}
+
+// nextDueDate 在原到期日基础上 +months 个月；原日期解析失败则从当前时间推算。
+func nextDueDate(dueAt string, months int) string {
+	d := strings.TrimSpace(dueAt)
+	var base time.Time
+	parsed := false
+	for _, layout := range []string{"2006-01-02", "2006-01", "2006/01/02", "2006/01"} {
+		if t, err := time.Parse(layout, d); err == nil {
+			base = t
+			parsed = true
+			break
+		}
+	}
+	if !parsed {
+		base = time.Now()
+	}
+	return base.AddDate(0, months, 0).Format("2006-01-02")
+}
+
+// rolloverTaskTitle 生成下期任务标题，如“电梯维保 · 2026年8月期”。
+func rolloverTaskTitle(plan *EngineeringPlanItem, nextDue string) string {
+	label := nextDue
+	if t, err := time.Parse("2006-01-02", nextDue); err == nil {
+		label = t.Format("2006年1月")
+	}
+	return firstNonEmpty(plan.WorkContent, "巡检") + " · " + label + "期"
+}
+
+// maybeRolloverPlanTask 循环计划做完一期后生成下一期待执行任务（含去重与在途守卫）。
+func (s *Server) maybeRolloverPlanTask(plan *EngineeringPlanItem, done *EngineeringTask) {
+	if plan == nil || done == nil || done.Status != engTaskStatusDone {
+		return
+	}
+	months := inferCycleIntervalMonths(plan.CycleText)
+	if months <= 0 {
+		return // 一次性计划：不滚动，交由 recompute 标记完成
+	}
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{PlanItemID: plan.ID})
+	for _, t := range tasks {
+		if t == nil || t.ID == done.ID {
+			continue
+		}
+		switch t.Status {
+		case engTaskStatusPending, engTaskStatusProcessing, engTaskStatusRectify, engTaskStatusOverdue:
+			return // 已有在途任务，不重复生成
+		}
+	}
+	nextDue := nextDueDate(done.DueAt, months)
+	for _, t := range tasks {
+		if t != nil && t.DueAt == nextDue {
+			return // 同到期日任务已存在
+		}
+	}
+	now := time.Now()
+	next := &EngineeringTask{
+		ID:             newID("eng_task"),
+		PlanItemID:     plan.ID,
+		Source:         "rollover",
+		TaskType:       done.TaskType,
+		Title:          rolloverTaskTitle(plan, nextDue),
+		Project:        plan.Project,
+		Category:       plan.Category,
+		WorkContent:    firstNonEmpty(done.WorkContent, plan.WorkContent),
+		AssigneeName:   done.AssigneeName,
+		ReviewerName:   done.ReviewerName,
+		VendorName:     done.VendorName,
+		DueAt:          nextDue,
+		Status:         engTaskStatusPending,
+		EvidenceStatus: "待上传",
+		AIStatus:       "待分析",
+		BudgetAmount:   plan.BudgetAmount,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	_ = s.store.CreateEngineeringTask(next)
 }
 
 func parseFloatOrZero(raw string) float64 {

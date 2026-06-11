@@ -98,24 +98,32 @@ body.aside-empty .content {
 
 .brand {
   position: relative;
-  padding: 0 8px 26px;
-  color: #fff;
-  font-size: 18px;
-  font-weight: 950;
-  letter-spacing: -0.05em;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 10px 22px;
+  /* 上行 JADEAST：小号、宽字距、青绿，作为品牌前缀 */
+  color: rgba(126, 255, 210, 0.82);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   white-space: nowrap;
 }
 
+/* 下行 智巡后台：主标题 */
 .brand span {
-  color: #f2f7ff;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .brand::after {
   content: "";
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 14px;
+  left: 10px;
+  right: 12px;
+  bottom: 11px;
   height: 1px;
   background: linear-gradient(90deg, rgba(37, 213, 255, 0.80), transparent);
 }
@@ -151,6 +159,76 @@ body.aside-empty .content {
   box-shadow: inset 3px 0 0 rgba(126, 255, 210, 0.95);
 }
 
+/* ===== 侧边栏收起开关 ===== */
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: #dce9f7;
+  background: transparent;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.sidebar-toggle:hover {
+  background: rgba(220, 233, 247, 0.10);
+  color: #fff;
+}
+
+/* 列宽平滑过渡 */
+.admin-shell {
+  transition: grid-template-columns 180ms ease;
+}
+
+/* ===== 收起态：64px 纯图标轨 ===== */
+body.sidebar-collapsed .admin-shell {
+  grid-template-columns: 64px minmax(0, 1fr) 360px;
+}
+body.sidebar-collapsed.aside-empty .admin-shell {
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+}
+
+body.sidebar-collapsed .sidebar {
+  padding: 24px 8px;
+}
+
+/* 品牌收起为居中「智」标 */
+body.sidebar-collapsed .brand {
+  align-items: center;
+  gap: 0;
+  padding: 0 0 16px;
+  font-size: 0;
+  letter-spacing: 0;
+}
+body.sidebar-collapsed .brand span { display: none; }
+body.sidebar-collapsed .brand::before {
+  content: "智";
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+}
+body.sidebar-collapsed .brand::after { left: 14px; right: 14px; }
+
+/* 分组小标题隐藏 */
+body.sidebar-collapsed .nav span { display: none !important; }
+
+/* 导航项：仅居中图标，隐藏文字 */
+body.sidebar-collapsed .nav button {
+  grid-template-columns: 1fr !important;
+  justify-items: center;
+  gap: 0 !important;
+  font-size: 0 !important;
+  padding: 9px 0 !important;
+}
+body.sidebar-collapsed .nav button img {
+  width: 18px !important;
+  height: 18px !important;
+  margin: 0 auto;
+}
+
 .topbar {
   grid-column: 2 / span 2;
   /* 顶栏跟侧栏同属固定外框:整页滚动时钉在顶部,内容从其下方滚过 */
@@ -166,17 +244,6 @@ body.aside-empty .content {
     linear-gradient(90deg, rgba(37, 213, 255, 0.10), transparent 34%),
     radial-gradient(circle at 24% 0%, rgba(42, 122, 204, 0.22), transparent 32%),
     linear-gradient(90deg, #0a1b2b, #0d2134);
-}
-
-.company-select select {
-  width: 260px;
-  height: 36px;
-  padding: 0 36px 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 4px;
-  color: #dce9f7;
-  background: rgba(255, 255, 255, 0.04);
-  outline: none;
 }
 
 .topbar-actions {
@@ -215,34 +282,47 @@ body.aside-empty .content {
 .approval-shortcut {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(126, 255, 210, 0.28);
+  padding: 0 13px;
+  border: 1px solid rgba(220, 233, 247, 0.16);
   border-radius: 999px;
   color: #dce9f7;
-  background: rgba(126, 255, 210, 0.08);
-  font-weight: 800;
+  background: rgba(220, 233, 247, 0.06);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 
 .approval-shortcut:hover {
-  border-color: rgba(126, 255, 210, 0.55);
-  background: rgba(126, 255, 210, 0.14);
-  transform: translateY(-1px);
+  border-color: rgba(220, 233, 247, 0.30);
+  background: rgba(220, 233, 247, 0.12);
 }
 
+/* 计数徽标：0 时安静（灰），有待办时变蓝提示 */
 .approval-shortcut b {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 7px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
   display: inline-grid;
   place-items: center;
   border-radius: 999px;
-  color: #061a12;
-  background: #7effd2;
+  color: #aebfd2;
+  background: rgba(220, 233, 247, 0.12);
   font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-shortcut.has-pending {
+  border-color: rgba(36, 107, 254, 0.45);
+  background: rgba(36, 107, 254, 0.12);
+  color: #fff;
+}
+.approval-shortcut.has-pending b {
+  color: #fff;
+  background: var(--blue);
 }
 
 .admin-user {
@@ -2437,6 +2517,235 @@ td i {
   font-size: 13px;
 }
 
+.plan-entry-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 84px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 20px rgba(15, 35, 55, 0.06);
+}
+
+.plan-entry-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 22px 18px 26px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text);
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.plan-entry-card:last-child {
+  border-right: 0;
+}
+
+.plan-entry-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--green);
+}
+
+.plan-entry-card.tone-pending::before { background: #f59e0b; }
+.plan-entry-card.tone-running::before { background: var(--blue); }
+.plan-entry-card.tone-attention::before { background: var(--red); }
+.plan-entry-card.tone-done::before { background: var(--green); }
+
+.plan-entry-card:hover {
+  z-index: 1;
+  background: linear-gradient(180deg, #ffffff 0%, #f6fbff 100%);
+  box-shadow: 0 8px 18px rgba(15, 35, 55, 0.10);
+  transform: translateY(-1px);
+}
+
+.plan-entry-card.active {
+  z-index: 2;
+  background: linear-gradient(180deg, #ffffff 0%, #f2fff9 100%);
+  box-shadow: inset 0 -2px 0 rgba(18, 169, 104, 0.22), 0 8px 18px rgba(15, 35, 55, 0.10);
+}
+
+.plan-entry-card.tone-pending.active { box-shadow: inset 0 -2px 0 rgba(245, 158, 11, 0.36), 0 8px 18px rgba(15, 35, 55, 0.10); }
+.plan-entry-card.tone-running.active { box-shadow: inset 0 -2px 0 rgba(36, 107, 254, 0.30), 0 8px 18px rgba(15, 35, 55, 0.10); }
+.plan-entry-card.tone-attention.active { box-shadow: inset 0 -2px 0 rgba(239, 75, 63, 0.34), 0 8px 18px rgba(15, 35, 55, 0.10); }
+
+.plan-entry-card span {
+  color: #59708f;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.plan-entry-card b {
+  color: #001634;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-entry-card small {
+  color: #59708f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.plan-table-restored {
+  margin-top: 18px;
+}
+
+.plan-status-drawer {
+  display: grid;
+  gap: 14px;
+}
+
+.plan-status-drawer-head {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding: 12px 0 4px;
+}
+
+.plan-status-drawer-head b {
+  color: var(--text);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.plan-status-drawer-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.plan-status-list {
+  display: grid;
+  gap: 10px;
+}
+
+.plan-status-task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--green);
+  border-radius: 12px;
+  color: var(--text);
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.plan-status-drawer.tone-pending .plan-status-task { border-left-color: #f59e0b; }
+.plan-status-drawer.tone-running .plan-status-task { border-left-color: var(--blue); }
+.plan-status-drawer.tone-attention .plan-status-task { border-left-color: var(--red); }
+.plan-status-drawer.tone-done .plan-status-task { border-left-color: var(--green); }
+
+.plan-status-task:hover {
+  border-color: rgba(36, 107, 254, 0.26);
+  box-shadow: 0 12px 24px rgba(15, 35, 55, 0.10);
+  transform: translateY(-1px);
+}
+
+.plan-status-task b {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.plan-status-task span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.plan-status-task span i {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: #61728d;
+  background: #f5f8fc;
+  border: 1px solid #e6edf6;
+  font-style: normal;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-status-task em {
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--green);
+  background: rgba(18, 169, 104, 0.08);
+  border: 1px solid rgba(18, 169, 104, 0.22);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.plan-status-drawer.tone-pending .plan-status-task em {
+  color: #b8740b;
+  border-color: rgba(245, 158, 11, 0.30);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.plan-status-drawer.tone-running .plan-status-task em {
+  color: var(--blue);
+  border-color: rgba(36, 107, 254, 0.25);
+  background: rgba(36, 107, 254, 0.06);
+}
+
+.plan-status-drawer.tone-attention .plan-status-task em {
+  color: var(--red);
+  border-color: rgba(239, 75, 63, 0.28);
+  background: rgba(239, 75, 63, 0.07);
+}
+
+.plan-status-empty {
+  display: grid;
+  place-items: center;
+  min-height: 110px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--page);
+  font-size: 13px;
+}
+
+@media (max-width: 980px) {
+  .plan-entry-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .device-grid,
 .risk-grid,
 .approval-list,
@@ -2685,6 +2994,41 @@ td i {
   border-radius: 8px;
   color: #31425a;
   background: #f3f7fc;
+}
+
+.approval-patch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.approval-patch-grid div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dce6f3;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.approval-patch-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.approval-patch-grid b {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+
+.approval-card.approval-asset-exception {
+  border-left-color: #ef4b3f;
+  background: linear-gradient(135deg, #fff 0%, #fff8f8 100%);
 }
 
 .approval-list-modern .approval-card footer {
@@ -10102,8 +10446,8 @@ button.profile-hero-logout,
 }
 .ledger-stat {
   position: relative;
-  min-height: 76px;
-  padding: 14px 16px 12px;
+  min-height: 60px;
+  padding: 14px 16px 14px;
   overflow: hidden;
   background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
   border: 1px solid #dfe7f1;
@@ -10129,7 +10473,7 @@ button.profile-hero-logout,
 }
 .ledger-stat b {
   display: block;
-  margin: 8px 0 4px;
+  margin: 6px 0 0;
   color: #07172f;
   font-size: 32px;
   line-height: 1;
@@ -10144,12 +10488,12 @@ button.profile-hero-logout,
 .ledger-stat.warn small {
   color: #b8741a;
 }
+/* 异常卡：背景/边框与其它卡完全一致，只有数字是红色（覆盖全局 .danger 红底白字） */
 .ledger-stat.danger {
-  border-left-color: #f59e0b;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%) !important;
+  color: #07172f !important;
 }
-.ledger-stat.danger small {
-  color: #b8741a;
-}
+.ledger-stat.danger b { color: #e0392b !important; }
 .asset-table-panel {
   border-radius: 16px;
 }

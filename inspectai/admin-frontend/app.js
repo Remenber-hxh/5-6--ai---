@@ -38,8 +38,27 @@ function defaultApiBase() {
   return "http://127.0.0.1:18080";
 }
 
+function initialApiBase() {
+  const fallback = defaultApiBase();
+  const stored = localStorage.getItem(API_BASE_KEY);
+  const { hostname, port } = window.location;
+  const isLocalAdmin = port === "18081" && ["127.0.0.1", "localhost"].includes(hostname);
+  if (isLocalAdmin) {
+    if (stored !== fallback) localStorage.setItem(API_BASE_KEY, fallback);
+    return fallback;
+  }
+  if (!stored) return fallback;
+  try {
+    const url = new URL(stored);
+    return url.origin;
+  } catch {
+    localStorage.removeItem(API_BASE_KEY);
+    return fallback;
+  }
+}
+
 const state = {
-  apiBase: localStorage.getItem(API_BASE_KEY) || defaultApiBase(),
+  apiBase: initialApiBase(),
   token: localStorage.getItem(API_TOKEN_KEY) || "",
   page: normalizedPage(new URLSearchParams(location.search).get("page") || "dashboard"),
   assets: [],
@@ -58,6 +77,9 @@ const state = {
   selectedProject: "",
   selectedAssetId: "",
   selectedRecordId: "",
+  selectedPlanStatus: "",
+  selectedPlanTaskKey: "",
+  selectedPlanTaskIndex: -1,
   assetDetails: {}, // §3 资产详情缓存：{ id → { history, total, page, pageSize, trend } }
   confirmLogs: {},  // §4 记录的字段确认留痕：{ recordId → [log,...] }
   dataInsights: {}, // 阶段一 数据看板缓存：{ key → { overview, items, summary, model, generatedAt } }
@@ -136,7 +158,7 @@ function businessCode(value = "", fallback = "NA") {
 }
 
 function recordProjectCode(project = "") {
-  const map = { "会议中心": "HYZX", "国会中心": "GHZX", "紫涵雅集": "ZHYJ" };
+  const map = { "会议中心": "HYZX", "紫涵雅集": "ZHYJ" };
   return map[project] || businessCode(project, "PROJ");
 }
 
@@ -174,7 +196,7 @@ function apiHeaders(json = false) {
   const user = state.currentUser || {};
   const headers = {
     "X-User-Role": user.roleCode || "supervisor",
-    "X-User-Name": encodeURIComponent(user.displayName || "张管理员"),
+    "X-User-Name": encodeURIComponent(user.displayName || user.username || "管理员"),
   };
   if (state.token) headers["X-InspectAI-Token"] = state.token;
   if (json) headers["Content-Type"] = "application/json";
@@ -182,11 +204,27 @@ function apiHeaders(json = false) {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(state.apiBase + path, {
-    ...options,
-    headers: { ...apiHeaders(Boolean(options.body)), ...(options.headers || {}) },
-    credentials: "include",
-  });
+  let res;
+  try {
+    res = await fetch(state.apiBase + path, {
+      ...options,
+      headers: { ...apiHeaders(Boolean(options.body)), ...(options.headers || {}) },
+      credentials: "include",
+    });
+  } catch (error) {
+    const fallback = defaultApiBase();
+    if (state.apiBase !== fallback) {
+      state.apiBase = fallback;
+      localStorage.setItem(API_BASE_KEY, fallback);
+      res = await fetch(state.apiBase + path, {
+        ...options,
+        headers: { ...apiHeaders(Boolean(options.body)), ...(options.headers || {}) },
+        credentials: "include",
+      });
+    } else {
+      throw error;
+    }
+  }
   const text = await res.text();
   let data = {};
   try {
@@ -699,6 +737,7 @@ async function loadData(showToast = true) {
 
 function renderProjectOptions() {
   const select = $("#projectSelect");
+  if (!select) return; // 顶栏项目筛选已移除，全局默认“全部项目”
   const current = state.selectedProject || select.value;
   const options = [`<option value="">全部项目</option>`]
     .concat(projects().map((project) => `<option value="${escapeHTML(project)}">${escapeHTML(project)}</option>`));
@@ -788,6 +827,8 @@ function render() {
   $("#pendingBadge").hidden = pendingApprovalCount <= 0;
   const approvalShortcutCount = $("#approvalShortcutCount");
   if (approvalShortcutCount) approvalShortcutCount.textContent = pendingApprovalCount;
+  const approvalShortcut = $("#approvalShortcut");
+  if (approvalShortcut) approvalShortcut.classList.toggle("has-pending", pendingApprovalCount > 0);
   updateUserBadge();
   const renderer = pageRenderers[state.page] || renderDashboardPage;
   renderer();
@@ -1278,6 +1319,8 @@ function last7DayAbnormal(records) {
 
 function aiHeroBanner({ todayRecords, todayAuto, todayFlagged, savedHours, issuesCount, accuracy, trendCounts, todayTaskDone = 0 }) {
   const accText = accuracy && accuracy.sample ? `${accuracy.value}%` : "—";
+  const userName = state.currentUser?.displayName || state.currentUser?.username || "管理员";
+  const normalCount = Math.max(0, Number(todayRecords || 0) - Number(issuesCount || 0));
   // sparkline: 7 day abnormal trend
   const w = 168, h = 44;
   const max = Math.max(1, ...(trendCounts || [0]));
@@ -1289,14 +1332,13 @@ function aiHeroBanner({ todayRecords, todayAuto, todayFlagged, savedHours, issue
   return `
     <section class="ai-hero ai-hero-v2">
       <div class="ai-hero-text">
-        <div class="ai-hero-hi">${HELLO}，张管理员</div>
+        <div class="ai-hero-hi">${HELLO}，${escapeHTML(userName)}</div>
         <div class="ai-hero-line">
           今日 AI 交付
           <b><span class="dash-anim" data-count="${todayRecords}">0</span></b><em>条巡检</em>
           <b><span class="dash-anim" data-count="${issuesCount}">0</span></b><em>项异常</em>
-          <b><span class="dash-anim" data-count="${todayTaskDone}">0</span></b><em>项完成</em>
+          <b><span class="dash-anim" data-count="${normalCount}">0</span></b><em>项正常</em>
         </div>
-        <div class="ai-hero-sub">其中 ${todayAuto} 条 AI 自动确认 · ${todayTaskDone} 个任务今日已闭环</div>
       </div>
       <aside class="ai-hero-side" aria-hidden="true">
         <span class="ai-hero-orb ai-hero-orb-1"></span>
@@ -1638,24 +1680,54 @@ function asideFindings(issues, attentionItems = []) {
 }
 
 function renderPlanPage() {
-  const rows = filteredPlanRows();
-  const tasks = taskGroups();
-  const activePlans = rows.filter((row) => !["暂停", "已停用", "已完成"].includes(row.status));
-  const engineeringCount = rows.filter((row) => row.source === "engineering").length;
-  const budgetTotal = rows.reduce((sum, row) => sum + Number(row.budgetAmount || 0), 0);
+  // 顶部统计卡与下方计划列表同源：都基于计划行（按计划状态分桶），点击卡片即筛选列表
+  const baseRows = filteredPlanRows();
+  const counts = planBucketCounts(baseRows);
+  const rows = state.selectedPlanStatus
+    ? baseRows.filter((r) => planStatusBucket(r.status) === state.selectedPlanStatus)
+    : baseRows;
   if (!state.selectedPlanId || !rows.some((r) => r.id === state.selectedPlanId)) {
     state.selectedPlanId = rows[0]?.id || "";
   }
   $("#pageMain").innerHTML = `
-    ${metrics([
-      { label: "工程计划", value: engineeringCount || rows.length, sub: "年度事项" },
-      { label: "执行中", value: rows.filter((row) => row.status === "执行中").length, sub: "当前有效", good: true },
-      { label: "待执行", value: activePlans.filter((row) => row.status === "待执行" || row.status === "启用").length, sub: "需派发 / 跟踪" },
-      { label: "预算合计", value: budgetTotal ? `${Math.round(budgetTotal / 10000)}万` : "-", sub: "计划口径", good: true },
-    ])}
-    <section class="panel plan-table-panel">
+    ${planStatusEntryBoard(counts)}
+    ${planTableSection(rows)}
+  `;
+  const selectedPlan = rows.find((r) => r.id === state.selectedPlanId) || null;
+  // 点了"查看任务进度"→侧栏显示与移动端挂钩的那条工程任务进度；否则显示计划详情
+  const selectedTask = state.selectedTaskId
+    ? engineeringTaskRows().find((t) => t.id === state.selectedTaskId)
+    : null;
+  $("#pageAside").innerHTML = selectedTask
+    ? asideStack(taskDetailCard(selectedTask))
+    : asideStack(planEditCard(selectedPlan));
+  bindPlanStatusEntries();
+  bindPlanFilters();
+  bindPlanRowClicks();
+  bindPlanEditForm();
+  if (selectedTask) bindTaskDetailActions();
+}
+
+// 计划状态 → 统计桶（与四张卡一一对应）
+function planStatusBucket(status = "") {
+  const s = String(status);
+  if (s.includes("已完成")) return "done";
+  if (s.includes("待执行")) return "pending";
+  if (s.includes("执行中") || s.includes("进行中") || s.includes("启用")) return "processing";
+  return "overdue"; // 需跟进：未排期 / 暂停 / 草稿 / 已停用 / 逾期 等
+}
+
+function planBucketCounts(rows) {
+  const c = { pending: 0, processing: 0, overdue: 0, done: 0 };
+  (rows || []).forEach((r) => { c[planStatusBucket(r.status)] += 1; });
+  return c;
+}
+
+function planTableSection(rows) {
+  return `
+    <section class="panel plan-table-panel plan-table-restored">
       <div class="panel-head plan-panel-head">
-        <div class="panel-title-block"><h2>巡检计划</h2><p>点击行可在右侧编辑该计划。</p></div>
+        <div class="panel-title-block"><h2>巡检计划</h2></div>
         <div class="panel-actions plan-toolbar">${planFiltersHTML()}<button data-drawer="plan">新建计划</button></div>
       </div>
       <div class="table-wrap">
@@ -1671,37 +1743,136 @@ function renderPlanPage() {
         </table>
       </div>
     </section>
-    ${planExecutionBoard(tasks)}
   `;
-  const selected = rows.find((r) => r.id === state.selectedPlanId) || null;
-  $("#pageAside").innerHTML = asideStack(planEditCard(selected));
-  bindPlanFilters();
-  bindPlanRowClicks();
-  bindPlanEditForm();
-  bindTaskCardClicks();
-  bindTaskDetailActions();
 }
 
-function planExecutionBoard(tasks) {
+function planStatusEntryBoard(counts) {
+  const configs = ["pending", "processing", "overdue", "done"].map(planStatusConfig);
   return `
-    <section class="panel plan-execution-panel">
-      <div class="panel-head">
-        <div><h2>计划执行情况</h2><p>任务已并入计划，按执行状态跟踪，不再单独拆一个任务入口。</p></div>
-      </div>
-      <div class="task-board plan-task-board">
-        ${taskColumn("待执行", tasks.pending, "warning")}
-        ${taskColumn("进行中", tasks.processing, "normal")}
-        ${taskColumn("已完成", tasks.done, "normal")}
-        ${taskColumn("需跟进", tasks.overdue, "danger")}
-      </div>
+    <section class="plan-entry-strip" aria-label="计划状态筛选">
+      ${configs.map((config) => `
+        <button class="plan-entry-card tone-${escapeHTML(config.tone)} ${state.selectedPlanStatus === config.key ? "active" : ""}" type="button" data-plan-status="${escapeHTML(config.key)}">
+          <span>${escapeHTML(config.label)}</span>
+          <b>${escapeHTML(counts[config.key] || 0)}</b>
+        </button>
+      `).join("")}
     </section>
   `;
+}
+
+function planStatusConfig(key) {
+  const map = {
+    pending: { key: "pending", label: "待执行", sub: "未开始", tone: "pending" },
+    processing: { key: "processing", label: "进行中", sub: "现场处理", tone: "running" },
+    overdue: { key: "overdue", label: "需跟进", sub: "复核 / 异常", tone: "attention" },
+    done: { key: "done", label: "已完成", sub: "结果入库", tone: "done" },
+  };
+  return map[key] || map.pending;
+}
+
+function planExecutionGroups(tasks) {
+  const clean = (items, bucket) => (items || [])
+    .filter((item) => item && item.status !== "已取消")
+    .map((item) => ({ ...item, bucket }));
+  const pending = clean(tasks.pending, "pending");
+  const processing = clean(tasks.processing, "processing");
+  const done = clean(tasks.done, "done");
+  const overdue = clean(tasks.overdue, "overdue");
+  return {
+    pending,
+    processing,
+    done,
+    overdue,
+    all: [...pending, ...processing, ...done, ...overdue],
+  };
+}
+
+function bindPlanStatusEntries() {
+  document.querySelectorAll("[data-plan-status]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.planStatus;
+      // 点同一张卡 → 取消筛选；否则按该状态筛选下方计划列表
+      state.selectedPlanStatus = state.selectedPlanStatus === key ? "" : key;
+      state.selectedPlanId = "";
+      state.selectedTaskId = "";
+      render();
+    });
+  });
+}
+
+function openPlanStatusDrawer(key) {
+  const config = planStatusConfig(key);
+  const groups = planExecutionGroups(taskGroups());
+  const items = groups[config.key] || [];
+  openDrawer(`${config.label}任务`, `
+    <div class="plan-status-drawer tone-${escapeHTML(config.tone)}">
+      <div class="plan-status-drawer-head">
+        <b>${escapeHTML(items.length)}</b>
+        <span>${escapeHTML(config.sub)}</span>
+      </div>
+      <div class="plan-status-list">
+        ${items.map((item, index) => planStatusTaskRow(item, config.key, index)).join("") || `<div class="plan-status-empty">暂无任务</div>`}
+      </div>
+    </div>
+  `);
+  bindPlanStatusDrawerItems(config.key);
+}
+
+function planStatusTaskRow(item, key, index) {
+  const meta = taskMetaSegments(item);
+  return `
+    <button class="plan-status-task" type="button" data-plan-task-key="${escapeHTML(key)}" data-plan-task-index="${escapeHTML(index)}">
+      <div>
+        <b>${escapeHTML(item.title || item.planName || "执行任务")}</b>
+        <span>${meta.map((part) => `<i>${escapeHTML(part)}</i>`).join("")}</span>
+      </div>
+      <em>${escapeHTML(item.status || "-")}</em>
+    </button>
+  `;
+}
+
+function taskMetaSegments(item) {
+  if (!item) return ["-"];
+  const direct = [
+    item.project,
+    item.pointName || item.planName,
+    item.owner,
+    item.dueAt ? `截止 ${item.dueAt}` : "",
+  ].filter(Boolean);
+  if (direct.length) return direct;
+  return String(item.meta || "-").split("·").map((part) => part.trim()).filter(Boolean).slice(0, 4);
+}
+
+function bindPlanStatusDrawerItems(key) {
+  document.querySelectorAll("[data-plan-task-key]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const groups = planExecutionGroups(taskGroups());
+      const item = groups[key]?.[Number(btn.dataset.planTaskIndex)];
+      if (!item) return;
+      state.selectedTaskId = item.id || "";
+      state.selectedPlanStatus = key;
+      state.selectedPlanTaskKey = key;
+      state.selectedPlanTaskIndex = Number(btn.dataset.planTaskIndex);
+      $("#pageAside").innerHTML = asideStack(taskDetailCard(item));
+      document.body.classList.remove("aside-empty");
+      closeDrawer();
+      bindTaskDetailActions();
+    });
+  });
+}
+
+function selectedPlanTaskFromGroups(groups) {
+  const key = state.selectedPlanTaskKey;
+  const index = Number(state.selectedPlanTaskIndex);
+  if (!key || index < 0) return null;
+  return groups[key]?.[index] || null;
 }
 
 function bindPlanRowClicks() {
   document.querySelectorAll(".plan-row").forEach((tr) => {
     tr.addEventListener("click", () => {
       state.selectedPlanId = tr.dataset.planId;
+      state.selectedTaskId = ""; // 选计划行 → 侧栏回到计划详情
       render();
     });
   });
@@ -1735,7 +1906,7 @@ function planEditCard(plan) {
         ${plan.remark ? `<div class="td-remark"><span>备注</span><p>${escapeHTML(plan.remark)}</p></div>` : ""}
         <div class="td-actions">
           <button class="td-btn primary" data-eng-plan-dispatch="${escapeHTML(plan.backendId || plan.id)}">派发执行任务</button>
-          ${plan.latestTaskId ? `<button class="td-btn ghost" data-eng-task-link="${escapeHTML(plan.latestTaskId)}">查看最近任务</button>` : ""}
+          ${plan.latestTaskId ? `<button class="td-btn ghost" data-eng-task-link="${escapeHTML(plan.latestTaskId)}">查看任务进度</button>` : ""}
         </div>
       </div>`;
   }
@@ -1854,8 +2025,8 @@ function bindPlanEditForm() {
   });
   document.querySelectorAll("[data-eng-task-link]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state.selectedTaskId = btn.dataset.engTaskLink;
-      setPage("plan");
+      state.selectedTaskId = btn.dataset.engTaskLink; // 跳到与移动端挂钩的工程任务
+      render();
     });
   });
   const form = document.getElementById("planEditForm");
@@ -2144,7 +2315,7 @@ function renderTaskPage() {
         ${taskColumn("待执行", tasks.pending, "warning")}
         ${taskColumn("进行中", tasks.processing, "normal")}
         ${taskColumn("已完成", tasks.done, "normal")}
-        ${taskColumn("逾期", tasks.overdue, "danger")}
+        ${taskColumn("逾期 / 待整改", tasks.overdue, "danger")}
       </div>
     </section>
   `;
@@ -2175,7 +2346,6 @@ function taskDetailCard(task) {
         <div class="task-detail-empty">点击左侧任意任务卡查看详情</div>
       </div>`;
   }
-  const isPlanTask = String(task.id).startsWith("task_from_") || task.source === "plan" || task.source === "engineering";
   const editableTask = state.customTasks?.some((t) => t.id === task.id) || task.source === "engineering";
   const statusFlow = ["待执行", "进行中", "已完成"];
   const curIdx = statusFlow.indexOf(task.status);
@@ -2186,7 +2356,6 @@ function taskDetailCard(task) {
           <b>任务详情</b>
           <span class="td-status ${taskStatusTone(task.status)}">${escapeHTML(task.status)}</span>
         </div>
-        ${isPlanTask ? `<button class="td-source-link" data-plan-link="${escapeHTML(task.planId || "")}" title="跳到对应计划">← 来自计划</button>` : ""}
       </div>
       <div class="td-title">${escapeHTML(task.title || task.planName || "任务")}</div>
       <div class="td-meta-list">
@@ -2359,7 +2528,7 @@ function taskGroups() {
   engineeringTasks.forEach((task) => {
     if (task.status === "进行中") processing.unshift(task);
     else if (task.status === "已完成") done.unshift(task);
-    else if (task.status === "逾期") overdue.unshift(task);
+    else if (task.status === "逾期" || task.status === "待整改") overdue.unshift(task);
     else pending.unshift(task);
   });
   return { pending, processing, done, overdue };
@@ -2527,7 +2696,6 @@ function ledgerStatsBar(counts) {
         <article class="ledger-stat ${item.tone || ""}">
           <span>${escapeHTML(item.label)}</span>
           <b>${escapeHTML(item.value)}</b>
-          <small>${escapeHTML(item.sub || "")}</small>
         </article>
       `).join("")}
     </section>
@@ -2743,6 +2911,9 @@ function approvalPatchSummary(request) {
     const names = patch.fields.map((field) => field.label || field.code).filter(Boolean).slice(0, 4);
     if (names.length) parts.push(`字段修正：${names.join("、")}`);
   }
+  if (patch.addImages && Array.isArray(patch.addImages.imageIds)) {
+    parts.push(`补交照片：${patch.addImages.imageIds.length} 张`);
+  }
   if (Array.isArray(patch.images) || Array.isArray(patch.photos) || Array.isArray(patch.photoIds)) {
     const n = (patch.images || patch.photos || patch.photoIds || []).length;
     parts.push(`补交照片：${n} 张`);
@@ -2756,10 +2927,31 @@ function approvalPatchSummary(request) {
     report: "日报内容",
   };
   Object.keys(patch).forEach((key) => {
-    if (["fields", "images", "photos", "photoIds"].includes(key)) return;
+    if (["fields", "images", "photos", "photoIds", "addImages"].includes(key)) return;
     parts.push(labelMap[key] || key);
   });
   return parts.join("；") || "查看申请详情确认变更内容";
+}
+
+function approvalPatchDetailHTML(request) {
+  const patch = request.patch || {};
+  const items = [];
+  if (Array.isArray(patch.fields)) {
+    patch.fields.slice(0, 8).forEach((field) => {
+      items.push([field.label || field.code || "字段", field.value ?? "-"]);
+    });
+  }
+  if (patch.addImages && Array.isArray(patch.addImages.imageIds)) items.push(["补交照片", `${patch.addImages.imageIds.length} 张`]);
+  if (patch.assetName) items.push(["资产名称", patch.assetName]);
+  if (patch.lastStatus) items.push(["资产状态", patch.lastStatus]);
+  if (patch.lastSummary !== undefined) items.push(["台账摘要", patch.lastSummary || "-"]);
+  if (patch.inspector) items.push(["巡检人", patch.inspector]);
+  if (patch.aiSummary !== undefined) items.push(["AI总结", patch.aiSummary || "-"]);
+  return `
+    <div class="approval-patch-grid">
+      ${items.map(([label, value]) => `<div><span>${escapeHTML(label)}</span><b>${escapeHTML(String(value))}</b></div>`).join("") || `<div><span>变更</span><b>${escapeHTML(approvalPatchSummary(request))}</b></div>`}
+    </div>
+  `;
 }
 
 function approvalCardHTML(request) {
@@ -2796,12 +2988,11 @@ function approvalAssetExceptionHTML(asset) {
         </div>
         <b>${escapeHTML(asset.assetName || "异常资产")}</b>
         <p>${escapeHTML(locationText(asset))} · ${fmtTime(asset.lastInspectedAt)}</p>
-        <div class="approval-reason">异常摘要：${escapeHTML(asset.lastSummary || "该资产需要主管复核。")}</div>
-        <div class="approval-patch">处理方式：查看证据后确认是否标记正常，或要求一线补图 / 修改字段。</div>
+        <div class="approval-patch">${escapeHTML(truncateText(asset.lastSummary || "待复核", 52))}</div>
       </div>
       <footer>
-        <button class="btn-ghost" data-asset-select="${escapeHTML(asset.id)}">查看证据</button>
-        <button data-asset-normal="${escapeHTML(asset.id)}">标记正常</button>
+        <button class="btn-ghost" data-asset-detail="${escapeHTML(asset.id)}">查看档案</button>
+        <button data-asset-request="${escapeHTML(asset.id)}">转审批</button>
       </footer>
     </article>
   `;
@@ -2822,7 +3013,7 @@ function renderApprovalPage() {
   $("#pageMain").innerHTML = `
     <section class="panel approval-workbench">
       <div class="panel-head approval-head">
-        <div><h2>审批中心</h2><p>处理巡检员提交的补图、字段修正和台账修改申请。</p></div>
+        <div><h2>审批中心</h2></div>
         <button data-drawer="approval">审批设置</button>
       </div>
       <div class="approval-summary">
@@ -3178,7 +3369,7 @@ function humanizeFieldNames(text) {
 // ③ 重点关注 Top 5
 function renderFocusBoard(insights) {
   if (!insights.items.length) {
-    return `<section class="focus-board"><div class="focus-board-head"><h2>今日重点关注</h2><span>暂无需重点关注的资产</span></div></section>`;
+    return `<section class="focus-board"><div class="focus-board-head"><h2>近期重点关注</h2></div><div class="empty-state">暂无需重点关注的资产</div></section>`;
   }
   const items = insights.items || [];
   const featured = items.find((item) => {
@@ -3189,7 +3380,7 @@ function renderFocusBoard(insights) {
   return `
     <section class="focus-board">
       <div class="focus-board-head">
-        <div><h2>近期重点关注</h2><small>AI 基于历史巡检、异常频次和字段漂移综合判断</small></div>
+        <div><h2>近期重点关注</h2></div>
         <span class="focus-board-count">${items.length} 台需关注</span>
       </div>
       <article class="focus-feature focus-${featured.riskLevel}" data-asset-select="${escapeHTML(featured.assetId)}">
@@ -3228,7 +3419,7 @@ function renderStatusHeatmap(periodDef, insights = {}) {
   });
   const allAssets = filteredAssets();
   if (!allAssets.length) {
-    return `<section class="status-heatmap-panel"><div class="panel-head"><h2>设备状态时间轴</h2><small>近 ${days} 天</small></div><div class="empty-state">暂无资产</div></section>`;
+    return `<section class="status-heatmap-panel"><div class="panel-head"><h2>资产状态周视图</h2></div><div class="empty-state">暂无资产</div></section>`;
   }
   const focusIds = new Set((insights.items || []).map((item) => item.assetId));
   const assets = [...allAssets].sort((a, b) => {
@@ -3278,8 +3469,7 @@ function renderStatusHeatmap(periodDef, insights = {}) {
   return `
     <section class="status-heatmap-panel">
       <div class="panel-head">
-        <div><h2>重点资产状态时间轴</h2><small>优先展示风险资产与代表设备，最多 6 台</small></div>
-        <small>${escapeHTML(startLabel)} → ${escapeHTML(endLabel)} · ■正常 ▲待复核 ●异常 □未巡</small>
+        <div><h2>资产状态周视图</h2></div>
       </div>
       <div class="hm-grid">${rows}</div>
       <div class="hm-legend">
@@ -3299,7 +3489,7 @@ function renderDriftBoard(insights) {
   if (!numeric.length && !repeated.length) return "";
   const numericHTML = numeric.length ? `
     <div class="drift-col">
-      <h4>数值字段漂移 <small>近 30 天 · 变化率 |Δ| 排序</small></h4>
+      <h4>数值字段漂移</h4>
       <ul class="drift-list">
         ${numeric.slice(0, 6).map((d) => {
           const pct = (d.changeRate >= 0 ? "+" : "") + (d.changeRate * 100).toFixed(1) + "%";
@@ -3314,7 +3504,7 @@ function renderDriftBoard(insights) {
     </div>` : `<div class="drift-col"><h4>数值字段漂移</h4><div class="empty-state">无数值字段或无足够历史</div></div>`;
   const repeatedHTML = repeated.length ? `
     <div class="drift-col">
-      <h4>状态字段重复异常 <small>同字段累计 ≥2 次</small></h4>
+      <h4>状态字段重复异常</h4>
       <ul class="drift-list">
         ${repeated.slice(0, 6).map((r) => `
           <li class="drift-item" data-asset-select="${escapeHTML(r.assetId)}">
@@ -3326,7 +3516,7 @@ function renderDriftBoard(insights) {
     </div>` : `<div class="drift-col"><h4>状态字段重复异常</h4><div class="empty-state">本期未发现重复异常</div></div>`;
   return `
     <section class="drift-board">
-      <div class="drift-board-head"><h2>字段漂移看板</h2><small>规则计算 · 不依赖 AI</small></div>
+      <div class="drift-board-head"><h2>字段漂移看板</h2></div>
       <div class="drift-grid">
         ${numericHTML}
         ${repeatedHTML}
@@ -3341,7 +3531,7 @@ function renderInspectorQuality(insights) {
   if (!rows.length) return "";
   return `
     <section class="inspector-quality">
-      <div class="iq-head"><h2>巡检员质量榜</h2><small>近 30 天 · 留痕指标</small></div>
+      <div class="iq-head"><h2>巡检员质量榜</h2></div>
       <table class="iq-table">
         <thead>
           <tr>
@@ -3389,7 +3579,7 @@ function renderPeriodCompare(insights) {
       : `本期异常 ${cur} 项,与上期持平`;
   return `
     <section class="period-compare">
-      <div class="pc-head"><h2>异常本期 vs 上期</h2><small>同长度时间窗对比</small></div>
+      <div class="pc-head"><h2>异常本期 vs 上期</h2></div>
       <div class="pc-grid">
         <article class="pc-card">
           <span class="pc-label">本期异常</span>
@@ -3425,7 +3615,7 @@ function renderInsightAux(records, assets, requests, periodDef) {
   const TYPE_COLORS = ["#12a968", "#246bfe", "#f59e0b", "#8b5cf6", "#ef4b3f", "#06b6d4"];
   return `
     <section class="insight-aux">
-      <div class="insight-aux-head"><h2>资产类型分布 <small>Top ${typeList.length}</small></h2></div>
+      <div class="insight-aux-head"><h2>资产类型分布</h2></div>
       <div class="type-bars type-bars-wide">
         ${typeList.map(([name, n], i) => {
           const pct = Math.round((n / typeMax) * 100);
@@ -3474,8 +3664,8 @@ function renderDataPage() {
       ${renderTrendInsight(insights)}
     </div>
     <div class="board-divider"><span>资产与质量明细</span></div>
-    ${renderFocusBoard(insights)}
     ${renderStatusHeatmap(periodDef, insights)}
+    ${renderFocusBoard(insights)}
     ${renderInspectorQuality(insights)}
     ${renderDriftBoard(insights)}
     ${renderInsightFooter(insights)}
@@ -4398,6 +4588,29 @@ async function setAssetNormal(id) {
   await saveAsset(id, { assetName: asset.assetName, lastStatus: "正常", lastSummary: asset.lastSummary || "后台复核后标记正常。" });
 }
 
+async function createAssetReviewRequest(id) {
+  const asset = state.assets.find((item) => item.id === id);
+  if (!asset) return;
+  const existing = state.requests.find((item) => item.status === "pending" && item.targetType === "asset" && item.targetId === id);
+  if (existing) {
+    openRequestDrawer(existing.id);
+    return;
+  }
+  const summary = asset.lastSummary || "主管复核后确认正常";
+  const request = await api("/api/change-requests", {
+    method: "POST",
+    body: JSON.stringify({
+      targetType: "asset",
+      targetId: id,
+      patch: { lastStatus: "正常", lastSummary: summary },
+      reason: "异常复核：确认正常",
+    }),
+  });
+  toast("处理单已生成");
+  await loadData(false);
+  if (request?.id) openRequestDrawer(request.id);
+}
+
 async function reviewRequest(id, action) {
   await api(`/api/change-requests/${encodeURIComponent(id)}/${action}`, {
     method: "POST",
@@ -4432,7 +4645,7 @@ function openRequestDrawer(id) {
       <tr><th>申请理由</th><td>${escapeHTML(request.reason || "-")}</td></tr>
       <tr><th>复核备注</th><td>${escapeHTML(request.reviewNote || "-")}</td></tr>
     </tbody></table>
-    <h3>变更内容</h3><pre>${escapeHTML(JSON.stringify(request.patch || {}, null, 2))}</pre>
+    <h3>变更内容</h3>${approvalPatchDetailHTML(request)}
     ${request.status === "pending" ? `<div class="drawer-actions"><button class="primary" data-request-review="${escapeHTML(request.id)}" data-action="approve">通过申请</button><button class="danger-btn" data-request-review="${escapeHTML(request.id)}" data-action="reject">拒绝申请</button></div>` : ""}
   `);
 }
@@ -4851,9 +5064,25 @@ function exportRecordsWorkbook() {
   toast(`已导出 ${rows.length} 条巡检记录 Excel`);
 }
 
+const SIDEBAR_COLLAPSED_KEY = "inspectai_admin_sidebar_collapsed";
+function applySidebarCollapsed(collapsed) {
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+  // 收起时文字隐藏，用原生 title 作 hover 提示；展开时去掉避免多余气泡
+  $$(".nav button").forEach((btn) => {
+    if (collapsed) btn.title = btn.textContent.trim();
+    else btn.removeAttribute("title");
+  });
+  const toggle = $("#sidebarToggle");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
 function bindEvents() {
   $$(".nav button").forEach((btn) => btn.addEventListener("click", () => setPage(btn.dataset.page)));
-  $("#projectSelect").addEventListener("change", (event) => {
+  $("#sidebarToggle")?.addEventListener("click", () =>
+    applySidebarCollapsed(!document.body.classList.contains("sidebar-collapsed")));
+  applySidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+  $("#projectSelect")?.addEventListener("change", (event) => {
     state.selectedProject = event.target.value;
     state.selectedAssetId = filteredAssets()[0]?.id || "";
     state.selectedRecordId = filteredRecords()[0]?.id || "";
@@ -4921,6 +5150,7 @@ function bindEvents() {
     const approvalFilter = event.target.closest("[data-approval-filter]")?.dataset.approvalFilter;
     const assetId = event.target.closest("[data-asset-select]")?.dataset.assetSelect;
     const assetDetailId = event.target.closest("[data-asset-detail]")?.dataset.assetDetail;
+    const assetRequestId = event.target.closest("[data-asset-request]")?.dataset.assetRequest;
     const recordId = event.target.closest("[data-record-select]")?.dataset.recordSelect;
     const requestId = event.target.closest("[data-request-open]")?.dataset.requestOpen;
     const drawerType = event.target.closest("[data-drawer]")?.dataset.drawer;
@@ -4931,6 +5161,12 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       await reviewRequest(reviewBtn.dataset.requestReview, reviewBtn.dataset.action || "approve");
+      return;
+    }
+    if (assetRequestId) {
+      event.preventDefault();
+      event.stopPropagation();
+      await createAssetReviewRequest(assetRequestId);
       return;
     }
     if (normalId) {

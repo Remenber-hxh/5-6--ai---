@@ -65,6 +65,7 @@
 
     <!-- ========= 屏 1：相机入口（默认） ========= -->
     <section class="scene scene-camera active" id="sceneCamera">
+      <div class="task-banner" id="taskBanner" hidden></div>
       <div class="camera-hero">
         <div class="hero-text">
           <p class="hero-tagline" aria-label="JADEAST 智巡">
@@ -88,6 +89,8 @@
           <span class="shutter-label">拍照识别</span>
         </label>
         <div class="hero-secondary">
+          <button class="link-btn" id="myTasksBtn" type="button">我的任务</button>
+          <span class="link-sep">·</span>
           <span class="link-btn upload-wrap">
             从相册上传
             <input id="uploadInput" type="file" accept="image/*" multiple class="upload-input" />
@@ -96,6 +99,11 @@
           <button class="link-btn" id="manualPickBtn" type="button">手动选择模板</button>
         </div>
       </div>
+    </section>
+
+    <!-- ========= 屏 1.5：我的任务 ========= -->
+    <section class="scene scene-tasks" id="sceneTasks">
+      <div id="taskList" class="task-list"></div>
     </section>
 
     <!-- ========= 屏 2：识别中 ========= -->
@@ -145,7 +153,7 @@
       <div class="group" id="previewFields"></div>
 
       <div class="summary-card" id="summaryCard" hidden>
-        <div class="head">★ AI 总结（仅基于已确认字段）</div>
+        <div class="head">★ AI 总结（仅基于已确认字段）<span id="summaryStatus" class="sum-status" hidden></span></div>
         <div class="body" id="summaryBody"></div>
       </div>
 

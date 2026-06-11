@@ -11,15 +11,25 @@ New-Item -ItemType Directory -Force -Path $storage | Out-Null
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
 if (Test-Path -LiteralPath $pidFile) {
-  $oldPid = Get-Content -LiteralPath $pidFile
+  $oldPid = Get-Content -LiteralPath $pidFile | Select-Object -First 1
   if ($oldPid) {
     try { Stop-Process -Id $oldPid -Force -ErrorAction Stop } catch {}
   }
-  Remove-Item -LiteralPath $pidFile -Force
+  Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
 }
 
+# 兜底：按端口杀掉残留监听进程（pid 文件可能过期，或有孤儿 admin 进程仍占着 18081/日志）
+$owners = (Get-NetTCPConnection -LocalPort 18081 -State Listen -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique
+foreach ($procId in $owners) {
+  Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Milliseconds 300
+
+# 清旧日志：文件被占用时不致命（进程已停通常可删；删不掉就跳过，不中断启动）
 foreach ($f in @($logFile, "$logFile.err")) {
-  if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force }
+  if (Test-Path -LiteralPath $f) {
+    try { Remove-Item -LiteralPath $f -Force -ErrorAction Stop } catch {}
+  }
 }
 
 $env:ADMIN_FRONTEND_HOST = "127.0.0.1"

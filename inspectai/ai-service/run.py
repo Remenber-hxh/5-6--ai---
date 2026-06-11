@@ -50,9 +50,9 @@ TEMPLATE_PROMPT_MAP = {
     "zihan_energy": "energy_meter",
     "zihan_daily": "screen_reading",
     "hot_water_room": "screen_reading",
-    "elevator_no_room": "elevator_visual",
-    "elevator_machine_room": "elevator_visual",
-    "escalator": "elevator_visual",
+    "elevator_no_room": "elevator_no_room",
+    "elevator_machine_room": "elevator_machine_room",
+    "escalator": "escalator",
     "power_room": "substation",
 }
 
@@ -400,7 +400,7 @@ def analyze(payload: dict) -> dict:
     )
 
     content: list = [{"type": "text", "text": user_text}]
-    for image in images[:6]:
+    for image in images[:20]:
         path = image.get("path") or ""
         url = image_to_data_url(path)
         if url:

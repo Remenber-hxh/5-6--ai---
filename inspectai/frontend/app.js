@@ -131,13 +131,31 @@ const API = {
       headers: { "Idempotency-Key": idempotencyKey() },
     });
   },
+  // ===== 工程巡检任务（闭环入口） =====
+  engineeringTasks() { return API.json("/api/engineering/tasks"); },
+  updateEngineeringTaskStatus(id, body) {
+    return API.json(`/api/engineering/tasks/${encodeURIComponent(id)}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+  },
 };
+
+const ACTIVE_TASK_KEY = "activeEngineeringTask";
+function loadActiveTask() {
+  try { return JSON.parse(localStorage.getItem(ACTIVE_TASK_KEY) || "null"); }
+  catch { return null; }
+}
 
 const state = {
   templates: [],
   points: [],
   assets: [],
   assetSummary: null,
+  engineeringTasks: [],
+  activeEngineeringTask: loadActiveTask(),
+  activeEngineeringTaskId: (loadActiveTask() || {}).id || null,
   scene: "camera",
   classifyResult: null,    // { templateId, confidence, ..., tmpDir }
   pendingImageIds: [],
@@ -174,7 +192,8 @@ const state = {
     localStorage.setItem("userRole", "inspector");
   }
 })();
-function isSupervisor() { return state.userRole === "supervisor"; }
+function canReview() { return ["admin", "manager", "supervisor"].includes(state.userRole); }
+function isSupervisor() { return canReview(); }
 
 // ===== 工具 =====
 
@@ -200,10 +219,11 @@ function toast(msg) {
   el._timer = setTimeout(() => el.classList.remove("show"), 2400);
 }
 
-const PROGRESS = { login: 0, camera: 0, loading: 15, classify: 30, form: 60, preview: 85, ledger: 100, asset: 100, approvals: 100 };
+const PROGRESS = { login: 0, camera: 0, tasks: 0, loading: 15, classify: 30, form: 60, preview: 85, ledger: 100, asset: 100, approvals: 100 };
 const TITLES = {
   login: "登录",
   camera: "智巡",
+  tasks: "我的任务",
   loading: "AI 识别中",
   classify: "确认场景",
   form: "确认日报字段",
@@ -222,7 +242,7 @@ function setScene(name) {
   document.getElementById("scene" + cap(name))?.classList.add("active");
   $("#pageTitle").textContent = TITLES[name] || "智巡";
 
-  const showProgress = !["camera", "ledger", "asset", "approvals"].includes(name);
+  const showProgress = !["camera", "tasks", "ledger", "asset", "approvals"].includes(name);
   $("#progress").hidden = !showProgress;
   $("#progressBar").style.width = (PROGRESS[name] || 0) + "%";
 
@@ -243,12 +263,13 @@ function setScene(name) {
     $("#topAction").onclick = () => goLedger();
   } else if (name === "camera") {
     $("#topAction").hidden = true;
+    renderTaskBanner();
   } else {
     $("#topAction").hidden = true;
   }
 
   // 审批入口：仅主管 + 仅在台账页显示
-  $("#topApprovals").hidden = !(isSupervisor() && name === "ledger");
+  $("#topApprovals").hidden = !(canReview() && name === "ledger");
 
   // footer button per scene
   setFooter(name);
@@ -290,6 +311,7 @@ function setFooter(name) {
 
   switch (name) {
     case "camera":
+    case "tasks":
     case "loading":
       footer.hidden = true;
       break;
@@ -575,6 +597,9 @@ async function startRecordWithTemplate(templateId) {
     if (state.classifyResult?.tmpDir) {
       body.tmpDir = state.classifyResult.tmpDir;
       body.imageIds = state.pendingImageIds;
+    }
+    if (state.activeEngineeringTaskId) {
+      body.engineeringTaskId = state.activeEngineeringTaskId;
     }
     state.record = await API.createRecord(body);
     state.retakePending = false;
@@ -1080,6 +1105,13 @@ function renderPreview() {
   if (rec.aiSummary) {
     $("#summaryCard").hidden = false;
     $("#summaryBody").textContent = rec.aiSummary;
+    const st = inspectionStatus(rec);
+    const badge = $("#summaryStatus");
+    if (badge) {
+      badge.hidden = false;
+      badge.textContent = st;
+      badge.className = "sum-status " + ({ "正常": "ok", "异常": "bad", "待复核": "warn" }[st] || "warn");
+    }
   } else {
     $("#summaryCard").hidden = true;
   }
@@ -1090,7 +1122,10 @@ function renderPreview() {
     } else if (rec.aiRecommendations.length === 0) {
       $("#recosCard").hidden = true;
     } else {
-      $("#recosList").innerHTML = rec.aiRecommendations.map(r => `
+      const priOrder = { high: 0, medium: 1, low: 2 };
+      const sortedRecos = [...rec.aiRecommendations].sort(
+        (a, b) => (priOrder[a.priority] ?? 3) - (priOrder[b.priority] ?? 3));
+      $("#recosList").innerHTML = sortedRecos.map(r => `
         <div class="reco">
           <div class="pri ${escapeHTML(r.priority || 'low')}">${priorityText(r.priority)}</div>
           <div class="body">
@@ -1116,6 +1151,24 @@ function priorityText(p) {
   return ({ high: "高", medium: "中", low: "低" })[p] || "·";
 }
 
+// 与后端 isOccurrenceLabel / inferOverallStatus 一致：判断本次巡检整体状态
+function isOccurrenceLabel(label = "") {
+  if (label.includes("有无") || label.includes("是否有")) return true;
+  if (label.includes("无异") || label.includes("无报警") || label.includes("无漏") || label.includes("无故障")) return false;
+  return ["异常", "是否漏水", "是否报警", "有异响", "有异味"].some((k) => label.includes(k));
+}
+function inspectionStatus(rec) {
+  let abnormal = false, unfilled = false;
+  for (const f of (rec.fields || [])) {
+    const v = String(f.value || "").trim();
+    if (!v) { if (f.required) unfilled = true; continue; }
+    if (["异常", "缺失", "破损", "故障"].includes(v)) abnormal = true;
+    else if (v === "否") { if (!isOccurrenceLabel(f.label)) abnormal = true; }
+    else if (v === "是" || v === "有") { if (isOccurrenceLabel(f.label)) abnormal = true; }
+  }
+  return abnormal ? "异常" : (unfilled ? "待复核" : "正常");
+}
+
 async function submitRecord() {
   $("#primaryBtn").disabled = true;
   $("#primaryBtn").textContent = "AI 总结生成中…";
@@ -1123,8 +1176,13 @@ async function submitRecord() {
     state.record = await API.submit(state.record.id);
     renderPreview();
     setScene("preview");
-    toast("提交成功，已更新台账");
     localStorage.removeItem("activeRecord");
+    if (state.activeEngineeringTaskId) {
+      toast("提交成功，巡检任务已闭环");
+      setActiveTask(null);
+    } else {
+      toast("提交成功，已更新台账");
+    }
   } catch (err) {
     toast(err.message);
     $("#primaryBtn").disabled = false;
@@ -1424,16 +1482,13 @@ async function openAssetDetail(assetId) {
     const data = await API.getAsset(assetId);
     state.currentAsset = data.asset;
     state.currentAssetHistory = data.history || [];
-    // 仅主管视角拉申请历史；普通用户不展示「审批」相关字段
-    if (isSupervisor()) {
-      const my = await API.listChangeRequests({ mine: "1" });
-      state.currentAssetRequests = (my.requests || []).filter(r =>
-        (r.targetType === "asset" && r.targetId === assetId) ||
-        (r.targetType === "record" && state.currentAssetHistory.some(h => h.id === r.targetId))
-      );
-    } else {
-      state.currentAssetRequests = [];
-    }
+    // 一线人员看自己的申请，主管/管理员看该资产相关申请。
+    const requestQuery = canReview() ? {} : { mine: "1" };
+    const my = await API.listChangeRequests(requestQuery);
+    state.currentAssetRequests = (my.requests || []).filter(r =>
+      (r.targetType === "asset" && r.targetId === assetId) ||
+      (r.targetType === "record" && state.currentAssetHistory.some(h => h.id === r.targetId))
+    );
     renderAssetDetail();
   } catch (err) {
     toast("加载失败：" + err.message);
@@ -1472,8 +1527,9 @@ function renderAssetDetail() {
     `;
   }).join("") : `<div class="empty-tip" style="text-align:left;padding:14px 0">暂无历史巡检</div>`;
 
+  const reqTitle = canReview() ? "相关申请" : "我的申请";
   const reqHTML = myReqs.length ? `
-    <div class="section-head">我的修改申请</div>
+    <div class="section-head">${reqTitle}</div>
     <div class="cr-list">
       ${myReqs.map(c => `
         <div class="cr-item cr-${escapeHTML(c.status)}">
@@ -1482,8 +1538,8 @@ function renderAssetDetail() {
             <span class="cr-when">${(c.requestedAt || "").substring(0,16).replace("T"," ")}</span>
           </div>
           <div class="cr-patch">${escapeHTML(describePatch(c))}</div>
-          <div class="cr-reason">理由：${escapeHTML(c.reason || "")}</div>
-          ${c.reviewNote ? `<div class="cr-note">主管：${escapeHTML(c.reviewNote)}</div>` : ""}
+          ${c.reason ? `<div class="cr-reason">${escapeHTML(c.reason)}</div>` : ""}
+          ${c.reviewNote ? `<div class="cr-note">${escapeHTML(c.reviewNote)}</div>` : ""}
           ${c.status === "pending" ? `<div class="cr-actions"><button type="button" class="btn-ghost" data-withdraw="${escapeHTML(c.id)}">撤回</button></div>` : ""}
         </div>
       `).join("")}
@@ -1881,6 +1937,7 @@ function goCamera() {
 
 $("#backBtn").addEventListener("click", () => {
   switch (state.scene) {
+    case "tasks": setScene("camera"); break;
     case "loading": setScene("camera"); break;
     case "classify": setScene("camera"); break;
     case "form": setScene("camera"); break;
@@ -1901,6 +1958,142 @@ function startManualPick() {
 $("#manualPickBtn").addEventListener("click", startManualPick);
 const boardManualBtn = document.getElementById("boardManualBtn");
 if (boardManualBtn) boardManualBtn.addEventListener("click", startManualPick);
+
+// ===== 我的任务（工程任务闭环入口） =====
+
+function setActiveTask(task) {
+  state.activeEngineeringTask = task || null;
+  state.activeEngineeringTaskId = task ? task.id : null;
+  if (task) localStorage.setItem(ACTIVE_TASK_KEY, JSON.stringify(task));
+  else localStorage.removeItem(ACTIVE_TASK_KEY);
+  renderTaskBanner();
+}
+
+function formatTaskDate(s) {
+  if (!s) return "";
+  return String(s).slice(0, 10);
+}
+
+function taskStatusClass(status) {
+  switch (status) {
+    case "已完成": return "done";
+    case "进行中": return "doing";
+    case "逾期": return "overdue";
+    case "已取消": return "canceled";
+    default: return "pending";
+  }
+}
+
+// 我的待办：未关闭(非已完成/已取消)，且指派给我或暂未指派；
+// 若没有任何匹配，则回退展示全部未关闭任务，避免空列表。
+function myOpenTasks() {
+  const me = state.userName || state.inspector;
+  const open = (state.engineeringTasks || []).filter(t => !["已完成", "已取消"].includes(t.status));
+  const mine = open.filter(t => !t.assigneeName || t.assigneeName === me);
+  return mine.length ? mine : open;
+}
+
+async function goTasks() {
+  setScene("tasks");
+  const list = $("#taskList");
+  list.innerHTML = `<div class="task-loading">任务加载中…</div>`;
+  try {
+    const data = await API.engineeringTasks();
+    state.engineeringTasks = data.tasks || [];
+  } catch (err) {
+    toast(err.message);
+    state.engineeringTasks = [];
+  }
+  renderTasks();
+}
+
+const TASK_STATUS_ORDER = { "逾期": 0, "待执行": 1, "进行中": 2 };
+
+function renderTasks() {
+  const list = $("#taskList");
+  const tasks = myOpenTasks();
+  if (!tasks.length) {
+    list.innerHTML = `<div class="task-empty">暂无待办巡检任务</div>`;
+    return;
+  }
+  // 逾期最先、再待执行、再进行中；同状态按截止时间近的在前
+  const sorted = [...tasks].sort((a, b) =>
+    (TASK_STATUS_ORDER[a.status] ?? 3) - (TASK_STATUS_ORDER[b.status] ?? 3) ||
+    String(a.dueAt || "9999").localeCompare(String(b.dueAt || "9999")));
+  const counts = { pending: 0, doing: 0, overdue: 0 };
+  sorted.forEach(t => {
+    if (t.status === "逾期") counts.overdue++;
+    else if (t.status === "进行中") counts.doing++;
+    else counts.pending++;
+  });
+  const summary = `
+    <div class="task-summary">
+      <div class="ts-item"><b>${counts.pending}</b><span>待执行</span></div>
+      <div class="ts-item"><b>${counts.doing}</b><span>进行中</span></div>
+      <div class="ts-item${counts.overdue ? " warn" : ""}"><b>${counts.overdue}</b><span>逾期</span></div>
+    </div>`;
+  list.innerHTML = summary + sorted.map(t => {
+    const title = t.title || t.workContent || "巡检任务";
+    const showDesc = t.workContent && !title.includes(t.workContent);
+    const overdue = t.status === "逾期";
+    return `
+    <article class="task-card">
+      <div class="task-card-head">
+        <span class="task-status task-status-${taskStatusClass(t.status)}">${escapeHTML(t.status || "待执行")}</span>
+        ${t.dueAt ? `<span class="task-due${overdue ? " overdue" : ""}">截止 ${escapeHTML(formatTaskDate(t.dueAt))}</span>` : ""}
+      </div>
+      <h3 class="task-title">${escapeHTML(title)}</h3>
+      <div class="task-meta">${escapeHTML(t.project || "未填项目")}${t.category ? " · " + escapeHTML(t.category) : ""}</div>
+      ${showDesc ? `<p class="task-desc">${escapeHTML(t.workContent)}</p>` : ""}
+      <button class="task-start" data-task-start="${escapeHTML(t.id)}">开始巡检</button>
+    </article>`;
+  }).join("");
+  list.querySelectorAll("[data-task-start]").forEach(btn => {
+    btn.addEventListener("click", () => startTaskExecution(btn.dataset.taskStart));
+  });
+}
+
+async function startTaskExecution(taskId) {
+  const task = (state.engineeringTasks || []).find(t => t.id === taskId);
+  if (!task) { toast("任务不存在或已变更"); return; }
+  setActiveTask(task);
+  // 乐观地把任务置为「进行中」，失败不阻断巡检（提交时后端仍会自动闭环）
+  if (task.status === "待执行" || task.status === "逾期") {
+    try {
+      await API.updateEngineeringTaskStatus(taskId, { status: "进行中" });
+      task.status = "进行中";
+      setActiveTask(task);
+    } catch (_) { /* 容忍 */ }
+  }
+  goCamera();
+  toast("已关联任务，拍照即开始巡检");
+}
+
+function renderTaskBanner() {
+  const banner = $("#taskBanner");
+  if (!banner) return;
+  const t = state.activeEngineeringTask;
+  const hasTask = Boolean(state.activeEngineeringTaskId && t);
+  // 有任务时给相机页打标记：隐藏品牌标牌与拍照说明，让位给任务+取景框
+  document.getElementById("sceneCamera")?.classList.toggle("task-active", hasTask);
+  if (hasTask) {
+    banner.hidden = false;
+    banner.innerHTML = `
+      <span class="tb-dot" aria-hidden="true"></span>
+      <div class="tb-main">
+        <span class="tb-label">正在执行任务</span>
+        <span class="tb-title">${escapeHTML(t.title || t.workContent || "巡检任务")}</span>
+      </div>
+      <button class="tb-clear" type="button" id="taskBannerClear">取消关联</button>`;
+    const clearBtn = document.getElementById("taskBannerClear");
+    if (clearBtn) clearBtn.addEventListener("click", () => { setActiveTask(null); toast("已取消任务关联"); });
+  } else {
+    banner.hidden = true;
+    banner.innerHTML = "";
+  }
+}
+
+$("#myTasksBtn")?.addEventListener("click", goTasks);
 
 // ===== 启动 =====
 

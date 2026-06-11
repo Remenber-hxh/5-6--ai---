@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JADEAST 智巡后台</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=20260609-approval-center-1" />
+  <link rel="stylesheet" href="./styles.css?v=20260611-task-progress-11" />
 </head>
 <body>
   <div class="monitor-frame">
@@ -30,14 +30,14 @@
       </aside>
 
       <header class="topbar">
-        <label class="company-select" aria-label="项目筛选">
-          <select id="projectSelect"></select>
-        </label>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" title="收起 / 展开侧边栏" aria-label="收起侧边栏" aria-expanded="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6.5" x2="20" y2="6.5"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17.5" x2="20" y2="17.5"/></svg>
+        </button>
         <div class="topbar-actions">
           <button class="icon-btn" id="refreshBtn" title="刷新"><img src="./assets/icon-refresh.svg" alt="" /><em id="pendingBadge">0</em></button>
-          <button class="approval-shortcut" id="approvalShortcut" type="button" title="进入审批中心">待审批 <b id="approvalShortcutCount">0</b></button>
           <button class="icon-btn" id="systemConfigBtn" title="系统配置"><img src="./assets/icon-settings.svg" alt="" /></button>
-          <div class="admin-user"><b>张</b><span>张管理员</span></div>
+          <button class="approval-shortcut" id="approvalShortcut" type="button" title="进入审批中心">待审批 <b id="approvalShortcutCount">0</b></button>
+          <div class="admin-user"><b>管</b><span>管理员</span></div>
         </div>
       </header>
 
@@ -53,6 +53,6 @@
   </aside>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260609-approval-center-1"></script>
+  <script src="./app.js?v=20260611-task-progress-11"></script>
 </body>
 </html>

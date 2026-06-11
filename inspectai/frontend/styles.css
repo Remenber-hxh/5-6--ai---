@@ -951,6 +951,20 @@ button {
   color: var(--wx-text);
   white-space: pre-wrap;
 }
+/* 本次巡检状态徽标（紧跟 AI 总结标题） */
+.sum-status {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+.sum-status.ok   { background: var(--c-green-soft);  color: var(--ios-green); }
+.sum-status.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
+.sum-status.bad  { background: var(--c-red-soft);    color: var(--ios-red); }
 
 .recos-card {
   background: var(--wx-bg-card);
@@ -2935,3 +2949,126 @@ body:has(#app[data-scene="camera"]) {
     min-height: 104px;
   }
 }
+
+/* ===== 我的任务（工程任务闭环入口） ===== */
+
+/* --- 相机页任务横幅：暗色玻璃，匹配科技态 camera-hero --- */
+/* 无任务时必须真隐藏：.task-banner 的 display:flex 会盖掉 [hidden] 的 display:none */
+.task-banner[hidden] { display: none !important; }
+/* 有任务时隐藏品牌标牌 + 拍照标题/说明，聚焦任务与取景框 */
+#sceneCamera.task-active .hero-text { display: none; }
+.task-banner {
+  margin: 12px 16px 0;
+  padding: 11px 12px 11px 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: rgba(7, 22, 34, 0.62);
+  border: 1px solid rgba(111, 255, 219, 0.20);
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35), 0 0 22px rgba(67, 229, 172, 0.08);
+}
+.task-banner .tb-dot {
+  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--tech-jade, #43e5ac);
+  animation: tbPulse 2s ease-out infinite;
+}
+@keyframes tbPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(67, 229, 172, 0.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(67, 229, 172, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(67, 229, 172, 0); }
+}
+.task-banner .tb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.task-banner .tb-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  color: rgba(67, 229, 172, 0.85);
+}
+.task-banner .tb-title {
+  font-size: 14.5px; font-weight: 600; color: #ecfbff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.task-banner .tb-clear {
+  flex: none; border: 1px solid rgba(236, 251, 255, 0.20); background: transparent;
+  color: rgba(236, 251, 255, 0.72); font-size: 12px; padding: 5px 12px;
+  border-radius: 999px; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.task-banner .tb-clear:active { background: rgba(236, 251, 255, 0.10); }
+
+/* --- 任务列表页（浅色 iOS 风） --- */
+.task-list { padding: 12px 16px 28px; display: flex; flex-direction: column; gap: 12px; }
+
+.task-summary {
+  display: flex; align-items: stretch;
+  background: var(--wx-bg-card);
+  border-radius: var(--wx-radius);
+  box-shadow: var(--shadow-1);
+  padding: 14px 0;
+  margin-bottom: 2px;
+}
+.task-summary .ts-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.task-summary .ts-item + .ts-item { border-left: 1px solid var(--wx-line-soft); }
+.task-summary b {
+  font-size: 22px; font-weight: 700; color: var(--wx-text);
+  font-variant-numeric: tabular-nums; line-height: 1.2;
+}
+.task-summary span { font-size: 12px; color: var(--wx-text-3); }
+.task-summary .ts-item.warn b { color: var(--wx-red); }
+
+.task-loading { text-align: center; color: var(--wx-text-3); padding: 56px 0; font-size: 14px; }
+.task-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  text-align: center; color: var(--wx-text-3); padding: 64px 0 48px; font-size: 14px;
+}
+.task-empty::before {
+  content: "✓";
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--wx-green-soft); color: var(--wx-green);
+  font-size: 22px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.task-card {
+  background: var(--wx-bg-card);
+  border-radius: var(--wx-radius);
+  box-shadow: var(--shadow-1);
+  padding: 14px 16px 12px;
+}
+.task-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 8px;
+}
+.task-status {
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.task-status-pending { background: var(--wx-blue-soft); color: var(--wx-blue); }
+.task-status-doing { background: var(--wx-orange-soft); color: var(--wx-orange); }
+.task-status-overdue { background: var(--wx-red-soft); color: var(--wx-red); }
+.task-status-done { background: var(--wx-green-soft); color: var(--wx-green); }
+.task-status-canceled { background: var(--wx-line-soft); color: var(--wx-text-3); }
+.task-due { font-size: 12px; color: var(--wx-text-3); font-variant-numeric: tabular-nums; }
+.task-due.overdue { color: var(--wx-red); font-weight: 600; }
+.task-title {
+  font-size: 17px; font-weight: 700; color: var(--wx-text);
+  margin: 0 0 3px; line-height: 1.35; letter-spacing: -0.01em;
+}
+.task-meta { font-size: 13px; color: var(--wx-text-2); }
+.task-desc {
+  font-size: 13px; color: var(--wx-text-3); margin: 4px 0 0; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.task-start {
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  width: 100%; margin-top: 12px; padding: 11px 0;
+  border: none; border-radius: var(--wx-radius-sm);
+  background: var(--wx-blue-soft); color: var(--wx-blue);
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.task-start::after { content: "›"; font-size: 17px; line-height: 1; margin-top: -1px; }
+.task-start:active { background: rgba(0, 122, 255, 0.18); }

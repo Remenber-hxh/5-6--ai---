@@ -87,7 +87,7 @@ func (c *AIClient) Analyze(payload map[string]any) (*AnalyzeResponse, error) {
 // Summarize — 调 /summarize（生成总结+建议）
 func (c *AIClient) Summarize(payload map[string]any) (*SummarizeResponse, error) {
 	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 12 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/summarize", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
