@@ -598,12 +598,114 @@ def summarize(payload: dict) -> dict:
         result["model"] = "fallback-parse-failed"
         return result
 
+    abnormal_fields = summarize_abnormal_fields(payload)
+    tags = [str(t) for t in (parsed.get("tags") or [])][:5]
+    if abnormal_fields and "异常待跟进" not in tags:
+        tags = ["异常待跟进"] + [t for t in tags if t != "正常"]
+    elif not abnormal_fields and not tags:
+        tags = ["正常"]
+
     return {
-        "summary": str(parsed.get("summary", "")).strip(),
-        "tags": [str(t) for t in (parsed.get("tags") or [])][:5],
+        "summary": enforce_summary_policy(str(parsed.get("summary", "")).strip(), payload, abnormal_fields),
+        "tags": tags[:5],
         "recommendations": normalize_recommendations(parsed.get("recommendations") or []),
         "model": text_model,
     }
+
+
+def summary_field_label(field: dict) -> str:
+    return str(field.get("label") or field.get("name") or field.get("code") or "").strip()
+
+
+def summary_field_value(field: dict) -> str:
+    return str(field.get("value") or "").strip().strip("。；;,， ")
+
+
+def summary_is_occurrence_label(label: str) -> bool:
+    """发生即异常的问题：答"否"是正常，答"是/有"才异常。"""
+    if any(kw in label for kw in ("无异", "无报警", "无告警", "无漏", "无故障")):
+        return False
+    return any(kw in label for kw in (
+        "有无", "是否有", "是否存在", "是否漏水", "是否报警", "是否告警",
+        "存在异响", "存在异味", "存在卡阻", "有异响", "有异味",
+        "漏水", "渗漏", "报警", "告警", "卡阻",
+    ))
+
+
+def summary_value_is_abnormal(label: str, value: str) -> bool:
+    if not value:
+        return False
+    normal_phrases = (
+        "正常", "完好", "合格", "通过", "有效", "齐全", "无异常", "无报警", "无告警",
+        "无故障", "无破损", "无缺失", "无漏水", "无渗漏", "无异响", "无异味",
+        "未发现异常", "未发现报警", "未发现故障", "未发现漏水", "未过期",
+        "没有异常", "没有报警", "没有故障", "没有问题",
+    )
+    if any(p in value for p in normal_phrases):
+        return False
+    if value in ("否", "无"):
+        return not summary_is_occurrence_label(label)
+    if value in ("是", "有"):
+        return summary_is_occurrence_label(label)
+    abnormal_phrases = (
+        "异常", "故障", "损坏", "报警", "告警", "破损", "裂纹", "缺失", "漏水",
+        "渗漏", "异响", "异味", "卡阻", "超限", "过期", "不正常", "不可用",
+    )
+    return any(p in value for p in abnormal_phrases)
+
+
+def summarize_abnormal_fields(payload: dict) -> list[str]:
+    abnormal: list[str] = []
+    for field in payload.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        label = summary_field_label(field)
+        value = summary_field_value(field)
+        if not label:
+            continue
+        if not value:
+            if field.get("required"):
+                abnormal.append(f"{label}未填写")
+            continue
+        if summary_value_is_abnormal(label, value):
+            abnormal.append(f"{label}={value}")
+
+    note = str(payload.get("abnormalNote") or "").strip()
+    if note and not any(p in note for p in ("无异常", "未发现异常", "没有异常")):
+        abnormal.append(f"异常说明={note[:30]}")
+    return abnormal
+
+
+def enforce_summary_policy(summary: str, payload: dict, abnormal_fields: list[str] | None = None) -> str:
+    abnormal_fields = abnormal_fields if abnormal_fields is not None else summarize_abnormal_fields(payload)
+    summary = re.sub(r"\s+", " ", summary or "").strip()
+    if not summary:
+        fields = payload.get("fields") or []
+        parts = [f"{summary_field_label(f)}={summary_field_value(f)}" for f in fields[:6] if isinstance(f, dict)]
+        summary = (
+            f"{payload.get('inspector', '巡检员')}在{payload.get('inspectionTime', '')}"
+            f"完成{payload.get('templateName', '巡检')}，关键字段：{'; '.join(parts) or '无'}。"
+        )
+
+    if abnormal_fields:
+        labels = "、".join(abnormal_fields[:4])
+        if len(abnormal_fields) > 4:
+            labels += "等"
+        prefix = f"异常提示：本次发现{len(abnormal_fields)}项异常/待复核字段：{labels}。"
+        low_risk = "低风险总结：除前述异常外，其余已确认字段暂按低风险观察。"
+    else:
+        prefix = "异常提示：本次已确认字段未发现异常。"
+        low_risk = "低风险总结：本次已确认字段整体处于低风险状态，后续按计划巡检沉淀趋势。"
+
+    # 模型有时会自行写错"异常提示"或"低风险总结"；这里按字段判定结果强制重写首尾。
+    summary = re.sub(r"^异常提示[:：][^。；;]*[。；;]?\s*", "", summary).strip()
+    summary = re.sub(r"\s*低风险总结[:：].*$", "", summary).strip()
+    summary = summary.lstrip("。；; ")
+    if summary:
+        summary = prefix + summary.rstrip("。；; ") + "。" + low_risk
+    else:
+        summary = prefix + low_risk
+    return summary
 
 
 def normalize_recommendations(raw_list: list) -> list:
@@ -698,9 +800,10 @@ def fallback_summarize(payload: dict) -> dict:
         f"{payload.get('inspector', '巡检员')} 在 {payload.get('inspectionTime', '')} "
         f"完成 {payload.get('templateName', '巡检')}，关键字段：{'; '.join(parts) or '无'}。"
     )
+    abnormal_fields = summarize_abnormal_fields(payload)
     return {
-        "summary": summary,
-        "tags": ["自动摘要降级"],
+        "summary": enforce_summary_policy(summary, payload, abnormal_fields),
+        "tags": ["异常待跟进" if abnormal_fields else "正常", "自动摘要降级"],
         "recommendations": [],
         "model": "fallback",
     }
