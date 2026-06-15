@@ -737,6 +737,42 @@ button {
   letter-spacing: -0.01em;
   font-weight: 500;
 }
+/* 设备健康列表分段标题（需跟进 / 健康） */
+.asset-section {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 18px 22px 8px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.asset-section::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+}
+.asset-section.warn { color: var(--ios-red); }
+.asset-section.warn::before { background: var(--ios-red); }
+.asset-section.ok { color: var(--muted-foreground); }
+.asset-section.ok::before { background: var(--ios-green); }
+
+/* 设备档案顶部健康状态条 */
+.health-strip {
+  margin: 14px 16px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.health-strip b { font-size: 15px; font-weight: 700; }
+.health-strip span { font-size: 12px; color: var(--muted-foreground); }
+.health-strip.ok   { background: var(--c-green-soft); }
+.health-strip.ok b { color: var(--ios-green); }
+.health-strip.warn   { background: var(--c-red-soft); }
+.health-strip.warn b { color: var(--ios-red); }
 /* iOS Settings 分组卡：白底 + 大圆角 + 多层柔阴影 */
 .group {
   background: var(--card);
@@ -1061,7 +1097,7 @@ button {
   letter-spacing: -0.5px;
 }
 .lo-num.lo-ok    { color: var(--wx-green); }
-.lo-num.lo-warn  { color: var(--wx-orange); }
+.lo-num.lo-warn  { color: var(--ios-red); }
 .lo-num.lo-blue  { color: var(--wx-blue); }
 .lo-label {
   font-size: 10px;

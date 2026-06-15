@@ -46,6 +46,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       # MySQL 官方镜像原生支持 _FILE 约定
@@ -72,6 +73,7 @@ services:
       dockerfile: ai-service/Dockerfile
     restart: unless-stopped
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       AI_SERVICE_ADDR: 0.0.0.0
       AI_SERVICE_PORT: 9100
       # 不再传 DASHSCOPE_API_KEY；指向 secret 文件
@@ -111,6 +113,7 @@ services:
       dockerfile: go-backend/Dockerfile
     restart: unless-stopped
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       BACKEND_ADDR: ":8080"
       AI_SERVICE_URL: "http://ai-service:9100"
       FRONTEND_DIR: "/app/frontend"

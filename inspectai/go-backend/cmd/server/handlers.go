@@ -2147,6 +2147,13 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 			"recordId": rec.ID,
 		})
 	}
+	// 复检合格自动销账：本次提交使资产恢复"正常"时，闭环该资产遗留的"待整改"任务
+	// （与「标记正常」「审批通过」共用 onAssetResolvedNormal，三条恢复路径行为一致）。
+	for _, asset := range assets {
+		if asset != nil && asset.LastStatus == "正常" {
+			s.onAssetResolvedNormal(asset.ID)
+		}
+	}
 	_ = s.store.CompleteSubmission(recordID, idemKey)
 	s.notifyInspectionSubmitted(rec, assets)
 

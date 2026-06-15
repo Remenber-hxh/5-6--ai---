@@ -1362,8 +1362,9 @@ function healthCards(counts) {
   const total = counts.total || 1;
   const items = [
     { key: "normal", label: "正常资产", count: counts.normal, pct: Math.round((counts.normal / total) * 100), color: "#12a968", desc: "AI 判定运行正常" },
-    { key: "warn",   label: "需关注",   count: counts.warning + counts.danger, pct: Math.round(((counts.warning + counts.danger) / total) * 100), color: "#f59e0b", desc: "AI 检出异常或建议复核" },
-    { key: "repair", label: "待维修",   count: counts.repair, pct: Math.round((counts.repair / total) * 100), color: "#ef4b3f", desc: "需现场处理" },
+    // 需跟进口径与移动端「设备健康」一致：异常 + 待复核 + 待维修
+    { key: "warn",   label: "需跟进",   count: counts.warning + counts.danger + counts.repair, pct: Math.round(((counts.warning + counts.danger + counts.repair) / total) * 100), color: "#f59e0b", desc: "异常 / 待复核 / 待维修" },
+    { key: "repair", label: "待维修",   count: counts.repair, pct: Math.round((counts.repair / total) * 100), color: "#ef4b3f", desc: "需跟进中需现场处理的部分" },
   ];
   const ring = (pct, color) => {
     const r = 28, c = 2 * Math.PI * r;
@@ -1680,11 +1681,13 @@ function asideFindings(issues, attentionItems = []) {
 }
 
 function renderPlanPage() {
-  // 顶部统计卡与下方计划列表同源：都基于计划行（按计划状态分桶），点击卡片即筛选列表
+  // 顶部统计卡与下方计划列表同源：都基于计划行（按计划状态分桶），点击卡片即筛选列表。
+  // seed 占位行（"未配置"）不是真实计划：不进统计、不进状态筛选，只在不筛选时垫底展示。
   const baseRows = filteredPlanRows();
-  const counts = planBucketCounts(baseRows);
+  const realRows = baseRows.filter((r) => r.source !== "seed");
+  const counts = planBucketCounts(realRows);
   const rows = state.selectedPlanStatus
-    ? baseRows.filter((r) => planStatusBucket(r.status) === state.selectedPlanStatus)
+    ? realRows.filter((r) => planStatusBucket(r.status) === state.selectedPlanStatus)
     : baseRows;
   if (!state.selectedPlanId || !rows.some((r) => r.id === state.selectedPlanId)) {
     state.selectedPlanId = rows[0]?.id || "";
@@ -2036,8 +2039,13 @@ function bindPlanEditForm() {
     savePlanFromAside(form);
   });
   document.getElementById("planEditDeleteBtn")?.addEventListener("click", () => {
-    if (!confirm("确认删除该计划？")) return;
     const id = form.dataset.planId;
+    // 工程计划在后端，没有删除 API——不能假装删掉
+    if ((state.engineeringPlans || []).some((p) => p.id === id)) {
+      toast("工程计划与任务闭环挂钩，暂不支持删除");
+      return;
+    }
+    if (!confirm("确认删除该计划？")) return;
     state.customPlans = state.customPlans.filter((p) => p.id !== id);
     saveLocalArray(ADMIN_PLANS_KEY, state.customPlans);
     state.selectedPlanId = "";
@@ -2046,12 +2054,84 @@ function bindPlanEditForm() {
   });
 }
 
-function savePlanFromAside(form) {
+async function savePlanFromAside(form) {
   const data = Object.fromEntries(new FormData(form).entries());
   const id = form.dataset.planId;
   const isSeed = String(id).startsWith("seed_");
   const rows = filteredPlanRows();
   const src = rows.find((r) => r.id === id) || {};
+  // 工程计划：合并编辑项后回写后端（整对象 upsert，避免清掉未编辑字段）。
+  // 旧实现会把工程计划复制一份进 localStorage，造成真假两条计划并存。
+  if (src.source === "engineering") {
+    const full = (state.engineeringPlans || []).find((p) => p.id === id);
+    if (!full) { toast("计划数据未加载，请刷新后重试"); return; }
+    const merged = {
+      ...full,
+      workContent: (data.name || "").trim() || full.workContent,
+      ownerName: (data.owner || "").trim() || full.ownerName,
+      cycleText: data.frequency || full.cycleText,
+      planEnd: (data.nextRun || "").trim() || full.planEnd,
+      remark: (data.remark || "").trim(),
+      // status 不回写：侧栏下拉是 启用/暂停 旧词表，工程计划状态由任务闭环自动推进
+      status: full.status,
+    };
+    try {
+      await api("/api/engineering/plans", { method: "POST", body: JSON.stringify(merged) });
+      toast("计划已保存");
+      await loadData(false);
+      state.selectedPlanId = id;
+      render();
+    } catch (error) {
+      toast(error.message || "计划保存失败");
+    }
+    return;
+  }
+  // seed 占位行「新建计划」：与抽屉一致，创建后端计划 + 下发首期任务
+  if (isSeed) {
+    const name = (data.name || "").trim() || src.name || "巡检计划";
+    const owner = (data.owner || "").trim() || "巡检员";
+    const nextRun = (data.nextRun || "").trim();
+    try {
+      const planRes = await api("/api/engineering/plans", {
+        method: "POST",
+        body: JSON.stringify({
+          workContent: name,
+          project: src.project || "-",
+          category: src.point || src.templateName || "巡检点位",
+          ownerName: owner,
+          cycleText: data.frequency || "每日 09:00",
+          planEnd: nextRun,
+          scopeDesc: src.desc || "",
+          remark: (data.remark || "").trim(),
+          status: "待执行",
+          source: "manual",
+        }),
+      });
+      const planId = planRes?.plan?.id || "";
+      if (planId) {
+        await api("/api/engineering/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            planItemId: planId,
+            title: `${name} 巡检任务`,
+            assigneeName: owner,
+            dueAt: nextRun,
+            taskType: "巡检计划执行",
+            status: "待执行",
+            source: "manual",
+          }),
+        });
+      }
+      toast("计划已创建，任务已下发到移动端「我的任务」");
+      await loadData(false);
+      state.selectedPlanId = planId;
+      state.selectedTaskId = "";
+      render();
+    } catch (error) {
+      toast(error.message || "计划创建失败");
+    }
+    return;
+  }
   const payload = {
     id: isSeed ? `plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` : id,
     name: (data.name || "").trim() || src.name,
@@ -2348,7 +2428,9 @@ function taskDetailCard(task) {
   }
   const editableTask = state.customTasks?.some((t) => t.id === task.id) || task.source === "engineering";
   const statusFlow = ["待执行", "进行中", "已完成"];
-  const curIdx = statusFlow.indexOf(task.status);
+  // 待整改 / 逾期 介于"进行中"与"已完成"之间：流程条按进行中档位点亮
+  const flowStatus = (task.status === "待整改" || task.status === "逾期") ? "进行中" : task.status;
+  const curIdx = statusFlow.indexOf(flowStatus);
   return `
     <div class="task-detail-card">
       <div class="task-detail-head">
@@ -2389,7 +2471,7 @@ function taskDetailCard(task) {
       ${editableTask ? `
         <div class="td-actions">
           ${task.status === "待执行" ? `<button class="td-btn primary" data-task-action="start">开始执行</button>` : ""}
-          ${task.status === "进行中" ? `<button class="td-btn primary" data-task-action="done">标记完成</button>` : ""}
+          ${["进行中", "待整改", "逾期"].includes(task.status) ? `<button class="td-btn primary" data-task-action="done">标记完成</button>` : ""}
           ${task.status !== "已完成" ? `<button class="td-btn ghost" data-task-action="cancel">取消任务</button>` : `<button class="td-btn ghost" data-task-action="reopen">重新打开</button>`}
         </div>
       ` : `<div class="td-readonly">来自巡检记录，不可在此修改状态</div>`}
@@ -2400,7 +2482,7 @@ function taskDetailCard(task) {
 function taskStatusTone(status) {
   if (status === "已完成") return "tone-success";
   if (status === "进行中") return "tone-info";
-  if (status === "逾期") return "tone-danger";
+  if (status === "逾期" || status === "待整改") return "tone-danger";
   return "tone-warning";
 }
 
@@ -4256,6 +4338,18 @@ function renderAssetSide(asset) {
   if (!asset) return `<div class="detail-head"><h2>资产详情</h2></div><div class="empty-state">暂无资产数据</div>`;
   const localHist = state.records.filter((record) => record.id === asset.lastRecordId || record.pointId === asset.pointId);
   const photos = collectAssetPhotos(asset, localHist);
+  // 串联工程闭环：该资产存在「待整改」任务时直接给出跳转，不用去计划页翻找
+  const followTasks = engineeringTaskRows().filter((t) => t.assetId === asset.id && t.status === "待整改");
+  const followHTML = followTasks.length ? `
+      <div class="asset-follow">
+        ${followTasks.map((t) => `
+          <button class="asset-follow-item" data-task-jump="${escapeHTML(t.id)}" type="button">
+            <span class="pill danger">待整改</span>
+            <span class="af-title">${escapeHTML(t.title)}</span>
+            <em>查看任务 →</em>
+          </button>
+        `).join("")}
+      </div>` : "";
   return `
     <div class="detail-head asset-detail-head"><h2>资产预览</h2></div>
     <div class="asset-preview">
@@ -4269,6 +4363,7 @@ function renderAssetSide(asset) {
         <div><span>巡检次数</span><b>${asset.inspectionCount || 0} 次</b></div>
       </div>
       <div class="asset-preview-summary">${escapeHTML(truncateText(asset.lastSummary || "暂无管理摘要。", 90))}</div>
+      ${followHTML}
       <button class="asset-preview-btn" data-asset-detail="${escapeHTML(asset.id)}" type="button">查看完整档案 →</button>
     </div>
   `;
@@ -4371,12 +4466,13 @@ function renderRecordSide(record) {
       <b>复核留痕 <small>共 ${logs.length} 次字段确认 · 防惰性留痕</small></b>
       <div class="confirm-logs">${logs.slice().reverse().slice(0, 8).map(renderConfirmLogRow).join("")}</div>
     </div>` : "";
+  const recMain = recordBusinessStatus(record);
   return `
     <div class="detail-head"><h2>记录详情</h2></div>
     ${renderLoadErrorBanner(`confirmLogs:${record.id}`)}
     <div class="side-stack">
       <div class="info-card"><b>记录编号</b><span>${escapeHTML(recordNo(record))}</span></div>
-      <div class="info-card"><b>AI 总结</b><span>${escapeHTML(record.aiSummary || record.report || "暂无总结")}</span></div>
+      <div class="info-card"><b>AI 总结 <em class="status ${statusClass(recMain)}">${escapeHTML(recMain)}</em></b><span>${escapeHTML(record.aiSummary || record.report || "暂无总结")}</span></div>
       <div class="photo-row">${photos.slice(0, 2).map((url) => `<img src="${escapeHTML(url)}" alt="">`).join("")}</div>
       <table class="history-table"><thead><tr><th>字段</th><th>值</th><th>置信度</th></tr></thead><tbody>${(record.fields || []).slice(0, 8).map((field) => `<tr><td>${escapeHTML(field.label || field.code)}</td><td>${escapeHTML(field.value || field.aiValue || "-")}</td><td>${Math.round((field.confidence || 0) * 100)}%</td></tr>`).join("") || emptyRow(3, "暂无字段")}</tbody></table>
       ${confirmHTML}
@@ -4758,32 +4854,55 @@ function openGenericDrawer(type) {
   openDrawer(copy[0], `<p>${escapeHTML(copy[1])}</p>`);
 }
 
-function createAdminPlan(form) {
+// 新建计划走后端：创建工程计划 + 下发首期任务，移动端「我的任务」即刻可见、可执行。
+// （旧实现写 localStorage customPlans，状态"启用"却永远生不出任务，是个死胡同。）
+async function createAdminPlan(form) {
   const template = state.templates.find((tpl) => tpl.id === form.get("templateId")) || {};
   const point = state.points.find((item) => item.id === form.get("pointId")) || {};
   const project = String(form.get("project") || point.project || template.project || "默认项目");
-  const plan = {
-    id: clientId("plan"),
-    name: String(form.get("name") || template.name || point.name || "巡检计划").trim(),
-    project,
-    pointId: point.id || "",
-    pointName: point.name || point.location || "未配置点位",
-    templateId: template.id || "",
-    templateName: template.name || "默认日报模板",
-    frequency: String(form.get("frequency") || "每日 09:00"),
-    owner: String(form.get("owner") || "巡检员"),
-    nextRun: displayDateTimeInput(form.get("firstRun")),
-    aiPolicy: String(form.get("aiPolicy") || "视觉识别 + 人工确认"),
-    remark: String(form.get("remark") || "").trim(),
-    status: "启用",
-    createdAt: new Date().toISOString(),
-  };
-  state.customPlans.unshift(plan);
-  saveLocalArray(ADMIN_PLANS_KEY, state.customPlans);
-  renderProjectOptions();
-  closeDrawer();
-  setPage("plan", false);
-  toast("巡检计划已保存");
+  const name = String(form.get("name") || template.name || point.name || "巡检计划").trim();
+  const owner = String(form.get("owner") || "巡检员");
+  const nextRun = displayDateTimeInput(form.get("firstRun"));
+  try {
+    const planRes = await api("/api/engineering/plans", {
+      method: "POST",
+      body: JSON.stringify({
+        workContent: name,
+        project,
+        category: point.name || point.location || template.assetType || "巡检点位",
+        ownerName: owner,
+        cycleText: String(form.get("frequency") || "每日 09:00"),
+        planEnd: nextRun === "-" ? "" : nextRun,
+        scopeDesc: `${point.name || point.location || "点位"}，使用 ${template.name || "默认"} 模板。`,
+        remark: String(form.get("remark") || "").trim(),
+        status: "待执行",
+        source: "manual",
+      }),
+    });
+    const planId = planRes?.plan?.id || "";
+    if (planId) {
+      await api("/api/engineering/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          planItemId: planId,
+          title: `${name} 巡检任务`,
+          assigneeName: owner,
+          dueAt: nextRun === "-" ? "" : nextRun,
+          taskType: "巡检计划执行",
+          status: "待执行",
+          source: "manual",
+        }),
+      });
+    }
+    closeDrawer();
+    await loadData(false);
+    state.selectedPlanId = planId;
+    state.selectedTaskId = "";
+    setPage("plan", false);
+    toast("计划已创建，任务已下发到移动端「我的任务」");
+  } catch (error) {
+    toast(error.message || "计划创建失败");
+  }
 }
 
 async function createAdminTask(form) {
@@ -5179,6 +5298,14 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       openGenericDrawer(drawerType);
+      return;
+    }
+    const taskJump = event.target.closest("[data-task-jump]")?.dataset.taskJump;
+    if (taskJump) {
+      event.preventDefault();
+      event.stopPropagation();
+      state.selectedTaskId = taskJump; // 台账 → 计划页对应任务（与「查看任务进度」同机制）
+      setPage("plan");
       return;
     }
     if (pageLink) {

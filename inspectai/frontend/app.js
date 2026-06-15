@@ -228,8 +228,8 @@ const TITLES = {
   classify: "确认场景",
   form: "确认日报字段",
   preview: "提交日报",
-  ledger: "资产台账",
-  asset: "资产详情",
+  ledger: "设备健康",
+  asset: "设备档案",
   approvals: "待审批",
 };
 
@@ -259,7 +259,7 @@ function setScene(name) {
   }
   if (name === "form" || name === "preview") {
     $("#topAction").hidden = false;
-    $("#topAction").textContent = "台账";
+    $("#topAction").textContent = "设备健康";
     $("#topAction").onclick = () => goLedger();
   } else if (name === "camera") {
     $("#topAction").hidden = true;
@@ -339,7 +339,9 @@ function setFooter(name) {
     }
     case "preview": {
       footer.hidden = false;
-      primary.textContent = state.record?.submitted ? "查看台账" : "提交日报";
+      primary.textContent = state.record?.submitted
+        ? (inspectionStatus(state.record) === "异常" ? "查看设备健康 · 有需跟进" : "查看设备健康")
+        : "提交日报";
       primary.disabled = false;
       primary.onclick = () => state.record?.submitted ? goLedger() : submitRecord();
       secondary.textContent = "返回修改";
@@ -359,7 +361,7 @@ function setFooter(name) {
       primary.textContent = "申请修改";
       primary.disabled = false;
       primary.onclick = () => openChangeRequestSheet();
-      secondary.textContent = "返回台账";
+      secondary.textContent = "返回设备健康";
       secondary.hidden = false;
       secondary.onclick = () => goLedger();
       break;
@@ -1181,7 +1183,7 @@ async function submitRecord() {
       toast("提交成功，巡检任务已闭环");
       setActiveTask(null);
     } else {
-      toast("提交成功，已更新台账");
+      toast("提交成功，设备健康档案已更新");
     }
   } catch (err) {
     toast(err.message);
@@ -1348,7 +1350,8 @@ function renderLedgerOverview() {
   const summary = state.assetSummary;
   if (summary) {
     normal = summary.normal || 0;
-    risk = (summary.warning || 0) + (summary.danger || 0) + (summary.repair || 0) + (summary.unknown || 0);
+    // 需跟进口径(两端统一)：异常+待复核+待维修；未巡检(unknown)不算需跟进
+    risk = (summary.warning || 0) + (summary.danger || 0) + (summary.repair || 0);
   } else {
     for (const a of assets) {
       const s = a.lastStatus || "";
@@ -1433,39 +1436,64 @@ function renderGroupPills(groups, kind) {
   }).join("");
 }
 
+// 需跟进严重度：异常 > 待维修 > 待复核；不在表内 = 健康段
+const FOLLOWUP_SEVERITY = { "异常": 0, "待维修": 1, "待复核": 2 };
+
+function assetRowHTML(a) {
+  const cover = a.coverImage
+    ? `<div class="asset-cover"><img src="${storageURL(thumbPath(a.coverImage, a.lastRecordId))}" alt="" loading="lazy" /></div>`
+    : `<div class="asset-cover empty"></div>`;
+  const subParts = [a.project, a.assetType];
+  if (a.lastInspector) subParts.push("最近 " + a.lastInspector);
+  return `
+    <div class="asset-row" data-id="${escapeHTML(a.id)}">
+      ${cover}
+      <div class="meta">
+        <div class="name">${escapeHTML(a.assetName)}</div>
+        <div class="sub">${subParts.map(escapeHTML).join(" · ")}</div>
+        ${a.lastSummary ? `<div class="summary">${escapeHTML(a.lastSummary)}</div>` : ""}
+      </div>
+      <div class="asset-side">
+        <div class="status ${escapeHTML(a.lastStatus || '')}">${escapeHTML(a.lastStatus || '未巡检')}</div>
+        <div class="count-badge">${a.inspectionCount} 次</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderAssets() {
   const list = $("#assetList");
   if (!state.assets.length) {
-    list.innerHTML = `<div class="empty-tip">暂无资产记录<br>提交一条巡检后会自动建立台账</div>`;
+    list.innerHTML = `<div class="empty-tip">还没有设备档案<br>提交一条巡检即自动建档</div>`;
     return;
   }
   const filtered = applyAssetFilter(state.assets);
   if (!filtered.length) {
-    list.innerHTML = `<div class="empty-tip">没有符合当前筛选的资产<br>点击上方「资产总数」清空筛选</div>`;
+    list.innerHTML = `<div class="empty-tip">没有符合当前筛选的设备<br>点击上方「已巡设备」清空筛选</div>`;
     return;
   }
-  list.innerHTML = filtered.map(a => {
-    const cover = a.coverImage
-      ? `<div class="asset-cover"><img src="${storageURL(thumbPath(a.coverImage, a.lastRecordId))}" alt="" loading="lazy" /></div>`
-      : `<div class="asset-cover empty"></div>`;
-    const subParts = [a.project, a.assetType];
-    if (a.lastInspector) subParts.push("最近 " + a.lastInspector);
-    return `
-      <div class="asset-row" data-id="${escapeHTML(a.id)}">
-        ${cover}
-        <div class="meta">
-          <div class="name">${escapeHTML(a.assetName)}</div>
-          <div class="sub">${subParts.map(escapeHTML).join(" · ")}</div>
-          ${a.lastSummary ? `<div class="summary">${escapeHTML(a.lastSummary)}</div>` : ""}
-        </div>
-        <div class="asset-side">
-          <div class="status ${escapeHTML(a.lastStatus || '')}">${escapeHTML(a.lastStatus || '未巡检')}</div>
-          <div class="count-badge">${a.inspectionCount} 次</div>
-        </div>
-      </div>
-    `;
-  }).join("");
-  // 行点击 → 资产详情页（只读）
+  // 两段式：需跟进置顶（按严重度，再按最近巡检时间），健康段按时间倒序
+  const followup = [];
+  const healthy = [];
+  for (const a of filtered) {
+    (a.lastStatus in FOLLOWUP_SEVERITY ? followup : healthy).push(a);
+  }
+  const byTime = (x, y) => (y.lastInspectedAt || "").localeCompare(x.lastInspectedAt || "");
+  followup.sort((x, y) =>
+    (FOLLOWUP_SEVERITY[x.lastStatus] - FOLLOWUP_SEVERITY[y.lastStatus]) || byTime(x, y));
+  healthy.sort(byTime);
+
+  let html = "";
+  if (followup.length) {
+    html += `<div class="asset-section warn">需跟进 · ${followup.length}</div>`;
+    html += followup.map(assetRowHTML).join("");
+  }
+  if (healthy.length) {
+    html += `<div class="asset-section ok">健康 · ${healthy.length}</div>`;
+    html += healthy.map(assetRowHTML).join("");
+  }
+  list.innerHTML = html;
+  // 行点击 → 设备档案（只读）
   list.querySelectorAll(".asset-row").forEach(row => {
     row.addEventListener("click", () => openAssetDetail(row.dataset.id));
   });
@@ -1546,9 +1574,15 @@ function renderAssetDetail() {
     </div>
   ` : "";
 
+  const followup = a.lastStatus in FOLLOWUP_SEVERITY;
+  const lastWhen = (a.lastInspectedAt || "").substring(5, 16).replace("T", " ");
   $("#assetDetailBody").innerHTML = `
+    <div class="health-strip ${followup ? "warn" : "ok"}">
+      <b>${followup ? "需跟进 · " + escapeHTML(a.lastStatus) : "健康"}</b>
+      <span>最近体检 ${escapeHTML(lastWhen)}${a.lastInspector ? " · " + escapeHTML(a.lastInspector) : ""}</span>
+    </div>
     <div class="asset-meta">
-      <div class="row"><span>资产名称</span><b>${escapeHTML(a.assetName || "")}</b></div>
+      <div class="row"><span>设备名称</span><b>${escapeHTML(a.assetName || "")}</b></div>
       <div class="row"><span>项目</span><b>${escapeHTML(a.project || "")}</b></div>
       <div class="row"><span>类型</span><b>${escapeHTML(a.assetType || "")}</b></div>
       <div class="row"><span>当前状态</span><b class="status ${escapeHTML(a.lastStatus || '')}">${escapeHTML(a.lastStatus || '未巡检')}</b></div>
@@ -1557,7 +1591,7 @@ function renderAssetDetail() {
       ${a.lastInspector ? `<div class="row"><span>最近巡检人</span><b>${escapeHTML(a.lastInspector)}</b></div>` : ""}
       ${a.lastSummary ? `<div class="row col"><span>最近总结</span><div class="multi">${escapeHTML(a.lastSummary)}</div></div>` : ""}
     </div>
-    <div class="section-head">巡检记录 · 共 ${history.length} 次（只读）</div>
+    <div class="section-head">体检记录 · 共 ${history.length} 次（只读）</div>
     ${historyHTML}
     ${reqHTML}
   `;

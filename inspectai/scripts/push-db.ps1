@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   将本地 InspectAI MySQL 数据库推送到生产服务器并覆盖生产库。
 
