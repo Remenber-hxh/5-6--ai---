@@ -1,3 +1,19 @@
+/* 本地打包的中文字体：Noto Sans SC（思源黑体同源，干净中性），中文用它、拉丁走系统字体 */
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/noto-sc-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/noto-sc-700.woff2") format("woff2");
+}
+
 :root {
   --nav: #071827;
   --nav2: #10283b;
@@ -27,7 +43,13 @@ body {
 body {
   min-width: 0;
   color: var(--text);
-  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  /* 现代系统字体栈：Latin 走 system-ui/Segoe；中文优先更干净的 PingFang/MiSans/鸿蒙/思源/Noto，
+     都没有才退回微软雅黑。配合抗锯齿，粗体不再发钝。 */
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   /* 去外框 grid pattern,跟 monitor-frame 同色无缝,贴边布局 */
   background: #07111d;
 }
@@ -1169,7 +1191,8 @@ body.login-screen .login-card .primary:hover {
 }
 
 .panel-head > button,
-.panel-actions > button {
+.panel-actions > button,
+.approval-head-actions > button:not(.btn-ghost) {
   height: 36px;
   padding: 0 18px;
   border: 1px solid var(--blue);
@@ -1184,11 +1207,26 @@ body.login-screen .login-card .primary:hover {
 }
 
 .panel-head > button:hover,
-.panel-actions > button:hover {
+.panel-actions > button:hover,
+.approval-head-actions > button:not(.btn-ghost):hover {
   background: #1655d8;
   box-shadow: 0 8px 18px rgba(36, 107, 254, 0.30);
   transform: translateY(-1px);
 }
+/* 导出：描边次要按钮 */
+.approval-head-actions > .btn-ghost {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.approval-head-actions > .btn-ghost:hover { background: var(--page); }
 
 .panel-head > .link-btn,
 .panel-actions > .link-btn {
@@ -3083,6 +3121,109 @@ td i {
   color: #fff !important;
   background: var(--red) !important;
 }
+
+/* 审批头部操作区 */
+.approval-head-actions { display: flex; align-items: center; gap: 8px; }
+
+/* 审批动态行可点 + 预览提示 */
+.live-row.live-clickable { cursor: pointer; }
+.live-row.live-clickable:hover { background: var(--page); }
+.live-peek {
+  align-self: center;
+  font-size: 11px; color: var(--blue);
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(36, 107, 254, 0.08);
+  opacity: 0; transition: opacity 120ms ease;
+}
+.live-row.live-clickable:hover .live-peek { opacity: 1; }
+
+/* 快速预览小窗（企业微信式） */
+.cr-preview-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(8, 20, 35, 0.04);
+}
+.cr-preview-pop {
+  position: fixed;
+  width: 290px; max-width: calc(100vw - 24px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(15, 35, 55, 0.18);
+  padding: 14px 16px;
+  display: grid; gap: 9px;
+  animation: crpIn 140ms ease;
+}
+@keyframes crpIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.crp-head { display: flex; align-items: center; justify-content: space-between; }
+.crp-head .status { font-size: 12px; font-weight: 700; padding: 3px 11px; border-radius: 999px; }
+.crp-close {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 20px; line-height: 1; color: var(--muted); padding: 0 2px;
+}
+.crp-close:hover { color: var(--text); }
+.crp-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.crp-meta { font-size: 12px; color: var(--muted); margin-top: -2px; }
+.crp-row { display: grid; grid-template-columns: 40px 1fr; gap: 8px; font-size: 13px; align-items: baseline; }
+.crp-row > span { color: var(--muted); }
+.crp-row > b { color: var(--text); font-weight: 500; line-height: 1.5; }
+.crp-actions { display: flex; gap: 8px; margin-top: 4px; }
+.crp-actions button { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.crp-actions .btn-ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
+.crp-actions .primary { background: var(--green); color: #fff; border: 0; }
+
+/* ===== 审批卡美化 ===== */
+.approval-list-modern .approval-card {
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid #f59e0b;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 35, 55, 0.04), 0 6px 16px rgba(15, 35, 55, 0.05);
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.approval-list-modern .approval-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(15, 35, 55, 0.07), 0 14px 30px rgba(15, 35, 55, 0.09);
+}
+.approval-list-modern .approval-card.approval-approved { border-left-color: var(--green); }
+.approval-list-modern .approval-card.approval-rejected { border-left-color: var(--red); }
+/* 顶部：状态 pill + 短 id（截断、淡化） */
+.approval-card-top .status {
+  font-size: 12px; font-weight: 700; padding: 3px 11px; border-radius: 999px;
+}
+.approval-card-top em {
+  max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; color: #9aa6b4;
+}
+.approval-card b { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.approval-list-modern .approval-card p,
+.approval-list-modern .approval-reason { font-size: 14px; }
+/* 变更内容框：清爽 */
+.approval-list-modern .approval-patch {
+  background: #f6f8fb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-size: 14px; color: var(--text);
+}
+/* 卡片内部间距休整，略松 */
+.approval-list-modern .approval-card { gap: 12px; padding: 20px 22px; }
+.approval-card-main { gap: 9px; }
+/* 按钮分主次：查看详情=描边、通过=绿、驳回=红描边 */
+.approval-list-modern .approval-card footer { margin-top: 2px; }
+.approval-list-modern .approval-card footer .btn-ghost {
+  background: #fff !important; color: var(--text) !important;
+  border: 1px solid var(--line) !important;
+}
+.approval-list-modern .approval-card footer .btn-ghost:hover { background: #f6f8fb !important; }
+.approval-list-modern .approval-card footer button[data-action="approve"] {
+  background: var(--green) !important; color: #fff !important; border: 0 !important;
+}
+.approval-list-modern .approval-card footer button.danger {
+  background: #fff !important; color: var(--red) !important;
+  border: 1px solid rgba(224, 57, 43, 0.40) !important;
+}
+.approval-list-modern .approval-card footer button.danger:hover { background: rgba(224, 57, 43, 0.06) !important; }
 
 .ring-card {
   min-height: 260px;
@@ -7292,6 +7433,148 @@ td .status,
   animation: none !important;
 }
 
+.ai-scaffold {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+.ai-scaffold-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ai-scaffold-head b {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.ai-scaffold-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+  max-width: 58%;
+}
+.ai-scaffold-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.ai-scaffold-evidence span {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 12px;
+  border: 1px solid var(--line);
+}
+.ai-scaffold-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ai-action {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.ai-action:hover {
+  transform: translateY(-1px);
+}
+.ai-action.primary,
+.ai-action.info {
+  border-color: rgba(36, 107, 254, 0.28);
+  color: var(--blue);
+  background: rgba(36, 107, 254, 0.05);
+}
+.ai-action.warn {
+  border-color: rgba(245, 158, 11, 0.32);
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.08);
+}
+.ai-action.danger {
+  border-color: rgba(239, 68, 68, 0.28);
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.06);
+}
+.ai-action.neutral {
+  color: var(--muted);
+}
+
+.ai-action-card {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.ai-action-card:hover {
+  transform: translateY(-1px);
+  background: #fbfdff;
+  border-color: rgba(36, 107, 254, 0.24);
+}
+.ai-action-card b {
+  font-size: 12px;
+  line-height: 1.35;
+}
+.ai-action-card span {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-action-card em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ai-action-card.primary,
+.ai-action-card.info {
+  border-color: rgba(36, 107, 254, 0.26);
+  background: rgba(36, 107, 254, 0.035);
+}
+.ai-action-card.warn {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(245, 158, 11, 0.065);
+}
+.ai-action-card.danger {
+  border-color: rgba(239, 68, 68, 0.30);
+  background: rgba(239, 68, 68, 0.055);
+}
+.ai-action-card.neutral {
+  background: var(--page);
+}
+
 
 /* ============================================================
    M22 · 个人工作台 风格统一
@@ -7777,11 +8060,11 @@ button.profile-hero-logout,
 
 .live-row {
   display: grid;
-  grid-template-columns: 26px 1fr auto;
+  grid-template-columns: 30px 1fr auto;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 8px;
-  border-radius: 8px;
+  gap: 11px;
+  padding: 12px 10px;
+  border-radius: 9px;
   border: 1px solid transparent;
   transition: background 140ms ease, border-color 140ms ease, transform 120ms ease;
   position: relative;
@@ -7795,12 +8078,12 @@ button.profile-hero-logout,
   transform: translateX(2px);
 }
 .live-avatar {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--text);
   background: var(--page);
@@ -7814,7 +8097,7 @@ button.profile-hero-logout,
 .live-body {
   min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 .live-line {
   display: flex;
@@ -7823,18 +8106,23 @@ button.profile-hero-logout,
   min-width: 0;
 }
 .live-line b {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 88px;
+  max-width: 110px;
 }
 .live-action {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
   font-weight: 600;
+}
+/* 审批动态里的时间：朴素小字，不用代码块样式 */
+.live-time {
+  font-size: 12px;
+  color: var(--muted);
 }
 .live-target {
   font-size: 11px;

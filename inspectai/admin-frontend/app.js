@@ -988,6 +988,98 @@ function relativeTime(iso) {
   return fmtTime(iso);
 }
 
+// 审批页专属动态：只看「修改申请」相关事件，中文、去掉原始 ID，与左侧申请卡互补不冲突
+function approvalActivityCard() {
+  const logs = (state.operationLogs || [])
+    .filter((l) => String(l.action || "").startsWith("change_request"))
+    .slice(0, 8);
+  const head = `
+    <div class="live-activity-head">
+      <div class="live-activity-title"><span class="live-dot"></span><b>审批动态</b></div>
+      <span class="live-activity-sub">近期 · ${logs.length} 条</span>
+    </div>`;
+  if (!logs.length) {
+    return `<div class="live-activity">${head}<div class="live-activity-empty">暂无审批动态</div></div>`;
+  }
+  const rows = logs.map((log) => {
+    const tone = logActionTone(log.action);
+    const actor = log.actorName || "系统";
+    const cr = matchRequestForLog(log);
+    const cls = `live-row tone-${tone}${cr ? " live-clickable" : ""}`;
+    const attr = cr ? ` data-cr-preview="${escapeHTML(cr.id)}"` : "";
+    return `
+      <li class="${cls}"${attr}>
+        <span class="live-avatar">${escapeHTML((actor || "?").slice(0, 1))}</span>
+        <div class="live-body">
+          <div class="live-line"><b>${escapeHTML(actor)}</b><span class="live-action">${escapeHTML(actionLabel(log.action))}</span></div>
+          <div class="live-time">${escapeHTML(relativeTime(log.createdAt))}</div>
+        </div>
+        ${cr ? `<span class="live-peek">预览</span>` : ""}
+      </li>`;
+  }).join("");
+  return `<div class="live-activity">${head}<ul class="live-activity-list">${rows}</ul></div>`;
+}
+
+// 把一条审批动态日志匹配到对应的修改申请（按目标 + 时间最近）
+function matchRequestForLog(log) {
+  if (!log || !String(log.action || "").startsWith("change_request")) return null;
+  const cands = (state.requests || []).filter((r) => r.targetId === log.targetId);
+  if (!cands.length) return null;
+  const t = new Date(log.createdAt).getTime();
+  return cands.slice().sort((a, b) =>
+    Math.abs(new Date(a.requestedAt).getTime() - t) - Math.abs(new Date(b.requestedAt).getTime() - t))[0];
+}
+
+function bindApprovalActivityPreview() {
+  document.querySelectorAll("#pageAside [data-cr-preview]").forEach((row) => {
+    row.addEventListener("click", () => showApprovalPreview(row.dataset.crPreview, row));
+  });
+}
+
+// 企业微信式快速预览：点审批动态 → 小窗看申请内容
+function showApprovalPreview(crId, anchor) {
+  const r = (state.requests || []).find((x) => x.id === crId);
+  if (!r) return;
+  closeApprovalPreview();
+  const target = approvalTargetSummary(r);
+  const statusCls = r.status === "approved" ? "normal" : r.status === "rejected" ? "danger" : "warning";
+  const overlay = document.createElement("div");
+  overlay.className = "cr-preview-overlay";
+  overlay.innerHTML = `
+    <div class="cr-preview-pop" role="dialog">
+      <div class="crp-head">
+        <span class="status ${statusCls}">${escapeHTML(statusLabel(r.status))}</span>
+        <button class="crp-close" aria-label="关闭">×</button>
+      </div>
+      <div class="crp-title">${escapeHTML(target.title)}</div>
+      <div class="crp-meta">${escapeHTML(r.requestedBy || "-")} · ${escapeHTML(fmtTime(r.requestedAt))}</div>
+      <div class="crp-row"><span>变更</span><b>${escapeHTML(approvalPatchSummary(r))}</b></div>
+      <div class="crp-row"><span>理由</span><b>${escapeHTML(r.reason || "-")}</b></div>
+      ${r.reviewNote ? `<div class="crp-row"><span>审批</span><b>${escapeHTML(r.reviewNote)}</b></div>` : ""}
+      <div class="crp-actions">
+        ${r.status === "pending" ? `<button class="primary" data-request-review="${escapeHTML(r.id)}" data-action="approve">通过</button><button class="danger-btn" data-request-review="${escapeHTML(r.id)}" data-action="reject">驳回</button>` : ""}
+        <button class="btn-ghost crp-detail" data-request-open="${escapeHTML(r.id)}">完整详情</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const pop = overlay.querySelector(".cr-preview-pop");
+  const rect = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth || 280;
+  let left = rect.left - w - 10;
+  if (left < 8) left = rect.right + 10;
+  let top = Math.min(rect.top, window.innerHeight - pop.offsetHeight - 12);
+  pop.style.left = `${Math.max(8, left)}px`;
+  pop.style.top = `${Math.max(8, top)}px`;
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeApprovalPreview(); });
+  pop.querySelector(".crp-close").addEventListener("click", closeApprovalPreview);
+  pop.querySelector(".crp-detail")?.addEventListener("click", () => { closeApprovalPreview(); openRequestDrawer(r.id); });
+  // 通过/驳回由全局委托执行动作，这里只负责点完关掉小窗
+  pop.querySelectorAll("[data-request-review]").forEach((b) => b.addEventListener("click", () => setTimeout(closeApprovalPreview, 0)));
+}
+function closeApprovalPreview() {
+  document.querySelector(".cr-preview-overlay")?.remove();
+}
+
 function liveActivityCard(opts = {}) {
   const limit = opts.limit || 9;
   const logs = (state.operationLogs || []).slice(0, limit);
@@ -1195,6 +1287,7 @@ function bindAiChat() {
       sendAiChat(t);
     });
   });
+  bindAiScaffoldActions(body);
   // restore history on re-render
   if (AI_CHAT_STATE.history.length) {
     body.innerHTML = AI_CHAT_STATE.history.map(renderChatBubble).join("");
@@ -1211,7 +1304,247 @@ function renderChatBubble(m) {
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\n/g, "<br>");
-  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div></div>`;
+  const scaffold = cls === "ai" && m.scaffold ? renderAiScaffold(m.scaffold) : "";
+  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${scaffold}</div>`;
+}
+
+function firstAttentionAsset() {
+  return filteredAssets()
+    .filter((asset) => ["danger", "warning", "repair"].includes(normalizeStatus(asset.lastStatus)))
+    .sort((a, b) => assetPriorityRank(b.lastStatus) - assetPriorityRank(a.lastStatus) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
+}
+
+function assetPriorityRank(status = "") {
+  const level = normalizeStatus(status);
+  return { repair: 4, danger: 3, warning: 2, unknown: 1, normal: 0 }[level] || 0;
+}
+
+function latestProblemRecord() {
+  return filteredRecords()
+    .filter((record) => ["异常", "待复核", "需补图", "人工填写"].includes(recordBusinessStatus(record)))
+    .sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0))[0] || null;
+}
+
+function latestPendingApproval() {
+  return filteredRequests()
+    .filter((item) => item.status === "pending")
+    .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))[0] || null;
+}
+
+function currentTaskSnapshot() {
+  const groups = taskGroups();
+  return {
+    pending: groups.pending.length,
+    processing: groups.processing.length,
+    overdue: groups.overdue.length,
+    done: groups.done.length,
+    first: [...groups.overdue, ...groups.processing, ...groups.pending][0] || null,
+  };
+}
+
+function buildAiScaffold(message, reply, response = {}) {
+  const text = `${message || ""} ${reply || ""}`.toLowerCase();
+  const approvals = filteredRequests().filter((item) => item.status === "pending");
+  const attention = filteredAssets().filter((asset) => ["danger", "warning", "repair"].includes(normalizeStatus(asset.lastStatus)));
+  const asset = firstAttentionAsset();
+  const record = latestProblemRecord();
+  const approval = latestPendingApproval();
+  const tasks = currentTaskSnapshot();
+  const actions = [];
+  const evidence = [];
+
+  if (attention.length) evidence.push(`需跟进资产 ${attention.length} 台`);
+  if (approvals.length) evidence.push(`待审批 ${approvals.length} 条`);
+  if (tasks.processing || tasks.pending || tasks.overdue) evidence.push(`在途任务 ${tasks.processing + tasks.pending + tasks.overdue} 项`);
+  if (record) evidence.push(`最近问题记录 ${record.templateName || record.pointName || "巡检记录"}`);
+  if (!evidence.length) evidence.push("当前无高优先级阻塞项");
+
+  const wantsApproval = /审批|复核|申请|修改/.test(text);
+  const wantsTask = /任务|计划|派发|下发|完成/.test(text);
+  const wantsRecord = /记录|日报|巡检|异常/.test(text);
+  const wantsTrend = /趋势|历史|对比|最近|30|风险|看板/.test(text);
+
+  if ((wantsApproval || approvals.length) && approval) {
+    const target = approvalTargetSummary(approval);
+    actions.push({
+      label: "定位待审批",
+      page: "approval",
+      requestId: approval.id,
+      approvalStatus: "pending",
+      target: target.title,
+      reason: approval.reason || approvalPatchSummary(approval),
+      tone: "warn",
+    });
+  }
+  if ((wantsRecord || record) && record) {
+    const status = recordBusinessStatus(record);
+    actions.push({
+      label: "定位问题记录",
+      page: "record",
+      recordId: record.id,
+      recordProject: record.project || "",
+      recordTemplate: record.templateName || record.templateId || "",
+      recordStatus: status,
+      recordKeyword: recordNo(record),
+      target: `${record.pointName || record.templateName || "巡检记录"} · ${recordNo(record)}`,
+      reason: `${status} · ${truncateText(primaryReading(record) || record.aiSummary || record.report || "查看字段与图片证据", 42)}`,
+      tone: status === "异常" ? "danger" : "warn",
+    });
+  }
+  if ((wantsTask || tasks.first) && tasks.first?.id) {
+    actions.push({
+      label: "定位执行任务",
+      page: "plan",
+      taskId: tasks.first.id,
+      planStatus: planStatusBucket(tasks.first.status),
+      target: tasks.first.title || "巡检任务",
+      reason: `${tasks.first.status || "待处理"} · ${truncateText(tasks.first.meta || "查看责任人与截止时间", 42)}`,
+      tone: tasks.first.status === "逾期" || tasks.first.status === "待整改" ? "danger" : "info",
+    });
+  } else if (wantsTask) {
+    actions.push({
+      label: "筛选计划",
+      page: "plan",
+      planStatus: tasks.processing ? "processing" : "pending",
+      target: tasks.processing ? "进行中任务" : "待执行任务",
+      reason: "进入计划页后只看当前状态桶",
+      tone: "info",
+    });
+  }
+  if (asset) {
+    actions.push({
+      label: "定位资产档案",
+      page: "ledger",
+      assetId: asset.id,
+      assetType: asset.assetType || "",
+      assetStatus: asset.lastStatus || "",
+      assetKeyword: assetKey(asset),
+      target: `${asset.assetName || "资产"} · ${assetKey(asset)}`,
+      reason: `${asset.lastStatus || "待复核"} · ${truncateText(asset.lastSummary || locationText(asset), 42)}`,
+      tone: normalizeStatus(asset.lastStatus) === "danger" ? "danger" : "primary",
+    });
+  }
+  if (wantsTrend || attention.length) {
+    actions.push({
+      label: "看趋势结论",
+      page: "data",
+      target: "数据看板",
+      reason: attention.length ? "核对近期异常频次与字段漂移" : "查看历史巡检变化",
+      tone: "neutral",
+    });
+  }
+  if (!actions.length) {
+    actions.push(
+      { label: "筛选资产台账", page: "ledger", target: "全部资产", reason: "按状态和设备类型继续排查", tone: "primary" },
+      { label: "筛选巡检记录", page: "record", target: "最近巡检", reason: "查看日报、字段和照片证据", tone: "neutral" },
+    );
+  }
+
+  const externalActions = Array.isArray(response.actions) ? response.actions : [];
+  const merged = [...externalActions, ...actions].filter(Boolean);
+  const deduped = [];
+  const seen = new Set();
+  merged.forEach((action) => {
+    const key = [action.page, action.assetId, action.recordId, action.taskId, action.requestId, action.approvalStatus, action.label].join("|");
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(action);
+  });
+
+  return {
+    title: attention.length || approvals.length || tasks.overdue ? "下一步处置" : "可继续核对",
+    summary: scaffoldSummary(attention.length, approvals.length, tasks, deduped[0]),
+    evidence: evidence.slice(0, 4),
+    actions: deduped.slice(0, 3),
+  };
+}
+
+function scaffoldSummary(attentionCount, approvalCount, tasks, primaryAction) {
+  if (primaryAction?.target) return `优先看「${primaryAction.target}」，原因：${primaryAction.reason || "存在待处理信息"}。`;
+  if (approvalCount) return `先处理 ${approvalCount} 条审批，避免现场记录卡住。`;
+  if (tasks.overdue) return `有 ${tasks.overdue} 项需跟进任务，建议先确认责任人与截止时间。`;
+  if (attentionCount) return `有 ${attentionCount} 台资产需要跟进，建议先看资产档案和最近记录。`;
+  if (tasks.processing || tasks.pending) return `当前有 ${tasks.processing + tasks.pending} 项任务在流转，建议查看计划进度。`;
+  return "当前可从台账、记录和趋势三个入口继续核对。";
+}
+
+function renderAiScaffold(scaffold) {
+  const evidence = (scaffold.evidence || []).map((item) => `<span>${escapeHTML(item)}</span>`).join("");
+  const actions = (scaffold.actions || []).map((action) => `
+    <button type="button"
+      class="ai-action-card ${escapeHTML(action.tone || "neutral")}"
+      data-ai-action-page="${escapeHTML(action.page || "dashboard")}"
+      data-ai-action-request="${escapeHTML(action.requestId || "")}"
+      data-ai-action-asset="${escapeHTML(action.assetId || "")}"
+      data-ai-action-asset-type="${escapeHTML(action.assetType || "")}"
+      data-ai-action-asset-status="${escapeHTML(action.assetStatus || "")}"
+      data-ai-action-asset-keyword="${escapeHTML(action.assetKeyword || "")}"
+      data-ai-action-record="${escapeHTML(action.recordId || "")}"
+      data-ai-action-record-project="${escapeHTML(action.recordProject || "")}"
+      data-ai-action-record-template="${escapeHTML(action.recordTemplate || "")}"
+      data-ai-action-record-status="${escapeHTML(action.recordStatus || "")}"
+      data-ai-action-record-keyword="${escapeHTML(action.recordKeyword || "")}"
+      data-ai-action-task="${escapeHTML(action.taskId || "")}"
+      data-ai-action-plan-status="${escapeHTML(action.planStatus || "")}"
+      data-ai-action-approval="${escapeHTML(action.approvalStatus || "")}"
+      data-ai-action-target="${escapeHTML(action.target || action.label || "")}">
+      <b>${escapeHTML(action.label || "查看")}</b>
+      <span>${escapeHTML(action.target || pageLabels[action.page] || "目标页面")}</span>
+      ${action.reason ? `<em>${escapeHTML(action.reason)}</em>` : ""}
+    </button>
+  `).join("");
+  return `
+    <div class="ai-scaffold">
+      <div class="ai-scaffold-head">
+        <b>${escapeHTML(scaffold.title || "下一步")}</b>
+        <p>${escapeHTML(scaffold.summary || "")}</p>
+      </div>
+      <div class="ai-scaffold-evidence">${evidence}</div>
+      <div class="ai-scaffold-actions">${actions}</div>
+    </div>
+  `;
+}
+
+function bindAiScaffoldActions(root) {
+  if (!root || root.dataset.aiScaffoldBound) return;
+  root.dataset.aiScaffoldBound = "1";
+  root.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-ai-action-page]");
+    if (!btn) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const page = btn.dataset.aiActionPage || "dashboard";
+    const requestId = btn.dataset.aiActionRequest || "";
+    const assetId = btn.dataset.aiActionAsset || "";
+    const recordId = btn.dataset.aiActionRecord || "";
+    const taskId = btn.dataset.aiActionTask || "";
+    const approvalStatus = btn.dataset.aiActionApproval || "";
+    const planStatus = btn.dataset.aiActionPlanStatus || "";
+    if (assetId) state.selectedAssetId = assetId;
+    if (recordId) state.selectedRecordId = recordId;
+    if (taskId) state.selectedTaskId = taskId;
+    if (approvalStatus) state.approvalStatus = approvalStatus;
+    if (page === "ledger") {
+      state.filters.assetType = btn.dataset.aiActionAssetType || "";
+      state.filters.status = btn.dataset.aiActionAssetStatus || "";
+      state.filters.keyword = btn.dataset.aiActionAssetKeyword || "";
+    }
+    if (page === "record") {
+      state.recordFilters.project = btn.dataset.aiActionRecordProject || "";
+      state.recordFilters.template = btn.dataset.aiActionRecordTemplate || "";
+      state.recordFilters.status = btn.dataset.aiActionRecordStatus || "";
+      state.recordFilters.keyword = btn.dataset.aiActionRecordKeyword || "";
+      state.recordPage = 0;
+    }
+    if (page === "plan") {
+      state.selectedPlanStatus = planStatus || "";
+      state.planFilters.keyword = "";
+    }
+    setPage(page);
+    if (requestId) requestAnimationFrame(() => openRequestDrawer(requestId));
+    const target = btn.dataset.aiActionTarget;
+    if (target) toast(`已定位：${target}`);
+  });
 }
 
 async function sendAiChat(message) {
@@ -1235,15 +1568,16 @@ async function sendAiChat(message) {
       method: "POST",
       body: JSON.stringify({
         message,
-        history: AI_CHAT_STATE.history.slice(-6),
+        history: AI_CHAT_STATE.history.slice(-6).map((item) => ({ role: item.role, text: item.text })),
         project: state.selectedProject || "",
         range: "30d",
       }),
     });
     const reply = res.reply || "AI 没有给出回复。";
-    AI_CHAT_STATE.history.push({ role: "ai", text: reply });
+    const scaffold = buildAiScaffold(message, reply, res);
+    AI_CHAT_STATE.history.push({ role: "ai", text: reply, scaffold });
     document.getElementById("aiChatTyping")?.remove();
-    body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: reply }));
+    body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: reply, scaffold }));
   } catch (err) {
     document.getElementById("aiChatTyping")?.remove();
     body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: `出错了：${err.message || "未知错误"}` }));
@@ -1711,6 +2045,12 @@ function renderPlanPage() {
   if (selectedTask) bindTaskDetailActions();
 }
 
+// 计划状态 → 与顶部四张卡完全一致的归类词（让表格状态和卡片挂得上钩）
+function planBucketLabel(status = "") {
+  if (String(status).includes("未配置")) return "未配置";
+  return { pending: "待执行", processing: "进行中", overdue: "需跟进", done: "已完成" }[planStatusBucket(status)] || status;
+}
+
 // 计划状态 → 统计桶（与四张卡一一对应）
 function planStatusBucket(status = "") {
   const s = String(status);
@@ -1740,7 +2080,7 @@ function planTableSection(rows) {
             <tr class="plan-row ${row.id === state.selectedPlanId ? "selected" : ""}" data-plan-id="${escapeHTML(row.id)}">
               <td>${escapeHTML(row.name)}</td><td>${escapeHTML(row.project)}</td><td>${escapeHTML(row.point)}</td>
               <td>${escapeHTML(row.frequency)}</td><td>${escapeHTML(row.owner)}</td><td>${escapeHTML(row.next)}</td>
-              <td><span class="status ${statusClass(row.status === "启用" ? "正常" : row.status)}">${escapeHTML(row.status)}</span></td>
+              <td><span class="status ${statusClass(row.status === "启用" ? "正常" : row.status)}">${escapeHTML(planBucketLabel(row.status))}</span></td>
             </tr>
           `).join("") || emptyRow(7, "暂无巡检计划")}</tbody>
         </table>
@@ -1894,7 +2234,7 @@ function planEditCard(plan) {
       <div class="plan-edit-card">
         <div class="plan-edit-head">
           <b>工程计划详情</b>
-          <span class="plan-edit-tag custom">${escapeHTML(plan.status || "待执行")}</span>
+          <span class="plan-edit-tag custom">${escapeHTML(planBucketLabel(plan.status) || "待执行")}</span>
         </div>
         <div class="td-title">${escapeHTML(plan.name)}</div>
         <div class="td-meta-list">
@@ -2010,16 +2350,30 @@ function bindPlanEditForm() {
       const plan = state.engineeringPlans.find((item) => item.id === planId);
       if (!plan) return;
       try {
-        await api("/api/engineering/tasks", {
+        // 创建（或复用）该计划的执行任务，并直接置「进行中」= 一键下发到移动端
+        const res = await api("/api/engineering/tasks", {
           method: "POST",
           body: JSON.stringify({
             planItemId: plan.id,
             title: `${plan.workContent || "工程计划"} 执行任务`,
-            status: "待执行",
+            assigneeName: plan.ownerName || "",
+            dueAt: plan.planEnd || "",
+            taskType: "巡检计划执行",
+            status: "进行中",
+            source: "manual",
           }),
         });
-        toast("执行任务已派发");
+        const taskId = res?.task?.id;
+        // 始终调一次状态更新：后端「创建任务」不会重算计划状态，只有「更新状态」才会，
+        // 否则计划会停在「待执行」不跳「进行中」。
+        if (taskId) {
+          await api(`/api/engineering/tasks/${encodeURIComponent(taskId)}/status`, {
+            method: "POST", body: JSON.stringify({ status: "进行中" }),
+          });
+        }
+        toast("已派发并下发到移动端，任务进入「进行中」");
         await loadData(false);
+        if (taskId) state.selectedTaskId = taskId;
         setPage("plan", false);
       } catch (error) {
         toast(error.message || "任务派发失败");
@@ -2117,12 +2471,12 @@ async function savePlanFromAside(form) {
             assigneeName: owner,
             dueAt: nextRun,
             taskType: "巡检计划执行",
-            status: "待执行",
+            status: "待执行", // 后台「待执行」，点「下发」→进行中并上移动端
             source: "manual",
           }),
         });
       }
-      toast("计划已创建，任务已下发到移动端「我的任务」");
+      toast("计划已创建，任务在「待执行」；到任务详情点「下发到移动端」即进入进行中并下发给巡检员");
       await loadData(false);
       state.selectedPlanId = planId;
       state.selectedTaskId = "";
@@ -2297,7 +2651,10 @@ function planRows() {
         source: "seed",
       };
     });
-  return [...engineeringRows, ...customRows, ...seedRows];
+  // customRows（localStorage 旧版"启用"计划）已弃用：新建计划统一走后端工程计划，
+  // 这里不再并入，避免后台出现游离的"启用"假计划。
+  void customRows;
+  return [...engineeringRows, ...seedRows];
 }
 
 function planSearchText(row) {
@@ -2428,8 +2785,9 @@ function taskDetailCard(task) {
   }
   const editableTask = state.customTasks?.some((t) => t.id === task.id) || task.source === "engineering";
   const statusFlow = ["待执行", "进行中", "已完成"];
-  // 待整改 / 逾期 介于"进行中"与"已完成"之间：流程条按进行中档位点亮
-  const flowStatus = (task.status === "待整改" || task.status === "逾期") ? "进行中" : task.status;
+  // 待整改/逾期 按进行中档位点亮；待下发(历史遗留)归到待执行档
+  const flowStatus = (task.status === "待整改" || task.status === "逾期") ? "进行中"
+    : (task.status === "待下发" ? "待执行" : task.status);
   const curIdx = statusFlow.indexOf(flowStatus);
   return `
     <div class="task-detail-card">
@@ -2470,8 +2828,8 @@ function taskDetailCard(task) {
       </div>
       ${editableTask ? `
         <div class="td-actions">
-          ${task.status === "待执行" ? `<button class="td-btn primary" data-task-action="start">开始执行</button>` : ""}
-          ${["进行中", "待整改", "逾期"].includes(task.status) ? `<button class="td-btn primary" data-task-action="done">标记完成</button>` : ""}
+          ${["待执行", "待下发"].includes(task.status) ? `<span class="td-hint">待派发：在计划详情点「派发执行任务」即下发到移动端</span>` : ""}
+          ${["进行中", "待整改", "逾期"].includes(task.status) ? `<span class="td-hint">已下发，巡检员可在移动端执行</span><button class="td-btn primary" data-task-action="done">标记完成</button>` : ""}
           ${task.status !== "已完成" ? `<button class="td-btn ghost" data-task-action="cancel">取消任务</button>` : `<button class="td-btn ghost" data-task-action="reopen">重新打开</button>`}
         </div>
       ` : `<div class="td-readonly">来自巡检记录，不可在此修改状态</div>`}
@@ -2491,7 +2849,7 @@ function bindTaskDetailActions() {
     btn.addEventListener("click", async () => {
       const id = state.selectedTaskId;
       const action = btn.dataset.taskAction;
-      const map = { start: "进行中", done: "已完成", cancel: "已取消", reopen: "待执行" };
+      const map = { dispatch: "进行中", start: "进行中", done: "已完成", cancel: "已取消", reopen: "待执行" };
       const grouped = taskGroups();
       const current = [...grouped.pending, ...grouped.processing, ...grouped.done, ...grouped.overdue].find((t) => t.id === id);
       if (current?.source === "engineering") {
@@ -2989,30 +3347,19 @@ function approvalTargetSummary(request) {
 function approvalPatchSummary(request) {
   const patch = request.patch || {};
   const parts = [];
-  if (Array.isArray(patch.fields)) {
-    const names = patch.fields.map((field) => field.label || field.code).filter(Boolean).slice(0, 4);
-    if (names.length) parts.push(`字段修正：${names.join("、")}`);
+  // 字段订正：直接显示「字段名 → 新值」，这是审批的核心
+  if (Array.isArray(patch.fields) && patch.fields.length) {
+    const items = patch.fields.slice(0, 3).map((f) => `${f.label || f.code} → ${f.value}`);
+    parts.push(items.join("、") + (patch.fields.length > 3 ? " 等" : ""));
   }
+  if (patch.assetName) parts.push(`资产名称 → ${patch.assetName}`);
+  if (patch.lastStatus) parts.push(`资产状态 → ${patch.lastStatus}`);
+  if (patch.inspector) parts.push(`巡检人 → ${patch.inspector}`);
   if (patch.addImages && Array.isArray(patch.addImages.imageIds)) {
-    parts.push(`补交照片：${patch.addImages.imageIds.length} 张`);
+    parts.push(`补交照片 ${patch.addImages.imageIds.length} 张`);
   }
-  if (Array.isArray(patch.images) || Array.isArray(patch.photos) || Array.isArray(patch.photoIds)) {
-    const n = (patch.images || patch.photos || patch.photoIds || []).length;
-    parts.push(`补交照片：${n} 张`);
-  }
-  const labelMap = {
-    assetName: "资产名称",
-    lastStatus: "资产状态",
-    lastSummary: "台账摘要",
-    inspector: "巡检人",
-    aiSummary: "AI 总结",
-    report: "日报内容",
-  };
-  Object.keys(patch).forEach((key) => {
-    if (["fields", "images", "photos", "photoIds", "addImages"].includes(key)) return;
-    parts.push(labelMap[key] || key);
-  });
-  return parts.join("；") || "查看申请详情确认变更内容";
+  // 台账摘要 / AI 总结这类长文本不塞进卡片摘要，去详情看
+  return parts.join("；") || "查看详情确认变更内容";
 }
 
 function approvalPatchDetailHTML(request) {
@@ -3084,8 +3431,6 @@ function renderApprovalPage() {
   const all = filteredRequests();
   const counts = approvalCounts(all);
   const rows = approvalRows();
-  const exceptionAssets = filteredAssets().filter((asset) => ["warning", "danger", "repair"].includes(asset.statusLevel || normalizeStatus(asset.lastStatus)));
-  const showExceptions = state.approvalStatus === "pending" || state.approvalStatus === "all";
   const filters = [
     ["pending", "待审批", counts.pending],
     ["all", "全部", counts.total],
@@ -3096,26 +3441,48 @@ function renderApprovalPage() {
     <section class="panel approval-workbench">
       <div class="panel-head approval-head">
         <div><h2>审批中心</h2></div>
-        <button data-drawer="approval">审批设置</button>
-      </div>
-      <div class="approval-summary">
-        <article class="${counts.pending || exceptionAssets.length ? "hot" : ""}"><span>待处理</span><b>${counts.pending + exceptionAssets.length}</b><em>审批 + 异常</em></article>
-        <article><span>已通过</span><b>${counts.approved}</b><em>已落库</em></article>
-        <article><span>已驳回</span><b>${counts.rejected}</b><em>保留记录</em></article>
-        <article><span>申请总数</span><b>${counts.total}</b><em>全部留痕</em></article>
+        <div class="approval-head-actions">
+          <button class="btn-ghost" id="exportApprovalsBtn">导出</button>
+          <button data-drawer="approval">审批设置</button>
+        </div>
       </div>
       <div class="approval-filter-bar">
         ${filters.map(([key, label, count]) => `<button class="${state.approvalStatus === key ? "active" : ""}" data-approval-filter="${key}">${label}<b>${count}</b></button>`).join("")}
       </div>
       <div class="approval-list approval-list-modern">
-        ${showExceptions ? exceptionAssets.map(approvalAssetExceptionHTML).join("") : ""}
         ${rows.map(approvalCardHTML).join("")}
-        ${(!rows.length && (!showExceptions || !exceptionAssets.length)) ? `<div class="empty-state">当前筛选下暂无待处理事项</div>` : ""}
+        ${!rows.length ? `<div class="empty-state">当前筛选下暂无修改申请</div>` : ""}
       </div>
     </section>
   `;
-  $("#pageAside").innerHTML = asideStack(liveActivityCard({ limit: 6 }));
-  bindLiveActivity();
+  $("#pageAside").innerHTML = asideStack(approvalActivityCard());
+  $("#exportApprovalsBtn")?.addEventListener("click", exportApprovalsWorkbook);
+  bindApprovalActivityPreview();
+}
+
+function exportApprovalsWorkbook() {
+  const rows = filteredRequests();
+  exportExcel(
+    "智巡-审批记录",
+    "JADEAST 智巡审批记录",
+    ["序号", "申请编号", "申请时间", "申请人", "目标类型", "目标", "变更内容", "申请理由", "状态", "审批人", "审批意见", "审批时间"],
+    rows.map((r, index) => [
+      index + 1,
+      r.id,
+      fmtTime(r.requestedAt),
+      r.requestedBy || "-",
+      statusLabel(r.targetType),
+      approvalTargetSummary(r).title,
+      approvalPatchSummary(r),
+      r.reason || "-",
+      statusLabel(r.status),
+      r.reviewedBy || r.reviewer || "-",
+      r.reviewNote || "-",
+      r.reviewedAt ? fmtTime(r.reviewedAt) : "-",
+    ]),
+    [["导出口径", "按当前页签筛选导出修改申请，含变更内容、理由与审批结果"]],
+  );
+  toast(`已导出 ${rows.length} 条审批记录 Excel`);
 }
 
 const DATA_PERIODS = [
@@ -4180,6 +4547,10 @@ const ACTION_LABEL = {
   "asset.create": "新建资产",
   approval: "审批操作",
   classify: "AI 场景识别",
+  "change_request.create": "提交修改申请",
+  "change_request.approve": "审批通过",
+  "change_request.reject": "审批驳回",
+  "change_request.withdraw": "撤回申请",
 };
 function actionLabel(action = "") {
   return ACTION_LABEL[action] || ACTION_LABEL[action.toLowerCase()] || action || "—";
@@ -4771,19 +5142,30 @@ function displayDateTimeInput(value) {
   return String(value || "").replace("T", " ") || "-";
 }
 
+function planPointOptions(proj) {
+  const list = (state.points || []).filter((p) => !proj || p.project === proj);
+  if (!list.length) return `<option value="">该项目暂无点位，请先维护</option>`;
+  return list.map((point) => optionHTML(point.id, `${point.name || point.location || "-"}`)).join("");
+}
+
+function planTemplateOptions(proj) {
+  const list = (state.templates || []).filter((t) => !proj || t.project === proj);
+  if (!list.length) return `<option value="">该项目暂无模板</option>`;
+  return list.map((tpl) => optionHTML(tpl.id, `${tpl.name || "-"} / ${tpl.assetType || "-"}`)).join("");
+}
+
 function openPlanDrawer() {
   const projectList = projects();
-  const pointList = state.points.length ? state.points : [{ id: "", name: "未配置点位", location: "请先维护点位", project: state.selectedProject || projectList[0] || "" }];
-  const templateList = state.templates.length ? state.templates : [{ id: "", name: "默认日报模板", project: state.selectedProject || projectList[0] || "", assetType: "-" }];
+  const initialProject = state.selectedProject || projectList[0] || "";
   openDrawer("新建巡检计划", `
     <form class="drawer-form" id="adminPlanForm">
       <section class="drawer-section">
         <h3>计划信息</h3>
         <div class="form-grid">
           <label>计划名称<input name="name" placeholder="如：能耗抄表每日巡检" required></label>
-          <label>所属项目<select name="project" required>${projectList.map((name) => optionHTML(name, name, state.selectedProject)).join("") || optionHTML("默认项目", "默认项目")}</select></label>
-          <label>巡检点位<select name="pointId">${pointList.map((point) => optionHTML(point.id, `${point.project || "-"} · ${point.name || point.location || "-"}`)).join("")}</select></label>
-          <label>日报模板<select name="templateId">${templateList.map((tpl) => optionHTML(tpl.id, `${tpl.name || "-"} / ${tpl.assetType || "-"}`)).join("")}</select></label>
+          <label>所属项目<select name="project" required>${projectList.map((name) => optionHTML(name, name, initialProject)).join("") || optionHTML("默认项目", "默认项目")}</select></label>
+          <label>巡检点位<select name="pointId">${planPointOptions(initialProject)}</select></label>
+          <label>日报模板<select name="templateId">${planTemplateOptions(initialProject)}</select></label>
           <label>执行频次<select name="frequency" required>
             ${["每日 09:00", "每日 18:00", "每周一 09:00", "每月 1 日 09:00", "临时计划"].map((item) => optionHTML(item, item)).join("")}
           </select></label>
@@ -4807,6 +5189,16 @@ function openPlanDrawer() {
       </div>
     </form>
   `);
+  // 项目联动：切换项目时，点位与模板自动过滤为该项目的
+  const planForm = document.getElementById("adminPlanForm");
+  const projSel = planForm?.querySelector('select[name="project"]');
+  projSel?.addEventListener("change", () => {
+    const proj = projSel.value;
+    const pointSel = planForm.querySelector('select[name="pointId"]');
+    const tplSel = planForm.querySelector('select[name="templateId"]');
+    if (pointSel) pointSel.innerHTML = planPointOptions(proj);
+    if (tplSel) tplSel.innerHTML = planTemplateOptions(proj);
+  });
 }
 
 function openTaskDrawer() {
@@ -4899,7 +5291,7 @@ async function createAdminPlan(form) {
     state.selectedPlanId = planId;
     state.selectedTaskId = "";
     setPage("plan", false);
-    toast("计划已创建，任务已下发到移动端「我的任务」");
+    toast("计划已创建，任务在「待执行」；到任务详情点「下发到移动端」即进入进行中并下发给巡检员");
   } catch (error) {
     toast(error.message || "计划创建失败");
   }
