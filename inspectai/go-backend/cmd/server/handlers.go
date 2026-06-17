@@ -2154,6 +2154,10 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 			s.onAssetResolvedNormal(asset.ID)
 		}
 	}
+	// 检出异常（需跟进）时，确保移动端「我的任务」有一条待整改任务可跟进——
+	// 计划挂钩的巡检已由 closeEngineeringTaskFromRecord 置为待整改；这里兜底处理
+	// 临时/非计划巡检：没有覆盖该资产的在途任务时，自动建一条待整改任务并同步移动端。
+	s.ensureFollowupTaskForAnomalies(rec, assets, now)
 	_ = s.store.CompleteSubmission(recordID, idemKey)
 	s.notifyInspectionSubmitted(rec, assets)
 
@@ -3468,7 +3472,29 @@ func (s *Server) approveChangeRequestSQL(store *SQLiteStore, id, reviewer, note 
 		}
 		return nil, err
 	}
+	// 提交后再做异常闭环回写：onAssetResolvedNormal 走独立连接，须在事务提交后执行
+	s.resolveNormalAfterChange(cr)
 	return cr, nil
+}
+
+// resolveNormalAfterChange 审批通过、资产恢复正常后闭环待整改任务（事务路径提交后调用）。
+func (s *Server) resolveNormalAfterChange(cr *ChangeRequest) {
+	switch cr.TargetType {
+	case "asset":
+		if a, err := s.store.GetAsset(cr.TargetID); err == nil && a != nil && a.LastStatus == "正常" {
+			s.onAssetResolvedNormal(a.ID)
+		}
+	case "record":
+		rec, err := s.store.GetRecord(cr.TargetID)
+		if err != nil || rec == nil {
+			return
+		}
+		for _, asset := range buildAssets(rec, time.Now()) {
+			if a, err := s.store.GetAsset(asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID && a.LastStatus == "正常" {
+				s.onAssetResolvedNormal(a.ID)
+			}
+		}
+	}
 }
 
 func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (func(), error) {
@@ -3805,6 +3831,10 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		for _, asset := range buildAssets(rec, time.Now()) {
 			if a, err := s.store.GetAsset(asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
 				_, _ = s.store.UpdateAssetMeta(asset.ID, "", asset.LastStatus, asset.LastSummary)
+				// 字段级审批通过后资产重算为正常 → 异常闭环回写（与「标记正常」「资产级审批」「复检」一致）
+				if asset.LastStatus == "正常" {
+					s.onAssetResolvedNormal(asset.ID)
+				}
 			}
 		}
 		return nil

@@ -15,8 +15,10 @@ const (
 
 	engPlanStatusPending    = "待执行"
 	engPlanStatusRunning    = "执行中"
+	engPlanStatusRectify    = "待整改" // 计划下有待整改任务 → 归"需跟进"，与移动端异常资产口径一致
 	engPlanStatusDone       = "已完成"
 	engPlanStatusUnplanned  = "未排期"
+	engTaskStatusDraft      = "待下发" // 管理员已建、尚未下发到移动端，巡检员看不到
 	engTaskStatusPending    = "待执行"
 	engTaskStatusProcessing = "进行中"
 	engTaskStatusDone       = "已完成"
@@ -746,6 +748,22 @@ func (s *Server) handleCreateEngineeringTask(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	normalizeEngineeringTask(&req)
+	// 去重守卫：一个计划同一时间只应有一个在途任务，避免重复下发产生“幽灵任务”
+	// 把计划永久卡在执行中。已有未完成（待下发/待执行/进行中/待整改/逾期）任务时，直接复用。
+	if req.PlanItemID != "" {
+		if existing, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{PlanItemID: req.PlanItemID}); err == nil {
+			for _, t := range existing {
+				if t == nil {
+					continue
+				}
+				switch t.Status {
+				case engTaskStatusDraft, engTaskStatusPending, engTaskStatusProcessing, engTaskStatusRectify, engTaskStatusOverdue:
+					writeJSON(w, http.StatusOK, map[string]any{"task": t, "reused": true})
+					return
+				}
+			}
+		}
+	}
 	if err := s.store.CreateEngineeringTask(&req); err != nil {
 		writeError(w, http.StatusInternalServerError, "create_engineering_task_failed", err.Error())
 		return
@@ -912,26 +930,33 @@ func (s *Server) recomputeEngineeringPlanStatus(planID, latestTaskID string) {
 		return
 	}
 	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{PlanItemID: planID})
-	openAnomaly, hasDone, hasActive := 0, false, false
+	// running：真正在推进/有待闭环异常的任务；pending：建好但还没开始（待下发/待执行）；done：已完成
+	openAnomaly, running, pending, done := 0, 0, 0, 0
 	for _, t := range tasks {
 		switch t.Status {
 		case engTaskStatusRectify:
 			openAnomaly++
-			hasActive = true
+			running++
+		case engTaskStatusProcessing, engTaskStatusOverdue:
+			running++
+		case engTaskStatusDraft, engTaskStatusPending:
+			pending++
 		case engTaskStatusDone:
-			hasDone = true
-		case engTaskStatusProcessing, engTaskStatusPending, engTaskStatusOverdue:
-			hasActive = true
+			done++
 		}
 	}
 	var status string
 	switch {
 	case openAnomaly > 0:
-		status = engPlanStatusRunning
-	case hasDone && !hasActive:
-		status = engPlanStatusDone
-	case hasDone || hasActive:
-		status = engPlanStatusRunning
+		status = engPlanStatusRectify // 有待整改 → 需跟进（与移动端异常资产口径一致）
+	case running > 0:
+		status = engPlanStatusRunning // 进行中/逾期（无待整改）→ 执行中
+	case pending > 0 && done == 0:
+		status = engPlanStatusPending // 只有待下发/待执行、尚无完成 → 待执行
+	case pending > 0 && done > 0:
+		status = engPlanStatusRunning // 做完一部分还有下一期待执行 → 执行中
+	case done > 0:
+		status = engPlanStatusDone // 全部完成、无在途无待办 → 已完成
 	default:
 		status = engPlanStatusPending
 	}
@@ -941,6 +966,54 @@ func (s *Server) recomputeEngineeringPlanStatus(planID, latestTaskID string) {
 	}
 	plan.UpdatedAt = time.Now()
 	_ = s.store.UpsertEngineeringPlan(plan)
+}
+
+// ensureFollowupTaskForAnomalies 巡检检出异常（需跟进）但没有在途任务覆盖该资产时，
+// 自动建一条「待整改」任务挂到资产，使移动端「我的任务」立即出现可跟进项。
+// 计划挂钩的巡检已由 closeEngineeringTaskFromRecord 处理，这里只兜底临时/非计划巡检。
+func (s *Server) ensureFollowupTaskForAnomalies(rec *Record, assets []*AssetEntry, now time.Time) {
+	if rec == nil {
+		return
+	}
+	existing, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{})
+	for _, a := range assets {
+		if a == nil || !isAnomalyAssetStatus(a.LastStatus) {
+			continue
+		}
+		covered := false
+		for _, t := range existing {
+			if t == nil || t.AssetID != a.ID {
+				continue
+			}
+			switch t.Status {
+			case engTaskStatusDraft, engTaskStatusPending, engTaskStatusProcessing, engTaskStatusRectify, engTaskStatusOverdue:
+				covered = true
+			}
+		}
+		if covered {
+			continue
+		}
+		task := &EngineeringTask{
+			ID:             newID("eng_task"),
+			Source:         "auto-followup",
+			TaskType:       "异常复查",
+			Title:          firstNonEmpty(a.AssetName, "设备") + " 异常复查",
+			Project:        a.Project,
+			Category:       a.AssetType,
+			AssetID:        a.ID,
+			RecordID:       rec.ID,
+			AssigneeName:   rec.Inspector,
+			DueAt:          now.Format("2006-01-02"),
+			Status:         engTaskStatusRectify,
+			EvidenceStatus: "待复查",
+			AIStatus:       firstNonEmpty(rec.RecognitionStatus, "已检出异常"),
+			CloseResult:    a.LastStatus,
+			CloseNote:      firstNonEmpty(rec.AISummary, "巡检检出异常，待复查闭环"),
+		}
+		normalizeEngineeringTask(task)
+		task.Status = engTaskStatusRectify
+		_ = s.store.CreateEngineeringTask(task)
+	}
 }
 
 // onAssetResolvedNormal 资产被改回"正常"（标记正常 / 修改审批通过）后，
