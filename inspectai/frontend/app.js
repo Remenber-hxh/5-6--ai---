@@ -1106,7 +1106,7 @@ function renderPreview() {
 
   if (rec.aiSummary) {
     $("#summaryCard").hidden = false;
-    $("#summaryBody").textContent = rec.aiSummary;
+    $("#summaryBody").innerHTML = summaryBodyHTML(rec);
     const st = inspectionStatus(rec);
     const badge = $("#summaryStatus");
     if (badge) {
@@ -1159,6 +1159,33 @@ function isOccurrenceLabel(label = "") {
   if (label.includes("无异") || label.includes("无报警") || label.includes("无漏") || label.includes("无故障")) return false;
   return ["异常", "是否漏水", "是否报警", "有异响", "有异味"].some((k) => label.includes(k));
 }
+// 预览页 AI 总结正文：异常项拎成红色「待跟进」小块，正文去掉模板腔(待跟进/异常提示/低风险总结前后缀)
+function summaryBodyHTML(rec) {
+  const flags = [];
+  for (const f of (rec.fields || [])) {
+    const v = String(f.value || "").trim();
+    if (!v) continue;
+    let bad = false;
+    if (["异常", "缺失", "破损", "故障"].includes(v)) bad = true;
+    else if (v === "否") bad = !isOccurrenceLabel(f.label);
+    else if (v === "是" || v === "有") bad = isOccurrenceLabel(f.label);
+    if (bad) flags.push({ label: f.label, value: v });
+  }
+  const text = String(rec.aiSummary || "")
+    .replace(/^待跟进[^：:]*[：:][^。]*。\s*/, "")
+    .replace(/^异常提示[:：][^。]*。\s*/, "")
+    .replace(/低风险总结[:：][^。]*。?\s*$/, "")
+    .trim();
+  let html = "";
+  if (flags.length) {
+    html += `<div class="sum-flags"><div class="sum-flags-h">待跟进 · ${flags.length} 项</div>`
+      + flags.map(f => `<div class="sum-flag"><b>${escapeHTML(f.label)}</b><i>${escapeHTML(f.value)}</i></div>`).join("")
+      + `</div>`;
+  }
+  if (text) html += `<div class="sum-text">${escapeHTML(text)}</div>`;
+  return html || `<div class="sum-text">${escapeHTML(rec.aiSummary || "")}</div>`;
+}
+
 function inspectionStatus(rec) {
   let abnormal = false, unfilled = false;
   for (const f of (rec.fields || [])) {
@@ -1439,6 +1466,22 @@ function renderGroupPills(groups, kind) {
 // 需跟进严重度：异常 > 待维修 > 待复核；不在表内 = 健康段
 const FOLLOWUP_SEVERITY = { "异常": 0, "待维修": 1, "待复核": 2 };
 
+// 卡片总结净化：健康时去掉 AI 的"异常提示：…"格式前缀(否则正常设备却显示"发现X项异常")，
+// 需跟进时红字提炼异常字段。让卡片文案与状态徽标一致、干净。
+function assetCardSummary(a) {
+  const raw = String(a.lastSummary || "").trim();
+  if (a.lastStatus in FOLLOWUP_SEVERITY) {
+    const m = raw.match(/发现\s*\d+\s*项[^：:]*[：:]\s*([^。]+)/);
+    const fields = m ? m[1].trim() : "";
+    return { tone: "warn", text: fields ? `需跟进：${fields}` : "存在待跟进项，待复查" };
+  }
+  const body = raw
+    .replace(/^异常提示[:：][^。]*。\s*/, "")
+    .replace(/低风险总结[:：][^。]*。?\s*$/, "")
+    .trim();
+  return { tone: "ok", text: body || "本次巡检正常" };
+}
+
 function assetRowHTML(a) {
   const cover = a.coverImage
     ? `<div class="asset-cover"><img src="${storageURL(thumbPath(a.coverImage, a.lastRecordId))}" alt="" loading="lazy" /></div>`
@@ -1451,7 +1494,7 @@ function assetRowHTML(a) {
       <div class="meta">
         <div class="name">${escapeHTML(a.assetName)}</div>
         <div class="sub">${subParts.map(escapeHTML).join(" · ")}</div>
-        ${a.lastSummary ? `<div class="summary">${escapeHTML(a.lastSummary)}</div>` : ""}
+        ${(() => { const s = assetCardSummary(a); return `<div class="summary ${s.tone}">${escapeHTML(s.text)}</div>`; })()}
       </div>
       <div class="asset-side">
         <div class="status ${escapeHTML(a.lastStatus || '')}">${escapeHTML(a.lastStatus || '未巡检')}</div>
@@ -1505,6 +1548,8 @@ const ASSET_STATUSES = ["正常", "异常", "待复核", "待维修"];
 
 async function openAssetDetail(assetId) {
   setScene("asset");
+  state.assetHistoryExpanded = false;
+  state.assetReqExpanded = false;
   $("#assetDetailBody").innerHTML = `<div class="empty-tip">加载中…</div>`;
   try {
     const data = await API.getAsset(assetId);
@@ -1529,7 +1574,11 @@ function renderAssetDetail() {
   const history = state.currentAssetHistory;
   const myReqs = state.currentAssetRequests || [];
 
-  const historyHTML = history.length ? history.map((r, i) => {
+  const HISTORY_LIMIT = 7;
+  const histShown = state.assetHistoryExpanded ? history : history.slice(0, HISTORY_LIMIT);
+  const histMoreBtn = history.length > HISTORY_LIMIT
+    ? `<button type="button" class="more-btn" data-more="history">${state.assetHistoryExpanded ? "收起" : `查看更多 ${history.length - HISTORY_LIMIT} 次`}</button>` : "";
+  const historyHTML = history.length ? histShown.map((r, i) => {
     const when = (r.submittedAt || r.createdAt || "").substring(0,16).replace("T"," ");
     const photos = (r.images || []).map((img, j) => `
       <button type="button" class="photo-thumb" data-rec="${i}" data-img="${j}">
@@ -1556,10 +1605,13 @@ function renderAssetDetail() {
   }).join("") : `<div class="empty-tip" style="text-align:left;padding:14px 0">暂无历史巡检</div>`;
 
   const reqTitle = canReview() ? "相关申请" : "我的申请";
+  const reqShown = state.assetReqExpanded ? myReqs : myReqs.slice(0, 1);
+  const reqMoreBtn = myReqs.length > 1
+    ? `<button type="button" class="more-btn" data-more="req">${state.assetReqExpanded ? "收起" : `查看全部 ${myReqs.length} 条`}</button>` : "";
   const reqHTML = myReqs.length ? `
     <div class="section-head">${reqTitle}</div>
     <div class="cr-list">
-      ${myReqs.map(c => `
+      ${reqShown.map(c => `
         <div class="cr-item cr-${escapeHTML(c.status)}">
           <div class="cr-row">
             <span class="cr-status">${crStatusText(c.status)}</span>
@@ -1571,28 +1623,34 @@ function renderAssetDetail() {
           ${c.status === "pending" ? `<div class="cr-actions"><button type="button" class="btn-ghost" data-withdraw="${escapeHTML(c.id)}">撤回</button></div>` : ""}
         </div>
       `).join("")}
+      ${reqMoreBtn}
     </div>
   ` : "";
 
   const followup = a.lastStatus in FOLLOWUP_SEVERITY;
   const lastWhen = (a.lastInspectedAt || "").substring(5, 16).replace("T", " ");
+  const sum = assetCardSummary(a);
   $("#assetDetailBody").innerHTML = `
-    <div class="health-strip ${followup ? "warn" : "ok"}">
-      <b>${followup ? "需跟进 · " + escapeHTML(a.lastStatus) : "健康"}</b>
-      <span>最近体检 ${escapeHTML(lastWhen)}${a.lastInspector ? " · " + escapeHTML(a.lastInspector) : ""}</span>
+    <div class="asset-hero ${followup ? "warn" : "ok"}">
+      <div class="ah-top">
+        <div class="ah-name">${escapeHTML(a.assetName || "设备")}</div>
+        <span class="ah-status">${followup ? "需跟进" : "健康"}</span>
+      </div>
+      <div class="ah-sub">${escapeHTML(a.assetType || "设备")}${a.project ? " · " + escapeHTML(a.project) : ""}</div>
+      <div class="ah-rows">
+        <div><span>累计巡检</span><b>${a.inspectionCount} 次</b></div>
+        <div><span>最近体检</span><b>${(a.lastInspectedAt || "").substring(0,16).replace("T"," ") || "—"}</b></div>
+        <div><span>巡检人</span><b>${escapeHTML(a.lastInspector || "—")}</b></div>
+      </div>
     </div>
-    <div class="asset-meta">
-      <div class="row"><span>设备名称</span><b>${escapeHTML(a.assetName || "")}</b></div>
-      <div class="row"><span>项目</span><b>${escapeHTML(a.project || "")}</b></div>
-      <div class="row"><span>类型</span><b>${escapeHTML(a.assetType || "")}</b></div>
-      <div class="row"><span>当前状态</span><b class="status ${escapeHTML(a.lastStatus || '')}">${escapeHTML(a.lastStatus || '未巡检')}</b></div>
-      <div class="row"><span>累计巡检</span><b>${a.inspectionCount} 次</b></div>
-      <div class="row"><span>最近巡检</span><b>${(a.lastInspectedAt || "").substring(0,16).replace("T"," ")}</b></div>
-      ${a.lastInspector ? `<div class="row"><span>最近巡检人</span><b>${escapeHTML(a.lastInspector)}</b></div>` : ""}
-      ${a.lastSummary ? `<div class="row col"><span>最近总结</span><div class="multi">${escapeHTML(a.lastSummary)}</div></div>` : ""}
-    </div>
+    ${a.lastSummary ? `
+      <div class="asset-sum-card">
+        <div class="ascard-h">最近总结</div>
+        <div class="ascard-body ${sum.tone}">${escapeHTML(sum.text)}</div>
+      </div>` : ""}
     <div class="section-head">体检记录 · 共 ${history.length} 次（只读）</div>
     ${historyHTML}
+    ${histMoreBtn}
     ${reqHTML}
   `;
 
@@ -1605,6 +1663,14 @@ function renderAssetDetail() {
       const imgIdx = parseInt(btn.dataset.img, 10) || 0;
       const rec = (state.currentAssetHistory || [])[recIdx];
       if (rec && rec.images) openLightbox(rec.images, imgIdx);
+    });
+  });
+  // 查看更多（体检记录 / 我的申请）
+  $("#assetDetailBody").querySelectorAll("[data-more]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.more === "history") state.assetHistoryExpanded = !state.assetHistoryExpanded;
+      else state.assetReqExpanded = !state.assetReqExpanded;
+      renderAssetDetail();
     });
   });
   // 撤回按钮
@@ -1655,9 +1721,13 @@ function describePatch(cr) {
     return parts.join(" · ") || "（无明细）";
   }
   if (cr.targetType === "record") {
+    // 旧申请 patch 没存 label，从对应记录回查字段标签
+    const rec = (state.currentAssetHistory || []).find(r => r.id === cr.targetId);
+    const labelMap = {};
+    (rec?.fields || []).forEach(f => { if (f.code) labelMap[f.code] = f.label; });
     const parts = [];
     if (Array.isArray(p.fields)) {
-      for (const f of p.fields) parts.push(`${f.code} → ${truncateStr(f.value, 16)}`);
+      for (const f of p.fields) parts.push(`${f.label || labelMap[f.code] || f.code} → ${truncateStr(f.value, 16)}`);
     }
     if (p.inspector) parts.push(`巡检人 → ${p.inspector}`);
     if (p.aiSummary !== undefined) parts.push(`AI 总结 → ${truncateStr(p.aiSummary, 24)}`);
@@ -1676,21 +1746,42 @@ function openChangeRequestSheet() {
   const a = state.currentAsset;
   if (!a) return;
   const history = state.currentAssetHistory || [];
-  // 构造目标下拉：1 个 asset + N 条 record
-  const targets = [
-    { kind: "asset", id: a.id, label: `资产：${a.assetName || a.id}` },
-    ...history.map(r => ({
-      kind: "record",
-      id: r.id,
-      label: `巡检：${(r.submittedAt || r.createdAt || "").substring(0,16).replace("T"," ")} · ${r.inspector || ""}`,
-    }))
-  ];
-  $("#changeReqTarget").innerHTML = targets.map((t, i) => `
-    <option value="${t.kind}::${escapeHTML(t.id)}"${i === 0 ? " selected" : ""}>${escapeHTML(t.label)}</option>
-  `).join("");
+  // 申请修改的本质=纠正这次巡检填错/AI 识别错的字段，所以默认对象=最近一次巡检记录（不是资产）。
+  const sorted = [...history].sort((x, y) =>
+    String(y.submittedAt || y.createdAt || "").localeCompare(String(x.submittedAt || x.createdAt || "")));
+  const records = sorted.map(r => ({
+    kind: "record",
+    id: r.id,
+    label: `巡检：${(r.submittedAt || r.createdAt || "").substring(0, 16).replace("T", " ")} · ${r.inspector || ""}`,
+  }));
+  // 记录在前、资产台账在后（资产是主管直接改状态的台账动作，降级）
+  const targets = [...records, { kind: "asset", id: a.id, label: `资产台账：${a.assetName || a.id}` }];
+  const lr = records.find(r => r.id === a.lastRecordId);
+  const defaultSel = lr ? `record::${lr.id}` : (records[0] ? `record::${records[0].id}` : `asset::${a.id}`);
+  $("#changeReqTarget").innerHTML = targets.map(t => {
+    const val = `${t.kind}::${t.id}`;
+    return `<option value="${escapeHTML(val)}"${val === defaultSel ? " selected" : ""}>${escapeHTML(t.label)}</option>`;
+  }).join("");
   $("#changeReqReason").value = "";
   renderChangeReqFields();
+  renderReasonChips();
   $("#changeReqSheet").hidden = false;
+  // 有异常 → 自动定位到第一个待复核字段
+  requestAnimationFrame(() => {
+    const flag = document.querySelector("#changeReqFields .crf-flag");
+    if (flag) flag.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+}
+
+// 修改理由快选（能选不手打）：点一下填进理由框，可再手改
+function renderReasonChips() {
+  const box = document.getElementById("changeReqReasonChips");
+  if (!box) return;
+  const reasons = ["AI 识别有误", "现场已整改", "补拍补录", "误判，实际正常"];
+  box.innerHTML = reasons.map(r => `<span class="cr-reason-chip" data-reason="${escapeHTML(r)}">${escapeHTML(r)}</span>`).join("");
+  box.querySelectorAll("[data-reason]").forEach(chip => {
+    chip.addEventListener("click", () => { $("#changeReqReason").value = chip.dataset.reason; });
+  });
 }
 function closeChangeRequestSheet() {
   $("#changeReqSheet").hidden = true;
@@ -1700,6 +1791,34 @@ function splitTargetSel(sel) {
   const idx = (sel || "").indexOf("::");
   if (idx < 0) return ["", ""];
   return [sel.slice(0, idx), sel.slice(idx + 2)];
+}
+
+// 字段是否"待复核"(异常)——与台账/总结同一套是/否语义
+function crfFieldIsBad(f) {
+  const v = String(f.value || "").trim();
+  if (!v) return false;
+  if (["异常", "缺失", "破损", "故障"].includes(v)) return true;
+  if (v === "否") return !isOccurrenceLabel(f.label);
+  if (v === "是" || v === "有") return isOccurrenceLabel(f.label);
+  return false;
+}
+
+// 申请修改里每个字段的输入控件——与"填写表单"同款：choice→下拉、number→数字、说明→文本域、其余→文本
+function crfFieldControl(f) {
+  const v = String(f.value || "");
+  const code = escapeHTML(f.code);
+  if (f.kind === "choice") {
+    const opts = ['<option value="">请选择</option>'].concat(
+      (f.options || []).map(o => `<option value="${escapeHTML(o)}" ${o === v ? "selected" : ""}>${escapeHTML(o)}</option>`));
+    return `<select data-code="${code}">${opts.join("")}</select>`;
+  }
+  if (f.kind === "number") {
+    return `<input data-code="${code}" type="number" step="any" value="${escapeHTML(v)}" placeholder="请输入数值" />`;
+  }
+  if (f.kind === "text" && /说明|备注|记录/.test(f.label)) {
+    return `<textarea data-code="${code}">${escapeHTML(v)}</textarea>`;
+  }
+  return `<input data-code="${code}" type="text" value="${escapeHTML(v)}" placeholder="请输入" />`;
 }
 
 function renderChangeReqFields() {
@@ -1744,33 +1863,25 @@ function renderChangeReqFields() {
   } else if (kind === "record") {
     const rec = state.currentAssetHistory.find(r => r.id === id);
     if (!rec) { box.innerHTML = ""; return; }
-    const fields = (rec.fields || []).map(f => `
-      <div class="kv-edit">
-        <label>${escapeHTML(f.label)}</label>
-        ${f.kind === "longtext" || (f.value || "").length > 20
-          ? `<textarea data-code="${escapeHTML(f.code)}">${escapeHTML(String(f.value || ""))}</textarea>`
-          : `<input type="text" data-code="${escapeHTML(f.code)}" value="${escapeHTML(String(f.value || ""))}" />`}
-      </div>
-    `).join("");
+    const all = rec.fields || [];
+    const bad = all.filter(crfFieldIsBad);
+    const ok = all.filter(f => !crfFieldIsBad(f));
+    const row = (f, flag) => `
+      <div class="kv-edit ${flag ? "crf-flag" : ""}">
+        <label>${escapeHTML(f.label)}${flag ? `<span class="crf-badge">待复核</span>` : ""}</label>
+        ${crfFieldControl(f)}
+      </div>`;
     box.innerHTML = `
       <div class="kv-edit-grid">
-        <div class="kv-edit">
-          <label>巡检人</label>
-          <input type="text" id="crf_inspector" value="${escapeHTML(rec.inspector || "")}" />
-        </div>
-        ${fields}
+        ${bad.length ? `<div class="crf-sec warn">需复核 · ${bad.length} 项</div>${bad.map(f => row(f, true)).join("")}` : ""}
+        ${ok.length ? `<div class="crf-sec">其余字段</div>${ok.map(f => row(f, false)).join("")}` : ""}
         <div class="kv-edit kv-edit-full">
-          <label>AI 总结（人工覆盖）</label>
-          <textarea id="crf_aiSummary">${escapeHTML(rec.aiSummary || "")}</textarea>
-        </div>
-        <div class="kv-edit kv-edit-full">
-          <label>补交照片（审批通过后并入本次巡检）</label>
-          <input type="file" id="crf_photos" accept="image/*" multiple />
+          <label>补交照片 · 拍照（审批通过后并入本次巡检）</label>
+          <input type="file" id="crf_photos" accept="image/*" capture="environment" multiple />
           <div class="crf-photo-hint" id="crf_photoHint"></div>
         </div>
       </div>
     `;
-    // 文件选择反馈
     $("#crf_photos").addEventListener("change", (e) => {
       const n = e.target.files?.length || 0;
       $("#crf_photoHint").textContent = n ? `已选 ${n} 张，提交时上传` : "";
@@ -1781,13 +1892,9 @@ function renderChangeReqFields() {
         const code = el.dataset.code;
         const newVal = el.value;
         const orig = rec.fields.find(f => f.code === code);
-        if (newVal !== String(orig?.value || "")) patch.fields.push({ code, value: newVal });
+        if (newVal !== String(orig?.value || "")) patch.fields.push({ code, label: orig?.label || code, value: newVal });
       });
       if (!patch.fields.length) delete patch.fields;
-      const ins = $("#crf_inspector").value.trim();
-      if (ins && ins !== rec.inspector) patch.inspector = ins;
-      const sm = $("#crf_aiSummary").value;
-      if (sm !== (rec.aiSummary || "")) patch.aiSummary = sm;
       return patch;
     };
     box._photoFiles = () => {
@@ -2022,7 +2129,9 @@ function taskStatusClass(status) {
 // 若没有任何匹配，则回退展示全部未关闭任务，避免空列表。
 function myOpenTasks() {
   const me = state.userName || state.inspector;
-  const open = (state.engineeringTasks || []).filter(t => !["已完成", "已取消"].includes(t.status));
+  // 只有「已下发」的任务才到巡检员手机：进行中(下发即进行中) / 待整改 / 逾期。
+  // 待执行/待下发=管理员还没下发，移动端不显示。
+  const open = (state.engineeringTasks || []).filter(t => ["进行中", "待整改", "逾期"].includes(t.status));
   const mine = open.filter(t => !t.assigneeName || t.assigneeName === me);
   return mine.length ? mine : open;
 }

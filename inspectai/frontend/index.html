@@ -153,12 +153,19 @@
       <div class="group" id="previewFields"></div>
 
       <div class="summary-card" id="summaryCard" hidden>
-        <div class="head">★ AI 总结（仅基于已确认字段）<span id="summaryStatus" class="sum-status" hidden></span></div>
+        <div class="head">
+          <span class="ai-mark">✦</span>
+          <span class="head-title">AI 总结</span>
+          <span id="summaryStatus" class="sum-status" hidden></span>
+        </div>
         <div class="body" id="summaryBody"></div>
       </div>
 
       <div class="recos-card" id="recosCard" hidden>
-        <div class="head">▲ AI 行动建议（与总结分开，可独立采纳）</div>
+        <div class="head">
+          <span class="ai-mark amber">✦</span>
+          <span class="head-title">AI 行动建议</span>
+        </div>
         <div id="recosList"></div>
       </div>
 
@@ -224,7 +231,8 @@
         <div id="changeReqFields"></div>
         <div class="form-row">
           <label>修改理由（必填）</label>
-          <textarea id="changeReqReason" placeholder="例如：现场温度计读数被遮挡，AI 识别错误"></textarea>
+          <div class="cr-reason-chips" id="changeReqReasonChips"></div>
+          <textarea id="changeReqReason" placeholder="点上方快选，或在此补充"></textarea>
         </div>
       </div>
       <div class="sheet-footer">
