@@ -622,13 +622,18 @@ def summary_field_value(field: dict) -> str:
 
 
 def summary_is_occurrence_label(label: str) -> bool:
-    """发生即异常的问题：答"否"是正常，答"是/有"才异常。"""
-    if any(kw in label for kw in ("无异", "无报警", "无告警", "无漏", "无故障")):
+    """发生即异常的问题：答"否"是正常，答"是/有"才异常。
+    与 Go inferOverallStatus/isOccurrenceLabel 对齐：不能用裸"报警/卡阻/漏水"匹配，
+    否则"报警装置有效=是""无卡阻=是"会被误判为异常。"""
+    # "有无X""是否有X" 是问"有没有发生" → occurrence（有/是=异常）
+    if any(kw in label for kw in ("有无", "是否有")):
+        return True
+    # 正向描述（无异响/无卡阻/……完好有效）→ 非 occurrence（是=好）
+    if any(kw in label for kw in ("无异", "无报警", "无告警", "无漏", "无故障", "无卡阻", "无渗漏")):
         return False
     return any(kw in label for kw in (
-        "有无", "是否有", "是否存在", "是否漏水", "是否报警", "是否告警",
+        "异常", "是否漏水", "是否报警", "是否告警", "是否渗漏",
         "存在异响", "存在异味", "存在卡阻", "有异响", "有异味",
-        "漏水", "渗漏", "报警", "告警", "卡阻",
     ))
 
 
@@ -687,24 +692,19 @@ def enforce_summary_policy(summary: str, payload: dict, abnormal_fields: list[st
             f"完成{payload.get('templateName', '巡检')}，关键字段：{'; '.join(parts) or '无'}。"
         )
 
+    # 去掉模型/历史可能写的旧式"异常提示：…""低风险总结：…"前后缀（历史提示词遗留，啰嗦）
+    summary = re.sub(r"^异常提示[:：][^。；;]*[。；;]?\s*", "", summary).strip()
+    summary = re.sub(r"\s*低风险总结[:：].*$", "", summary).strip()
+    summary = summary.lstrip("。；; ").strip()
+    # 干净拼装：有异常 → 以一句"待跟进 N 项：…"开头，正文跟随；无异常 → 直接用正文
     if abnormal_fields:
         labels = "、".join(abnormal_fields[:4])
         if len(abnormal_fields) > 4:
             labels += "等"
-        prefix = f"异常提示：本次发现{len(abnormal_fields)}项异常/待复核字段：{labels}。"
-        low_risk = "低风险总结：除前述异常外，其余已确认字段暂按低风险观察。"
-    else:
-        prefix = "异常提示：本次已确认字段未发现异常。"
-        low_risk = "低风险总结：本次已确认字段整体处于低风险状态，后续按计划巡检沉淀趋势。"
-
-    # 模型有时会自行写错"异常提示"或"低风险总结"；这里按字段判定结果强制重写首尾。
-    summary = re.sub(r"^异常提示[:：][^。；;]*[。；;]?\s*", "", summary).strip()
-    summary = re.sub(r"\s*低风险总结[:：].*$", "", summary).strip()
-    summary = summary.lstrip("。；; ")
-    if summary:
-        summary = prefix + summary.rstrip("。；; ") + "。" + low_risk
-    else:
-        summary = prefix + low_risk
+        head = f"待跟进 {len(abnormal_fields)} 项：{labels}。"
+        summary = head + summary if summary else head
+    elif not summary:
+        summary = "本次已确认字段未发现异常。"
     return summary
 
 
