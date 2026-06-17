@@ -1,5 +1,6 @@
 # ---- Claude Code / 编辑器 ----
-.claude/settings.local.json
+# 本地 Claude 配置与个人/项目 skill（含本机路径），不进版本库
+.claude/
 .idea/
 .vscode/
 .DS_Store
