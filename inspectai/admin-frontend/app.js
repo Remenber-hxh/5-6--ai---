@@ -1252,7 +1252,11 @@ function aiChatPanel() {
         <span class="ai-chat-model">DeepSeek · 台账分析</span>
       </div>
       <div class="ai-chat-body" id="aiChatBody">
-        <div class="ai-chat-empty">问 AI 看数据、查异常、要建议；下方点话题即可发起对话。</div>
+        <div class="ai-chat-empty">
+          <div class="ai-empty-icon"><img src="./assets/ai-spark.svg" alt=""></div>
+          <p class="ai-empty-title">问问你的台账</p>
+          <p class="ai-empty-hint">看数据 · 查异常 · 要建议，点下方话题即可开始</p>
+        </div>
       </div>
       <div class="ai-chat-suggestions" id="aiChatSuggestions">
         ${AI_SUGGESTIONS.map((s) => `<button type="button" class="ai-chat-chip" data-ai-suggest="${escapeHTML(s)}">${escapeHTML(s)}</button>`).join("")}
@@ -1265,7 +1269,50 @@ function aiChatPanel() {
   `;
 }
 
-const AI_CHAT_STATE = { history: [], busy: false };
+const AI_CHAT_STATE = { history: [], busy: false, seq: 0 };
+
+// 从 AI 回复里抽取 <<ACTION>>…<<END>> 动作提议块,正文去掉该块。只接受已支持的动作类型。
+function extractActionProposal(reply) {
+  const raw = reply || "";
+  const m = raw.match(/<<ACTION>>\s*([\s\S]*?)\s*<<END>>/);
+  if (!m) return { text: raw.trim(), proposal: null };
+  let proposal = null;
+  try {
+    const obj = JSON.parse(m[1].trim());
+    if (obj && obj.type === "create_recheck_task" && obj.asset) proposal = obj;
+  } catch (e) { proposal = null; }
+  const text = raw.replace(/<<ACTION>>[\s\S]*?<<END>>/, "").trim();
+  return { text, proposal };
+}
+
+// 动作提议 → 确认卡(可调整责任人/截止);已派发后渲染 done 态
+function renderActionProposal(m) {
+  const p = m.proposal;
+  if (!p || m.proposalDismissed) return "";
+  const asset = escapeHTML(p.asset || "");
+  if (m.proposalDone) {
+    return `<div class="ai-action-proposal done">
+      <div class="aap-head"><span class="aap-tag done">已派发</span><b>${escapeHTML(m.proposalResult || "复查任务已派发")}</b></div>
+      <button type="button" class="aap-goto" data-task-id="${escapeHTML(m.proposalTaskId || "")}" data-asset="${asset}">查看任务详情 →</button>
+    </div>`;
+  }
+  const assignee = escapeHTML(p.assignee || "");
+  const dueAt = escapeHTML(p.dueAt || "");
+  const reason = escapeHTML(p.reason || "");
+  return `<div class="ai-action-proposal" data-msg-id="${escapeHTML(m.id || "")}" data-action-type="${escapeHTML(p.type)}" data-action-asset="${asset}">
+    <div class="aap-head"><span class="aap-tag">建议动作</span><b>派复检任务</b></div>
+    <div class="aap-target">目标设备 <span class="ai-ref-static">${asset}</span></div>
+    ${reason ? `<div class="aap-reason">${reason}</div>` : ""}
+    <div class="aap-fields">
+      <label>责任人<input class="aap-input" data-k="assignee" value="${assignee}" placeholder="默认上次巡检人"></label>
+      <label>截止<input class="aap-input" data-k="dueAt" type="date" value="${dueAt}"></label>
+    </div>
+    <div class="aap-actions">
+      <button type="button" class="aap-confirm">确认派发</button>
+      <button type="button" class="aap-dismiss">忽略</button>
+    </div>
+  </div>`;
+}
 
 function bindAiChat() {
   const form = document.getElementById("aiChatForm");
@@ -1297,15 +1344,37 @@ function bindAiChat() {
 
 function renderChatBubble(m) {
   const cls = m.role === "user" ? "user" : "ai";
-  const html = (m.text || "")
+  let html = (m.text || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\n/g, "<br>");
-  const scaffold = cls === "ai" && m.scaffold ? renderAiScaffold(m.scaffold) : "";
-  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${scaffold}</div>`;
+  // AI 回复里的设备编号 / 记录号自动转成可点链接(命中真实数据才加,避免死链)
+  if (cls === "ai") html = linkifyRefs(html);
+  const card = cls === "ai" ? renderActionProposal(m) : "";
+  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}</div>`;
+}
+
+// 把回复正文里出现的真实资产编号 / 记录号包成 .ai-ref 链接(等宽蓝字 + 可点跳转)
+function linkifyRefs(html) {
+  const assetByCode = new Map();
+  (state.assets || []).forEach((a) => { const k = assetKey(a); if (k) assetByCode.set(k, a); });
+  const recByNo = new Map();
+  (state.records || []).forEach((r) => { const n = recordNo(r); if (n) recByNo.set(n, r); });
+  if (!assetByCode.size && !recByNo.size) return html;
+  return html.replace(/[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+/g, (token) => {
+    const a = assetByCode.get(token);
+    if (a) {
+      return `<span class="ai-ref" data-ref="asset" data-ref-id="${escapeHTML(a.id)}" data-ref-keyword="${escapeHTML(token)}" data-ref-asset-type="${escapeHTML(a.assetType || "")}" data-ref-asset-status="${escapeHTML(a.lastStatus || "")}">${token}</span>`;
+    }
+    const r = recByNo.get(token);
+    if (r) {
+      return `<span class="ai-ref" data-ref="record" data-ref-id="${escapeHTML(r.id)}" data-ref-keyword="${escapeHTML(token)}" data-ref-record-project="${escapeHTML(r.project || "")}" data-ref-record-template="${escapeHTML(r.templateName || r.templateId || "")}">${token}</span>`;
+    }
+    return token;
+  });
 }
 
 function firstAttentionAsset() {
@@ -1472,7 +1541,7 @@ function renderAiScaffold(scaffold) {
   const evidence = (scaffold.evidence || []).map((item) => `<span>${escapeHTML(item)}</span>`).join("");
   const actions = (scaffold.actions || []).map((action) => `
     <button type="button"
-      class="ai-action-card ${escapeHTML(action.tone || "neutral")}"
+      class="ai-action-card tone-${escapeHTML(action.tone || "neutral")}"
       data-ai-action-page="${escapeHTML(action.page || "dashboard")}"
       data-ai-action-request="${escapeHTML(action.requestId || "")}"
       data-ai-action-asset="${escapeHTML(action.assetId || "")}"
@@ -1508,7 +1577,98 @@ function renderAiScaffold(scaffold) {
 function bindAiScaffoldActions(root) {
   if (!root || root.dataset.aiScaffoldBound) return;
   root.dataset.aiScaffoldBound = "1";
-  root.addEventListener("click", (event) => {
+  root.addEventListener("click", async (event) => {
+    // 动作提议卡:确认派发 / 忽略 / 查看任务
+    const aap = event.target.closest(".ai-action-proposal");
+    if (aap) {
+      if (event.target.closest(".aap-dismiss")) {
+        event.preventDefault();
+        const m = AI_CHAT_STATE.history.find((x) => x.id === aap.dataset.msgId);
+        if (m) m.proposalDismissed = true;
+        aap.remove();
+        return;
+      }
+      const goto = event.target.closest(".aap-goto");
+      if (goto) {
+        event.preventDefault();
+        const taskId = goto.dataset.taskId || "";
+        if (taskId) {
+          // 定位到「复查任务」列表里那一行(行高亮 + 右侧详情卡),并滚动到可见
+          state.selectedTaskId = taskId;
+          state.selectedPlanStatus = ""; // 全部:确保复查任务区块可见
+          state.selectedPlanId = "";
+          setPage("plan");
+          requestAnimationFrame(() => {
+            const row = document.querySelector(".recheck-row.selected");
+            if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+        } else {
+          const a = (state.assets || []).find((x) => assetKey(x) === goto.dataset.asset);
+          if (a) state.selectedAssetId = a.id;
+          state.selectedPlanStatus = "";
+          setPage("plan");
+        }
+        return;
+      }
+      const confirmBtn = event.target.closest(".aap-confirm");
+      if (confirmBtn) {
+        event.preventDefault();
+        const asset = (state.assets || []).find((x) => assetKey(x) === aap.dataset.actionAsset);
+        if (!asset) { toast(`未找到设备「${aap.dataset.actionAsset}」,无法派发`); return; }
+        const params = {};
+        aap.querySelectorAll(".aap-input").forEach((inp) => {
+          const v = (inp.value || "").trim();
+          if (v) params[inp.dataset.k] = v;
+        });
+        const msgId = aap.dataset.msgId;
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "派发中…";
+        try {
+          const res = await api("/api/management-ai/act", {
+            method: "POST",
+            body: JSON.stringify({ type: aap.dataset.actionType, targetId: asset.id, params }),
+          });
+          const m = AI_CHAT_STATE.history.find((x) => x.id === msgId);
+          const detail = res.task ? `(责任人 ${res.task.assigneeName || "—"} · 截止 ${res.task.dueAt || "—"})` : "";
+          if (m) {
+            m.proposalDone = true;
+            m.proposalResult = (res.message || "复查任务已派发") + detail;
+            m.proposalTaskId = res.task?.id || "";
+          }
+          toast(res.message || "复查任务已派发");
+          await loadData(false); // 刷新数据,任务进入计划池;re-render 用 done 态重绘卡片
+        } catch (err) {
+          toast(`派发失败:${err.message || "未知错误"}`);
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = "确认派发";
+        }
+        return;
+      }
+      return;
+    }
+    const ref = event.target.closest(".ai-ref");
+    if (ref) {
+      event.preventDefault();
+      event.stopPropagation();
+      const keyword = ref.dataset.refKeyword || "";
+      if (ref.dataset.ref === "record") {
+        if (ref.dataset.refId) state.selectedRecordId = ref.dataset.refId;
+        state.recordFilters.project = ref.dataset.refRecordProject || "";
+        state.recordFilters.template = ref.dataset.refRecordTemplate || "";
+        state.recordFilters.status = "";
+        state.recordFilters.keyword = keyword;
+        state.recordPage = 0;
+        setPage("record");
+      } else {
+        if (ref.dataset.refId) state.selectedAssetId = ref.dataset.refId;
+        state.filters.assetType = ref.dataset.refAssetType || "";
+        state.filters.status = "";
+        state.filters.keyword = keyword;
+        setPage("ledger");
+      }
+      if (keyword) toast(`已定位：${keyword}`);
+      return;
+    }
     const btn = event.target.closest("[data-ai-action-page]");
     if (!btn) return;
     event.preventDefault();
@@ -1559,8 +1719,9 @@ async function sendAiChat(message) {
 
   AI_CHAT_STATE.history.push({ role: "user", text: message });
   body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "user", text: message }));
+  body.lastElementChild?.classList.add("just-in");
   // typing placeholder
-  body.insertAdjacentHTML("beforeend", `<div class="ai-chat-msg ai" id="aiChatTyping"><div class="ai-chat-bubble typing"><i></i><i></i><i></i></div></div>`);
+  body.insertAdjacentHTML("beforeend", `<div class="ai-chat-msg ai just-in" id="aiChatTyping"><div class="ai-chat-bubble typing"><i></i><i></i><i></i></div></div>`);
   body.scrollTop = body.scrollHeight;
 
   try {
@@ -1574,10 +1735,12 @@ async function sendAiChat(message) {
       }),
     });
     const reply = res.reply || "AI 没有给出回复。";
-    const scaffold = buildAiScaffold(message, reply, res);
-    AI_CHAT_STATE.history.push({ role: "ai", text: reply, scaffold });
+    const { text, proposal } = extractActionProposal(reply);
+    const msg = { role: "ai", text, proposal, id: "aim_" + (++AI_CHAT_STATE.seq) };
+    AI_CHAT_STATE.history.push(msg);
     document.getElementById("aiChatTyping")?.remove();
-    body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: reply, scaffold }));
+    body.insertAdjacentHTML("beforeend", renderChatBubble(msg));
+    body.lastElementChild?.classList.add("just-in");
   } catch (err) {
     document.getElementById("aiChatTyping")?.remove();
     body.insertAdjacentHTML("beforeend", renderChatBubble({ role: "ai", text: `出错了：${err.message || "未知错误"}` }));
@@ -2026,8 +2189,12 @@ function renderPlanPage() {
   if (!state.selectedPlanId || !rows.some((r) => r.id === state.selectedPlanId)) {
     state.selectedPlanId = rows[0]?.id || "";
   }
+  const recheckTasks = standaloneOpenTasks();
+  // 复查任务属于「需跟进」桶:只在「需跟进」和「全部」(未筛选)时展示,其余筛选页隐藏
+  const showRecheck = state.selectedPlanStatus === "" || state.selectedPlanStatus === "overdue";
   $("#pageMain").innerHTML = `
-    ${planStatusEntryBoard(counts)}
+    ${planStatusEntryBoard(counts, recheckTasks.length)}
+    ${showRecheck ? recheckTaskSection(recheckTasks) : ""}
     ${planTableSection(rows)}
   `;
   const selectedPlan = rows.find((r) => r.id === state.selectedPlanId) || null;
@@ -2041,8 +2208,53 @@ function renderPlanPage() {
   bindPlanStatusEntries();
   bindPlanFilters();
   bindPlanRowClicks();
+  bindRecheckRowClicks();
   bindPlanEditForm();
   if (selectedTask) bindTaskDetailActions();
+}
+
+// 无计划归属的在途任务(异常复查 / AI 派单 / 自动兜底):工程计划列表里看不到,单列出来
+function standaloneOpenTasks() {
+  return (state.engineeringTasks || [])
+    .filter((t) => t && !t.planItemId && !["已完成", "已取消"].includes(t.status))
+    .filter((t) => !state.selectedProject || t.project === state.selectedProject)
+    .sort((a, b) => String(a.dueAt || "").localeCompare(String(b.dueAt || "")));
+}
+
+function recheckTaskSection(tasks) {
+  if (!tasks.length) return "";
+  return `
+    <section class="panel recheck-task-panel">
+      <div class="panel-head">
+        <div class="panel-title-block"><h2>复查任务</h2></div>
+        <span class="recheck-hint">异常检出 / AI 派单生成,未挂工程计划;复检合格后自动销账</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>设备 / 任务</th><th>项目</th><th>责任人</th><th>截止</th><th>状态</th></tr></thead>
+          <tbody>${tasks.map((t) => `
+            <tr class="recheck-row ${t.id === state.selectedTaskId ? "selected" : ""}" data-task-id="${escapeHTML(t.id)}">
+              <td>${escapeHTML(t.title || "异常复查")}</td>
+              <td>${escapeHTML(t.project || "-")}</td>
+              <td>${escapeHTML(t.assigneeName || "-")}</td>
+              <td>${escapeHTML(t.dueAt || "-")}</td>
+              <td><span class="status ${statusClass(t.status)}">${escapeHTML(planBucketLabel(t.status) || "需跟进")}</span></td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function bindRecheckRowClicks() {
+  document.querySelectorAll(".recheck-row").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      state.selectedTaskId = tr.dataset.taskId;
+      state.selectedPlanId = "";
+      render();
+    });
+  });
 }
 
 // 计划状态 → 与顶部四张卡完全一致的归类词（让表格状态和卡片挂得上钩）
@@ -2070,7 +2282,7 @@ function planTableSection(rows) {
   return `
     <section class="panel plan-table-panel plan-table-restored">
       <div class="panel-head plan-panel-head">
-        <div class="panel-title-block"><h2>巡检计划</h2></div>
+        <div class="panel-title-block"><h2>巡检任务</h2></div>
         <div class="panel-actions plan-toolbar">${planFiltersHTML()}<button data-drawer="plan">新建计划</button></div>
       </div>
       <div class="table-wrap">
@@ -2082,23 +2294,31 @@ function planTableSection(rows) {
               <td>${escapeHTML(row.frequency)}</td><td>${escapeHTML(row.owner)}</td><td>${escapeHTML(row.next)}</td>
               <td><span class="status ${statusClass(row.status === "启用" ? "正常" : row.status)}">${escapeHTML(planBucketLabel(row.status))}</span></td>
             </tr>
-          `).join("") || emptyRow(7, "暂无巡检计划")}</tbody>
+          `).join("") || emptyRow(7, "暂无巡检任务")}</tbody>
         </table>
       </div>
     </section>
   `;
 }
 
-function planStatusEntryBoard(counts) {
+function planStatusEntryBoard(counts, recheckCount = 0) {
   const configs = ["pending", "processing", "overdue", "done"].map(planStatusConfig);
+  // 需跟进口径并入无计划归属的在途复查任务,避免"有待整改却显示 0"
+  const nums = configs.map((c) => (counts[c.key] || 0) + (c.key === "overdue" ? recheckCount : 0));
+  const total = nums.reduce((a, b) => a + b, 0) || 1;
   return `
     <section class="plan-entry-strip" aria-label="计划状态筛选">
-      ${configs.map((config) => `
+      ${configs.map((config, i) => {
+        const n = nums[i];
+        const pct = Math.round((n / total) * 100);
+        return `
         <button class="plan-entry-card tone-${escapeHTML(config.tone)} ${state.selectedPlanStatus === config.key ? "active" : ""}" type="button" data-plan-status="${escapeHTML(config.key)}">
           <span>${escapeHTML(config.label)}</span>
-          <b>${escapeHTML(counts[config.key] || 0)}</b>
+          <b>${escapeHTML(n)}</b>
+          <i class="plan-entry-bar" style="width:${pct}%"></i>
         </button>
-      `).join("")}
+      `;
+      }).join("")}
     </section>
   `;
 }

@@ -27,7 +27,8 @@
   --orange: #f59e0b;
   --red: #ef4b3f;
   --cyan: #25d5ff;
-  --shadow: 0 14px 34px rgba(15, 35, 55, 0.10);
+  /* 克制精致:双层微阴影——贴面接触光 + 柔和环境光,比单层重阴影更"实"更高级 */
+  --shadow: 0 1px 2px rgba(15, 35, 55, 0.05), 0 10px 28px rgba(15, 35, 55, 0.07);
 }
 
 * {
@@ -2623,6 +2624,23 @@ td i {
   box-shadow: 0 8px 18px rgba(15, 35, 55, 0.10);
   transform: translateY(-1px);
 }
+
+/* 占比微条:底部细条,宽度 = 该状态占四类总量比例,一眼看负载分布 */
+.plan-entry-card .plan-entry-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 0;
+  background: var(--green);
+  opacity: 0.85;
+  border-top-right-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.plan-entry-card.tone-pending .plan-entry-bar { background: #f59e0b; }
+.plan-entry-card.tone-running .plan-entry-bar { background: var(--blue); }
+.plan-entry-card.tone-attention .plan-entry-bar { background: var(--red); }
+.plan-entry-card.tone-done .plan-entry-bar { background: var(--green); }
 
 .plan-entry-card.active {
   z-index: 2;
@@ -6189,8 +6207,8 @@ td .status,
 }
 .ai-chat-body {
   padding: 16px 20px;
-  min-height: 80px;
-  max-height: 360px;
+  min-height: 220px;
+  max-height: 560px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -6230,6 +6248,97 @@ td .status,
   border: 1px solid var(--line);
   border-bottom-left-radius: 4px;
 }
+/* 回复正文里的设备编号 / 记录号:等宽链接字体,可点跳转 */
+.ai-chat-bubble .ai-ref {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  font-size: 0.92em;
+  letter-spacing: 0.2px;
+  color: var(--blue);
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 3px;
+  border-bottom: 1px dashed rgba(36, 107, 254, 0.45);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ai-chat-bubble .ai-ref:hover {
+  background: rgba(36, 107, 254, 0.1);
+  border-bottom-color: var(--blue);
+}
+.ai-chat-bubble strong .ai-ref,
+.ai-chat-bubble .ai-ref { font-weight: 600; }
+/* 让 AI 消息列内堆叠:气泡在上,动作提议卡在下 */
+.ai-chat-msg.ai { flex-direction: column; align-items: flex-start; gap: 8px; }
+/* 克制精致:新消息淡入上移,聊天更有生命力(只对新插入的消息,re-render 不重放) */
+@keyframes aiMsgIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ai-chat-msg.just-in { animation: aiMsgIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* 空状态:柔色圆图标 + 标题/提示两级,更聚焦更有邀请感 */
+.ai-chat-empty {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px !important;
+  text-align: center;
+}
+.ai-empty-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, rgba(36, 107, 254, 0.18), rgba(36, 107, 254, 0.05));
+}
+.ai-empty-icon img { width: 22px; height: 22px; }
+.ai-empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.ai-empty-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.ai-chat-body:has(.ai-chat-empty) { justify-content: center !important; align-items: center; }
+/* 动作提议确认卡(agent 一键执行) */
+.ai-action-proposal {
+  width: 100%;
+  max-width: 440px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.ai-action-proposal.done { border-left-color: #16a34a; }
+.aap-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.aap-tag {
+  font-size: 11px; font-weight: 600; color: var(--blue);
+  background: rgba(36, 107, 254, 0.1); padding: 2px 7px; border-radius: 5px;
+}
+.aap-tag.done { color: #16a34a; background: rgba(22, 163, 74, 0.1); }
+.aap-head b { font-size: 13px; color: var(--text); }
+.aap-target { color: var(--muted); margin-bottom: 6px; }
+.aap-reason { color: var(--text); margin-bottom: 10px; line-height: 1.5; }
+.aap-fields { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.aap-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); flex: 1; min-width: 120px; }
+.aap-input {
+  height: 32px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 7px; font-size: 13px; background: #ffffff; color: var(--text);
+}
+.aap-input:focus { border-color: var(--blue); outline: none; }
+.aap-actions { display: flex; gap: 8px; }
+.aap-confirm {
+  height: 34px; padding: 0 16px; border: 0; border-radius: 7px;
+  background: var(--blue); color: #ffffff; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.aap-confirm:hover:not(:disabled) { background: #1655d8; }
+.aap-confirm:disabled { opacity: 0.6; cursor: default; }
+.aap-dismiss {
+  height: 34px; padding: 0 14px; border: 1px solid var(--line); border-radius: 7px;
+  background: #ffffff; color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.aap-dismiss:hover { color: var(--text); border-color: var(--muted); }
+.aap-goto { margin-top: 4px; border: 0; background: none; color: var(--blue); font-size: 12px; cursor: pointer; padding: 0; }
+.aap-goto:hover { text-decoration: underline; }
+.ai-ref-static { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 600; color: var(--blue); }
 .ai-chat-bubble.typing {
   display: inline-flex;
   align-items: center;
@@ -7366,6 +7475,7 @@ td .status,
   border: 1px solid var(--line) !important;
   box-shadow: none !important;
   border-bottom-left-radius: 4px !important;
+  max-width: 100% !important;
 }
 .ai-chat-bubble.typing i {
   background: var(--muted) !important;
@@ -7558,20 +7668,20 @@ td .status,
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.ai-action-card.primary,
-.ai-action-card.info {
+.ai-action-card.tone-primary,
+.ai-action-card.tone-info {
   border-color: rgba(36, 107, 254, 0.26);
   background: rgba(36, 107, 254, 0.035);
 }
-.ai-action-card.warn {
+.ai-action-card.tone-warn {
   border-color: rgba(245, 158, 11, 0.34);
   background: rgba(245, 158, 11, 0.065);
 }
-.ai-action-card.danger {
+.ai-action-card.tone-danger {
   border-color: rgba(239, 68, 68, 0.30);
   background: rgba(239, 68, 68, 0.055);
 }
-.ai-action-card.neutral {
+.ai-action-card.tone-neutral {
   background: var(--page);
 }
 
@@ -8159,6 +8269,14 @@ button.profile-hero-logout,
   box-shadow: inset 3px 0 0 var(--blue);
 }
 .plan-row.selected td { color: var(--text); font-weight: 600; }
+
+/* 复查任务区块(无计划归属的在途任务) */
+.recheck-task-panel { margin-bottom: 14px; }
+.recheck-task-panel .recheck-hint { font-size: 12px; color: var(--muted); }
+.recheck-row { cursor: pointer; transition: background 140ms ease; }
+.recheck-row:hover { background: var(--page); }
+.recheck-row.selected { background: rgba(36, 107, 254, 0.06); box-shadow: inset 3px 0 0 var(--blue); }
+.recheck-row.selected td { color: var(--text); font-weight: 600; }
 
 .plan-edit-card {
   padding: 16px 18px;
@@ -10491,13 +10609,13 @@ button.profile-hero-logout,
   min-height: 350px;
 }
 .content:has(.ai-chat) .ai-chat-body {
-  min-height: 188px !important;
-  max-height: 360px !important;
+  min-height: 340px !important;
+  max-height: 620px !important;
 }
 .content:has(.ai-chat) .ai-chat-body:has(.ai-chat-empty) {
-  min-height: 188px !important;
-  max-height: 188px !important;
-  height: 188px !important;
+  min-height: 240px !important;
+  max-height: 240px !important;
+  height: 240px !important;
 }
 
 /* M39 - Data board: one trend workspace with a restrained AI sidecar. */
