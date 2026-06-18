@@ -110,6 +110,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleManagementAttention(w, r)
 	case r.URL.Path == "/api/management-ai/chat" && r.Method == http.MethodPost:
 		s.handleManagementChat(w, r)
+	case r.URL.Path == "/api/management-ai/act" && r.Method == http.MethodPost:
+		s.handleManagementAct(w, r)
 	default:
 		s.serveStatic(w, r)
 	}

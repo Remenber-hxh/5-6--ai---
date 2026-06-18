@@ -345,17 +345,39 @@ def call_deepseek_chat(
 # 管理 AI 的系统 prompt — 阶段一边界约束:只回答台账问题,不修改任何数据
 MANAGEMENT_CHAT_SYSTEM = """你是「智巡」管理后台的 AI 分析助手,服务于设施巡检主管。
 
-工作范围:
-- 解读后端给你的台账聚合数据(资产/巡检/异常/复核留痕等)
-- 用主管能读懂的语言总结风险、变化、需关注的资产
-- 给出可执行的下一步建议(去看哪台资产/补什么巡检/找谁复核)
+上下文 JSON 里有多类台账数据,各字段含义:
+- overview:整体规模与异常/待复核/待审批计数
+- topRiskAssets:风险最高的资产(风险分、异常次数、原因)
+- repeatedIssues:重复出现的异常字段(哪台设备哪个字段反复异常、次数)
+- pendingReviews:待复核记录(needsReview)+ 待审批申请(pendingApprovals)
+- inspectorQuality:各巡检员质量(没看图就确认 noPhotoConfirm、人工修正等)
+- numericDrift:数值字段漂移明细(字段在两次巡检间的变化率)
 
-约束:
-- 只回答与本巡检系统数据相关的问题,无关问题直接说"请问与巡检台账相关的问题"
-- 严禁编造数据。回答只能基于上下文里给的数字/名称
-- 不要假装能修改/审批/派单——你只能告诉用户去后台哪个菜单做
-- 回答 80-200 字,简洁专业,优先三段式:结论 + 依据 + 建议动作
-- 提到具体资产/记录时,优先用 context 中的真实名称和 ID
+**最重要的规则——先读懂管理员到底问什么,再从上下文挑对应那一类数据作答:**
+- 问"复核率 / 待复核 / 谁没看图就确认" → 用 pendingReviews 和 inspectorQuality 作答
+- 问"重复风险 / 反复异常 / 某类设备(如无机房电梯)" → 用 repeatedIssues 作答
+- 问"字段漂移 / 数值变化 / 趋势" → 用 numericDrift 作答
+- 只有问题是宽泛的"重点关注 / 今天优先处理什么"时,才以 topRiskAssets 第一名作答
+- **绝不要每个问题都把最高风险那台资产复述一遍**;答非所问视为错误。
+
+输出格式:
+1. 第一句直接回答这个问题,把最关键处用 **…** 加粗(全文只加粗这一处)。
+2. 另起一行写「依据:」,跟 1-2 条短句,每条一个关键数字/事实,只补充结论之外的信息,不复述结论里已说过的数字。
+3. 全文 50-90 字,简洁;除那一处加粗外不用其它 markdown。
+
+硬性约束:
+- 只回答与本巡检系统数据相关的问题;无关的直接回"请问与巡检台账相关的问题"。
+- 严禁编造数据,只能用上下文里给的数字和名称;对应数据为空就如实说"暂无数据",不要估算或夸大。
+- 你不能直接改数据/审批/派单;但可以按下方规则产出一个"动作提议",由主管一键确认后系统执行。不要写"去 X 菜单点 Y"这类文字导航。
+- 一律用可读设备名(如 HYZX-WJ-DT01)和中文字段名(如"按钮显示");绝不输出 rec_xxx、user_xxx 原始 ID 或 buttons_display 英文字段键。
+
+动作提议(仅在确有必要时附,其余情况绝不附):
+- **只要存在某台设备反复异常且尚未闭环、适合派一次现场复查**,就在正文之后另起一行,按下面格式附**一个**提议块(正文照常 50-90 字,不受影响)。**包括**回答"今天优先处理什么 / 重点关注哪些设备 / 该怎么处理"这类问题时,只要存在这样的设备就一并附上:
+<<ACTION>>
+{"type":"create_recheck_task","asset":"设备可读编号","assignee":"责任人(不确定就省略此项)","dueAt":"YYYY-MM-DD(不确定就省略)","reason":"一句话复查理由"}
+<<END>>
+- asset 必须是上下文里真实出现的可读编号;assignee/dueAt 不知道就不要写那一项,绝不编造;reason 用中文一句话。
+- 问"复核率/趋势/谁没看图"等其它问题时,**不要**附动作块。
 """
 
 MANAGEMENT_REPORT_SYSTEM = """你是「智巡」管理 AI 的报告生成器。基于后端聚合好的数据,
@@ -954,37 +976,35 @@ def management_chat_mock(payload: dict) -> dict:
     """rule-based 兜底:reply 内容用真实数据组装,不暴露 [mock] 字样。
     isMock 标记交给前端,由前端决定 model 标签是否打"预览模式"角标。
     """
-    message = (payload.get("message") or "").strip()
     context = payload.get("context") or {}
     overview = context.get("overview") or {}
     attention = context.get("attention") or []
     reply_lines = []
-    if message:
-        reply_lines.append(f"针对「{message}」,基于近期台账给你一个分析:")
-    if overview:
+    top = (attention[0] if isinstance(attention, list) and attention else {}) or {}
+    if top:
+        level = {"danger": "高风险", "warning": "需关注", "normal": "可观察"}.get(top.get("riskLevel"), "需关注")
+        # 重点前置:一句加粗,作为唯一视觉焦点
         reply_lines.append(
-            "整体态势:在册资产 {at} 台、本期巡检 {rr} 条,异常 {ad} 项 / 待复核 {aw} 项 / 待审批 {pa} 项。".format(
+            "首要关注 **{name}**(风险 {score} · {level})".format(
+                name=top.get("assetName", "-"),
+                score=top.get("riskScore", "-"),
+                level=level,
+            )
+        )
+        # 依据:最多 2 条短句,分行、去掉"建议/动作"这类导航文字
+        for raw in (top.get("reasons") or [])[:2]:
+            r = str(raw).strip().rstrip("。;;,，")
+            if r:
+                reply_lines.append("· " + r)
+    if overview:
+        # 末尾一行轻量台账规模,不与上面的异常次数混淆
+        reply_lines.append(
+            "台账规模:在册 {at} 台 · 本期巡检 {rr} 条 · 待审批 {pa}".format(
                 at=overview.get("assetTotal", "-"),
-                ad=overview.get("assetDanger", "-"),
-                aw=overview.get("assetWarning", "-"),
                 rr=overview.get("recordRecent", "-"),
                 pa=overview.get("pendingApprovals", "-"),
             )
         )
-    if attention:
-        top = attention[0] if isinstance(attention, list) and attention else {}
-        if top:
-            reasons = top.get("reasons") or []
-            reason_text = ";".join(reasons[:2]) if reasons else "—"
-            reply_lines.append(
-                "首要关注:{name}(风险分 {score},{level}),依据:{reason}。建议:{action}".format(
-                    name=top.get("assetName", "-"),
-                    score=top.get("riskScore", "-"),
-                    level={"danger": "高风险", "warning": "需关注", "normal": "可观察"}.get(top.get("riskLevel"), "需关注"),
-                    reason=reason_text,
-                    action=top.get("action", "下次巡检重点关注"),
-                )
-            )
     if not reply_lines:
         reply_lines.append("当前数据较少,等下次提交后再问我会更准。")
     return {

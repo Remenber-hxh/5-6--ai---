@@ -1154,14 +1154,26 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	rangeKey := firstNonEmpty(req.Range, "30d")
 	overview, _ := s.toolGetOverview(req.Project, rangeKey)
 	attention, _ := s.toolListAttention(req.Project, 5)
+	// 多类聚合一起喂给 AI,让它能按问题挑对应数据,而不是每次都答最高风险资产
+	repeated, _ := s.toolListRepeatedIssues(req.Project, 6)
+	pending, _ := s.toolListPendingReviews(req.Project, 10)
+	quality, _ := s.toolGetInspectorQuality(rangeKey)
+	drift, _ := s.toolListNumericDrift(req.Project)
+	if len(drift) > 8 {
+		drift = drift[:8]
+	}
 	payload := map[string]any{
 		"message": req.Message,
 		"history": req.History,
 		"context": map[string]any{
-			"overview":  overview,
-			"attention": attention,
-			"rangeKey":  rangeKey,
-			"project":   req.Project,
+			"overview":         overview,
+			"topRiskAssets":    attention,
+			"repeatedIssues":   repeated,
+			"pendingReviews":   pending,
+			"inspectorQuality": quality,
+			"numericDrift":     drift,
+			"rangeKey":         rangeKey,
+			"project":          req.Project,
 		},
 	}
 	resp, err := s.analyticsClient.Chat(payload)
@@ -1170,4 +1182,127 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// ===== Agent 执行入口 /api/management-ai/act =====
+//
+// L2「一键执行」的落地端:管理 AI 只能产出「动作提议」,真正的写操作全部走这里——
+// 由后端按 type 校验、调现有内部逻辑、权限门控 + 审计。模型永远碰不到真实 API。
+
+func (s *Server) handleManagementAct(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
+	var req struct {
+		Type     string         `json:"type"`
+		TargetID string         `json:"targetId"`
+		Params   map[string]any `json:"params"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	switch req.Type {
+	case "create_recheck_task":
+		s.actCreateRecheckTask(w, r, req.TargetID, req.Params)
+	default:
+		writeError(w, http.StatusBadRequest, "unknown_action", "未知或暂不支持的动作类型")
+	}
+}
+
+// actCreateRecheckTask 给某资产派一条「异常复查」工程任务。
+// 资产已有在途任务则复用并更新责任人/截止(再派发),否则新建;
+// 走的是和自动兜底同一条 TaskType=异常复查 + 待整改 路径,完成后复用既有的复检自动销账。
+func (s *Server) actCreateRecheckTask(w http.ResponseWriter, r *http.Request, assetID string, params map[string]any) {
+	assetID = strings.TrimSpace(assetID)
+	if assetID == "" {
+		writeError(w, http.StatusBadRequest, "missing_target", "缺少目标资产")
+		return
+	}
+	asset, err := s.store.GetAsset(assetID)
+	if err != nil || asset == nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "目标资产不存在")
+		return
+	}
+	assignee := strings.TrimSpace(actParamString(params, "assignee"))
+	if assignee == "" {
+		assignee = asset.LastInspector
+	}
+	dueAt := strings.TrimSpace(actParamString(params, "dueAt"))
+	if dueAt == "" {
+		dueAt = time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	}
+	reason := strings.TrimSpace(actParamString(params, "reason"))
+
+	// 去重:该资产已有在途任务时,改为更新责任人/截止(再派发),不重复建
+	if existing, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{}); err == nil {
+		for _, t := range existing {
+			if t == nil || t.AssetID != assetID {
+				continue
+			}
+			switch t.Status {
+			case engTaskStatusDraft, engTaskStatusPending, engTaskStatusProcessing, engTaskStatusRectify, engTaskStatusOverdue:
+				_ = s.store.UpdateEngineeringTask(t.ID, func(task *EngineeringTask) {
+					if assignee != "" {
+						task.AssigneeName = assignee
+					}
+					if dueAt != "" {
+						task.DueAt = dueAt
+					}
+				})
+				updated, _ := s.store.GetEngineeringTask(t.ID)
+				s.recordOperation(r, "agent_recheck_redispatch", "engineering_task", t.ID, map[string]any{
+					"asset": asset.AssetName, "assignee": assignee, "dueAt": dueAt,
+				})
+				writeJSON(w, http.StatusOK, map[string]any{
+					"task":    updated,
+					"reused":  true,
+					"message": "该资产已有在途复查任务,已更新责任人/截止",
+				})
+				return
+			}
+		}
+	}
+
+	task := &EngineeringTask{
+		ID:             newID("eng_task"),
+		Source:         "agent-recheck",
+		TaskType:       "异常复查",
+		Title:          firstNonEmpty(asset.AssetName, "设备") + " 异常复查",
+		Project:        asset.Project,
+		Category:       asset.AssetType,
+		AssetID:        asset.ID,
+		AssigneeName:   assignee,
+		DueAt:          dueAt,
+		Status:         engTaskStatusRectify,
+		EvidenceStatus: "待复查",
+		AIStatus:       "待复查",
+		CloseResult:    asset.LastStatus,
+		CloseNote:      firstNonEmpty(reason, "管理 AI 派发复查"),
+	}
+	normalizeEngineeringTask(task)
+	task.Status = engTaskStatusRectify
+	if err := s.store.CreateEngineeringTask(task); err != nil {
+		writeError(w, http.StatusInternalServerError, "create_task_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "agent_recheck_create", "engineering_task", task.ID, map[string]any{
+		"asset": asset.AssetName, "assignee": task.AssigneeName, "dueAt": dueAt,
+	})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"task":    task,
+		"message": "复查任务已派发",
+	})
+}
+
+func actParamString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
 }
