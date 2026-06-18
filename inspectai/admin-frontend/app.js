@@ -1253,13 +1253,12 @@ function aiChatPanel() {
       </div>
       <div class="ai-chat-body" id="aiChatBody">
         <div class="ai-chat-empty">
-          <div class="ai-empty-icon"><img src="./assets/ai-spark.svg" alt=""></div>
-          <p class="ai-empty-title">问问你的台账</p>
-          <p class="ai-empty-hint">看数据 · 查异常 · 要建议，点下方话题即可开始</p>
+          <b>问问你的台账</b>
+          <span>看数据 · 查异常 · 要建议，点下方话题即可开始</span>
         </div>
       </div>
       <div class="ai-chat-suggestions" id="aiChatSuggestions">
-        ${AI_SUGGESTIONS.map((s) => `<button type="button" class="ai-chat-chip" data-ai-suggest="${escapeHTML(s)}">${escapeHTML(s)}</button>`).join("")}
+        ${AI_SUGGESTIONS.map((s, i) => `<button type="button" class="ai-chat-chip" style="--i:${i}" data-ai-suggest="${escapeHTML(s)}">${escapeHTML(s)}</button>`).join("")}
       </div>
       <form class="ai-chat-form" id="aiChatForm" autocomplete="off">
         <input id="aiChatInput" type="text" placeholder="输入你想问的，例如『派给我哪些任务还没完成』" maxlength="200" />

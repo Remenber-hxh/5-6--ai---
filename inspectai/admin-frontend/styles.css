@@ -6193,7 +6193,11 @@ td .status,
 .ai-chat .panel-head h2 .hi {
   width: 18px; height: 18px;
   color: var(--blue);
-  filter: drop-shadow(0 0 6px rgba(36, 107, 254, 0.45));
+  /* design-taste: 去外发光,改 1px 柔色底托,克制有质感不刺眼 */
+  padding: 3px;
+  border-radius: 7px;
+  background: rgba(36, 107, 254, 0.08);
+  box-sizing: content-box;
 }
 .ai-chat-model {
   padding: 3px 10px;
@@ -6275,27 +6279,28 @@ td .status,
   to { opacity: 1; transform: translateY(0); }
 }
 .ai-chat-msg.just-in { animation: aiMsgIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
-/* 空状态:柔色圆图标 + 标题/提示两级,更聚焦更有邀请感 */
-.ai-chat-empty {
-  display: flex !important;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 9px !important;
-  text-align: center;
+/* 空状态统一收口见文件末尾 .ai-chat-empty 权威块 */
+
+/* ===== design-taste-frontend 规则落地:微交互 + 入场编排 ===== */
+/* 话题 chips 瀑布式淡入(transform/opacity only,硬件加速) */
+@keyframes chipIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.ai-empty-icon {
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 30%, rgba(36, 107, 254, 0.18), rgba(36, 107, 254, 0.05));
+.ai-chat-suggestions .ai-chat-chip {
+  animation: chipIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
 }
-.ai-empty-icon img { width: 22px; height: 22px; }
-.ai-empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
-.ai-empty-hint { margin: 0; font-size: 12px; color: var(--muted); }
-.ai-chat-body:has(.ai-chat-empty) { justify-content: center !important; align-items: center; }
+/* Tactile :active —— 按下时物理下沉,克制不浮夸 */
+.ai-chat-send:active:not(:disabled) { transform: translateY(1px) scale(0.99); }
+.ai-chat-chip:active { transform: translateY(1px); }
+.aap-confirm:active:not(:disabled),
+.aap-dismiss:active { transform: translateY(1px) scale(0.99); }
+.ai-action-proposal .aap-confirm,
+.ai-action-proposal .aap-dismiss { transition: background 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.12s ease, border-color 0.2s ease; }
+/* 提议卡:背景色调阴影,提升层级而不刺眼(tinted shadow) */
+.ai-action-proposal { box-shadow: 0 1px 2px rgba(36, 107, 254, 0.04), 0 8px 22px rgba(36, 107, 254, 0.06); }
+.ai-action-proposal.done { box-shadow: 0 1px 2px rgba(18, 169, 104, 0.05), 0 8px 22px rgba(18, 169, 104, 0.06); }
 /* 动作提议确认卡(agent 一键执行) */
 .ai-action-proposal {
   width: 100%;
@@ -10392,8 +10397,8 @@ button.profile-hero-logout,
   font-size: 12px;
 }
 .ai-chat-bubble strong {
-  color: #0f6d62;
-  font-weight: 900;
+  color: var(--text);
+  font-weight: 700;
 }
 .ai-chat-bubble code {
   padding: 1px 5px;
@@ -11139,4 +11144,44 @@ button.profile-hero-logout,
   .asset-card-full .asset-photo {
     width: 100%;
   }
+}
+
+/* ============================================================
+   AI 空状态 · 权威收口块(放文件末尾,赢过历史多版 !important)
+   单图标(::before 柔色圆 + ✦)+ 标题(b)+ 提示(span),竖排居中
+   ============================================================ */
+.ai-chat-empty {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  padding: 8px 16px !important;
+  text-align: center !important;
+  height: auto !important;
+}
+.ai-chat-empty::before {
+  content: "✦" !important;
+  width: 48px !important;
+  height: 48px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 50% !important;
+  border: 0 !important;
+  background: radial-gradient(circle at 32% 28%, rgba(36, 107, 254, 0.16), rgba(36, 107, 254, 0.05)) !important;
+  color: var(--blue) !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  box-shadow: none !important;
+}
+.ai-chat-empty b {
+  color: var(--text) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+.ai-chat-empty span {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  line-height: 1.5;
 }
