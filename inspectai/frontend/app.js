@@ -163,6 +163,7 @@ const state = {
   pollTimer: null,
   forceManual: false,
   retakePending: false,
+  retakeTarget: null,      // 异常资产「重新拍照复检」上下文:{ templateId, pointId, assetNo, assetName }
   inspector: localStorage.getItem("inspector") || "巡检员",
   userRole: localStorage.getItem("userRole") || "inspector",   // inspector / supervisor
   userName: localStorage.getItem("userName") || (localStorage.getItem("inspector") || "巡检员"),
@@ -317,7 +318,14 @@ function setFooter(name) {
       break;
     case "classify": {
       const r = state.classifyResult;
-      if (r && !r.needsManualPick && r.templateId !== "unknown") {
+      if (state.retakeTarget?.templateId) {
+        // 复检:模板已知(目标资产的模板),无视分类结果直接进入填报
+        footer.hidden = false;
+        primary.textContent = `继续复检填报`;
+        primary.disabled = false;
+        primary.onclick = () => startRecordWithTemplate(state.retakeTarget.templateId);
+        secondary.hidden = true;
+      } else if (r && !r.needsManualPick && r.templateId !== "unknown") {
         footer.hidden = false;
         primary.textContent = `开始填报【${r.templateName}】`;
         primary.disabled = false;
@@ -592,10 +600,14 @@ function showTemplateList(showAll) {
 
 async function startRecordWithTemplate(templateId) {
   try {
+    const rt = state.retakeTarget;
+    // 复检:强制目标模板 + 带目标点位,保证新记录落到同一台资产
+    if (rt && rt.templateId) templateId = rt.templateId;
     const body = {
       templateId,
       inspector: state.inspector,
     };
+    if (rt && rt.pointId) body.pointId = rt.pointId;
     if (state.classifyResult?.tmpDir) {
       body.tmpDir = state.classifyResult.tmpDir;
       body.imageIds = state.pendingImageIds;
@@ -736,6 +748,11 @@ function showManualHint() {
 
 async function renderForm() {
   const rec = state.record;
+  // 复检:把目标资产编号写进 asset_no,保证提交后归属同一台设备(多资产模板兜底)
+  if (state.retakeTarget?.assetNo) {
+    const f = rec.fields.find(x => x.code === "asset_no");
+    if (f) { f.value = state.retakeTarget.assetNo; f.source = "manual"; f.confidence = 1; }
+  }
   $("#formContext").innerHTML = renderContext(rec);
   $("#manualHint").hidden = !rec.manualRequired;
   const groups = $("#formGroups");
@@ -772,6 +789,11 @@ async function renderForm() {
     el.addEventListener("focus", () => trackFieldFocus(el.dataset.fieldCode));
     el.addEventListener("change", () => saveField(el.dataset.fieldCode));
   });
+  // 复检:asset_no 已带入 → 落库持久化,确保归属同一台
+  if (state.retakeTarget?.assetNo && groups.querySelector('[data-field-input][data-field-code="asset_no"]')) {
+    saveField("asset_no");
+  }
+  updateRetakeBanner();
   // P0-4 一键确认按钮:批量给所有 source=ai 字段写一条 confirm-batch 留痕,主管能识别"批量过的"
   document.getElementById("confirmAllBtn")?.addEventListener("click", () => confirmAllAIFields());
   // 缩略图点击 → 弹大图
@@ -1206,7 +1228,12 @@ async function submitRecord() {
     renderPreview();
     setScene("preview");
     localStorage.removeItem("activeRecord");
-    if (state.activeEngineeringTaskId) {
+    const wasRetake = state.retakeTarget;
+    state.retakeTarget = null;   // 复检提交完毕,清掉上下文
+    updateRetakeBanner();
+    if (wasRetake) {
+      toast(`复检已提交，「${wasRetake.assetName}」健康档案已更新`);
+    } else if (state.activeEngineeringTaskId) {
       toast("提交成功，巡检任务已闭环");
       setActiveTask(null);
     } else {
@@ -1643,6 +1670,7 @@ function renderAssetDetail() {
         <div><span>巡检人</span><b>${escapeHTML(a.lastInspector || "—")}</b></div>
       </div>
     </div>
+    ${followup ? `<button type="button" class="asset-retake-btn" id="assetRetakeBtn">重新拍照复检</button>` : ""}
     ${a.lastSummary ? `
       <div class="asset-sum-card">
         <div class="ascard-h">最近总结</div>
@@ -1654,6 +1682,8 @@ function renderAssetDetail() {
     ${reqHTML}
   `;
 
+  // 重新拍照复检 → 带上下文跳首页拍照
+  document.getElementById("assetRetakeBtn")?.addEventListener("click", retakeForAsset);
   // 照片点击 → lightbox
   $("#assetDetailBody").querySelectorAll("[data-history-photos]").forEach(strip => {
     strip.addEventListener("click", (e) => {
@@ -2072,8 +2102,43 @@ function goCamera() {
   state.pendingImageIds = [];
   state.forceManual = false;
   state.retakePending = false;
+  state.retakeTarget = null;   // 普通新建巡检:清掉残留的复检上下文
   localStorage.removeItem("activeRecord");
   setScene("camera");
+  updateRetakeBanner();
+}
+
+// 异常资产「重新拍照复检」:跳首页拍照,并带上 模板/点位/编号 上下文,
+// 使重拍提交后落到同一台资产、把异常闭环。
+function retakeForAsset() {
+  const a = state.currentAsset;
+  if (!a) return;
+  goCamera();                 // 先复位(会清 retakeTarget),再设目标
+  state.retakeTarget = {
+    templateId: a.templateId || "",
+    pointId: a.pointId || "",
+    assetNo: a.assetName || "",
+    assetName: a.assetName || "设备",
+  };
+  updateRetakeBanner();
+  toast(`复检：对准「${state.retakeTarget.assetName}」重新拍照即可`);
+}
+
+// 顶部复检横幅:retakeTarget 存在时显示,提示巡检员当前是在为某台设备复检
+function updateRetakeBanner() {
+  let el = document.getElementById("retakeBanner");
+  const t = state.retakeTarget;
+  if (!t) { if (el) el.hidden = true; return; }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "retakeBanner";
+    el.className = "retake-banner";
+    el.innerHTML = `<span class="rb-text"></span><button type="button" class="rb-cancel">取消复检</button>`;
+    document.body.appendChild(el);
+    el.querySelector(".rb-cancel").addEventListener("click", () => { state.retakeTarget = null; updateRetakeBanner(); toast("已取消复检"); });
+  }
+  el.querySelector(".rb-text").textContent = `复检中：${t.assetName}（编号已带入,重拍后自动更新这台设备）`;
+  el.hidden = false;
 }
 
 $("#backBtn").addEventListener("click", () => {

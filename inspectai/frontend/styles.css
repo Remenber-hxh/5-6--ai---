@@ -788,6 +788,49 @@ button {
 .ah-rows > div > span { color: var(--wx-text-2); }
 .ah-rows > div > b { color: var(--wx-text); font-weight: 600; }
 
+/* 异常资产「重新拍照复检」按钮 */
+.asset-retake-btn {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 12px 16px 0;
+  padding: 12px;
+  border: 1px solid var(--primary);
+  border-radius: var(--wx-radius);
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.asset-retake-btn:active { transform: translateY(1px) scale(0.99); background: var(--primary); color: #fff; }
+
+/* 复检模式顶部横幅 */
+.retake-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1200;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 16px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.4;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
+}
+.retake-banner[hidden] { display: none; }
+.retake-banner .rb-cancel {
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 /* 设备档案：最近总结卡 */
 .asset-sum-card {
   margin: 12px 16px 0;
