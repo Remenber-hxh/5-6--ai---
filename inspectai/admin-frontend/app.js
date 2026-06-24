@@ -1180,25 +1180,10 @@ function renderDashboardPage() {
   const pendingApprovals = requests.filter((item) => item.status === "pending").length;
   const tileCounts = quickAccessCounts(records);
 
-  const trendCounts = last7DayAbnormal(records);
-  const todayKeyStr = todayKey();
-  const todayTaskDone = (state.customTasks || []).filter((t) => t.status === "已完成" && String(t.completedAt || "").startsWith(todayKeyStr)).length;
-  $("#pageMain").innerHTML = `
-    ${aiHeroBanner({ todayRecords: todayRecords.length, todayAuto, todayFlagged, savedHours, issuesCount, accuracy, trendCounts, todayTaskDone })}
-    ${quickAccessTiles(tileCounts)}
-    ${aiChatPanel()}
-  `;
-  $("#pageAside").innerHTML = dashboardAside({
-    monthly: monthlyAiStats(),
-    pendingExceptions: issuesCount,
-    pendingApprovals,
-    pendingTasks: tileCounts.tasks,
-    accuracy,
-  });
-  animateDashboardCounts();
-  animateHealthRings();
+  // 首页 = 纯暗色 Agent 控制台(辉光地平线版);不再渲染旧的问候横幅/快速入口/本月成绩。
+  $("#pageMain").innerHTML = aiChatPanel();
+  $("#pageAside").innerHTML = "";
   bindAiChat();
-  bindHeroCursor();
 }
 
 function bindHeroCursor() {
@@ -1244,26 +1229,51 @@ const AI_SUGGESTIONS = [
   "今天应该优先处理什么？",
 ];
 
+// Agent 首页:@页面跳转(复用全局 data-page-link → setPage)
+const AGENT_NAV = [
+  { page: "plan",     label: "巡检计划" },
+  { page: "record",   label: "巡检记录" },
+  { page: "ledger",   label: "资产台账" },
+  { page: "approval", label: "审批中心" },
+  { page: "data",     label: "数据看板" },
+];
+// 4 个建议动作(点了直接发问)
+const AGENT_ACTS = [
+  { q: "查看本周巡检计划", label: "查看本周巡检计划", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
+  { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", tone: "p", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
+  { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
+  { q: "本周异常比上周增加了吗？", label: "分析本月异常趋势", tone: "o", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
+];
+
+// 首页 = 暗色 Agent 控制台(辉光地平线):居中问候 + 建议动作 + 大输入(@页面跳转)
 function aiChatPanel() {
+  const acts = AGENT_ACTS.map((a) => `<button type="button" class="ah-act" data-ai-suggest="${escapeHTML(a.q)}"><span class="ah-ic ${a.tone}">${a.svg}</span>${escapeHTML(a.label)}</button>`).join("");
+  const ments = AGENT_NAV.map((n) => `<button type="button" class="ah-ment" data-page-link="${n.page}">@ ${escapeHTML(n.label)}</button>`).join("");
   return `
-    <section class="panel ai-chat">
-      <div class="panel-head">
-        <h2><img class="hi" src="./assets/ai-spark.svg" alt="">AI 智能问答</h2>
-        <span class="ai-chat-model">DeepSeek · 台账分析</span>
-      </div>
-      <div class="ai-chat-body" id="aiChatBody">
-        <div class="ai-chat-empty">
-          <b>问问你的台账</b>
-          <span>看数据 · 查异常 · 要建议，点下方话题即可开始</span>
+    <section class="agent-home agent-dark">
+      <div class="ah-aura"></div>
+      <div class="ah-horizon"></div>
+      <div class="ah-body" id="aiChatBody">
+        <div class="ai-chat-empty ah-hero">
+          <div class="ah-hi">你好，我是 <span class="en">智巡 Agent</span></div>
+          <div class="ah-sub">您身边的智能巡检助手，随时为您服务</div>
+          <div class="ah-ask">你可以这样问我</div>
+          <div class="ah-acts">${acts}</div>
         </div>
       </div>
-      <div class="ai-chat-suggestions" id="aiChatSuggestions">
-        ${AI_SUGGESTIONS.map((s, i) => `<button type="button" class="ai-chat-chip" style="--i:${i}" data-ai-suggest="${escapeHTML(s)}">${escapeHTML(s)}</button>`).join("")}
-      </div>
-      <form class="ai-chat-form" id="aiChatForm" autocomplete="off">
-        <input id="aiChatInput" type="text" placeholder="输入你想问的，例如『派给我哪些任务还没完成』" maxlength="200" />
-        <button type="submit" class="ai-chat-send" id="aiChatSend">发送</button>
+      <form class="ah-composer ai-chat-form" id="aiChatForm" autocomplete="off">
+        <div class="ah-crow">
+          <input id="aiChatInput" type="text" maxlength="200" placeholder="请输入您的问题，或直接 @相关页面，如：@巡检记录" />
+          <button type="submit" class="ah-send" id="aiChatSend" aria-label="发送">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#04241b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </div>
+        <div class="ah-ments"><span class="ah-ments-lbl">可以试试</span>${ments}</div>
       </form>
+      <div class="ah-foot">
+        <span class="ah-dis">AI 生成的内容仅供参考，请以实际数据为准</span>
+        <button type="button" class="ah-clear" id="aiClearBtn">清空对话</button>
+      </div>
     </section>
   `;
 }
@@ -1332,6 +1342,11 @@ function bindAiChat() {
       if (!t || AI_CHAT_STATE.busy) return;
       sendAiChat(t);
     });
+  });
+  document.getElementById("aiClearBtn")?.addEventListener("click", () => {
+    if (AI_CHAT_STATE.busy) return;
+    AI_CHAT_STATE.history = [];
+    render();
   });
   bindAiScaffoldActions(body);
   // restore history on re-render

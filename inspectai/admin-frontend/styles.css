@@ -11185,3 +11185,122 @@ button.profile-hero-logout,
   font-size: 12px !important;
   line-height: 1.5;
 }
+
+/* ============================================================
+   首页 Agent · 暗色辉光地平线(原型图)
+   ============================================================ */
+.content:has(.agent-home) {
+  background: linear-gradient(135deg, #06131f 0%, #091d2d 54%, #06131f 100%);
+  padding: 24px;
+  overflow: hidden;
+}
+.agent-home.agent-dark {
+  position: relative; z-index: 1; align-self: stretch;
+  display: flex; flex-direction: column;
+  min-height: calc(100vh - 112px);
+  border-radius: 22px; overflow: hidden;
+  border: 1px solid rgba(62, 230, 180, 0.12) !important;
+  background: radial-gradient(120% 80% at 50% 120%, #0a2433 0%, #071521 38%, #050b12 70%) !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35) !important;
+  color: #e9f3f1;
+}
+.agent-home.agent-dark::after { display: none !important; }
+.agent-home.agent-dark::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.6; pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(1.4px 1.4px at 18% 22%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1.4px 1.4px at 72% 16%, rgba(255,255,255,.35), transparent),
+    radial-gradient(1.2px 1.2px at 40% 30%, rgba(255,255,255,.3), transparent),
+    radial-gradient(1.6px 1.6px at 85% 40%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1.2px 1.2px at 30% 12%, rgba(255,255,255,.3), transparent),
+    radial-gradient(1.3px 1.3px at 60% 44%, rgba(120,255,225,.4), transparent);
+}
+.agent-home .ah-horizon {
+  position: absolute; left: 50%; top: 55%; transform: translateX(-50%);
+  width: 2200px; height: 2200px; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: #050b12;
+  border-top: 2px solid rgba(170, 255, 230, 0.85);
+  box-shadow: 0 -10px 80px 6px rgba(62, 230, 180, 0.4), 0 -2px 18px rgba(170, 255, 230, 0.55);
+}
+.agent-home .ah-aura {
+  position: absolute; left: 50%; top: 55%; transform: translate(-50%, -100%);
+  width: 1500px; height: 560px; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse 50% 100% at 50% 100%, rgba(62,230,180,.42), rgba(62,230,180,.12) 40%, transparent 68%);
+  filter: blur(6px);
+}
+.agent-home .ah-body {
+  position: relative; z-index: 2; flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px; padding: 24px;
+  width: 100%; max-width: 1060px; margin: 0 auto;
+}
+.agent-home .ah-body:has(.ai-chat-empty) { justify-content: center; align-items: center; overflow: hidden; }
+.agent-home .ai-chat-empty { display: flex !important; gap: 0 !important; padding: 0 !important; background: none !important; }
+.agent-home .ai-chat-empty::before { content: none !important; display: none !important; }
+.agent-home .ah-hero { flex-direction: column; align-items: center; text-align: center; animation: ahFade 0.7s cubic-bezier(0.32,0.72,0,1) both; }
+@keyframes ahFade { from { opacity: 0; transform: translateY(16px); filter: blur(6px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+.agent-home .ah-hi { font-size: 40px; font-weight: 800; letter-spacing: -0.01em; color: #eef6f4; }
+.agent-home .ah-hi .en {
+  font-size: 40px !important; font-weight: 800 !important; color: transparent !important;
+  background: linear-gradient(90deg, #7bffd9, #2fe6b0); -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 14px rgba(62,230,180,.35));
+}
+.agent-home .ah-sub { margin-top: 14px; font-size: 15px; color: #8aa3ad; }
+.agent-home .ah-ask {
+  margin-top: 150px; font-size: 11px; color: #9fd6c4;
+  letter-spacing: 0.18em; padding: 5px 14px; border-radius: 999px;
+  border: 1px solid rgba(62,230,180,.2); background: rgba(62,230,180,.06);
+}
+.agent-home .ah-acts { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 18px; }
+.agent-home .ah-act {
+  display: inline-flex; align-items: center; gap: 9px; padding: 13px 20px; border-radius: 12px;
+  background: rgba(255,255,255,.03); border: 1px solid rgba(62,230,180,.14); color: #e9f3f1;
+  font-size: 14.5px; font-weight: 600; cursor: pointer;
+  transition: border-color .3s cubic-bezier(0.32,0.72,0,1), background .3s, transform .2s cubic-bezier(0.32,0.72,0,1);
+}
+.agent-home .ah-act:hover { border-color: #3ee6b4; background: rgba(62,230,180,.07); transform: translateY(-2px); }
+.agent-home .ah-act:active { transform: translateY(0) scale(0.98); }
+.agent-home .ah-ic { width: 18px; height: 18px; display: grid; place-items: center; }
+.agent-home .ah-ic svg { width: 18px; height: 18px; }
+.agent-home .ah-ic.b { color: #7fb0ff; } .agent-home .ah-ic.p { color: #c4a7ff; }
+.agent-home .ah-ic.t { color: #3ee6b4; } .agent-home .ah-ic.o { color: #ffc46b; }
+.agent-home .ah-composer {
+  position: relative; z-index: 3; width: 100%; max-width: 1040px; margin: 0 auto 6px;
+  border-radius: 18px !important; border: 1px solid rgba(62,230,180,.14) !important; border-top: 1px solid rgba(62,230,180,.14) !important;
+  background: rgba(10,20,28,.72) !important; backdrop-filter: blur(8px); padding: 8px !important; display: block !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.agent-home .ah-crow { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 18px; }
+.agent-home .ah-crow input {
+  flex: 1; height: 42px !important; border: 0 !important; background: transparent !important;
+  color: #e9f3f1 !important; font-size: 15px !important; outline: none; box-shadow: none !important;
+}
+.agent-home .ah-crow input::placeholder { color: #7e94a0; }
+.agent-home .ah-send {
+  width: 46px !important; height: 46px !important; border: 0 !important; border-radius: 12px !important;
+  background: linear-gradient(135deg, #3ee6b4, #18c597) !important; display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(62,230,180,.3) !important; flex: none; padding: 0 !important;
+  transition: transform .2s cubic-bezier(0.32,0.72,0,1), filter .2s;
+}
+.agent-home .ah-send svg { width: 20px; height: 20px; }
+.agent-home .ah-send:hover { filter: brightness(1.06); transform: scale(1.04); }
+.agent-home .ah-send:active { transform: scale(0.96); }
+.agent-home .ah-ments { display: flex; align-items: center; gap: 10px; padding: 4px 16px 12px; flex-wrap: wrap; }
+.agent-home .ah-ments-lbl { font-size: 12.5px; color: #7e94a0; }
+.agent-home .ah-ment { padding: 6px 13px; border-radius: 999px; background: rgba(62,230,180,.08); border: 1px solid rgba(62,230,180,.14); color: #3ee6b4; font-size: 13px; cursor: pointer; transition: background .2s, transform .15s; }
+.agent-home .ah-ment:hover { background: rgba(62,230,180,.16); transform: translateY(-1px); }
+.agent-home .ah-foot { position: relative; z-index: 3; display: flex; justify-content: center; align-items: center; padding: 6px 24px 16px; }
+.agent-home .ah-dis { font-size: 12px; color: #5d7280; }
+.agent-home .ah-clear { position: absolute; right: 30px; font-size: 13px; color: #7e94a0; background: none; border: 0; cursor: pointer; transition: color .15s; }
+.agent-home .ah-clear:hover { color: #3ee6b4; }
+.agent-home .ai-chat-msg { width: 100%; max-width: 760px; margin-left: auto; margin-right: auto; }
+.agent-home .ai-chat-msg.user .ai-chat-bubble { background: linear-gradient(135deg, #18c597, #10a37f) !important; color: #04241b !important; border: 0 !important; }
+.agent-home .ai-chat-msg.ai .ai-chat-bubble { background: rgba(255,255,255,.04) !important; color: #dfeae8 !important; border: 1px solid rgba(62,230,180,.12) !important; }
+.agent-home .ai-chat-bubble .ai-ref { color: #5cf0c4 !important; border-bottom-color: rgba(92,240,196,.5) !important; }
+.agent-home .ai-chat-bubble strong { color: #eef6f4 !important; }
+.agent-home .ai-action-proposal { background: rgba(10,20,28,.7) !important; border-color: rgba(62,230,180,.2) !important; border-left-color: #3ee6b4 !important; }
+.agent-home .aap-tag { background: rgba(62,230,180,.15) !important; color: #3ee6b4 !important; }
+.agent-home .aap-head b, .agent-home .aap-target, .agent-home .aap-reason, .agent-home .ai-ref-static { color: #dfeae8 !important; }
+.agent-home .aap-input { background: rgba(255,255,255,.05) !important; border-color: rgba(62,230,180,.2) !important; color: #e9f3f1 !important; }
+.agent-home .aap-confirm { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
+.agent-home .aap-dismiss { background: transparent !important; color: #9fb2ad !important; border-color: rgba(62,230,180,.2) !important; }
+.agent-home .ai-jump-chip { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
