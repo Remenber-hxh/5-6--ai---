@@ -229,10 +229,11 @@ body.sidebar-collapsed .brand {
 }
 body.sidebar-collapsed .brand span { display: none; }
 body.sidebar-collapsed .brand::before {
-  content: "智";
-  font-size: 22px;
-  font-weight: 800;
-  color: #fff;
+  content: "";
+  width: 32px;
+  height: 32px;
+  background: url("./favicon.svg") center / contain no-repeat;
+  filter: drop-shadow(0 0 10px rgba(32, 214, 162, 0.35));
 }
 body.sidebar-collapsed .brand::after { left: 14px; right: 14px; }
 
