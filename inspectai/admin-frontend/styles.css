@@ -203,7 +203,8 @@ body.aside-empty .content {
 
 /* 列宽平滑过渡 */
 .admin-shell {
-  transition: grid-template-columns 260ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* 不在重场景上动 grid 轨道(主线程逐帧重排=卡);布局瞬时切换,平滑感交给侧栏内容的 opacity/transform 过渡 */
+  transition: none;
 }
 
 /* ===== 收起态：64px 纯图标轨 ===== */
@@ -11225,7 +11226,6 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
   background: #050b12;
   border-top: 2px solid rgba(170, 255, 230, 0.85);
   box-shadow: 0 -10px 80px 6px rgba(62, 230, 180, 0.4), 0 -2px 18px rgba(170, 255, 230, 0.55);
-  will-change: transform;
 }
 .agent-home .ah-aura {
   position: absolute; left: 50%; top: 55%; transform: translate(-50%, -100%);
