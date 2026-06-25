@@ -11338,6 +11338,18 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .agent-home .ai-export-btn { border-color: rgba(126, 255, 210, 0.28); color: rgba(220, 245, 236, 0.78); }
 .agent-home .ai-export-btn:hover { border-color: #3ee6b4; color: #3ee6b4; background: rgba(62, 230, 180, 0.1); }
 
+/* 周报富文本气泡(综述 + 规则表格) */
+.ai-chat-bubble.ai-report { width: 100%; max-width: 100%; }
+.ai-report-title { font-size: 15px; font-weight: 700; color: #eaf4f1; margin-bottom: 4px; }
+.ai-report h2 { font-size: 12.5px; font-weight: 700; color: #7effd2; margin: 14px 0 6px; letter-spacing: 0.02em; }
+.ai-report p { margin: 0 0 8px; line-height: 1.75; color: rgba(226, 240, 236, 0.92); }
+.ai-report table { width: 100%; border-collapse: collapse; margin: 2px 0 8px; font-size: 12.5px; }
+.ai-report th, .ai-report td { border: 1px solid rgba(126, 255, 210, 0.16); padding: 6px 9px; text-align: left; color: rgba(226, 240, 236, 0.9); }
+.ai-report th { background: rgba(126, 255, 210, 0.08); color: #cdeee2; font-weight: 600; }
+.ai-report .up { color: #ffb27a; font-weight: 600; }
+.ai-report .down { color: #3ee6b4; font-weight: 600; }
+.ai-report .flat { color: rgba(220, 233, 247, 0.5); }
+
 /* ============================================================
    侧栏:flex 列布局 + 底部用户块(头像迁移)+ 优化
    ============================================================ */

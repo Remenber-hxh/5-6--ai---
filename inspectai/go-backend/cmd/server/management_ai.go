@@ -1184,6 +1184,107 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// GET /api/management-ai/report?type=weekly&project=
+// 周报:滚动近 7 天聚合(规则表格)+ AI 写一段态势综述。AI 挂了仍返回表格(综述降级为规则版)。
+func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
+	reportType := firstNonEmpty(r.URL.Query().Get("type"), "weekly")
+	project := r.URL.Query().Get("project")
+	rangeKey := "7d" // 滚动近 7 天
+
+	overview, err := s.toolGetOverview(project, rangeKey)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "overview_failed", err.Error())
+		return
+	}
+	attention, _ := s.toolListAttention(project, 8)
+	repeated, _ := s.toolListRepeatedIssues(project, 8)
+	quality, _ := s.toolGetInspectorQuality(rangeKey)
+	pending, _ := s.toolListPendingReviews(project, 15)
+
+	// AI 综述(降级:规则版),复用 /management/analyze 的报告 prompt,kind=weekly 切周报口径
+	summary := ""
+	model := ""
+	isMock := true
+	if s.analyticsClient != nil {
+		payload := map[string]any{
+			"kind":             "weekly",
+			"period":           "近 7 天",
+			"overview":         overview,
+			"attention":        attention,
+			"repeatedIssues":   repeated,
+			"inspectorQuality": quality,
+		}
+		if resp, err := s.analyticsClient.Analyze(payload); err != nil {
+			log.Printf("WARN: weekly report analyze failed (降级规则版): %v", err)
+		} else {
+			if v, ok := resp["summary"].(string); ok {
+				summary = v
+			}
+			if v, ok := resp["model"].(string); ok {
+				model = v
+			}
+			if v, ok := resp["isMock"].(bool); ok {
+				isMock = v
+			}
+		}
+	}
+	if strings.TrimSpace(summary) == "" {
+		summary = weeklySummaryFallback(overview, attention)
+		isMock = true
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"type":             reportType,
+		"rangeKey":         rangeKey,
+		"rangeStart":       overview.RangeStart,
+		"rangeEnd":         overview.RangeEnd,
+		"generatedAt":      time.Now().Format(time.RFC3339),
+		"summary":          summary,
+		"model":            model,
+		"isMock":           isMock,
+		"overview":         overview,
+		"topRisk":          attention,
+		"repeatedIssues":   repeated,
+		"inspectorQuality": quality,
+		"pending":          pending,
+	})
+}
+
+// 规则版周报综述(AI 不可用时降级用),不编造、只用聚合数字。
+func weeklySummaryFallback(o *OverviewSummary, attention []*AttentionItem) string {
+	if o == nil {
+		return "近 7 天暂无足够数据生成综述。"
+	}
+	delta := o.RecordRecent - o.RecordPrev
+	trend := "持平"
+	if delta > 0 {
+		trend = fmt.Sprintf("较上周增加 %d 条", delta)
+	} else if delta < 0 {
+		trend = fmt.Sprintf("较上周减少 %d 条", -delta)
+	}
+	parts := []string{
+		fmt.Sprintf("近 7 天完成巡检 %d 条(%s),发现异常 %d 条,待复核 %d 条、待审批 %d 条",
+			o.RecordRecent, trend, o.AbnormalRecent, o.PendingReviews, o.PendingApprovals),
+	}
+	if o.LazyConfirmRate > 0 {
+		parts = append(parts, fmt.Sprintf("未看图即确认占比 %.1f%%,质量管控需关注", o.LazyConfirmRate*100))
+	}
+	if len(attention) > 0 {
+		names := make([]string, 0, 3)
+		for i, a := range attention {
+			if i >= 3 {
+				break
+			}
+			names = append(names, a.AssetName)
+		}
+		parts = append(parts, "重点关注 "+strings.Join(names, "、"))
+	}
+	return strings.Join(parts, ";") + "。"
+}
+
 // ===== Agent 执行入口 /api/management-ai/act =====
 //
 // L2「一键执行」的落地端:管理 AI 只能产出「动作提议」,真正的写操作全部走这里——

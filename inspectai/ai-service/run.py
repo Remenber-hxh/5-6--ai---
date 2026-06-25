@@ -398,6 +398,18 @@ MANAGEMENT_REPORT_SYSTEM = """你是「智巡」管理 AI 的报告生成器。�
 不要编造名称或数字;只用 overview/attention 里有的数据。
 """
 
+MANAGEMENT_WEEKLY_SYSTEM = """你是「智巡」管理 AI 的周报撰写助手。基于后端聚合好的"近 7 天"数据,为设施巡检主管写一段「本周态势综述」,120-220 字,无 markdown、无项目符号、无小标题,连贯流水句。
+
+必须覆盖(只用 overview / attention / repeatedIssues / inspectorQuality 里给的数字,绝不编造):
+1. 本周巡检规模与环比:recordRecent 本周巡检数 vs recordPrev 上周,abnormalRecent 异常数 vs abnormalPrev。
+2. 复核与质量:pendingReviews 待复核、lazyConfirmRate 未看图即确认占比(乘 100 写成百分比)、inspectorQuality 里突出的人。
+3. 重点设备:从 attention / repeatedIssues 挑 1-3 个反复异常或风险最高的(用 assetName)。
+4. 待办:pendingApprovals 待审批。
+5. 收尾给一句下周建议方向。
+
+口径是"近 7 天滚动",行文用"本周";数字缺失就略过那条,不要写"暂无"。
+"""
+
 
 # ===== /analyze =====
 
@@ -1024,16 +1036,17 @@ def management_chat_mock(payload: dict) -> dict:
 
 
 def management_analyze(payload: dict) -> dict:
-    """先打真 DeepSeek(用 report model),失败 fallback mock。"""
+    """先打真 DeepSeek(用 report model),失败 fallback mock。kind=weekly 用周报 prompt。"""
     key = get_deepseek_key()
     model = os.environ.get("DEEPSEEK_REPORT_MODEL", "deepseek-chat")
+    system = MANAGEMENT_WEEKLY_SYSTEM if payload.get("kind") == "weekly" else MANAGEMENT_REPORT_SYSTEM
     if not key:
         return management_analyze_mock(payload)
     user_text = json.dumps(payload, ensure_ascii=False)
     timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "30") or "30")
     try:
         reply, actual_model = call_deepseek_chat(
-            model=model, system=MANAGEMENT_REPORT_SYSTEM,
+            model=model, system=system,
             user_content=user_text, api_key=key, timeout=timeout,
         )
     except Exception as exc:

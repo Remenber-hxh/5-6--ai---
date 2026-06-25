@@ -1261,7 +1261,10 @@ const AGENT_ACTS = [
   { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", tone: "p", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
   { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
   { q: "本周异常比上周增加了吗？", label: "分析本月异常趋势", tone: "o", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
+  { q: "生成本周巡检周报", label: "生成本周周报", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5M8 9h2"/></svg>' },
 ];
+// 周报意图(命中则走 /report 接口,而非普通问答)
+const WEEKLY_REPORT_RE = /周报|周度报告|本周报告|生成.{0,4}周报|本周.{0,4}(报告|总结)/;
 
 // 首页 = 暗色 Agent 控制台(辉光地平线):居中问候 + 建议动作 + 大输入
 function aiChatPanel() {
@@ -1374,6 +1377,11 @@ function bindAiChat() {
 
 function renderChatBubble(m) {
   const cls = m.role === "user" ? "user" : "ai";
+  // 周报:富文本(综述 + 表格)气泡 + 导出 Word
+  if (cls === "ai" && m.report && m.reportHtml) {
+    const exportBtn = `<button type="button" class="ai-export-btn" data-export-msg="${escapeHTML(m.id || "")}" title="导出为 Word 文档"><i>⬇</i>导出 Word</button>`;
+    return `<div class="ai-chat-msg ai"><div class="ai-chat-bubble ai-report"><div class="ai-report-title">${escapeHTML(m.reportTitle || "本周周报")}</div>${m.reportHtml}</div><div class="ai-msg-acts">${exportBtn}</div></div>`;
+  }
   let html = (m.text || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -1446,6 +1454,59 @@ function docTimeStamps() {
     file: `${n.getFullYear()}${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`,
   };
 }
+// 周报富文本(综述 + 规则表格);同一份 HTML 既上屏渲染、又给 Word 导出,保证一致
+function buildWeeklyReportHtml(d) {
+  const o = d.overview || {};
+  const pct = (x) => ((x || 0) * 100).toFixed(1) + "%";
+  const dt = (s) => (s || "").slice(0, 10);
+  const riskLabel = (l) => l === "danger" ? "危险" : l === "warning" ? "预警" : l === "repair" ? "待修" : "正常";
+  const delta = (a, b) => { const v = (a || 0) - (b || 0); return v > 0 ? `<span class="up">▲ ${v}</span>` : v < 0 ? `<span class="down">▼ ${-v}</span>` : `<span class="flat">持平</span>`; };
+  let h = "";
+  h += `<h2>本周态势综述</h2><p>${escapeHTML(d.summary || "")}</p>`;
+  h += `<h2>巡检概况（${dt(d.rangeStart)} ~ ${dt(d.rangeEnd)}）</h2>`;
+  h += `<table><thead><tr><th>指标</th><th>本周</th><th>上周</th><th>环比</th></tr></thead><tbody>`;
+  h += `<tr><td>完成巡检</td><td>${o.recordRecent || 0}</td><td>${o.recordPrev || 0}</td><td>${delta(o.recordRecent, o.recordPrev)}</td></tr>`;
+  h += `<tr><td>发现异常</td><td>${o.abnormalRecent || 0}</td><td>${o.abnormalPrev || 0}</td><td>${delta(o.abnormalRecent, o.abnormalPrev)}</td></tr>`;
+  h += `</tbody></table>`;
+  h += `<table><tbody>`;
+  h += `<tr><td>待复核</td><td>${o.pendingReviews || 0} 条</td><td>待审批</td><td>${o.pendingApprovals || 0} 条</td></tr>`;
+  h += `<tr><td>未看图即确认率</td><td>${pct(o.lazyConfirmRate)}</td><td>资产 正常/预警/危险</td><td>${o.assetNormal || 0} / ${o.assetWarning || 0} / ${o.assetDanger || 0}</td></tr>`;
+  h += `</tbody></table>`;
+  const risk = (d.topRisk || []).slice(0, 5);
+  if (risk.length) {
+    h += `<h2>重点关注设备 TOP${risk.length}</h2><table><thead><tr><th>设备</th><th>风险</th><th>说明</th></tr></thead><tbody>`;
+    risk.forEach((a) => { h += `<tr><td>${escapeHTML(a.assetName || "")}</td><td>${riskLabel(a.riskLevel)}</td><td>${escapeHTML((a.reasons || []).join("；") || a.title || "")}</td></tr>`; });
+    h += `</tbody></table>`;
+  }
+  const q = (d.inspectorQuality || []).filter((x) => (x.noPhotoConfirm || 0) > 0).slice(0, 5);
+  if (q.length) {
+    h += `<h2>复核质量（未看图即确认）</h2><table><thead><tr><th>巡检员</th><th>确认总数</th><th>未看图确认</th></tr></thead><tbody>`;
+    q.forEach((x) => { h += `<tr><td>${escapeHTML(x.operator || "")}</td><td>${x.total || 0}</td><td>${x.noPhotoConfirm || 0}</td></tr>`; });
+    h += `</tbody></table>`;
+  }
+  const rep = (d.repeatedIssues || []).slice(0, 6);
+  if (rep.length) {
+    h += `<h2>重复异常</h2><table><thead><tr><th>设备</th><th>问题</th><th>次数</th></tr></thead><tbody>`;
+    rep.forEach((x) => { h += `<tr><td>${escapeHTML(x.assetName || "")}</td><td>${escapeHTML(x.fieldLabel || x.fieldKey || x.issue || "")}</td><td>${x.count || 0}</td></tr>`; });
+    h += `</tbody></table>`;
+  }
+  return h;
+}
+// 调周报接口 → 组装一条 report 消息(带 reportHtml 供导出)
+async function fetchWeeklyReportMessage() {
+  const q = state.selectedProject ? "&project=" + encodeURIComponent(state.selectedProject) : "";
+  const d = await api("/api/management-ai/report?type=weekly" + q);
+  const ts = docTimeStamps();
+  return {
+    role: "ai",
+    report: true,
+    text: d.summary || "本周周报已生成。",
+    reportHtml: buildWeeklyReportHtml(d),
+    reportTitle: "智巡 · 本周巡检周报",
+    reportFile: "智巡周报-" + ts.file,
+    id: "aim_" + (++AI_CHAT_STATE.seq),
+  };
+}
 // 判定该回复是否值得导出 Word:① 报告模块显式标记 ② 提问是报告类意图 ③ 长文综述(≥180 非空白字)
 function messageWantsExport(m) {
   if (!m || m.role !== "ai" || !(m.text || "").trim()) return false;
@@ -1460,7 +1521,19 @@ function messageWantsExport(m) {
 }
 // 把一条 AI 回复导出成 Word(带提问、生成时间、品牌页眉页脚)
 function exportAgentMessage(m) {
-  if (!m || !m.text) return;
+  if (!m) return;
+  const tsr = docTimeStamps();
+  // 周报:导出富文本(综述 + 表格)
+  if (m.report && m.reportHtml) {
+    let rb = `<h1>${escapeHTML(m.reportTitle || "智巡周报")}</h1>`;
+    rb += `<p class="meta">生成时间：${tsr.human} · 智巡管理后台</p><hr>`;
+    rb += m.reportHtml;
+    rb += `<p class="foot">本文档由「智巡」自动生成,数据以系统实时台账为准。</p>`;
+    exportWordDoc(m.reportFile || ("智巡周报-" + tsr.file), m.reportTitle || "智巡周报", rb);
+    toast("已导出 Word 文档");
+    return;
+  }
+  if (!m.text) return;
   const idx = AI_CHAT_STATE.history.indexOf(m);
   let question = "";
   for (let i = idx - 1; i >= 0; i--) {
@@ -1852,18 +1925,24 @@ async function sendAiChat(message) {
   body.scrollTop = body.scrollHeight;
 
   try {
-    const res = await api("/api/management-ai/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        message,
-        history: AI_CHAT_STATE.history.slice(-6).map((item) => ({ role: item.role, text: item.text })),
-        project: state.selectedProject || "",
-        range: "30d",
-      }),
-    });
-    const reply = res.reply || "AI 没有给出回复。";
-    const { text, proposal } = extractActionProposal(reply);
-    const msg = { role: "ai", text, proposal, navJump: navIntent(message), id: "aim_" + (++AI_CHAT_STATE.seq) };
+    let msg;
+    if (WEEKLY_REPORT_RE.test(message)) {
+      // 周报:走聚合接口(综述 + 规则表格)
+      msg = await fetchWeeklyReportMessage();
+    } else {
+      const res = await api("/api/management-ai/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          message,
+          history: AI_CHAT_STATE.history.slice(-6).map((item) => ({ role: item.role, text: item.text })),
+          project: state.selectedProject || "",
+          range: "30d",
+        }),
+      });
+      const reply = res.reply || "AI 没有给出回复。";
+      const { text, proposal } = extractActionProposal(reply);
+      msg = { role: "ai", text, proposal, navJump: navIntent(message), id: "aim_" + (++AI_CHAT_STATE.seq) };
+    }
     AI_CHAT_STATE.history.push(msg);
     document.getElementById("aiChatTyping")?.remove();
     body.insertAdjacentHTML("beforeend", renderChatBubble(msg));
