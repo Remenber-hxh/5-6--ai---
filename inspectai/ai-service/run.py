@@ -888,7 +888,8 @@ def classify(payload: dict) -> dict:
         }
 
     content: list = [{"type": "text", "text": SCENE_PROMPT}]
-    for path in paths[:3]:
+    # 多看几张:电梯有机房/无机房只差机房那几张,只看前 3 张会漏掉机房照
+    for path in paths[:6]:
         url = image_to_data_url(path)
         if url:
             content.append({"type": "image_url", "image_url": {"url": url}})
