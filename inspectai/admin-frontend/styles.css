@@ -11329,13 +11329,13 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .sidebar-user > b {
   width: 38px; height: 38px; flex: none;
   display: grid; place-items: center; border-radius: 50%;
-  background: linear-gradient(135deg, #20d6a2, #1499ff) !important; color: #04241b !important;
-  font-size: 15px; font-weight: 800;
-  box-shadow: 0 0 14px rgba(32, 214, 162, 0.3);
+  background: rgba(255, 255, 255, 0.1); color: #e6f0f5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 15px; font-weight: 700;
 }
 .sidebar-user .su-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-.sidebar-user .su-name { font-size: 14px !important; font-weight: 600 !important; color: #eaf4f1 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
-.sidebar-user .su-role { font-size: 12px !important; color: rgba(220, 233, 247, 0.5) !important; font-weight: 400 !important; }
+.sidebar-user .su-name { font-size: 14px; font-weight: 600; color: #eaf4f1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
+.sidebar-user .su-role { font-size: 12px; color: rgba(220, 233, 247, 0.5); font-weight: 400; }
 .sidebar-user .user-dot {
   margin-left: auto; flex: none; min-width: 18px; height: 18px; padding: 0 5px;
   display: grid; place-items: center; border-radius: 999px;
@@ -11346,6 +11346,3 @@ body.sidebar-collapsed .sidebar-user { justify-content: center; padding: 12px 0;
 body.sidebar-collapsed .sidebar-user .su-text,
 body.sidebar-collapsed .sidebar-user .user-dot { display: none; }
 body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
-
-/* 头像中性化(覆盖渐变)*/
-.sidebar-user > b { background: rgba(255,255,255,0.1) !important; color: #e6f0f5 !important; border: 1px solid rgba(255,255,255,0.12) !important; box-shadow: none !important; font-weight: 700 !important; }
