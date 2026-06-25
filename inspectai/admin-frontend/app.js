@@ -1279,7 +1279,6 @@ function aiChatPanel() {
           <div class="ah-hi">你好，我是 <span class="en">智巡 Agent</span></div>
           <div class="ah-sub">您身边的智能巡检助手，随时为您服务</div>
           <div class="ah-acts">${acts}</div>
-          <div class="ah-ask">你可以这样问我</div>
         </div>
       </div>
       <form class="ah-composer ai-chat-form" id="aiChatForm" autocomplete="off">
