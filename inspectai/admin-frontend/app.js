@@ -1388,8 +1388,8 @@ function renderChatBubble(m) {
   const jump = (cls === "ai" && m.navJump)
     ? `<button type="button" class="ai-jump-chip" data-page-link="${m.navJump.page}">前往${escapeHTML(m.navJump.label)}<i>→</i></button>`
     : "";
-  // 实质性回答附「导出 Word」(给 agent 用,复用 exportWordDoc)
-  const exportBtn = (cls === "ai" && (m.text || "").trim().length >= 24)
+  // 仅报告类长文附「导出 Word」(周报 / 生成报告 / 长文综述),不是每句都挂
+  const exportBtn = messageWantsExport(m)
     ? `<button type="button" class="ai-export-btn" data-export-msg="${escapeHTML(m.id || "")}" title="导出为 Word 文档"><i>⬇</i>导出 Word</button>`
     : "";
   const acts = (jump || exportBtn) ? `<div class="ai-msg-acts">${jump}${exportBtn}</div>` : "";
@@ -1445,6 +1445,18 @@ function docTimeStamps() {
     human: `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`,
     file: `${n.getFullYear()}${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`,
   };
+}
+// 判定该回复是否值得导出 Word:① 报告模块显式标记 ② 提问是报告类意图 ③ 长文综述(≥180 非空白字)
+function messageWantsExport(m) {
+  if (!m || m.role !== "ai" || !(m.text || "").trim()) return false;
+  if (m.report) return true;
+  const idx = AI_CHAT_STATE.history.indexOf(m);
+  let q = "";
+  for (let i = idx - 1; i >= 0; i--) {
+    if (AI_CHAT_STATE.history[i].role === "user") { q = AI_CHAT_STATE.history[i].text || ""; break; }
+  }
+  if (/周报|日报|月报|报告|汇报|总结|纪要|生成.{0,4}报/.test(q)) return true;
+  return (m.text || "").replace(/\s/g, "").length >= 180;
 }
 // 把一条 AI 回复导出成 Word(带提问、生成时间、品牌页眉页脚)
 function exportAgentMessage(m) {
