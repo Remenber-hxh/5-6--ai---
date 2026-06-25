@@ -410,6 +410,18 @@ MANAGEMENT_WEEKLY_SYSTEM = """你是「智巡」管理 AI 的周报撰写助手�
 口径是"近 7 天滚动",行文用"本周";数字缺失就略过那条,不要写"暂无"。
 """
 
+MANAGEMENT_DAILY_SYSTEM = """你是「智巡」管理 AI 的日报撰写助手。基于后端聚合好的"今日"数据,为设施巡检主管写一段「今日一句话结论」,60-110 字,无 markdown、无项目符号,1-2 句话。
+
+核心回答这件事:今天有没有问题、谁去处理。覆盖(只用给的数字,绝不编造):
+1. 今日完成巡检数 = overview.recordRecent(不是 execution 的任务数!);是否有异常看 conclusion.hasAbnormal / abnormalCount。
+2. 待处理:待复核 + 待审批(conclusion.pendingCount)。
+3. 任务执行(execution 指工程/复查任务,不是巡检记录):用 done/plan、overdue 描述任务在途与逾期,措辞用"任务"而非"巡检"。
+4. 若 abnormalList 里有异常,点名 1-2 个最该今天处理的(用 point/template + field),并提示责任人(assignee)跟进。
+5. 结尾给一句接下来要盯什么。
+
+严格区分"今日巡检数(recordRecent)"与"任务数(execution)",不要把任务数说成巡检数。行文用"今日",语气干练像晨会一句话。某项为 0 或缺失就别提它。
+"""
+
 
 # ===== /analyze =====
 
@@ -1039,7 +1051,8 @@ def management_analyze(payload: dict) -> dict:
     """先打真 DeepSeek(用 report model),失败 fallback mock。kind=weekly 用周报 prompt。"""
     key = get_deepseek_key()
     model = os.environ.get("DEEPSEEK_REPORT_MODEL", "deepseek-chat")
-    system = MANAGEMENT_WEEKLY_SYSTEM if payload.get("kind") == "weekly" else MANAGEMENT_REPORT_SYSTEM
+    kind = payload.get("kind")
+    system = MANAGEMENT_WEEKLY_SYSTEM if kind == "weekly" else MANAGEMENT_DAILY_SYSTEM if kind == "daily" else MANAGEMENT_REPORT_SYSTEM
     if not key:
         return management_analyze_mock(payload)
     user_text = json.dumps(payload, ensure_ascii=False)

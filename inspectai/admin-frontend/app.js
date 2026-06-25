@@ -1255,16 +1255,18 @@ function navIntent(text) {
   for (const n of NAV_INTENTS) if (n.re.test(t)) return n;
   return null;
 }
-// 4 个建议动作(点了直接发问)
+// 建议动作(点了直接发问)
 const AGENT_ACTS = [
+  { q: "生成今日管理日报", label: "生成今日日报", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h3"/><circle cx="17.5" cy="6.5" r="0"/></svg>' },
   { q: "查看本周巡检计划", label: "查看本周巡检计划", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
   { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", tone: "p", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
   { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
   { q: "本周异常比上周增加了吗？", label: "分析本月异常趋势", tone: "o", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
   { q: "生成本周巡检周报", label: "生成本周周报", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5M8 9h2"/></svg>' },
 ];
-// 周报意图(命中则走 /report 接口,而非普通问答)
+// 报告意图(命中则走 /report 接口,而非普通问答)
 const WEEKLY_REPORT_RE = /周报|周度报告|本周报告|生成.{0,4}周报|本周.{0,4}(报告|总结)/;
+const DAILY_REPORT_RE = /日报|今日(汇报|情况|报告|总结|管理)|今天.{0,3}(情况|汇报|怎么样)|生成.{0,4}日报/;
 
 // 首页 = 暗色 Agent 控制台(辉光地平线):居中问候 + 建议动作 + 大输入
 function aiChatPanel() {
@@ -1588,6 +1590,53 @@ function buildWeeklyReportHtml(d) {
     h += `</tbody></table>`;
   }
   return h;
+}
+// 日报富文本(管理摘要 + 巡检明细两层);同一份 HTML 上屏 + 导出
+function buildDailyReportHtml(d) {
+  const c = d.conclusion || {}, ex = d.execution || {}, as = d.assetStatus || {}, rq = d.reviewQuality || {}, cmp = d.compare || {}, ns = d.nextStep || {};
+  const riskLabel = (l) => l === "danger" ? "高" : l === "warning" ? "中" : "低";
+  const delta = (v) => v > 0 ? `<span class="up">▲ ${v}</span>` : v < 0 ? `<span class="down">▼ ${-v}</span>` : `<span class="flat">持平</span>`;
+  const pct = (x) => ((x || 0) * 100).toFixed(0) + "%";
+  let h = "";
+  h += `<p class="dr-meta">${escapeHTML(d.date || "")} · ${escapeHTML(d.project || "全部项目")} · 数据范围 今日 00:00–现在 · 口径 已提交巡检 + 待复核 + 待审批 + 今日任务</p>`;
+  const badge = c.hasAbnormal ? `<span class="dr-badge danger">今日有异常</span>` : `<span class="dr-badge ok">今日无异常</span>`;
+  h += `<h2>今日结论</h2><p>${badge} 异常 <b>${c.abnormalCount || 0}</b> · 待处理 <b>${c.pendingCount || 0}</b> · 今日闭环 <b>${c.closedCount || 0}</b></p><p>${escapeHTML(d.summary || "")}</p>`;
+  h += `<h2>巡检执行（任务）</h2><table><thead><tr><th>计划</th><th>已完成</th><th>进行中</th><th>未开始</th><th>逾期</th><th>完成率</th></tr></thead><tbody><tr><td>${ex.plan || 0}</td><td>${ex.done || 0}</td><td>${ex.processing || 0}</td><td>${ex.notStarted || 0}</td><td>${ex.overdue || 0}</td><td>${pct(ex.completeRate)}</td></tr></tbody></table>`;
+  h += `<h2>资产 / 记录状态（今日）</h2><table><thead><tr><th>今日巡检</th><th>正常</th><th>异常</th><th>待复核</th><th>需补图</th><th>人工填写</th></tr></thead><tbody><tr><td>${as.inspected || 0}</td><td>${as.normal || 0}</td><td>${as.abnormal || 0}</td><td>${as.pendingReview || 0}</td><td>${as.needRetake || 0}</td><td>${as.manualFill || 0}</td></tr></tbody></table>`;
+  h += `<h2>人工复核质量</h2><table><tbody><tr><td>AI 识别成功</td><td>${rq.aiSuccess || 0}</td><td>人工修正字段</td><td>${rq.manualEdits || 0}</td></tr><tr><td>低置信字段</td><td>${rq.lowConf || 0}</td><td>补图次数</td><td>${rq.retakes || 0}</td></tr><tr><td>未看图确认</td><td>${rq.noPhotoConfirm || 0}</td><td>需主管复核</td><td>${rq.needSupervisor || 0}</td></tr></tbody></table>`;
+  h += `<h2>较昨日</h2><table><tbody><tr><td>巡检数变化</td><td>${delta(cmp.recordDelta || 0)}</td><td>异常数变化</td><td>${delta(cmp.abnormalDelta || 0)}</td></tr></tbody></table>`;
+  const rep = cmp.repeatedIssues || [];
+  if (rep.length) h += `<p class="dr-sub">重复异常：${rep.slice(0, 4).map((x) => escapeHTML((x.assetName || "") + (x.fieldLabel ? " · " + x.fieldLabel : ""))).join("；")}</p>`;
+  const focus = (ns.focusAssets || []).map(escapeHTML).join("、");
+  h += `<h2>下一步</h2><p>待办转入 <b>${ns.carryOver || 0}</b> 项 · 待审批 <b>${ns.approvals || 0}</b> 项${focus ? " · 重点盯：" + focus : ""}</p>`;
+  const ab = d.abnormalList || [];
+  h += `<h2>异常处理清单（${ab.length}）</h2>`;
+  if (ab.length) {
+    h += `<table><thead><tr><th>点位</th><th>异常字段</th><th>值</th><th>风险</th><th>责任人</th><th>截止</th><th>状态</th><th>记录号</th></tr></thead><tbody>`;
+    ab.forEach((x) => { h += `<tr><td>${escapeHTML(x.point || "")}</td><td>${escapeHTML(x.field || "")}</td><td>${escapeHTML(x.value || "")}</td><td>${riskLabel(x.risk)}</td><td>${escapeHTML(x.assignee || "")}</td><td>${escapeHTML(x.dueAt || "—")}</td><td>${escapeHTML(x.status || "")}</td><td>${escapeHTML(x.recordNo || "")}</td></tr>`; });
+    h += `</tbody></table>`;
+  } else h += `<p class="dr-sub">今日无异常 / 待处理记录。</p>`;
+  const nm = d.normalSummary || {}, items = nm.items || [];
+  h += `<h2>正常记录摘要（${nm.count || 0}）</h2>`;
+  if (items.length) {
+    h += `<table><thead><tr><th>点位</th><th>模板</th><th>巡检人</th><th>提交</th></tr></thead><tbody>`;
+    items.slice(0, 12).forEach((x) => { h += `<tr><td>${escapeHTML(x.point || "")}</td><td>${escapeHTML(x.template || "")}</td><td>${escapeHTML(x.inspector || "")}</td><td>${escapeHTML(x.submittedAt || "")}</td></tr>`; });
+    h += `</tbody></table>`;
+  } else h += `<p class="dr-sub">今日暂无正常记录。</p>`;
+  return h;
+}
+async function fetchDailyReportMessage() {
+  const q = state.selectedProject ? "&project=" + encodeURIComponent(state.selectedProject) : "";
+  const d = await api("/api/management-ai/report?type=daily" + q);
+  const ts = docTimeStamps();
+  return {
+    role: "ai", report: true,
+    text: d.summary || "今日日报已生成。",
+    reportHtml: buildDailyReportHtml(d),
+    reportTitle: "智巡 · 今日管理日报",
+    reportFile: "智巡日报-" + ts.file,
+    id: "aim_" + (++AI_CHAT_STATE.seq),
+  };
 }
 // 调周报接口 → 组装一条 report 消息(带 reportHtml 供导出)
 async function fetchWeeklyReportMessage() {
@@ -2023,7 +2072,10 @@ async function sendAiChat(message) {
 
   try {
     let msg;
-    if (WEEKLY_REPORT_RE.test(message)) {
+    if (DAILY_REPORT_RE.test(message)) {
+      // 日报:走日报聚合接口(今日口径,管理摘要 + 巡检明细)
+      msg = await fetchDailyReportMessage();
+    } else if (WEEKLY_REPORT_RE.test(message)) {
       // 周报:走聚合接口(综述 + 规则表格)
       msg = await fetchWeeklyReportMessage();
     } else {

@@ -11380,6 +11380,11 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .ai-report .up { color: #ffb27a; font-weight: 600; }
 .ai-report .down { color: #3ee6b4; font-weight: 600; }
 .ai-report .flat { color: rgba(220, 233, 247, 0.5); }
+.ai-report .dr-meta { font-size: 11.5px; color: #6f8696; margin-bottom: 8px; }
+.ai-report .dr-sub { font-size: 12px; color: rgba(220, 233, 247, 0.62); margin: 2px 0 8px; }
+.ai-report .dr-badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-right: 4px; }
+.ai-report .dr-badge.ok { background: rgba(62, 230, 180, 0.14); color: #3ee6b4; }
+.ai-report .dr-badge.danger { background: rgba(255, 122, 122, 0.16); color: #ff8e8e; }
 
 /* ============================================================
    侧栏:flex 列布局 + 底部用户块(头像迁移)+ 优化

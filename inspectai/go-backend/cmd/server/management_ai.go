@@ -44,6 +44,14 @@ func parseRangeDays(key string) int {
 func rangeWindow(key string, now time.Time) (start, end time.Time, days int) {
 	days = parseRangeDays(key)
 	end = now
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "1d", "today", "day":
+		// 日报口径:今日 00:00 ~ 现在(prev 自动落到昨天整日)
+		y, m, d := now.Date()
+		start = time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+		days = 1
+		return
+	}
 	start = end.AddDate(0, 0, -days)
 	return
 }
@@ -1192,6 +1200,12 @@ func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) 
 	}
 	reportType := firstNonEmpty(r.URL.Query().Get("type"), "weekly")
 	project := r.URL.Query().Get("project")
+
+	if reportType == "daily" {
+		s.handleDailyReport(w, project)
+		return
+	}
+
 	rangeKey := "7d" // 滚动近 7 天
 
 	overview, err := s.toolGetOverview(project, rangeKey)
@@ -1283,6 +1297,258 @@ func weeklySummaryFallback(o *OverviewSummary, attention []*AttentionItem) strin
 		parts = append(parts, "重点关注 "+strings.Join(names, "、"))
 	}
 	return strings.Join(parts, ";") + "。"
+}
+
+// 记录的业务状态(日报口径):异常 > 需补图 > 待复核 > 人工填写 > 正常
+func recordBusinessStatus(r *Record) string {
+	if recordIsAbnormal(r) {
+		return "异常"
+	}
+	if r.RecognitionStatus == "retake_required" {
+		return "需补图"
+	}
+	if r.RecognitionStatus == "manual_required" || hasNeedsReview(r) {
+		return "待复核"
+	}
+	if r.ManualRequired {
+		return "人工填写"
+	}
+	return "正常"
+}
+
+func statusRisk(st string) string {
+	switch st {
+	case "异常":
+		return "danger"
+	case "待复核", "需补图":
+		return "warning"
+	}
+	return "normal"
+}
+
+// 取记录里最能代表问题的字段(优先异常值字段,其次待复核字段)
+func primaryAbnormalField(r *Record) (string, string) {
+	for _, f := range r.Fields {
+		if abnormalValueRE.Match(f.Value) {
+			return firstNonEmpty(f.Label, f.Code), f.Value
+		}
+	}
+	for _, f := range r.Fields {
+		if f.NeedsReview {
+			return firstNonEmpty(f.Label, f.Code), f.Value
+		}
+	}
+	return "", ""
+}
+
+func truncateRunes(s string, n int) string {
+	rs := []rune(strings.TrimSpace(s))
+	if len(rs) <= n {
+		return string(rs)
+	}
+	return string(rs[:n]) + "…"
+}
+
+func dailySummaryFallback(o *OverviewSummary, abnormal, done, plan int) string {
+	if o == nil {
+		return "今日暂无巡检数据。"
+	}
+	head := "暂未发现异常"
+	if abnormal > 0 {
+		head = fmt.Sprintf("发现 %d 项异常待处理", abnormal)
+	}
+	return fmt.Sprintf("今日完成巡检 %d 条,%s;待复核 %d 条、待审批 %d 条;任务完成 %d/%d。",
+		o.RecordRecent, head, o.PendingReviews, o.PendingApprovals, done, plan)
+}
+
+// GET /api/management-ai/report?type=daily —— 管理日报:今日 00:00~现在,业务状态口径,管理摘要 + 巡检明细两层。
+func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
+	ctx, err := s.buildInsightsContext(project, "today")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "daily_failed", err.Error())
+		return
+	}
+	overview, _ := s.toolGetOverview(project, "today")
+	attention, _ := s.toolListAttention(project, 5)
+	repeated, _ := s.toolListRepeatedIssues(project, 5)
+	drift, _ := s.toolListNumericDrift(project)
+	if len(drift) > 5 {
+		drift = drift[:5]
+	}
+
+	statusCount := map[string]int{}
+	abnormalList := []map[string]any{}
+	normalList := []map[string]any{}
+	aiSuccess, retakes, manualFill := 0, 0, 0
+	for _, r := range ctx.records {
+		t := recordTimestamp(r)
+		if t.Before(ctx.rangeStart) || t.After(ctx.rangeEnd) {
+			continue
+		}
+		st := recordBusinessStatus(r)
+		statusCount[st]++
+		if r.RecognitionStatus == "recognized" {
+			aiSuccess++
+		}
+		if r.CaptureAttempts > 1 || r.RecognitionStatus == "retake_required" {
+			retakes++
+		}
+		if r.ManualRequired {
+			manualFill++
+		}
+		if st == "异常" || st == "待复核" || st == "需补图" {
+			field, value := primaryAbnormalField(r)
+			assignee := r.Inspector
+			dueAt := ""
+			if r.EngineeringTaskID != "" {
+				if tk, e := s.store.GetEngineeringTask(r.EngineeringTaskID); e == nil && tk != nil {
+					assignee = firstNonEmpty(tk.AssigneeName, assignee)
+					dueAt = tk.DueAt
+				}
+			}
+			abnormalList = append(abnormalList, map[string]any{
+				"point": r.PointName, "template": r.TemplateName,
+				"field": field, "value": value,
+				"risk": statusRisk(st), "status": st,
+				"basis":    truncateRunes(r.AISummary, 40),
+				"assignee": assignee, "dueAt": dueAt,
+				"recordNo": firstNonEmpty(r.RecordNo, r.ID),
+			})
+		} else if len(normalList) < 20 {
+			sub := ""
+			if r.SubmittedAt != nil {
+				sub = r.SubmittedAt.Format("15:04")
+			}
+			normalList = append(normalList, map[string]any{
+				"point": r.PointName, "template": r.TemplateName,
+				"inspector": r.Inspector, "submittedAt": sub,
+			})
+		}
+	}
+
+	manualEdits, lowConf, noPhotoConfirm := 0, 0, 0
+	for _, e := range ctx.confirmRecent {
+		if e.CreatedAt.Before(ctx.rangeStart) || e.CreatedAt.After(ctx.rangeEnd) {
+			continue
+		}
+		if e.Action == "correct" {
+			manualEdits++
+		}
+		if e.AIConfidence > 0 && e.AIConfidence < 0.6 {
+			lowConf++
+		}
+		if (e.Action == "confirm" || e.Action == "correct") && !e.ViewedPhoto {
+			noPhotoConfirm++
+		}
+	}
+
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: project})
+	planN, doneN, procN, todoN, overdueN, closedToday := len(tasks), 0, 0, 0, 0, 0
+	todayStr := ctx.rangeStart.Format("2006-01-02")
+	for _, tk := range tasks {
+		switch tk.Status {
+		case engTaskStatusDone:
+			doneN++
+			if strings.HasPrefix(tk.CompletedAt, todayStr) {
+				closedToday++
+			}
+		case engTaskStatusProcessing:
+			procN++
+		case engTaskStatusOverdue:
+			overdueN++
+		default:
+			todoN++
+			if tk.DueAt != "" && tk.DueAt < todayStr {
+				overdueN++
+			}
+		}
+	}
+	completeRate := 0.0
+	if planN > 0 {
+		completeRate = float64(doneN) / float64(planN)
+	}
+
+	abnormalToday := statusCount["异常"]
+	focus := make([]string, 0, 3)
+	for _, a := range attention {
+		focus = append(focus, a.AssetName)
+		if len(focus) >= 3 {
+			break
+		}
+	}
+
+	resp := map[string]any{
+		"type":        "daily",
+		"date":        todayStr,
+		"project":     project,
+		"generatedAt": time.Now().Format(time.RFC3339),
+		"rangeStart":  ctx.rangeStart.Format(time.RFC3339),
+		"rangeEnd":    ctx.rangeEnd.Format(time.RFC3339),
+		"conclusion": map[string]any{
+			"hasAbnormal":   abnormalToday > 0 || overview.AbnormalRecent > 0,
+			"abnormalCount": abnormalToday,
+			"pendingCount":  overview.PendingReviews + overview.PendingApprovals,
+			"closedCount":   closedToday,
+		},
+		"execution": map[string]any{
+			"plan": planN, "done": doneN, "processing": procN,
+			"notStarted": todoN, "overdue": overdueN, "completeRate": completeRate,
+		},
+		"assetStatus": map[string]any{
+			"inspected":     statusCount["正常"] + statusCount["异常"] + statusCount["待复核"] + statusCount["需补图"] + statusCount["人工填写"],
+			"normal":        statusCount["正常"],
+			"abnormal":      statusCount["异常"],
+			"pendingReview": statusCount["待复核"],
+			"needRetake":    statusCount["需补图"],
+			"manualFill":    manualFill,
+		},
+		"abnormalList":  abnormalList,
+		"normalSummary": map[string]any{"count": statusCount["正常"], "items": normalList},
+		"reviewQuality": map[string]any{
+			"aiSuccess": aiSuccess, "manualEdits": manualEdits, "lowConf": lowConf,
+			"retakes": retakes, "noPhotoConfirm": noPhotoConfirm, "needSupervisor": statusCount["待复核"],
+		},
+		"compare": map[string]any{
+			"recordDelta":    overview.RecordRecent - overview.RecordPrev,
+			"abnormalDelta":  overview.AbnormalRecent - overview.AbnormalPrev,
+			"repeatedIssues": repeated,
+			"drift":          drift,
+		},
+		"nextStep": map[string]any{
+			"carryOver": procN + todoN + overdueN, "focusAssets": focus,
+			"approvals": overview.PendingApprovals, "recheckSuggest": focus,
+		},
+		"overview": overview,
+	}
+
+	summary, model, isMock := "", "", true
+	if s.analyticsClient != nil {
+		payload := map[string]any{
+			"kind": "daily", "period": "今日",
+			"overview": overview, "conclusion": resp["conclusion"],
+			"execution": resp["execution"], "assetStatus": resp["assetStatus"],
+			"abnormalList": abnormalList, "attention": attention,
+		}
+		if r2, e := s.analyticsClient.Analyze(payload); e != nil {
+			log.Printf("WARN: daily report analyze failed (降级规则版): %v", e)
+		} else {
+			if v, ok := r2["summary"].(string); ok {
+				summary = v
+			}
+			if v, ok := r2["model"].(string); ok {
+				model = v
+			}
+			if v, ok := r2["isMock"].(bool); ok {
+				isMock = v
+			}
+		}
+	}
+	if strings.TrimSpace(summary) == "" {
+		summary = dailySummaryFallback(overview, abnormalToday, doneN, planN)
+		isMock = true
+	}
+	resp["summary"], resp["model"], resp["isMock"] = summary, model, isMock
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // ===== Agent 执行入口 /api/management-ai/act =====
