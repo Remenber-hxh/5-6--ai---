@@ -11322,6 +11322,21 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .ai-jump-chip:hover i { transform: translateX(2px); }
 .ai-jump-chip:active { transform: translateY(1px); }
 .agent-home .ai-jump-chip { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
+/* AI 回复动作行 + 导出 Word 按钮 */
+.ai-msg-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.ai-export-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border, #d8dee4); background: transparent;
+  color: var(--ink-2, #5b6b78); font-size: 12.5px; font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ai-export-btn i { font-style: normal; font-size: 12px; }
+.ai-export-btn:hover { border-color: var(--blue, #1499ff); color: var(--blue, #1499ff); background: rgba(20, 153, 255, 0.06); }
+.ai-export-btn:active { transform: translateY(1px); }
+/* 暗色 agent 首页变体 */
+.agent-home .ai-export-btn { border-color: rgba(126, 255, 210, 0.28); color: rgba(220, 245, 236, 0.78); }
+.agent-home .ai-export-btn:hover { border-color: #3ee6b4; color: #3ee6b4; background: rgba(62, 230, 180, 0.1); }
 
 /* ============================================================
    侧栏:flex 列布局 + 底部用户块(头像迁移)+ 优化

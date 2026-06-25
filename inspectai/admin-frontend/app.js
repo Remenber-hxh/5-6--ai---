@@ -1388,7 +1388,80 @@ function renderChatBubble(m) {
   const jump = (cls === "ai" && m.navJump)
     ? `<button type="button" class="ai-jump-chip" data-page-link="${m.navJump.page}">前往${escapeHTML(m.navJump.label)}<i>→</i></button>`
     : "";
-  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}${jump}</div>`;
+  // 实质性回答附「导出 Word」(给 agent 用,复用 exportWordDoc)
+  const exportBtn = (cls === "ai" && (m.text || "").trim().length >= 24)
+    ? `<button type="button" class="ai-export-btn" data-export-msg="${escapeHTML(m.id || "")}" title="导出为 Word 文档"><i>⬇</i>导出 Word</button>`
+    : "";
+  const acts = (jump || exportBtn) ? `<div class="ai-msg-acts">${jump}${exportBtn}</div>` : "";
+  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}${acts}</div>`;
+}
+
+// ===== Word 导出模块(给 agent 用):前端零依赖,生成 Word/WPS 可直接打开的 .doc =====
+// 通用导出:把一段正文 HTML 包成带 MSO 头的 Word 文档并下载;周日报等模块复用此函数
+function exportWordDoc(filename, title, bodyHtml) {
+  const safeTitle = escapeHTML(title || "智巡文档");
+  const head =
+    '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+    'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
+    'xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8">' +
+    '<title>' + safeTitle + '</title>' +
+    '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View>' +
+    '<w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' +
+    '<style>' +
+    '@page{size:A4;margin:2.2cm;}' +
+    'body{font-family:"Microsoft YaHei","SimSun",sans-serif;font-size:11pt;color:#222;line-height:1.75;}' +
+    'h1{font-size:19pt;margin:0 0 4pt;color:#0c3b30;}' +
+    'h2{font-size:13.5pt;margin:16pt 0 6pt;color:#0a6b54;border-bottom:1pt solid #cfe8df;padding-bottom:3pt;}' +
+    '.meta{color:#888;font-size:9pt;margin:0 0 10pt;}' +
+    'hr{border:0;border-top:1pt solid #e3e3e3;margin:12pt 0;}' +
+    'table{border-collapse:collapse;width:100%;margin:8pt 0;}' +
+    'td,th{border:1pt solid #bcbcbc;padding:5pt 8pt;font-size:10.5pt;}' +
+    'th{background:#eef6f3;text-align:left;}' +
+    'strong{color:#0a6b54;}' +
+    'p{margin:0 0 8pt;}' +
+    '.foot{color:#9aa;font-size:8.5pt;margin-top:18pt;}' +
+    '</style></head><body>';
+  const blob = new Blob(["﻿", head + bodyHtml + "</body></html>"], { type: "application/msword;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = /\.docx?$/.test(filename) ? filename : filename + ".doc";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1200);
+}
+// 文本(含 **加粗** / 换行)→ Word 正文段落 HTML
+function textToDocHtml(text) {
+  const esc = String(text || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "$1");
+  return esc.split(/\n{2,}/).map((p) => "<p>" + p.replace(/\n/g, "<br>") + "</p>").join("");
+}
+// 时间戳工具
+function docTimeStamps() {
+  const n = new Date(), p = (x) => String(x).padStart(2, "0");
+  return {
+    human: `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`,
+    file: `${n.getFullYear()}${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`,
+  };
+}
+// 把一条 AI 回复导出成 Word(带提问、生成时间、品牌页眉页脚)
+function exportAgentMessage(m) {
+  if (!m || !m.text) return;
+  const idx = AI_CHAT_STATE.history.indexOf(m);
+  let question = "";
+  for (let i = idx - 1; i >= 0; i--) {
+    if (AI_CHAT_STATE.history[i].role === "user") { question = AI_CHAT_STATE.history[i].text || ""; break; }
+  }
+  const ts = docTimeStamps();
+  let body = "<h1>智巡 · AI 分析</h1>";
+  body += `<p class="meta">生成时间：${ts.human} · 智巡管理后台</p><hr>`;
+  if (question) body += `<p><strong>提问：</strong>${escapeHTML(question)}</p>`;
+  body += textToDocHtml(m.text);
+  body += `<p class="foot">本文档由「智巡」AI 助手自动生成,数据以系统实时台账为准。</p>`;
+  exportWordDoc(`智巡分析-${ts.file}`, "智巡 AI 分析", body);
+  toast("已导出 Word 文档");
 }
 
 // 把回复正文里出现的真实资产编号 / 记录号包成 .ai-ref 链接(等宽蓝字 + 可点跳转)
@@ -1612,6 +1685,14 @@ function bindAiScaffoldActions(root) {
   if (!root || root.dataset.aiScaffoldBound) return;
   root.dataset.aiScaffoldBound = "1";
   root.addEventListener("click", async (event) => {
+    // 导出 Word(给 agent 用)
+    const exportEl = event.target.closest("[data-export-msg]");
+    if (exportEl) {
+      event.preventDefault();
+      const m = AI_CHAT_STATE.history.find((x) => x.id === exportEl.dataset.exportMsg);
+      if (m) exportAgentMessage(m);
+      return;
+    }
     // 动作提议卡:确认派发 / 忽略 / 查看任务
     const aap = event.target.closest(".ai-action-proposal");
     if (aap) {
