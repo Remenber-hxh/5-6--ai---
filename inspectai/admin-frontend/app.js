@@ -1263,10 +1263,9 @@ const AGENT_ACTS = [
   { q: "本周异常比上周增加了吗？", label: "分析本月异常趋势", tone: "o", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
 ];
 
-// 首页 = 暗色 Agent 控制台(辉光地平线):居中问候 + 建议动作 + 大输入(@页面跳转)
+// 首页 = 暗色 Agent 控制台(辉光地平线):居中问候 + 建议动作 + 大输入
 function aiChatPanel() {
   const acts = AGENT_ACTS.map((a) => `<button type="button" class="ah-act" data-ai-suggest="${escapeHTML(a.q)}"><span class="ah-ic ${a.tone}">${a.svg}</span>${escapeHTML(a.label)}</button>`).join("");
-  const ments = AGENT_NAV.map((n) => `<button type="button" class="ah-ment" data-page-link="${n.page}">@ ${escapeHTML(n.label)}</button>`).join("");
   return `
     <section class="agent-home agent-dark">
       <div class="ah-aura"></div>
@@ -1286,7 +1285,6 @@ function aiChatPanel() {
             <svg viewBox="0 0 24 24" fill="none" stroke="#04241b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
           </button>
         </div>
-        <div class="ah-ments"><span class="ah-ments-lbl">可以试试</span>${ments}</div>
       </form>
       <div class="ah-foot">
         <span class="ah-dis">AI 生成的内容仅供参考，请以实际数据为准</span>
