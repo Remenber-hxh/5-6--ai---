@@ -11197,17 +11197,17 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
    ============================================================ */
 .content:has(.agent-home) {
   background: linear-gradient(135deg, #06131f 0%, #091d2d 54%, #06131f 100%);
-  padding: 24px;
+  padding: 0;
   overflow: hidden;
 }
 .agent-home.agent-dark {
   position: relative; z-index: 1; align-self: stretch;
   display: flex; flex-direction: column;
-  min-height: calc(100vh - 112px);
-  border-radius: 22px; overflow: hidden;
-  border: 1px solid rgba(62, 230, 180, 0.12) !important;
+  min-height: calc(100vh - 64px);
+  overflow: hidden;
+  border: 0 !important; border-radius: 0 !important;
   background: radial-gradient(120% 80% at 50% 120%, #0a2433 0%, #071521 38%, #050b12 70%) !important;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: none !important;
   color: #e9f3f1;
 }
 .agent-home.agent-dark::after { display: none !important; }
