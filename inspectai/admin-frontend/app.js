@@ -1291,13 +1291,88 @@ function aiChatPanel() {
       </form>
       <div class="ah-foot">
         <span class="ah-dis">AI 生成的内容仅供参考，请以实际数据为准</span>
-        <button type="button" class="ah-clear" id="aiClearBtn">清空对话</button>
+        <div class="ah-foot-acts">
+          <button type="button" class="ah-hist" id="aiHistBtn">历史对话</button>
+          <button type="button" class="ah-clear" id="aiClearBtn">清空对话</button>
+        </div>
+      </div>
+      <div class="ah-history" id="aiHistPanel" hidden>
+        <div class="ah-history-head"><span>历史对话 · 保留 7 天</span><button type="button" class="ah-history-close" id="aiHistClose" aria-label="关闭">×</button></div>
+        <div class="ah-history-list" id="aiHistList"></div>
       </div>
     </section>
   `;
 }
 
-const AI_CHAT_STATE = { history: [], busy: false, seq: 0 };
+const AI_CHAT_STATE = { history: [], busy: false, seq: 0, sessionId: null };
+
+// ===== Agent 历史对话(localStorage,保留 7 天)=====
+const CHAT_STORE_KEY = "inspectai_chat_sessions";
+const CHAT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CHAT_MAX_SESSIONS = 30;
+function loadChatSessions() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CHAT_STORE_KEY) || "[]");
+    if (!Array.isArray(arr)) return [];
+    const cutoff = Date.now() - CHAT_TTL_MS; // 7 天保留
+    return arr.filter((s) => s && (s.updatedAt || 0) >= cutoff).sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch (e) { return []; }
+}
+function saveChatSessions(arr) {
+  try { localStorage.setItem(CHAT_STORE_KEY, JSON.stringify(arr.slice(0, CHAT_MAX_SESSIONS))); } catch (e) { /* 配额满忽略 */ }
+}
+// 把当前会话写入本地(每轮对话后调用)
+function persistCurrentSession() {
+  if (!AI_CHAT_STATE.history.length) return;
+  const sessions = loadChatSessions();
+  if (!AI_CHAT_STATE.sessionId) AI_CHAT_STATE.sessionId = "cs_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+  const id = AI_CHAT_STATE.sessionId;
+  const firstUser = AI_CHAT_STATE.history.find((m) => m.role === "user");
+  const now = Date.now();
+  const existing = sessions.find((s) => s.id === id);
+  const record = {
+    id,
+    title: (firstUser?.text || "新对话").slice(0, 24),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    messages: AI_CHAT_STATE.history,
+  };
+  saveChatSessions([record, ...sessions.filter((s) => s.id !== id)]);
+}
+// 载入一段历史会话到当前对话
+function openChatSession(id) {
+  const s = loadChatSessions().find((x) => x.id === id);
+  if (!s) return;
+  AI_CHAT_STATE.history = (s.messages || []).map((m) => ({ ...m }));
+  AI_CHAT_STATE.sessionId = s.id;
+  let maxSeq = AI_CHAT_STATE.seq;
+  (s.messages || []).forEach((m) => { const mm = /^aim_(\d+)$/.exec(m.id || ""); if (mm) maxSeq = Math.max(maxSeq, +mm[1]); });
+  AI_CHAT_STATE.seq = maxSeq;
+  render();
+}
+function deleteChatSession(id) {
+  saveChatSessions(loadChatSessions().filter((s) => s.id !== id));
+  if (AI_CHAT_STATE.sessionId === id) { AI_CHAT_STATE.history = []; AI_CHAT_STATE.sessionId = null; }
+}
+function relTime(ts) {
+  const d = Date.now() - (ts || 0);
+  if (d < 60e3) return "刚刚";
+  if (d < 3600e3) return Math.floor(d / 60e3) + " 分钟前";
+  if (d < 864e5) return Math.floor(d / 3600e3) + " 小时前";
+  return Math.floor(d / 864e5) + " 天前";
+}
+function renderHistoryList() {
+  const sessions = loadChatSessions();
+  if (!sessions.length) return `<div class="ah-hist-empty">最近 7 天暂无历史对话</div>`;
+  return sessions.map((s) => `
+    <div class="ah-hist-item" data-session="${escapeHTML(s.id)}">
+      <div class="ah-hist-main">
+        <div class="ah-hist-title">${escapeHTML(s.title || "新对话")}</div>
+        <div class="ah-hist-time">${relTime(s.updatedAt)} · ${(s.messages || []).filter((m) => m.role === "user").length} 问</div>
+      </div>
+      <button type="button" class="ah-hist-del" data-del-session="${escapeHTML(s.id)}" title="删除" aria-label="删除">×</button>
+    </div>`).join("");
+}
 
 // 从 AI 回复里抽取 <<ACTION>>…<<END>> 动作提议块,正文去掉该块。只接受已支持的动作类型。
 function extractActionProposal(reply) {
@@ -1365,7 +1440,26 @@ function bindAiChat() {
   document.getElementById("aiClearBtn")?.addEventListener("click", () => {
     if (AI_CHAT_STATE.busy) return;
     AI_CHAT_STATE.history = [];
+    AI_CHAT_STATE.sessionId = null; // 起新会话(旧会话已存入历史)
     render();
+  });
+  // 历史对话面板
+  saveChatSessions(loadChatSessions()); // 顺手清掉超 7 天的
+  const histBtn = document.getElementById("aiHistBtn");
+  const histPanel = document.getElementById("aiHistPanel");
+  const histList = document.getElementById("aiHistList");
+  const closeHist = () => histPanel?.setAttribute("hidden", "");
+  histBtn?.addEventListener("click", () => {
+    if (!histPanel) return;
+    if (histPanel.hasAttribute("hidden")) { histList.innerHTML = renderHistoryList(); histPanel.removeAttribute("hidden"); }
+    else closeHist();
+  });
+  document.getElementById("aiHistClose")?.addEventListener("click", closeHist);
+  histList?.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-del-session]");
+    if (del) { e.stopPropagation(); deleteChatSession(del.dataset.delSession); histList.innerHTML = renderHistoryList(); if (AI_CHAT_STATE.sessionId === null) render(); return; }
+    const item = e.target.closest("[data-session]");
+    if (item) { closeHist(); openChatSession(item.dataset.session); }
   });
   bindAiScaffoldActions(body);
   // restore history on re-render
@@ -1955,6 +2049,7 @@ async function sendAiChat(message) {
     sendBtn.disabled = false;
     sendBtn.textContent = "发送";
     body.scrollTop = body.scrollHeight;
+    persistCurrentSession(); // 落本地历史(保留 7 天)
   }
 }
 
