@@ -11346,3 +11346,6 @@ body.sidebar-collapsed .sidebar-user { justify-content: center; padding: 12px 0;
 body.sidebar-collapsed .sidebar-user .su-text,
 body.sidebar-collapsed .sidebar-user .user-dot { display: none; }
 body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
+
+/* 头像中性化(覆盖渐变)*/
+.sidebar-user > b { background: rgba(255,255,255,0.1) !important; color: #e6f0f5 !important; border: 1px solid rgba(255,255,255,0.12) !important; box-shadow: none !important; font-weight: 700 !important; }
