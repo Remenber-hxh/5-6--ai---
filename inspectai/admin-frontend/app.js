@@ -1296,10 +1296,14 @@ function aiChatPanel() {
           <button type="button" class="ah-clear" id="aiClearBtn">清空对话</button>
         </div>
       </div>
-      <div class="ah-history" id="aiHistPanel" hidden>
-        <div class="ah-history-head"><span>历史对话 · 保留 7 天</span><button type="button" class="ah-history-close" id="aiHistClose" aria-label="关闭">×</button></div>
+      <div class="ah-history-backdrop" id="aiHistBackdrop"></div>
+      <aside class="ah-history" id="aiHistPanel" aria-label="历史对话">
+        <div class="ah-history-head">
+          <div class="ah-history-ttl">历史对话<span>保留 7 天</span></div>
+          <button type="button" class="ah-history-close" id="aiHistClose" aria-label="关闭">×</button>
+        </div>
         <div class="ah-history-list" id="aiHistList"></div>
-      </div>
+      </aside>
     </section>
   `;
 }
@@ -1448,13 +1452,12 @@ function bindAiChat() {
   const histBtn = document.getElementById("aiHistBtn");
   const histPanel = document.getElementById("aiHistPanel");
   const histList = document.getElementById("aiHistList");
-  const closeHist = () => histPanel?.setAttribute("hidden", "");
-  histBtn?.addEventListener("click", () => {
-    if (!histPanel) return;
-    if (histPanel.hasAttribute("hidden")) { histList.innerHTML = renderHistoryList(); histPanel.removeAttribute("hidden"); }
-    else closeHist();
-  });
+  const histBackdrop = document.getElementById("aiHistBackdrop");
+  const closeHist = () => { histPanel?.classList.remove("show"); histBackdrop?.classList.remove("show"); };
+  const openHist = () => { if (!histPanel) return; histList.innerHTML = renderHistoryList(); histPanel.classList.add("show"); histBackdrop?.classList.add("show"); };
+  histBtn?.addEventListener("click", () => { histPanel?.classList.contains("show") ? closeHist() : openHist(); });
   document.getElementById("aiHistClose")?.addEventListener("click", closeHist);
+  histBackdrop?.addEventListener("click", closeHist);
   histList?.addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-session]");
     if (del) { e.stopPropagation(); deleteChatSession(del.dataset.delSession); histList.innerHTML = renderHistoryList(); if (AI_CHAT_STATE.sessionId === null) render(); return; }
