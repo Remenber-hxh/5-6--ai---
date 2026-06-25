@@ -206,14 +206,14 @@ func reportTemplates() []ReportTemplate {
 			},
 		},
 		{
-			ID:        "elevator_no_room",
+			ID:        "elevator_machine_room",
 			Name:      "电梯巡检（有机房）",
 			Project:   "会议中心",
 			AssetType: "有机房电梯",
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "elevator_no_room",
+            AIPrompt:  "elevator_machine_room",
 			Fields: []TemplateField{
 				textField("inspection_time", "检查时间", false, "ai"),
 				textFieldDefault("asset_no", "电梯编号", false, "ai", "HYZX-WJ-DT01"),
@@ -237,14 +237,14 @@ func reportTemplates() []ReportTemplate {
 			},
 		},
 		{
-			ID:        "elevator_machine_room",
+			ID:        "elevator_no_room",
 			Name:      "电梯巡检（无机房）",
 			Project:   "会议中心",
 			AssetType: "无机房电梯",
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "elevator_machine_room",
+            AIPrompt:  "elevator_no_room",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期", false, "ai"),
 				textField("asset_no", "电梯编号", false, "ai"),
@@ -272,8 +272,8 @@ func seedPoints() []Point {
 		{ID: "p_power_room", Project: "会议中心", Name: "变电所", Type: "日常巡检", Location: "B1 强电间", TemplateID: "power_room", Featured: true},
 		{ID: "p_water_pump", Project: "会议中心", Name: "生活水泵房", Type: "日常巡检", Location: "B1 生活水泵房", TemplateID: "water_pump", Featured: true},
 		{ID: "p_escalator", Project: "会议中心", Name: "扶梯", Type: "特种设备巡检", Location: "公共区域扶梯", TemplateID: "escalator", Featured: true},
-		{ID: "p_elevator_no_room", Project: "会议中心", Name: "有机房电梯", Type: "特种设备巡检", Location: "电梯机房", TemplateID: "elevator_no_room", Featured: true},
-		{ID: "p_elevator_machine_room", Project: "会议中心", Name: "无机房电梯", Type: "特种设备巡检", Location: "电梯轿厢", TemplateID: "elevator_machine_room", Featured: true},
+		{ID: "p_elevator_no_room", Project: "会议中心", Name: "无机房电梯", Type: "特种设备巡检", Location: "电梯轿厢", TemplateID: "elevator_no_room", Featured: true},
+		{ID: "p_elevator_machine_room", Project: "会议中心", Name: "有机房电梯", Type: "特种设备巡检", Location: "电梯机房", TemplateID: "elevator_machine_room", Featured: true},
 	}
 }
 
