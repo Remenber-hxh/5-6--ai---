@@ -1257,7 +1257,6 @@ function navIntent(text) {
 }
 // 建议动作(点了直接发问)
 const AGENT_ACTS = [
-  { q: "生成今日管理日报", label: "生成今日日报", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h3"/><circle cx="17.5" cy="6.5" r="0"/></svg>' },
   { q: "查看本周巡检计划", label: "查看本周巡检计划", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
   { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", tone: "p", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
   { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
@@ -1279,8 +1278,8 @@ function aiChatPanel() {
         <div class="ai-chat-empty ah-hero">
           <div class="ah-hi">你好，我是 <span class="en">智巡 Agent</span></div>
           <div class="ah-sub">您身边的智能巡检助手，随时为您服务</div>
-          <div class="ah-ask">你可以这样问我</div>
           <div class="ah-acts">${acts}</div>
+          <div class="ah-ask">你可以这样问我</div>
         </div>
       </div>
       <form class="ah-composer ai-chat-form" id="aiChatForm" autocomplete="off">
