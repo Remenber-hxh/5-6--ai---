@@ -11310,3 +11310,39 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .agent-home .aap-confirm { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
 .agent-home .aap-dismiss { background: transparent !important; color: #9fb2ad !important; border-color: rgba(62,230,180,.2) !important; }
 .agent-home .ai-jump-chip { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
+
+/* ============================================================
+   侧栏:flex 列布局 + 底部用户块(头像迁移)+ 优化
+   ============================================================ */
+.sidebar { display: flex; flex-direction: column; }
+.sidebar .nav { flex: 1 1 auto; }
+/* 底部用户块 */
+.sidebar-user {
+  margin-top: auto;
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; padding: 12px 10px;
+  border: 0 !important; border-top: 1px solid rgba(126, 255, 210, 0.1) !important;
+  background: none; text-align: left; cursor: pointer; border-radius: 0;
+  transition: background 0.15s ease;
+}
+.sidebar-user:hover { background: rgba(126, 255, 210, 0.06); }
+.sidebar-user > b {
+  width: 38px; height: 38px; flex: none;
+  display: grid; place-items: center; border-radius: 50%;
+  background: linear-gradient(135deg, #20d6a2, #1499ff) !important; color: #04241b !important;
+  font-size: 15px; font-weight: 800;
+  box-shadow: 0 0 14px rgba(32, 214, 162, 0.3);
+}
+.sidebar-user .su-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.sidebar-user .su-name { font-size: 14px !important; font-weight: 600 !important; color: #eaf4f1 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
+.sidebar-user .su-role { font-size: 12px !important; color: rgba(220, 233, 247, 0.5) !important; font-weight: 400 !important; }
+.sidebar-user .user-dot {
+  margin-left: auto; flex: none; min-width: 18px; height: 18px; padding: 0 5px;
+  display: grid; place-items: center; border-radius: 999px;
+  background: #ef4b3f; color: #fff; font-size: 11px; font-weight: 700;
+}
+/* 收起态:只剩头像居中 */
+body.sidebar-collapsed .sidebar-user { justify-content: center; padding: 12px 0; gap: 0; }
+body.sidebar-collapsed .sidebar-user .su-text,
+body.sidebar-collapsed .sidebar-user .user-dot { display: none; }
+body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }

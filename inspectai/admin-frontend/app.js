@@ -844,9 +844,10 @@ function updateUserBadge() {
   const user = state.currentUser || { displayName: "未登录" };
   const name = user.displayName || user.username || "未登录";
   const initial = name.slice(0, 1) || "?";
+  const role = user.roleName || user.roleCode || "管理员";
   const todos = myTodoCount();
   const dot = todos > 0 ? `<i class="user-dot" aria-label="${todos} 个待办">${todos > 9 ? "9+" : todos}</i>` : "";
-  el.innerHTML = `<b>${escapeHTML(initial)}</b><span>${escapeHTML(name)}</span>${dot}`;
+  el.innerHTML = `<b>${escapeHTML(initial)}</b><span class="su-text"><span class="su-name">${escapeHTML(name)}</span><span class="su-role">${escapeHTML(role)}</span></span>${dot}`;
   el.title = todos > 0 ? `${todos} 个待办` : "当前登录用户";
 }
 
