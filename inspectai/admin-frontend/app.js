@@ -1238,6 +1238,23 @@ const AGENT_NAV = [
   { page: "approval", label: "审批中心" },
   { page: "data",     label: "数据看板" },
 ];
+// 问 agent 任何问题 → 按意图判断目标页,回复下方给一个「前往 X」跳转 chip(全前端,不依赖 AI)
+const NAV_INTENTS = [
+  { page: "approval", label: "审批中心", re: /审批|待审|申请|修改单|工单|复核率|没看图/ },
+  { page: "ledger",   label: "资产台账", re: /资产|台账|档案|设备健康|哪些设备|重点关注|定位.*设备/ },
+  { page: "data",     label: "数据看板", re: /看板|趋势|漂移|报表|分析|图表|对比|统计/ },
+  { page: "record",   label: "巡检记录", re: /巡检记录|日报|记录/ },
+  { page: "plan",     label: "巡检计划", re: /计划|排期|派发|复查任务|任务|跟进/ },
+  { page: "users",    label: "用户与权限", re: /用户|权限|账号|人员|角色/ },
+  { page: "logs",     label: "操作日志", re: /日志|操作记录|谁改|谁操作|审计/ },
+  { page: "system",   label: "系统管理", re: /系统|配置|服务|接口|密钥|企业微信|通知/ },
+  { page: "profile",  label: "个人首页", re: /个人|我的资料|退出登录/ },
+];
+function navIntent(text) {
+  const t = String(text || "");
+  for (const n of NAV_INTENTS) if (n.re.test(t)) return n;
+  return null;
+}
 // 4 个建议动作(点了直接发问)
 const AGENT_ACTS = [
   { q: "查看本周巡检计划", label: "查看本周巡检计划", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
@@ -1369,7 +1386,11 @@ function renderChatBubble(m) {
   // AI 回复里的设备编号 / 记录号自动转成可点链接(命中真实数据才加,避免死链)
   if (cls === "ai") html = linkifyRefs(html);
   const card = cls === "ai" ? renderActionProposal(m) : "";
-  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}</div>`;
+  // 按提问意图给一个「前往 X 页」跳转 chip(复用全局 data-page-link)
+  const jump = (cls === "ai" && m.navJump)
+    ? `<button type="button" class="ai-jump-chip" data-page-link="${m.navJump.page}">前往${escapeHTML(m.navJump.label)}<i>→</i></button>`
+    : "";
+  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}${jump}</div>`;
 }
 
 // 把回复正文里出现的真实资产编号 / 记录号包成 .ai-ref 链接(等宽蓝字 + 可点跳转)
@@ -1751,7 +1772,7 @@ async function sendAiChat(message) {
     });
     const reply = res.reply || "AI 没有给出回复。";
     const { text, proposal } = extractActionProposal(reply);
-    const msg = { role: "ai", text, proposal, id: "aim_" + (++AI_CHAT_STATE.seq) };
+    const msg = { role: "ai", text, proposal, navJump: navIntent(message), id: "aim_" + (++AI_CHAT_STATE.seq) };
     AI_CHAT_STATE.history.push(msg);
     document.getElementById("aiChatTyping")?.remove();
     body.insertAdjacentHTML("beforeend", renderChatBubble(msg));

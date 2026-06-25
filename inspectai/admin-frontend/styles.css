@@ -11309,6 +11309,18 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .agent-home .aap-input { background: rgba(255,255,255,.05) !important; border-color: rgba(62,230,180,.2) !important; color: #e9f3f1 !important; }
 .agent-home .aap-confirm { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
 .agent-home .aap-dismiss { background: transparent !important; color: #9fb2ad !important; border-color: rgba(62,230,180,.2) !important; }
+.ai-jump-chip {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 2px; padding: 7px 14px;
+  border: 0; border-radius: 8px;
+  background: var(--blue); color: #fff;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.2s ease, transform 0.12s ease;
+}
+.ai-jump-chip i { font-style: normal; transition: transform 0.15s ease; }
+.ai-jump-chip:hover i { transform: translateX(2px); }
+.ai-jump-chip:active { transform: translateY(1px); }
 .agent-home .ai-jump-chip { background: linear-gradient(135deg, #3ee6b4, #18c597) !important; color: #04241b !important; }
 
 /* ============================================================
