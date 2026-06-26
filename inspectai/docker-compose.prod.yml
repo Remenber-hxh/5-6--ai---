@@ -81,6 +81,8 @@ services:
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_VISION_MODEL: ${QWEN_VISION_MODEL:-qwen-vl-plus}
       QWEN_VISION_FALLBACK: ${QWEN_VISION_FALLBACK:-qwen-vl-max}
+      QWEN_VISION_TIMEOUT: ${QWEN_VISION_TIMEOUT:-90}
+      QWEN_VISION_COMPRESS: ${QWEN_VISION_COMPRESS:-0}
       QWEN_TEXT_MODEL: ${QWEN_TEXT_MODEL:-qwen-plus}
       # 管理端历史分析与问答独立走 DeepSeek，密钥同样只从 secret 文件读取。
       DEEPSEEK_API_KEY_FILE: /run/secrets/deepseek_api_key
