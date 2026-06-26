@@ -456,9 +456,12 @@ def analyze(payload: dict) -> dict:
     )
 
     content: list = [{"type": "text", "text": user_text}]
+    # 字段识别要读仪表读数/日期/小字编号,压图可能糊掉细节降准确度,默认全分辨率;
+    # 仅在跨区网络慢时由 QWEN_VISION_COMPRESS=1 开启
+    compress = os.environ.get("QWEN_VISION_COMPRESS", "0") == "1"
     for image in images[:20]:
         path = image.get("path") or ""
-        url = image_to_data_url(path, force_compress=True)  # 压图提速
+        url = image_to_data_url(path, force_compress=compress)
         if url:
             content.append({"type": "image_url", "image_url": {"url": url}})
 
@@ -895,9 +898,11 @@ def classify(payload: dict) -> dict:
 
     content: list = [{"type": "text", "text": SCENE_PROMPT}]
     # 多看几张:电梯有机房/无机房只差机房那几张,只看前 3 张会漏掉机房照
-    # 分类强制压缩(长边1600/JPEG80),大幅减小上传体积、提速
+    # 压图仅用于缓解跨区(美国→中国)上传延迟,默认关;同区服务器全分辨率更准。
+    # 场景分类只看大特征,压了不影响精度;由 QWEN_VISION_COMPRESS 控制
+    compress = os.environ.get("QWEN_VISION_COMPRESS", "0") == "1"
     for path in paths[:6]:
-        url = image_to_data_url(path, force_compress=True)
+        url = image_to_data_url(path, force_compress=compress)
         if url:
             content.append({"type": "image_url", "image_url": {"url": url}})
 
