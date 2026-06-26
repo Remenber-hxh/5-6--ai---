@@ -90,7 +90,7 @@ def read_json(handler: BaseHTTPRequestHandler) -> dict:
     return json.loads(raw.decode("utf-8"))
 
 
-def image_to_data_url(path: str) -> str:
+def image_to_data_url(path: str, force_compress: bool = False) -> str:
     if not path or not os.path.exists(path):
         return ""
     ext = os.path.splitext(path)[1].lower().strip(".")
@@ -102,8 +102,8 @@ def image_to_data_url(path: str) -> str:
     }.get(ext, "image/jpeg")
     with open(path, "rb") as f:
         data = f.read()
-    if len(data) > 8 * 1024 * 1024:
-        # 大于 8MB 不压缩也接得住但偏大；尝试用 PIL 压一下
+    if force_compress or len(data) > 8 * 1024 * 1024:
+        # force_compress:分类场景为提速强制压缩;否则仅 >8MB 才压
         compressed = try_compress(data, ext)
         if compressed:
             data = compressed
@@ -161,6 +161,7 @@ def call_qwen_chat(
     timeout: int = 60,
     temperature: float = 0.1,
     max_retries: int = 2,
+    extra_body: dict | None = None,
 ) -> str:
     base_url = os.environ.get(
         "DASHSCOPE_BASE_URL",
@@ -176,6 +177,8 @@ def call_qwen_chat(
         ],
         "temperature": temperature,
     }
+    if extra_body:
+        body.update(extra_body)
     body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
     # 写到临时文件后 --data-binary @file，避免命令行长度限制 + quoting 问题
@@ -455,7 +458,7 @@ def analyze(payload: dict) -> dict:
     content: list = [{"type": "text", "text": user_text}]
     for image in images[:20]:
         path = image.get("path") or ""
-        url = image_to_data_url(path)
+        url = image_to_data_url(path, force_compress=True)  # 压图提速
         if url:
             content.append({"type": "image_url", "image_url": {"url": url}})
 
@@ -463,6 +466,8 @@ def analyze(payload: dict) -> dict:
         return retake_required("没有可读图片", payload)
 
     model_name = os.environ.get("QWEN_VISION_MODEL", "qwen-vl-plus")
+    # qwen3.x 关思考,字段识别不需要链式推理,大幅提速避免超时
+    extra = {"enable_thinking": False} if model_name.lower().startswith("qwen3") else None
     started = time.time()
     try:
         raw = call_qwen_chat(
@@ -470,7 +475,8 @@ def analyze(payload: dict) -> dict:
             system=COMMON_PROMPT,
             user_content=content,
             api_key=api_key,
-            timeout=60,
+            timeout=int(os.environ.get("QWEN_VISION_TIMEOUT", "90") or "90"),
+            extra_body=extra,
         )
     except Exception as exc:
         print(f"[analyze] qwen failed: {exc}", file=sys.stderr)
@@ -889,8 +895,9 @@ def classify(payload: dict) -> dict:
 
     content: list = [{"type": "text", "text": SCENE_PROMPT}]
     # 多看几张:电梯有机房/无机房只差机房那几张,只看前 3 张会漏掉机房照
+    # 分类强制压缩(长边1600/JPEG80),大幅减小上传体积、提速
     for path in paths[:6]:
-        url = image_to_data_url(path)
+        url = image_to_data_url(path, force_compress=True)
         if url:
             content.append({"type": "image_url", "image_url": {"url": url}})
 
@@ -905,14 +912,18 @@ def classify(payload: dict) -> dict:
         }
 
     model = os.environ.get("QWEN_VISION_MODEL", "qwen-vl-plus")
+    cls_timeout = int(os.environ.get("QWEN_VISION_TIMEOUT", "90") or "90")
+    # qwen3.x 是混合思考模型,关掉思考(enable_thinking=false)大幅提速;分类不需要链式推理
+    extra = {"enable_thinking": False} if model.lower().startswith("qwen3") else None
     try:
         raw = call_qwen_chat(
             model=model,
             system="你只输出严格 JSON。",
             user_content=content,
             api_key=api_key,
-            timeout=30,
+            timeout=cls_timeout,
             max_retries=1,
+            extra_body=extra,
         )
     except Exception as exc:
         print(f"[classify] qwen failed: {exc}", file=sys.stderr)
