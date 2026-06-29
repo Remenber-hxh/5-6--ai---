@@ -2256,15 +2256,17 @@ func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "no_files", "请先拍照")
 		return
 	}
-	if len(files) > 6 {
-		files = files[:6]
+	// 上限提到 20:全部存下供字段识别(analyze)使用,否则超 6 张的部位永远识别不到
+	if len(files) > 20 {
+		files = files[:20]
 	}
 
 	tmpDirID := newID("cls")
 	tmpDir := filepath.Join(s.storageDir, "tmp_classify", tmpDirID)
 	saved := []ImageInfo{}
 	paths := []string{}
-	for _, header := range files[:min(len(files), 3)] {
+	// 前 6 张送场景分类(机房照可能排在第 4-6 张,只看前 3 张会漏判有机房)
+	for _, header := range files[:min(len(files), 6)] {
 		img, err := saveMultipartFile(tmpDir, header, 15<<20)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "upload_failed", err.Error())
@@ -2273,8 +2275,8 @@ func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, img.Path)
 		saved = append(saved, img)
 	}
-	// 多余的也存到 tmpDir 备用（用户确认模板后会带 imageIds 一起 createRecord）
-	for _, header := range files[min(len(files), 3):] {
+	// 其余的也存到 tmpDir 备用（用户确认模板后会带 imageIds 一起 createRecord）
+	for _, header := range files[min(len(files), 6):] {
 		img, err := saveMultipartFile(tmpDir, header, 15<<20)
 		if err != nil {
 			continue
