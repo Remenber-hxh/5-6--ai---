@@ -1189,8 +1189,8 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "ai_call_failed", err.Error())
 		return
 	}
-	// 溯源:把答案依据的本地数据(记录/资产/标准模块)整理成可点来源,附在回复后
-	resp["sources"] = s.buildChatSources(attention, repeated)
+	// 溯源:按问句精准匹配本地依据(标准模块/记录/资产),附在回复后
+	resp["sources"] = s.buildChatSources(req.Message, attention)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -1553,56 +1553,79 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// buildChatSources — 把答案所依据的本地数据整理成"溯源来源"(记录/资产/标准模块)
-func (s *Server) buildChatSources(attention []*AttentionItem, repeated []*RepeatedIssue) []map[string]any {
-	out := []map[string]any{}
-	for i, a := range attention {
-		if i >= 2 {
-			break
+// 检查项关键词 → 字段 code(问句命中即给该字段的标准依据)
+var fieldAliases = map[string][]string{
+	"extinguisher_valid": {"灭火器", "灭火", "过期", "压力表"},
+	"anti_clip":          {"防夹", "夹人", "光幕"},
+	"door_smooth":        {"开关门", "卡阻", "门运行"},
+	"floor_buttons":      {"选层", "楼层显示", "按钮面板"},
+	"car_lighting":       {"照明", "灯光", "候梯厅"},
+	"reg_mark":           {"登记标志", "使用标志", "登记证"},
+	"fire_switch_glass":  {"消防开关", "消防返回", "开关玻璃"},
+	"door_window_sign":   {"机房门", "警示标识", "门窗"},
+	"room_clean":         {"机房干净", "杂物", "整洁", "清洁"},
+	"lighting_ac":        {"机房照明", "空调", "温控"},
+	"rescue_device":      {"救援", "盘车", "松闸"},
+	"noise_smell":        {"异响", "异味", "声音", "气味"},
+	"alarm_device":       {"报警", "警铃", "对讲"},
+}
+
+func containsAny(s string, kws []string) bool {
+	for _, k := range kws {
+		if k != "" && strings.Contains(s, k) {
+			return true
 		}
-		if a.LastRecordID != "" {
+	}
+	return false
+}
+
+// buildChatSources — 按问句精准匹配本地依据:命中检查项→标准模块;提到设备/带异常意图→记录+异常史
+func (s *Server) buildChatSources(question string, attention []*AttentionItem) []map[string]any {
+	out := []map[string]any{}
+	seen := map[string]bool{}
+
+	// 1. 标准模块:问句命中某检查项关键词 → 该字段判定标准
+	tpls, _ := s.store.ListPromptTemplates()
+	for _, t := range tpls {
+		for _, f := range t.Fields {
+			if seen["s:"+f.Code] {
+				continue
+			}
+			if containsAny(question, fieldAliases[f.Code]) {
+				seen["s:"+f.Code] = true
+				out = append(out, map[string]any{
+					"type": "standard", "title": "标准 · " + f.Label,
+					"summary": t.Name, "detail": renderFieldCriteria(f),
+				})
+			}
+		}
+	}
+
+	// 2. 记录/资产:问句提到具体设备名,或带"异常类"意图(才给设备依据,否则不给)
+	anomalyIntent := containsAny(question, []string{"异常", "故障", "问题", "重点", "关注", "趋势", "风险", "复查", "隐患", "处理"})
+	added := 0
+	for _, a := range attention {
+		hit := (a.AssetName != "" && strings.Contains(question, a.AssetName)) || (anomalyIntent && added < 2)
+		if !hit {
+			continue
+		}
+		if a.LastRecordID != "" && !seen["r:"+a.LastRecordID] {
+			seen["r:"+a.LastRecordID] = true
 			out = append(out, map[string]any{
 				"type": "record", "title": a.AssetName + " · 最近巡检记录",
 				"summary": strings.Join(a.Reasons, "；"), "recordId": a.LastRecordID,
 			})
 		}
-		out = append(out, map[string]any{
-			"type": "asset", "title": a.AssetName + " · 异常史",
-			"summary": a.Title, "assetId": a.AssetID,
-		})
-	}
-	// 标准模块依据(best-effort:取首个能匹配到模板字段的重复异常,附该字段判定依据)
-	for _, ri := range repeated {
-		if f, ok := s.standardForField(ri.AssetID, ri.FieldKey); ok {
+		if !seen["a:"+a.AssetID] {
+			seen["a:"+a.AssetID] = true
 			out = append(out, map[string]any{
-				"type": "standard", "title": "标准 · " + f.Label,
-				"summary": "AI 判定依据", "detail": renderFieldCriteria(f),
+				"type": "asset", "title": a.AssetName + " · 异常史",
+				"summary": a.Title, "assetId": a.AssetID,
 			})
-			break
 		}
+		added++
 	}
 	return out
-}
-
-// standardForField — 资产 → 模板 → 该字段的判定标准
-func (s *Server) standardForField(assetID, fieldKey string) (PromptField, bool) {
-	if assetID == "" || fieldKey == "" {
-		return PromptField{}, false
-	}
-	a, err := s.store.GetAsset(assetID)
-	if err != nil || a == nil || a.TemplateID == "" {
-		return PromptField{}, false
-	}
-	t, ok, err := s.store.GetPromptTemplate(a.TemplateID)
-	if err != nil || !ok {
-		return PromptField{}, false
-	}
-	for _, f := range t.Fields {
-		if f.Code == fieldKey {
-			return f, true
-		}
-	}
-	return PromptField{}, false
 }
 
 // ===== Agent 执行入口 /api/management-ai/act =====
