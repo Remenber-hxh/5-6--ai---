@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -322,4 +324,94 @@ func renderPromptText(t PromptTemplate) string {
 		b.WriteString("- " + line + "\n")
 	}
 	return b.String()
+}
+
+// ---------- 判定模式选项(给后台下拉用) ----------
+
+func promptModeOptions() []map[string]string {
+	return []map[string]string{
+		{"value": ModeSystem, "label": "系统注入(不识别)"},
+		{"value": ModeReadText, "label": "读取文本(清晰才返回)"},
+		{"value": ModeVisual, "label": "看外观/状态"},
+		{"value": ModeVisualLenient, "label": "主观项(宽松判定)"},
+		{"value": ModeFunctionalTest, "label": "现场测试照"},
+		{"value": ModeSensory, "label": "靠听/闻(留人工)"},
+		{"value": ModeObjectiveDate, "label": "查日期(比当前日期)"},
+		{"value": ModeSummary, "label": "汇总(不符合项)"},
+	}
+}
+
+// ---------- 后台接口 ----------
+
+// GET /api/prompt/templates —— 模板列表(给后台选择)
+func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
+	tpls, err := s.store.ListPromptTemplates()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	sort.Slice(tpls, func(i, j int) bool { return tpls[i].ID < tpls[j].ID })
+	list := make([]map[string]any, 0, len(tpls))
+	for _, t := range tpls {
+		list = append(list, map[string]any{"id": t.ID, "name": t.Name, "fieldCount": len(t.Fields)})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"templates": list, "modes": promptModeOptions()})
+}
+
+// /api/prompt/templates/{id}        GET 取详情 / PUT 保存
+// /api/prompt/templates/{id}/render GET 预览渲染
+func (s *Server) handlePromptTemplateRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSupervisorAccess(w, r) {
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/api/prompt/templates/")
+	if rest == "" {
+		writeError(w, http.StatusBadRequest, "bad_id", "缺少模板 id")
+		return
+	}
+	if strings.HasSuffix(rest, "/render") {
+		id := strings.TrimSuffix(rest, "/render")
+		text, ok := renderPromptViaStore(s.store, id)
+		if !ok {
+			writeError(w, http.StatusNotFound, "not_found", "模板不存在")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "prompt": text})
+		return
+	}
+	id := rest
+	switch r.Method {
+	case http.MethodGet:
+		t, ok, err := s.store.GetPromptTemplate(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
+			return
+		}
+		if !ok {
+			writeError(w, http.StatusNotFound, "not_found", "模板不存在")
+			return
+		}
+		writeJSON(w, http.StatusOK, t)
+	case http.MethodPut:
+		var t PromptTemplate
+		if err := decodeJSON(r, &t); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		t.ID = id // 以路径 id 为准,防改错
+		if strings.TrimSpace(t.Name) == "" {
+			writeError(w, http.StatusBadRequest, "bad_name", "模板名不能为空")
+			return
+		}
+		if err := s.store.UpsertPromptTemplate(t); err != nil {
+			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的方法")
+	}
 }

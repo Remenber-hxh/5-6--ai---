@@ -114,6 +114,10 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleManagementReport(w, r)
 	case r.URL.Path == "/api/management-ai/act" && r.Method == http.MethodPost:
 		s.handleManagementAct(w, r)
+	case r.URL.Path == "/api/prompt/templates" && r.Method == http.MethodGet:
+		s.handleListPromptTemplates(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/prompt/templates/"):
+		s.handlePromptTemplateRoutes(w, r)
 	default:
 		s.serveStatic(w, r)
 	}
