@@ -91,6 +91,11 @@ type Store interface {
 	CompleteSubmission(recordID, idemKey string) error
 	ReleaseSubmission(recordID, idemKey string) error
 
+	// 模块化提示词:结构化模板持久化(后台可视化编辑、即时生效)
+	ListPromptTemplates() ([]PromptTemplate, error)
+	GetPromptTemplate(id string) (PromptTemplate, bool, error)
+	UpsertPromptTemplate(t PromptTemplate) error
+
 	Close() error
 }
 
@@ -127,6 +132,7 @@ type MemStore struct {
 	mgmtReports    []*ManagementAIReport
 	engPlans       map[string]*EngineeringPlanItem
 	engTasks       map[string]*EngineeringTask
+	promptTpls     map[string]PromptTemplate
 }
 
 type memUser struct {
@@ -146,7 +152,34 @@ func NewMemStore() *MemStore {
 		operationLogs:  map[string]*OperationLog{},
 		engPlans:       map[string]*EngineeringPlanItem{},
 		engTasks:       map[string]*EngineeringTask{},
+		promptTpls:     map[string]PromptTemplate{},
 	}
+}
+
+// ===== 模块化提示词:MemStore 实现 =====
+
+func (s *MemStore) ListPromptTemplates() ([]PromptTemplate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]PromptTemplate, 0, len(s.promptTpls))
+	for _, t := range s.promptTpls {
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+func (s *MemStore) GetPromptTemplate(id string) (PromptTemplate, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.promptTpls[id]
+	return t, ok, nil
+}
+
+func (s *MemStore) UpsertPromptTemplate(t PromptTemplate) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.promptTpls[t.ID] = t
+	return nil
 }
 
 func (s *MemStore) CreateRecord(rec *Record) error {
@@ -525,6 +558,9 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err := store.ensureRecordOwnershipSchema(); err != nil {
 		return nil, err
 	}
+	if err := store.ensurePromptTemplateSchema(); err != nil {
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -555,7 +591,74 @@ func NewMySQLStore(dsn string) (*SQLiteStore, error) {
 	if err := store.ensureRecordOwnershipSchema(); err != nil {
 		return nil, err
 	}
+	if err := store.ensurePromptTemplateSchema(); err != nil {
+		return nil, err
+	}
 	return store, nil
+}
+
+// ===== 模块化提示词:SQLiteStore(SQLite + MySQL)实现 =====
+
+func (s *SQLiteStore) ensurePromptTemplateSchema() error {
+	stmt := "CREATE TABLE IF NOT EXISTS prompt_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')"
+	if s.dialect == "mysql" {
+		stmt = "CREATE TABLE IF NOT EXISTS prompt_templates (id VARCHAR(64) PRIMARY KEY, name VARCHAR(255) NOT NULL DEFAULT '', data LONGTEXT NOT NULL, updated_at VARCHAR(40) NOT NULL DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("ensure prompt_templates: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListPromptTemplates() ([]PromptTemplate, error) {
+	rows, err := s.db.Query("SELECT data FROM prompt_templates ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PromptTemplate{}
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		var t PromptTemplate
+		if err := json.Unmarshal([]byte(data), &t); err != nil {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) GetPromptTemplate(id string) (PromptTemplate, bool, error) {
+	var data string
+	err := s.db.QueryRow("SELECT data FROM prompt_templates WHERE id = ?", id).Scan(&data)
+	if err == sql.ErrNoRows {
+		return PromptTemplate{}, false, nil
+	}
+	if err != nil {
+		return PromptTemplate{}, false, err
+	}
+	var t PromptTemplate
+	if err := json.Unmarshal([]byte(data), &t); err != nil {
+		return PromptTemplate{}, false, err
+	}
+	return t, true, nil
+}
+
+func (s *SQLiteStore) UpsertPromptTemplate(t PromptTemplate) error {
+	data, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Format(time.RFC3339)
+	stmt := "INSERT INTO prompt_templates(id,name,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, data=excluded.data, updated_at=excluded.updated_at"
+	if s.dialect == "mysql" {
+		stmt = "INSERT INTO prompt_templates(id,name,data,updated_at) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)"
+	}
+	_, err = s.db.Exec(stmt, t.ID, t.Name, string(data), now)
+	return err
 }
 
 type assetColumnMigration struct {

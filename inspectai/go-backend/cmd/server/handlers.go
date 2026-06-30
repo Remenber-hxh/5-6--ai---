@@ -1829,7 +1829,7 @@ func (s *Server) runAnalysis(taskID, recordID string) {
 	}
 	// 模块化提示词:已迁移到结构化数据的模板,渲染成提示词文本随 payload 下发;
 	// ai-service 优先用 promptText,没有则回退读 .md(灰度迁移、不破坏未迁移模板)
-	if rendered, ok := RenderPrompt(tpl.ID); ok {
+	if rendered, ok := renderPromptViaStore(s.store, tpl.ID); ok {
 		templatePayload["promptText"] = rendered
 	}
 	payload := map[string]any{

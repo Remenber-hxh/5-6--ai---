@@ -252,12 +252,45 @@ func renderFieldCriteria(f PromptField) string {
 	return ""
 }
 
-// RenderPrompt — 把一个模板渲染成完整提示词文本(等价原 .md)
-func RenderPrompt(templateID string) (string, bool) {
-	t, ok := promptTemplateByID(templateID)
+// renderPromptFromSeed — 用内存种子渲染(测试/回退用)
+func renderPromptFromSeed(id string) (string, bool) {
+	t, ok := promptTemplateByID(id)
 	if !ok {
 		return "", false
 	}
+	return renderPromptText(t), true
+}
+
+// renderPromptViaStore — 优先从 DB 取模板渲染;DB 没有则回退内存种子。
+// 后台改了 DB,下一次识别立刻用新规则(即时生效)。
+func renderPromptViaStore(store Store, id string) (string, bool) {
+	if store != nil {
+		if t, ok, err := store.GetPromptTemplate(id); err == nil && ok {
+			return renderPromptText(t), true
+		}
+	}
+	return renderPromptFromSeed(id)
+}
+
+// ensurePromptTemplateSeeds — 首次启动时把内存种子灌进 DB(已有数据则不动)
+func ensurePromptTemplateSeeds(store Store) error {
+	existing, err := store.ListPromptTemplates()
+	if err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	for _, t := range promptTemplateSeeds() {
+		if err := store.UpsertPromptTemplate(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// renderPromptText — 把一个模板渲染成完整提示词文本(等价原 .md)
+func renderPromptText(t PromptTemplate) string {
 	c := promptCommons()
 	var b strings.Builder
 
@@ -288,5 +321,5 @@ func RenderPrompt(templateID string) (string, bool) {
 	for _, line := range c.Confidence {
 		b.WriteString("- " + line + "\n")
 	}
-	return b.String(), true
+	return b.String()
 }

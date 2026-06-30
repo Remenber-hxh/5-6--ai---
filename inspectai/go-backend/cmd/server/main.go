@@ -116,6 +116,9 @@ func main() {
 	if err := ensureEngineeringPlanSeeds(store); err != nil {
 		log.Printf("WARN: engineering plan seed failed: %v", err)
 	}
+	if err := ensurePromptTemplateSeeds(store); err != nil {
+		log.Printf("WARN: prompt template seed failed: %v", err)
+	}
 
 	server := &Server{
 		store:              store,
