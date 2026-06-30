@@ -11326,15 +11326,15 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 /* 背板统一:更白、更透、磨砂玻璃,中性白边 */
 .agent-home .ai-chat-msg.ai .ai-chat-bubble,
 .agent-home .ai-action-proposal {
-  background: rgba(255, 255, 255, 0.12) !important;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   color: #eef5f3 !important;
 }
-.agent-home .ai-action-proposal { border-left: 2px solid rgba(255, 255, 255, 0.32) !important; }
+.agent-home .ai-action-proposal { border-left: 2px solid rgba(255, 255, 255, 0.3) !important; }
 .agent-home .ah-composer {
-  background: rgba(255, 255, 255, 0.1) !important;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 /* 悬停变暗(不再发亮) */
@@ -11343,17 +11343,17 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 
 /* 报告表格:中性白边/白头,跟随玻璃风;整行悬停变暗(覆盖全局 tr:hover 的白条) */
 .agent-home .ai-report th, .agent-home .ai-report td { border-color: rgba(255, 255, 255, 0.16) !important; color: #e9f2f0 !important; }
-.agent-home .ai-report th { background: rgba(255, 255, 255, 0.12) !important; color: #f3faf8 !important; }
+.agent-home .ai-report th { background: rgba(255, 255, 255, 0.1) !important; color: #f3faf8 !important; }
 .agent-home .ai-report tbody tr:hover,
 .agent-home .ai-report tbody tr:hover td { background: rgba(8, 16, 22, 0.4) !important; color: #eef5f3 !important; }
 
 /* 建议动作按钮:透明白,悬停变暗 */
-.agent-home .ah-act { background: rgba(255, 255, 255, 0.09) !important; border-color: rgba(255, 255, 255, 0.16) !important; }
+.agent-home .ah-act { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.14) !important; }
 .agent-home .ah-act:hover { background: rgba(8, 16, 22, 0.4) !important; border-color: rgba(255, 255, 255, 0.2) !important; transform: none !important; }
 
 /* 溯源 chip:中性白底,保留图标色;悬停变暗(覆盖原发亮) */
-.agent-home .ai-src { background: rgba(255, 255, 255, 0.09) !important; border-color: rgba(255, 255, 255, 0.16) !important; }
+.agent-home .ai-src { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.14) !important; }
 .agent-home .ai-src:hover { background: rgba(8, 16, 22, 0.46) !important; border-color: rgba(255, 255, 255, 0.22) !important; color: #eaf3f1 !important; }
-.agent-home .ai-src-detail { background: rgba(255, 255, 255, 0.09) !important; border-color: rgba(255, 255, 255, 0.15) !important; }
+.agent-home .ai-src-detail { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.13) !important; }
 .agent-home .ai-src-detail .src-open:hover { background: rgba(8, 16, 22, 0.46) !important; border-color: rgba(255, 255, 255, 0.24) !important; color: #eaf3f1 !important; }
 .agent-home .ai-export-btn:hover { background: rgba(8, 16, 22, 0.4) !important; border-color: rgba(255, 255, 255, 0.24) !important; color: #eaf3f1 !important; }
