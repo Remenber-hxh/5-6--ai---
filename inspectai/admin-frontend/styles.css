@@ -11317,3 +11317,41 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 .ai-src-detail .src-hist-sum { color: rgba(226, 240, 236, 0.75); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-src-detail .src-open { margin-top: 10px; padding: 5px 12px; border-radius: 7px; border: 1px solid rgba(126, 255, 210, 0.3); background: transparent; color: #3ee6b4; font-size: 12px; cursor: pointer; transition: background 0.15s; }
 .ai-src-detail .src-open:hover { background: rgba(62, 230, 180, 0.12); }
+
+/* ============ Agent 页:玻璃背板 + 隐藏滚动条 + 悬停变暗 ============ */
+/* 隐藏纵向滚动条(仍可滚动) */
+.agent-home .ah-body { scrollbar-width: none; }
+.agent-home .ah-body::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+
+/* 背板统一:更白、更透、磨砂玻璃,中性白边 */
+.agent-home .ai-chat-msg.ai .ai-chat-bubble,
+.agent-home .ai-action-proposal {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  color: #eef5f3 !important;
+}
+.agent-home .ai-action-proposal { border-left: 2px solid rgba(255, 255, 255, 0.3) !important; }
+.agent-home .ah-composer {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+/* 悬停变暗(不再发亮) */
+.agent-home .ai-chat-msg.ai .ai-chat-bubble:hover,
+.agent-home .ai-action-proposal:hover { background: rgba(8, 16, 22, 0.42) !important; }
+
+/* 报告表格:中性白边/白头,跟随玻璃风 */
+.agent-home .ai-report th, .agent-home .ai-report td { border-color: rgba(255, 255, 255, 0.14) !important; color: #e9f2f0 !important; }
+.agent-home .ai-report th { background: rgba(255, 255, 255, 0.1) !important; color: #f3faf8 !important; }
+
+/* 建议动作按钮:透明白,悬停变暗 */
+.agent-home .ah-act { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.14) !important; }
+.agent-home .ah-act:hover { background: rgba(8, 16, 22, 0.4) !important; border-color: rgba(255, 255, 255, 0.2) !important; transform: none !important; }
+
+/* 溯源 chip:中性白底,保留图标色;悬停变暗(覆盖原发亮) */
+.agent-home .ai-src { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.14) !important; }
+.agent-home .ai-src:hover { background: rgba(8, 16, 22, 0.46) !important; border-color: rgba(255, 255, 255, 0.22) !important; color: #eaf3f1 !important; }
+.agent-home .ai-src-detail { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.13) !important; }
+.agent-home .ai-src-detail .src-open:hover { background: rgba(8, 16, 22, 0.46) !important; border-color: rgba(255, 255, 255, 0.24) !important; color: #eaf3f1 !important; }
+.agent-home .ai-export-btn:hover { background: rgba(8, 16, 22, 0.4) !important; border-color: rgba(255, 255, 255, 0.24) !important; color: #eaf3f1 !important; }
