@@ -1189,27 +1189,8 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "ai_call_failed", err.Error())
 		return
 	}
-	// 溯源:本地依据(标准模块/记录/资产)+ ai-service 联网搜索结果,合并附在回复后
-	sources := s.buildChatSources(req.Message, attention)
-	if ws, ok := resp["webSources"].([]any); ok {
-		for _, w := range ws {
-			m, ok := w.(map[string]any)
-			if !ok {
-				continue
-			}
-			url, _ := m["url"].(string)
-			if url == "" {
-				continue
-			}
-			title, _ := m["title"].(string)
-			snippet, _ := m["snippet"].(string)
-			sources = append(sources, map[string]any{
-				"type": "web", "title": title, "summary": snippet, "url": url,
-			})
-		}
-	}
-	delete(resp, "webSources")
-	resp["sources"] = sources
+	// 溯源:按问句精准匹配本地依据(标准模块/记录/资产),附在回复后
+	resp["sources"] = s.buildChatSources(req.Message, attention)
 	writeJSON(w, http.StatusOK, resp)
 }
 

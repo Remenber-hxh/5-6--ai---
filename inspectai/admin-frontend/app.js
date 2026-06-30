@@ -1501,9 +1501,6 @@ function renderChatBubble(m) {
 
 // 溯源图标(SVG,按来源类型)
 function srcIcon(type) {
-  if (type === "web") {
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>';
-  }
   if (type === "asset") {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>';
   }
@@ -1761,8 +1758,6 @@ function bindAiScaffoldActions(root) {
         state.selectedAssetId = src.assetId;
         state.filters.status = ""; state.filters.keyword = "";
         setPage("ledger");
-      } else if (src.type === "web" && src.url) {
-        window.open(src.url, "_blank", "noopener");
       } else if (src.type === "standard") {
         const box = document.getElementById("srcd-" + srcEl.dataset.srcMi);
         if (box) {
