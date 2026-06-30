@@ -5014,8 +5014,133 @@ function renderSystemPage() {
   });
 }
 
+// ===== 提示词模板(可视化编辑) =====
+const PROMPT_STATE = { list: [], modes: [], current: null };
+
+function renderPromptTemplatesPage() {
+  $("#pageMain").innerHTML = `
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>提示词模板</h2><p>识别规则可视化编辑,保存后下次识别即时生效。</p></div>
+      </div>
+      <div id="promptTplPicker" class="prompt-picker"></div>
+      <div id="promptTplBody"><p class="muted" style="padding:16px">加载中…</p></div>
+    </section>`;
+  $("#pageAside").innerHTML = "";
+  loadPromptTemplatesPage();
+}
+
+async function loadPromptTemplatesPage() {
+  try {
+    const data = await api("/api/prompt/templates");
+    PROMPT_STATE.list = data.templates || [];
+    PROMPT_STATE.modes = data.modes || [];
+    const picker = $("#promptTplPicker");
+    if (picker) {
+      picker.innerHTML = PROMPT_STATE.list
+        .map((t) => `<button type="button" class="prompt-tab" data-prompt-id="${escapeHTML(t.id)}">${escapeHTML(t.name)} <em>${t.fieldCount}</em></button>`)
+        .join("");
+      picker.querySelectorAll(".prompt-tab").forEach((b) => b.addEventListener("click", () => selectPromptTemplate(b.dataset.promptId)));
+    }
+    if (PROMPT_STATE.list.length) selectPromptTemplate(PROMPT_STATE.list[0].id);
+  } catch (e) {
+    $("#promptTplBody").innerHTML = `<p class="muted" style="padding:16px">加载失败:${escapeHTML(e.message || "")}</p>`;
+  }
+}
+
+async function selectPromptTemplate(id) {
+  document.querySelectorAll(".prompt-tab").forEach((b) => b.classList.toggle("active", b.dataset.promptId === id));
+  $("#promptTplBody").innerHTML = `<p class="muted" style="padding:16px">加载中…</p>`;
+  try {
+    const t = await api("/api/prompt/templates/" + encodeURIComponent(id));
+    PROMPT_STATE.current = t;
+    renderPromptEditor(t);
+  } catch (e) {
+    $("#promptTplBody").innerHTML = `<p class="muted" style="padding:16px">加载失败:${escapeHTML(e.message || "")}</p>`;
+  }
+}
+
+function renderPromptEditor(t) {
+  const modeOpts = (selected) =>
+    PROMPT_STATE.modes.map((m) => `<option value="${escapeHTML(m.value)}" ${m.value === selected ? "selected" : ""}>${escapeHTML(m.label)}</option>`).join("");
+  const rows = (t.fields || [])
+    .map(
+      (f, i) => `
+    <tr data-fi="${i}">
+      <td class="pt-grp">${escapeHTML(f.group || "")}</td>
+      <td class="pt-code">${escapeHTML(f.code || "")}</td>
+      <td><input class="pt-in" data-k="label" value="${escapeHTML(f.label || "")}"></td>
+      <td><select class="pt-in pt-mode" data-k="mode">${modeOpts(f.mode)}</select></td>
+      <td><textarea class="pt-in" data-k="yesWhen" rows="2">${escapeHTML(f.yesWhen || "")}</textarea></td>
+      <td><textarea class="pt-in" data-k="noWhen" rows="2">${escapeHTML(f.noWhen || "")}</textarea></td>
+      <td><textarea class="pt-in" data-k="skipWhen" rows="2">${escapeHTML(f.skipWhen || "")}</textarea></td>
+      <td><textarea class="pt-in" data-k="note" rows="2">${escapeHTML(f.note || "")}</textarea></td>
+    </tr>`
+    )
+    .join("");
+  $("#promptTplBody").innerHTML = `
+    <div class="prompt-editor-head">
+      <span class="muted">${escapeHTML(t.scene || "")}</span>
+      <div class="prompt-editor-btns">
+        <button type="button" class="ghost" id="promptPreviewBtn">预览渲染</button>
+        <button type="button" id="promptSaveBtn">保存(即时生效)</button>
+      </div>
+    </div>
+    <div class="table-wrap prompt-table">
+      <table>
+        <thead><tr><th>分组</th><th>代码</th><th>名称</th><th>判定模式</th><th>判"是"</th><th>判"否"</th><th>不返回</th><th>备注</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div id="promptPreviewBox" class="prompt-preview" hidden></div>`;
+  $("#promptSaveBtn")?.addEventListener("click", savePromptTemplate);
+  $("#promptPreviewBtn")?.addEventListener("click", previewPromptTemplate);
+}
+
+function collectPromptFields() {
+  const base = PROMPT_STATE.current.fields || [];
+  return [...document.querySelectorAll("#promptTplBody tbody tr")].map((tr) => {
+    const i = parseInt(tr.dataset.fi, 10);
+    const f = { ...base[i] };
+    tr.querySelectorAll(".pt-in").forEach((el) => { f[el.dataset.k] = el.value; });
+    return f;
+  });
+}
+
+async function savePromptTemplate() {
+  const t = PROMPT_STATE.current;
+  if (!t) return;
+  const btn = $("#promptSaveBtn");
+  btn.disabled = true; btn.textContent = "保存中…";
+  try {
+    const payload = { ...t, fields: collectPromptFields() };
+    await api("/api/prompt/templates/" + encodeURIComponent(t.id), { method: "PUT", body: JSON.stringify(payload) });
+    PROMPT_STATE.current = payload;
+    toast("已保存,下次识别即生效");
+  } catch (e) {
+    toast("保存失败:" + (e.message || ""));
+  } finally {
+    btn.disabled = false; btn.textContent = "保存(即时生效)";
+  }
+}
+
+async function previewPromptTemplate() {
+  const t = PROMPT_STATE.current;
+  if (!t) return;
+  const box = $("#promptPreviewBox");
+  box.hidden = false;
+  box.textContent = "渲染中…";
+  try {
+    const r = await api("/api/prompt/templates/" + encodeURIComponent(t.id) + "/render");
+    box.textContent = r.prompt || "";
+  } catch (e) {
+    box.textContent = "预览失败:" + (e.message || "");
+  }
+}
+
 const pageRenderers = {
   dashboard: renderDashboardPage,
+  prompts: renderPromptTemplatesPage,
   profile: renderProfilePage,
   plan: renderPlanPage,
   task: renderPlanPage,

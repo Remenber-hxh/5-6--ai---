@@ -11271,3 +11271,19 @@ body.sidebar-collapsed .sidebar-user { justify-content: center; padding: 12px 0;
 body.sidebar-collapsed .sidebar-user .su-text,
 body.sidebar-collapsed .sidebar-user .user-dot { display: none; }
 body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
+
+/* 提示词模板编辑页 */
+.prompt-picker { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px 0; }
+.prompt-tab { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line, #e3e8ee); background: #fff; cursor: pointer; font-size: 13px; }
+.prompt-tab.active { border-color: var(--blue, #1499ff); color: var(--blue, #1499ff); background: rgba(20, 153, 255, 0.06); }
+.prompt-tab em { color: var(--muted, #8a98a5); font-style: normal; font-size: 12px; }
+.prompt-editor-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; gap: 12px; }
+.prompt-editor-btns { display: flex; gap: 8px; }
+.prompt-editor-btns .ghost { background: transparent; border: 1px solid var(--line, #e3e8ee); color: var(--ink-2, #5b6b78); }
+.prompt-table table { width: 100%; }
+.prompt-table th, .prompt-table td { vertical-align: top; padding: 6px 8px; font-size: 12.5px; }
+.prompt-table .pt-grp { white-space: nowrap; color: var(--muted, #8a98a5); }
+.prompt-table .pt-code { font-family: monospace; font-size: 12px; color: var(--muted, #8a98a5); white-space: nowrap; }
+.prompt-table .pt-in { width: 100%; box-sizing: border-box; border: 1px solid var(--line, #e3e8ee); border-radius: 6px; padding: 4px 6px; font-size: 12.5px; font-family: inherit; resize: vertical; }
+.prompt-table textarea.pt-in { min-height: 40px; }
+.prompt-preview { white-space: pre-wrap; background: #0b151e; color: #cfe; padding: 14px; border-radius: 10px; margin: 12px 16px; font-size: 12px; line-height: 1.65; max-height: 440px; overflow: auto; }

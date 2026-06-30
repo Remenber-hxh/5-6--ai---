@@ -444,3 +444,54 @@ func TestManagementRolesCanAccessManagementAI(t *testing.T) {
 		})
 	}
 }
+
+func TestPromptTemplateEndpoints(t *testing.T) {
+	server, tokens := newRecordAccessTestServer(t)
+	if err := ensurePromptTemplateSeeds(server.store); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tok := tokens["admin"]
+
+	// 列表
+	got := requestWithToken(server, http.MethodGet, "/api/prompt/templates", tok)
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "elevator_machine_room") {
+		t.Fatalf("list code=%d body=%s", got.Code, got.Body.String())
+	}
+	// 详情
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/elevator_machine_room", tok)
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "door_window_sign") {
+		t.Fatalf("get code=%d body=%s", got.Code, got.Body.String())
+	}
+	// 预览渲染
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/elevator_machine_room/render", tok)
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "字段映射") {
+		t.Fatalf("render code=%d body=%s", got.Code, got.Body.String())
+	}
+	// 保存(改名 + 改字段)→ 再取应反映
+	body := `{"id":"elevator_machine_room","name":"改名测试","scene":"x","fields":[{"code":"door_window_sign","label":"门改过了","group":"机房","mode":"visual","yesWhen":"y"}]}`
+	req := httptest.NewRequest(http.MethodPut, "/api/prompt/templates/elevator_machine_room", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-InspectAI-Token", tok)
+	rec := httptest.NewRecorder()
+	server.router(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/elevator_machine_room", tok)
+	if !strings.Contains(got.Body.String(), "改名测试") || !strings.Contains(got.Body.String(), "门改过了") {
+		t.Fatalf("after save not reflected: %s", got.Body.String())
+	}
+	// 渲染应反映新内容(即时生效)
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/elevator_machine_room/render", tok)
+	if !strings.Contains(got.Body.String(), "门改过了") {
+		t.Fatalf("render after save not reflected: %s", got.Body.String())
+	}
+}
+
+func TestPromptTemplateRequiresAuth(t *testing.T) {
+	server, _ := newRecordAccessTestServer(t)
+	got := requestWithToken(server, http.MethodGet, "/api/prompt/templates", "")
+	if got.Code == http.StatusOK {
+		t.Fatalf("无 token 不应返回 200,got %d", got.Code)
+	}
+}
