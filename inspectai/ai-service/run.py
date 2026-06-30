@@ -976,6 +976,68 @@ def classify(payload: dict) -> dict:
 # 返回结构必须跟阶段二真打 DeepSeek 时一致,这样前端代码不用改两遍。
 
 
+def web_search(query: str) -> list:
+    """DashScope 原生 enable_search 联网搜索,返回 [{title,url,snippet}]。best-effort,失败返回 []。"""
+    api_key = get_api_key()
+    if not api_key or not query.strip():
+        return []
+    model = os.environ.get("QWEN_SEARCH_MODEL", "qwen-plus")
+    body = {
+        "model": model,
+        "input": {"messages": [{"role": "user", "content": query}]},
+        "parameters": {
+            "enable_search": True,
+            "search_options": {"forced_search": True, "enable_source": True},
+            "result_format": "message",
+        },
+    }
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+    timeout = int(os.environ.get("QWEN_SEARCH_TIMEOUT", "15") or "15")
+    tmp = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
+    try:
+        tmp.write(json.dumps(body, ensure_ascii=False).encode("utf-8"))
+        tmp.close()
+        proc = subprocess.run(
+            [CURL_PATH, "-4", "-s", "-S", "--noproxy", "*", "-m", str(timeout),
+             "-X", "POST", url, "-H", f"Authorization: Bearer {api_key}",
+             "-H", "Content-Type: application/json", "--data-binary", f"@{tmp.name}"],
+            capture_output=True, timeout=timeout + 5,
+        )
+        if proc.returncode != 0:
+            print(f"[web_search] curl {proc.returncode}: {proc.stderr.decode('utf-8', 'replace')[:160]}", file=sys.stderr)
+            return []
+        raw = proc.stdout.decode("utf-8", "replace")
+        payload = json.loads(raw)
+        info = (payload.get("output") or {}).get("search_info") or {}
+        results = info.get("search_results") or []
+        out = []
+        for r in results[:5]:
+            u = r.get("url") or ""
+            if not u:
+                continue
+            out.append({
+                "title": (r.get("title") or r.get("site_name") or "网页")[:50],
+                "url": u,
+                "snippet": (r.get("snippet") or r.get("site_name") or "")[:80],
+            })
+        if not out:
+            print(f"[web_search] no results parsed; raw head: {raw[:220]}", file=sys.stderr)
+        return out
+    except Exception as exc:
+        print(f"[web_search] failed: {exc}", file=sys.stderr)
+        return []
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
+# 问句带这些意图才联网(查规范/年限/怎么处理等外部知识),避免拖慢简单数据问答
+WEB_SEARCH_INTENT = ["规范", "标准", "国标", "法规", "要求", "规定", "年限", "期限", "报废",
+                     "怎么", "如何", "为什么", "原因", "处理", "维修", "保养", "建议", "最佳", "多久", "多长时间"]
+
+
 def management_chat(payload: dict) -> dict:
     """先打真 DeepSeek,失败/没 key 走 rule-based mock 降级。
     后端 risk_score / context 始终可用,即使 AI 挂了主管也能看见东西。
@@ -1014,12 +1076,15 @@ def management_chat(payload: dict) -> dict:
         out = management_chat_mock(payload)
         out["fallbackReason"] = str(exc)[:120]
         return out
+    # 联网佐证:问句带外部知识意图时才搜(best-effort,失败不影响回答)
+    web_sources = web_search(message) if any(k in message for k in WEB_SEARCH_INTENT) else []
     return {
         "reply": (reply or "").strip(),
         "model": actual_model,
         "generatedAt": now_iso(),
         "evidence": [],
         "isMock": False,
+        "webSources": web_sources,
     }
 
 
