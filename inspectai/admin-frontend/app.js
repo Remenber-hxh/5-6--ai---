@@ -15,6 +15,7 @@ const pageLabels = {
   users: "用户与权限",
   logs: "操作日志",
   system: "系统管理",
+  prompts: "提示词模板",
 };
 
 function normalizedPage(page) {
