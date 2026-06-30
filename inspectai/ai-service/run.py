@@ -437,9 +437,7 @@ def analyze(payload: dict) -> dict:
 
     # 模块化提示词:优先用 Go 渲染并随 payload 下发的 promptText;没有则回退读本地 .md
     scenario = (template.get("promptText") or "").strip()
-    if scenario:
-        print(f"[analyze] using rendered promptText for {template_id} ({len(scenario)} chars)", file=sys.stderr)
-    else:
+    if not scenario:
         scenario = prompt_for_template(template_id, paper_ocr=paper_ocr)
     if not scenario:
         return manual_required("当前模板暂未启用 AI 识别，请直接人工填写")
