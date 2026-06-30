@@ -812,6 +812,10 @@ function setLoginScreen(enabled) {
 
 function render() {
   setLoginScreen(false);
+  // 提示词模板仅管理角色(admin/manager/supervisor)可见:隐藏菜单 + 越权访问兜底回首页
+  const isMgmtRole = ["admin", "manager", "supervisor"].includes(state.currentUser?.roleCode || "");
+  if (state.page === "prompts" && !isMgmtRole) state.page = "dashboard";
+  document.querySelector('.nav [data-page="prompts"]')?.classList.toggle("nav-hidden", !isMgmtRole);
   $$(".nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.page === state.page));
   // 当前页导航项滚入侧栏可视区(只滚侧栏自身,不带动整页)
   const activeNav = $(".nav button.active");
