@@ -1189,6 +1189,8 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "ai_call_failed", err.Error())
 		return
 	}
+	// 溯源:把答案依据的本地数据(记录/资产/标准模块)整理成可点来源,附在回复后
+	resp["sources"] = s.buildChatSources(attention, repeated)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -1549,6 +1551,58 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
 	}
 	resp["summary"], resp["model"], resp["isMock"] = summary, model, isMock
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// buildChatSources — 把答案所依据的本地数据整理成"溯源来源"(记录/资产/标准模块)
+func (s *Server) buildChatSources(attention []*AttentionItem, repeated []*RepeatedIssue) []map[string]any {
+	out := []map[string]any{}
+	for i, a := range attention {
+		if i >= 2 {
+			break
+		}
+		if a.LastRecordID != "" {
+			out = append(out, map[string]any{
+				"type": "record", "title": a.AssetName + " · 最近巡检记录",
+				"summary": strings.Join(a.Reasons, "；"), "recordId": a.LastRecordID,
+			})
+		}
+		out = append(out, map[string]any{
+			"type": "asset", "title": a.AssetName + " · 异常史",
+			"summary": a.Title, "assetId": a.AssetID,
+		})
+	}
+	// 标准模块依据(best-effort:取首个能匹配到模板字段的重复异常,附该字段判定依据)
+	for _, ri := range repeated {
+		if f, ok := s.standardForField(ri.AssetID, ri.FieldKey); ok {
+			out = append(out, map[string]any{
+				"type": "standard", "title": "标准 · " + f.Label,
+				"summary": "AI 判定依据", "detail": renderFieldCriteria(f),
+			})
+			break
+		}
+	}
+	return out
+}
+
+// standardForField — 资产 → 模板 → 该字段的判定标准
+func (s *Server) standardForField(assetID, fieldKey string) (PromptField, bool) {
+	if assetID == "" || fieldKey == "" {
+		return PromptField{}, false
+	}
+	a, err := s.store.GetAsset(assetID)
+	if err != nil || a == nil || a.TemplateID == "" {
+		return PromptField{}, false
+	}
+	t, ok, err := s.store.GetPromptTemplate(a.TemplateID)
+	if err != nil || !ok {
+		return PromptField{}, false
+	}
+	for _, f := range t.Fields {
+		if f.Code == fieldKey {
+			return f, true
+		}
+	}
+	return PromptField{}, false
 }
 
 // ===== Agent 执行入口 /api/management-ai/act =====

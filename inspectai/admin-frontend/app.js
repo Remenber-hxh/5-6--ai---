@@ -1495,7 +1495,28 @@ function renderChatBubble(m) {
     ? `<button type="button" class="ai-export-btn" data-export-msg="${escapeHTML(m.id || "")}" title="导出为 Word 文档"><i>⬇</i>导出 Word</button>`
     : "";
   const acts = (jump || exportBtn) ? `<div class="ai-msg-acts">${jump}${exportBtn}</div>` : "";
-  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}${acts}</div>`;
+  const srcRow = (cls === "ai" && Array.isArray(m.sources) && m.sources.length) ? renderSourceRow(m) : "";
+  return `<div class="ai-chat-msg ${cls}"><div class="ai-chat-bubble">${html}</div>${card}${acts}${srcRow}</div>`;
+}
+
+// 溯源图标(SVG,按来源类型)
+function srcIcon(type) {
+  if (type === "asset") {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>';
+  }
+  if (type === "standard") {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg>';
+  }
+  // record (default)
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>';
+}
+
+// 溯源行:答案下方的可点依据来源
+function renderSourceRow(m) {
+  const chips = m.sources
+    .map((s, i) => `<button type="button" class="ai-src ai-src-${escapeHTML(s.type || "record")}" data-src-mi="${escapeHTML(m.id || "")}" data-src-i="${i}" title="${escapeHTML(s.summary || "")}">${srcIcon(s.type)}<span>${escapeHTML(s.title || "")}</span></button>`)
+    .join("");
+  return `<div class="ai-src-row"><span class="ai-src-lbl">依据</span>${chips}</div><div class="ai-src-detail" id="srcd-${escapeHTML(m.id || "")}" hidden></div>`;
 }
 
 // ===== Word 导出模块(给 agent 用):前端零依赖,生成 Word/WPS 可直接打开的 .doc =====
@@ -1722,6 +1743,35 @@ function bindAiScaffoldActions(root) {
       if (m) exportAgentMessage(m);
       return;
     }
+    // 溯源来源:记录/资产跳转,标准内联展开
+    const srcEl = event.target.closest("[data-src-i]");
+    if (srcEl) {
+      event.preventDefault();
+      const m = AI_CHAT_STATE.history.find((x) => x.id === srcEl.dataset.srcMi);
+      const src = m?.sources?.[parseInt(srcEl.dataset.srcI, 10)];
+      if (!src) return;
+      if (src.type === "record" && src.recordId) {
+        state.selectedRecordId = src.recordId;
+        state.recordFilters.status = ""; state.recordFilters.keyword = ""; state.recordPage = 0;
+        setPage("record");
+      } else if (src.type === "asset" && src.assetId) {
+        state.selectedAssetId = src.assetId;
+        state.filters.status = ""; state.filters.keyword = "";
+        setPage("ledger");
+      } else if (src.type === "standard") {
+        const box = document.getElementById("srcd-" + srcEl.dataset.srcMi);
+        if (box) {
+          if (box.hidden || box.dataset.cur !== srcEl.dataset.srcI) {
+            box.innerHTML = `<b>${escapeHTML(src.title || "")}</b><p>${escapeHTML(src.detail || "")}</p>`;
+            box.dataset.cur = srcEl.dataset.srcI;
+            box.hidden = false;
+          } else {
+            box.hidden = true;
+          }
+        }
+      }
+      return;
+    }
     // 动作提议卡:确认派发 / 忽略 / 查看任务
     const aap = event.target.closest(".ai-action-proposal");
     if (aap) {
@@ -1853,7 +1903,7 @@ async function sendAiChat(message) {
       });
       const reply = res.reply || "AI 没有给出回复。";
       const { text, proposal } = extractActionProposal(reply);
-      msg = { role: "ai", text, proposal, navJump: navIntent(message), id: "aim_" + (++AI_CHAT_STATE.seq) };
+      msg = { role: "ai", text, proposal, navJump: navIntent(message), sources: res.sources || [], id: "aim_" + (++AI_CHAT_STATE.seq) };
     }
     AI_CHAT_STATE.history.push(msg);
     document.getElementById("aiChatTyping")?.remove();
