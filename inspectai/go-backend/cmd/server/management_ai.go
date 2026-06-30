@@ -1789,6 +1789,30 @@ var fieldPlain = map[string]string{
 	"alarm_device":       "测紧急报警/对讲。按警铃或对讲能接通、有响应,算合格;按了没反应、打不通,算不合格。",
 }
 
+// 权威来源:检查项 → {精确标准名, 官方标准系统链接}。链到稳定官方入口,标准名是准确引用。
+type stdSource struct{ Name, URL string }
+
+const (
+	officialSysGB  = "https://openstd.samr.gov.cn/bzgk/gb/" // 国家标准全文公开系统(GB 标准)
+	officialSysTSG = "https://www.samr.gov.cn/"             // 市场监管总局(特种设备安全技术规范 TSG 发布机关)
+)
+
+var fieldStandard = map[string]stdSource{
+	"extinguisher_valid": {"GB 50444《建筑灭火器配置验收及检查规范》", officialSysGB},
+	"anti_clip":          {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"door_smooth":        {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"floor_buttons":      {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"car_lighting":       {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"reg_mark":           {"TSG 08《特种设备使用管理规则》", officialSysTSG},
+	"fire_switch_glass":  {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"door_window_sign":   {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"room_clean":         {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"lighting_ac":        {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"rescue_device":      {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"noise_smell":        {"GB/T 18775《电梯、自动扶梯和自动人行道维修规范》", officialSysGB},
+	"alarm_device":       {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+}
+
 var fieldAliases = map[string][]string{
 	"extinguisher_valid": {"灭火器", "灭火", "过期", "压力表"},
 	"anti_clip":          {"防夹", "夹人", "光幕"},
@@ -1819,7 +1843,10 @@ func (s *Server) buildChatSources(question string, attention []*AttentionItem) [
 	out := []map[string]any{}
 	seen := map[string]bool{}
 
-	// 1. 标准模块:问句命中某检查项关键词 → 该字段判定标准
+	// 维保/标准类问句,额外附权威官方来源链接
+	wantStandard := containsAny(question, []string{"维保", "维护", "保养", "标准", "规范", "如何", "怎么", "依据", "要求", "年限", "报废", "规程"})
+
+	// 1. 标准模块:问句命中某检查项关键词 → 该字段判定标准(+ 权威来源)
 	tpls, _ := s.store.ListPromptTemplates()
 	for _, t := range tpls {
 		for _, f := range t.Fields {
@@ -1836,6 +1863,15 @@ func (s *Server) buildChatSources(question string, attention []*AttentionItem) [
 					"type": "standard", "title": "标准 · " + f.Label,
 					"summary": t.Name, "detail": detail,
 				})
+				// 维保/标准类:附权威官方来源(精确标准名 + 官方系统链接)
+				if wantStandard {
+					if st, ok := fieldStandard[f.Code]; ok {
+						out = append(out, map[string]any{
+							"type": "official", "title": st.Name, "url": st.URL,
+							"summary": "权威标准 · 点击查看官方来源",
+						})
+					}
+				}
 			}
 		}
 	}

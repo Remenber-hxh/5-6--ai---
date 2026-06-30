@@ -11370,3 +11370,8 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
   vertical-align: top; word-break: break-word; line-height: 1.55;
 }
 .ai-report th { box-shadow: none !important; }
+
+/* 权威来源 chip:链接蓝(点击开官方标准系统) */
+.ai-src-official { color: rgba(150, 185, 255, 0.95); }
+.agent-home .ai-src-official { color: #9cc0ff !important; }
+.agent-home .ai-src-official:hover { color: #c9dcff !important; }

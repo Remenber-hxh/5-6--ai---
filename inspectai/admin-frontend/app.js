@@ -1506,6 +1506,9 @@ function renderChatBubble(m) {
 
 // 溯源图标(SVG,按来源类型)
 function srcIcon(type) {
+  if (type === "official") {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+  }
   if (type === "asset") {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>';
   }
@@ -1842,6 +1845,7 @@ function bindAiScaffoldActions(root) {
       const m = AI_CHAT_STATE.history.find((x) => x.id === srcEl.dataset.srcMi);
       const src = m?.sources?.[parseInt(srcEl.dataset.srcI, 10)];
       if (!src) return;
+      if (src.type === "official" && src.url) { window.open(src.url, "_blank", "noopener"); return; }
       const box = document.getElementById("srcd-" + srcEl.dataset.srcMi);
       if (!box) return;
       const key = srcEl.dataset.srcI;
