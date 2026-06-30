@@ -109,6 +109,18 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 	if count(s1, "standard") == 0 {
 		t.Errorf("灭火器问句应出现标准源, got %v", s1)
 	}
+	// 标准源 detail 应是大白话,不含技术占位符 current_date
+	for _, x := range s1 {
+		if x["type"] == "standard" {
+			d, _ := x["detail"].(string)
+			if strings.Contains(d, "current_date") {
+				t.Errorf("标准源 detail 仍是技术文本(含 current_date): %s", d)
+			}
+			if !strings.Contains(d, "灭火器") {
+				t.Errorf("标准源 detail 不像大白话说明: %s", d)
+			}
+		}
+	}
 	if count(s1, "record")+count(s1, "asset") > 0 {
 		t.Errorf("灭火器问句不应出现设备源, got %v", s1)
 	}
