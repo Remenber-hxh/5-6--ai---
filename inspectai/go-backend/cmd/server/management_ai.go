@@ -1554,6 +1554,23 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
 }
 
 // 检查项关键词 → 字段 code(问句命中即给该字段的标准依据)
+// 给主管看的大白话判定说明(溯源展示用;AI 用的技术判定提示词另算,不混用)
+var fieldPlain = map[string]string{
+	"extinguisher_valid": "看灭火器有没有过期。瓶身检验/维修标签上的有效期还没到、压力表指针在绿区,算合格;过了有效期、指针在红区(没气或超压)、或检查记录卡很久没人填,算不合格。注意:出厂/生产日期不等于有效期,只有生产日期且已超过 5 年还没维修的,也要判不合格。照片看不清日期或压力表时先不下结论,留人工现场核。",
+	"anti_clip":          "测电梯门的防夹。关门时在门口挡一下,门能停住或回弹重开,就算正常;只有明显夹人、不回弹才算不合格。判定从宽,有回弹动作即视为正常。",
+	"door_smooth":        "看开关门顺不顺。门开合到位、不卡顿不异响,算合格;明显卡阻、关不严、反复弹跳,算不合格。",
+	"floor_buttons":      "看楼层按钮和显示屏。按钮齐全、按下有反馈、楼层显示正常,算合格;按钮缺失或失灵、显示黑屏或乱码,算不合格。",
+	"car_lighting":       "看轿厢和候梯厅的照明。灯亮、够亮,算合格;不亮、明显昏暗、灯具坏了,算不合格。",
+	"reg_mark":           "看《特种设备使用标志》/登记证。在位、信息清晰、没破损褪色、没过下次检验日期,算合格;缺失、模糊、已过期,算不合格。",
+	"fire_switch_glass":  "看消防返回开关的玻璃。完好无破损,算合格;玻璃破碎或缺失,算不合格。",
+	"door_window_sign":   "看机房门和警示标识。门完好关好、'电梯机房'和'危险/禁止入内'等标识齐全完好,算合格;标识缺失破损、门坏了,算不合格。",
+	"room_clean":         "看机房地面。基本整洁、没明显杂物堆放/积水/油污,算合格;堆了杂物纸箱、积水漏油、大面积脏乱,算不合格。",
+	"lighting_ac":        "看机房照明和空调。灯亮、空调或温控在运行(显示温度、有制冷),算合格;没照明、空调黑屏不工作、室温明显偏高,算不合格。",
+	"rescue_device":      "看机房应急救援三件套。盘车手轮、松闸扳手、救援说明牌都在且就位,算合格;缺其中一项,算不合格。",
+	"noise_smell":        "电梯运行有没有异响、异味。照片判断不了声音和气味,只有检查记录里明确写了异响异味才记不合格,否则留人工现场判断。",
+	"alarm_device":       "测紧急报警/对讲。按警铃或对讲能接通、有响应,算合格;按了没反应、打不通,算不合格。",
+}
+
 var fieldAliases = map[string][]string{
 	"extinguisher_valid": {"灭火器", "灭火", "过期", "压力表"},
 	"anti_clip":          {"防夹", "夹人", "光幕"},
@@ -1593,9 +1610,13 @@ func (s *Server) buildChatSources(question string, attention []*AttentionItem) [
 			}
 			if containsAny(question, fieldAliases[f.Code]) {
 				seen["s:"+f.Code] = true
+				detail := fieldPlain[f.Code] // 主管看大白话
+				if detail == "" {
+					detail = renderFieldCriteria(f) // 没写大白话的回退到判定标准
+				}
 				out = append(out, map[string]any{
 					"type": "standard", "title": "标准 · " + f.Label,
-					"summary": t.Name, "detail": renderFieldCriteria(f),
+					"summary": t.Name, "detail": detail,
 				})
 			}
 		}
