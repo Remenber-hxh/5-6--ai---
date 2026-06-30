@@ -1519,6 +1519,55 @@ function renderSourceRow(m) {
   return `<div class="ai-src-row"><span class="ai-src-lbl">依据</span>${chips}</div><div class="ai-src-detail" id="srcd-${escapeHTML(m.id || "")}" hidden></div>`;
 }
 
+// 溯源精准跳转(展开卡里点「打开」用)
+function jumpToRecord(id) {
+  state.selectedRecordId = id;
+  state.selectedProject = "";
+  state.recordFilters.project = ""; state.recordFilters.template = "";
+  state.recordFilters.status = ""; state.recordFilters.keyword = ""; state.recordPage = 0;
+  setPage("record");
+}
+function jumpToAsset(id) {
+  state.selectedAssetId = id;
+  state.selectedProject = "";
+  state.filters.assetType = ""; state.filters.status = ""; state.filters.keyword = "";
+  setPage("ledger");
+}
+
+// 记录证据卡:状态/总结/照片 + 打开完整记录
+function srcRecordHTML(recordId, title) {
+  const openBtn = `<button class="src-open" type="button" data-open-record="${escapeHTML(recordId || "")}">打开完整记录 →</button>`;
+  const r = state.records.find((x) => x.id === recordId);
+  if (!r) return `<b>${escapeHTML(title || "巡检记录")}</b><p class="src-muted">记录未在当前已加载数据中。</p>${openBtn}`;
+  const main = recordBusinessStatus(r);
+  const photos = collectPhotosFromRecord(r).slice(0, 2);
+  const summary = r.aiSummary || r.report || "暂无总结";
+  return `<b>${escapeHTML(title || "巡检记录")} <em class="status ${statusClass(main)}">${escapeHTML(main)}</em></b>
+    <p class="src-sub">${fmtTime(r.createdAt)} · ${escapeHTML(recordNo(r))}</p>
+    <p>${escapeHTML(summary)}</p>
+    ${photos.length ? `<div class="src-photos">${photos.map((u) => `<img src="${escapeHTML(u)}" alt="">`).join("")}</div>` : ""}
+    ${openBtn}`;
+}
+
+// 资产异常史卡:近期巡检记录列表 + 打开台账
+function srcAssetHTML(assetId, title) {
+  const openBtn = `<button class="src-open" type="button" data-open-asset="${escapeHTML(assetId || "")}">打开资产台账 →</button>`;
+  const a = state.assets.find((x) => x.id === assetId);
+  if (!a) return `<b>${escapeHTML(title || "异常史")}</b><p class="src-muted">设备未在当前已加载数据中。</p>${openBtn}`;
+  const hist = state.records
+    .filter((r) => r.pointId === a.pointId)
+    .sort((x, y) => (y.createdAt || "").localeCompare(x.createdAt || ""))
+    .slice(0, 5);
+  const rows = hist.map((r) => {
+    const m = recordBusinessStatus(r);
+    return `<div class="src-hist-row"><span>${fmtTime(r.createdAt)}</span><em class="status ${statusClass(m)}">${escapeHTML(m)}</em><span class="src-hist-sum">${escapeHTML((r.aiSummary || r.report || "-").slice(0, 26))}</span></div>`;
+  }).join("");
+  return `<b>${escapeHTML(title || "异常史")}</b>
+    <p class="src-sub">${escapeHTML(a.assetName || a.name || "")} · 近期巡检 ${hist.length} 条</p>
+    ${rows || `<p class="src-muted">暂无历史记录</p>`}
+    ${openBtn}`;
+}
+
 // ===== Word 导出模块(给 agent 用):前端零依赖,生成 Word/WPS 可直接打开的 .doc =====
 // 通用导出:把一段正文 HTML 包成带 MSO 头的 Word 文档并下载;周日报等模块复用此函数
 function exportWordDoc(filename, title, bodyHtml) {
@@ -1743,37 +1792,29 @@ function bindAiScaffoldActions(root) {
       if (m) exportAgentMessage(m);
       return;
     }
-    // 溯源来源:记录/资产跳转,标准内联展开
+    // 溯源展开卡里的「打开完整记录 / 台账」→ 精准跳转
+    const openRec = event.target.closest("[data-open-record]");
+    if (openRec) { event.preventDefault(); jumpToRecord(openRec.dataset.openRecord); return; }
+    const openAst = event.target.closest("[data-open-asset]");
+    if (openAst) { event.preventDefault(); jumpToAsset(openAst.dataset.openAsset); return; }
+    // 溯源来源:点击在答案下方原地展开证据(再点收起)
     const srcEl = event.target.closest("[data-src-i]");
     if (srcEl) {
       event.preventDefault();
       const m = AI_CHAT_STATE.history.find((x) => x.id === srcEl.dataset.srcMi);
       const src = m?.sources?.[parseInt(srcEl.dataset.srcI, 10)];
       if (!src) return;
-      if (src.type === "record" && src.recordId) {
-        state.selectedRecordId = src.recordId;
-        state.selectedProject = ""; // 清项目筛选,确保目标记录在列表里、不回退默认
-        state.recordFilters.project = ""; state.recordFilters.template = "";
-        state.recordFilters.status = ""; state.recordFilters.keyword = ""; state.recordPage = 0;
-        setPage("record");
-        requestAnimationFrame(() => document.querySelector(".content .selected, .content [data-record-select].active")?.scrollIntoView({ behavior: "smooth", block: "center" }));
-      } else if (src.type === "asset" && src.assetId) {
-        state.selectedAssetId = src.assetId;
-        state.selectedProject = "";
-        state.filters.assetType = ""; state.filters.status = ""; state.filters.keyword = "";
-        setPage("ledger");
-      } else if (src.type === "standard") {
-        const box = document.getElementById("srcd-" + srcEl.dataset.srcMi);
-        if (box) {
-          if (box.hidden || box.dataset.cur !== srcEl.dataset.srcI) {
-            box.innerHTML = `<b>${escapeHTML(src.title || "")}</b><p>${escapeHTML(src.detail || "")}</p>`;
-            box.dataset.cur = srcEl.dataset.srcI;
-            box.hidden = false;
-          } else {
-            box.hidden = true;
-          }
-        }
-      }
+      const box = document.getElementById("srcd-" + srcEl.dataset.srcMi);
+      if (!box) return;
+      const key = srcEl.dataset.srcI;
+      if (!box.hidden && box.dataset.cur === key) { box.hidden = true; return; } // 再点收起
+      let inner = "";
+      if (src.type === "record") inner = srcRecordHTML(src.recordId, src.title);
+      else if (src.type === "asset") inner = srcAssetHTML(src.assetId, src.title);
+      else inner = `<b>${escapeHTML(src.title || "")}</b><p>${escapeHTML(src.detail || "")}</p>`;
+      box.innerHTML = inner;
+      box.dataset.cur = key;
+      box.hidden = false;
       return;
     }
     // 动作提议卡:确认派发 / 忽略 / 查看任务
