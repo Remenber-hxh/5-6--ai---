@@ -1345,8 +1345,9 @@ func (s *Server) handleWeeklyReport(w http.ResponseWriter, project string) {
 		topRisk = append(topRisk, map[string]any{
 			"assetId": a.AssetID, "assetName": a.AssetName,
 			"riskLevel": a.RiskLevel, "riskScore": a.RiskScore,
-			"mainIssue": firstNonEmpty(strings.Join(a.Reasons, "；"), a.Title),
-			"aiBasis":   a.Title, "suggestedAction": weeklySuggestAction(a),
+			"mainIssue":       firstNonEmpty(strings.Join(a.Reasons, "；"), a.Title),
+			"aiBasis":         "异常频次+人工修正率+巡检间隔综合评分",
+			"suggestedAction": weeklySuggestAction(a),
 		})
 	}
 

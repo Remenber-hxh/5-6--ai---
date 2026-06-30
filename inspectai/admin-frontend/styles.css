@@ -11361,3 +11361,12 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 /* 周报内联溯源跳转链接(记录号/资产名) */
 .ai-report .rep-link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; color: #3ee6b4; border-bottom: 1px dashed rgba(62, 230, 180, 0.5); }
 .ai-report .rep-link:hover { color: #eaf3f1; border-bottom-color: rgba(255, 255, 255, 0.55); }
+
+/* 周报表格:去掉全局吸顶表头/nowrap/固定行高(那是给后台大表用的,会在报告卡里重叠) */
+.ai-report table { table-layout: fixed; }
+.ai-report th, .ai-report td {
+  position: static !important; top: auto !important; z-index: auto !important;
+  height: auto !important; white-space: normal !important;
+  vertical-align: top; word-break: break-word; line-height: 1.55;
+}
+.ai-report th { box-shadow: none !important; }
