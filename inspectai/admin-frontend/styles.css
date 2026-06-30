@@ -11062,7 +11062,7 @@ body.sidebar-collapsed .admin-shell:has(#pageAside:empty) {
 .agent-home.agent-dark {
   position: relative; z-index: 1; align-self: stretch;
   display: flex; flex-direction: column;
-  min-height: calc(100vh - 64px);
+  height: calc(100vh - 64px); max-height: calc(100vh - 64px);
   overflow: hidden;
   border: 0 !important; border-radius: 0 !important;
   background: radial-gradient(120% 80% at 50% 120%, #0a2433 0%, #071521 38%, #050b12 70%) !important;
