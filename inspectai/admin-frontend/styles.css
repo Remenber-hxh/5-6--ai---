@@ -11357,3 +11357,7 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 .agent-home .ai-src-detail { background: rgba(255, 255, 255, 0.06) !important; border-color: rgba(255, 255, 255, 0.13) !important; }
 .agent-home .ai-src-detail .src-open:hover { background: rgba(8, 16, 22, 0.46) !important; border-color: rgba(255, 255, 255, 0.24) !important; color: #eaf3f1 !important; }
 .agent-home .ai-export-btn:hover { background: rgba(8, 16, 22, 0.4) !important; border-color: rgba(255, 255, 255, 0.24) !important; color: #eaf3f1 !important; }
+
+/* 周报内联溯源跳转链接(记录号/资产名) */
+.ai-report .rep-link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; color: #3ee6b4; border-bottom: 1px dashed rgba(62, 230, 180, 0.5); }
+.ai-report .rep-link:hover { color: #eaf3f1; border-bottom-color: rgba(255, 255, 255, 0.55); }

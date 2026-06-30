@@ -1625,40 +1625,73 @@ function docTimeStamps() {
 }
 // 周报富文本(综述 + 规则表格);同一份 HTML 既上屏渲染、又给 Word 导出,保证一致
 function buildWeeklyReportHtml(d) {
-  const o = d.overview || {};
+  const m = d.metrics || {};
+  const esc = escapeHTML;
   const pct = (x) => ((x || 0) * 100).toFixed(1) + "%";
   const dt = (s) => (s || "").slice(0, 10);
-  const riskLabel = (l) => l === "danger" ? "危险" : l === "warning" ? "预警" : l === "repair" ? "待修" : "正常";
+  const riskLabel = (l) => l === "danger" ? "高风险" : l === "warning" ? "需关注" : l === "repair" ? "维修中" : "正常";
   const delta = (a, b) => { const v = (a || 0) - (b || 0); return v > 0 ? `<span class="up">▲ ${v}</span>` : v < 0 ? `<span class="down">▼ ${-v}</span>` : `<span class="flat">持平</span>`; };
+  const recLink = (id, no) => id ? `<button type="button" class="rep-link" data-open-record="${esc(id)}">${esc(no || "查看")}</button>` : esc(no || "");
+  const astLink = (id, name) => id ? `<button type="button" class="rep-link" data-open-asset="${esc(id)}">${esc(name || "")}</button>` : esc(name || "");
   let h = "";
-  h += `<h2>本周态势综述</h2><p>${escapeHTML(d.summary || "")}</p>`;
-  h += `<h2>巡检概况（${dt(d.rangeStart)} ~ ${dt(d.rangeEnd)}）</h2>`;
+
+  // 一、本周结论
+  h += `<h2>一、本周结论</h2><p>${esc(d.summary || "")}</p>`;
+
+  // 二、核心指标
+  h += `<h2>二、核心指标（${dt(d.rangeStart)} ~ ${dt(d.rangeEnd)}）</h2>`;
   h += `<table><thead><tr><th>指标</th><th>本周</th><th>上周</th><th>环比</th></tr></thead><tbody>`;
-  h += `<tr><td>完成巡检</td><td>${o.recordRecent || 0}</td><td>${o.recordPrev || 0}</td><td>${delta(o.recordRecent, o.recordPrev)}</td></tr>`;
-  h += `<tr><td>发现异常</td><td>${o.abnormalRecent || 0}</td><td>${o.abnormalPrev || 0}</td><td>${delta(o.abnormalRecent, o.abnormalPrev)}</td></tr>`;
+  const row = (label, a, b) => `<tr><td>${label}</td><td>${a || 0}</td><td>${b || 0}</td><td>${delta(a, b)}</td></tr>`;
+  h += row("巡检记录数", m.recordRecent, m.recordPrev);
+  h += row("巡检资产数", m.assetInspectedRecent, m.assetInspectedPrev);
+  h += row("异常记录数", m.abnormalRecent, m.abnormalPrev);
+  h += row("已闭环数", m.closedRecent, m.closedPrev);
+  h += `<tr><td>待复核 / 待审批</td><td colspan="3">${m.pendingReviews || 0} 条 / ${m.pendingApprovals || 0} 条</td></tr>`;
+  h += `<tr><td>需补图 / 未看图确认率</td><td colspan="3">${m.needRetake || 0} 条 / ${pct(m.lazyConfirmRate)}</td></tr>`;
   h += `</tbody></table>`;
-  h += `<table><tbody>`;
-  h += `<tr><td>待复核</td><td>${o.pendingReviews || 0} 条</td><td>待审批</td><td>${o.pendingApprovals || 0} 条</td></tr>`;
-  h += `<tr><td>未看图即确认率</td><td>${pct(o.lazyConfirmRate)}</td><td>资产 正常/预警/危险</td><td>${o.assetNormal || 0} / ${o.assetWarning || 0} / ${o.assetDanger || 0}</td></tr>`;
-  h += `</tbody></table>`;
+
+  // 三、重点关注资产
   const risk = (d.topRisk || []).slice(0, 5);
   if (risk.length) {
-    h += `<h2>重点关注设备 TOP${risk.length}</h2><table><thead><tr><th>设备</th><th>风险</th><th>说明</th></tr></thead><tbody>`;
-    risk.forEach((a) => { h += `<tr><td>${escapeHTML(a.assetName || "")}</td><td>${riskLabel(a.riskLevel)}</td><td>${escapeHTML((a.reasons || []).join("；") || a.title || "")}</td></tr>`; });
+    h += `<h2>三、重点关注资产</h2><table><thead><tr><th>资产</th><th>风险</th><th>主要问题</th><th>AI 依据</th><th>建议动作</th></tr></thead><tbody>`;
+    risk.forEach((a) => { h += `<tr><td>${astLink(a.assetId, a.assetName)}</td><td>${riskLabel(a.riskLevel)}</td><td>${esc(a.mainIssue || "")}</td><td>${esc(a.aiBasis || "")}</td><td>${esc(a.suggestedAction || "")}</td></tr>`; });
     h += `</tbody></table>`;
   }
-  const q = (d.inspectorQuality || []).filter((x) => (x.noPhotoConfirm || 0) > 0).slice(0, 5);
-  if (q.length) {
-    h += `<h2>复核质量（未看图即确认）</h2><table><thead><tr><th>巡检员</th><th>确认总数</th><th>未看图确认</th></tr></thead><tbody>`;
-    q.forEach((x) => { h += `<tr><td>${escapeHTML(x.operator || "")}</td><td>${x.total || 0}</td><td>${x.noPhotoConfirm || 0}</td></tr>`; });
+
+  // 四、异常闭环情况
+  const ic = d.issueClosure || [];
+  h += `<h2>四、异常闭环情况（${ic.length}）</h2>`;
+  if (ic.length) {
+    h += `<table><thead><tr><th>异常项</th><th>发现</th><th>来源记录</th><th>状态</th><th>责任人</th><th>截止</th><th>处理建议</th></tr></thead><tbody>`;
+    ic.forEach((x) => { h += `<tr><td>${esc(x.issueName || "")}${x.value ? "=" + esc(x.value) : ""}</td><td>${esc(x.foundAt || "")}</td><td>${recLink(x.recordId, x.recordNo)}</td><td>${esc(x.status || "")}</td><td>${esc(x.assignee || "")}</td><td>${esc(x.dueAt || "—")}</td><td>${esc(x.suggestion || "")}</td></tr>`; });
+    h += `</tbody></table>`;
+  } else {
+    h += `<p class="flat">本周无未闭环异常。</p>`;
+  }
+
+  // 五、巡检质量与 AI 协同
+  const qs = d.qualitySummary || {};
+  h += `<h2>五、巡检质量与 AI 协同</h2><table><thead><tr><th>维度</th><th>本周</th><th>风险判断</th></tr></thead><tbody>`;
+  const qrow = (label, val, judge) => `<tr><td>${label}</td><td>${val || 0}</td><td>${judge}</td></tr>`;
+  h += qrow("AI 识别成功记录", qs.aiSuccess, "正常");
+  h += qrow("人工修正字段", qs.manualEdits, "字段规则可优化");
+  h += qrow("低置信度字段", qs.lowConfidenceFields, "需补参考图");
+  h += qrow("补图次数", qs.retakes, "拍摄规范需加强");
+  h += qrow("未看图确认", qs.noPhotoConfirm, (qs.noPhotoConfirm || 0) > 0 ? "需主管抽查" : "良好");
+  h += qrow("重复异常字段", qs.repeatedFieldIssues, "应纳入重点规则");
+  h += `</tbody></table>`;
+
+  // 六、下周工作安排
+  const na = d.nextActions || [];
+  if (na.length) {
+    h += `<h2>六、下周工作安排</h2><table><thead><tr><th>工作项</th><th>对象</th><th>负责人</th><th>时间</th><th>触发依据</th></tr></thead><tbody>`;
+    na.forEach((x) => { h += `<tr><td>${esc(x.workItem || "")}</td><td>${esc(x.target || "")}</td><td>${esc(x.assignee || "")}</td><td>${esc(x.time || "")}</td><td>${esc(x.trigger || "")}</td></tr>`; });
     h += `</tbody></table>`;
   }
-  const rep = (d.repeatedIssues || []).slice(0, 6);
-  if (rep.length) {
-    h += `<h2>重复异常</h2><table><thead><tr><th>设备</th><th>问题</th><th>次数</th></tr></thead><tbody>`;
-    rep.forEach((x) => { h += `<tr><td>${escapeHTML(x.assetName || "")}</td><td>${escapeHTML(x.fieldLabel || x.fieldKey || x.issue || "")}</td><td>${x.count || 0}</td></tr>`; });
-    h += `</tbody></table>`;
-  }
+
+  // 七、数据溯源
+  const srcs = ((d.traceability || {}).sources || []).join("、");
+  h += `<h2>七、数据溯源</h2><p>本周报基于${esc(srcs || "系统巡检数据")}自动生成；每条异常可回溯到记录编号、资产编号与图片证据，点击上方记录号/资产名即可跳转查看。</p>`;
   return h;
 }
 // 日报富文本(管理摘要 + 巡检明细两层);同一份 HTML 上屏 + 导出
