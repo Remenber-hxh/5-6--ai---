@@ -1235,21 +1235,26 @@ const AI_SUGGESTIONS = [
   "今天应该优先处理什么？",
 ];
 
-// 问 agent 任何问题 → 按意图判断目标页,回复下方给一个「前往 X」跳转 chip(全前端,不依赖 AI)
+// 跳转 chip 只在用户显式 @某页面 时出(不再按问题关键词自动猜)
 const NAV_INTENTS = [
-  { page: "approval", label: "审批中心", re: /审批|待审|申请|修改单|工单|复核率|没看图/ },
-  { page: "ledger",   label: "资产台账", re: /资产|台账|档案|设备健康|哪些设备|重点关注|定位.*设备/ },
-  { page: "data",     label: "数据看板", re: /看板|趋势|漂移|报表|分析|图表|对比|统计/ },
-  { page: "record",   label: "巡检记录", re: /巡检记录|日报|记录/ },
-  { page: "plan",     label: "巡检计划", re: /计划|排期|派发|复查任务|任务|跟进/ },
-  { page: "users",    label: "用户与权限", re: /用户|权限|账号|人员|角色/ },
-  { page: "logs",     label: "操作日志", re: /日志|操作记录|谁改|谁操作|审计/ },
-  { page: "system",   label: "系统管理", re: /系统|配置|服务|接口|密钥|企业微信|通知/ },
-  { page: "profile",  label: "个人首页", re: /个人|我的资料|退出登录/ },
+  { page: "approval", label: "审批中心" },
+  { page: "ledger",   label: "资产台账" },
+  { page: "data",     label: "数据看板" },
+  { page: "record",   label: "巡检记录" },
+  { page: "plan",     label: "巡检计划" },
+  { page: "users",    label: "用户与权限" },
+  { page: "logs",     label: "操作日志" },
+  { page: "system",   label: "系统管理" },
+  { page: "profile",  label: "个人首页" },
 ];
+// 只认显式 @提及:如 @资产台账 / @台账 / @巡检记录;没 @ 则不给跳转按钮
 function navIntent(text) {
-  const t = String(text || "");
-  for (const n of NAV_INTENTS) if (n.re.test(t)) return n;
+  const m = String(text || "").match(/@([一-龥A-Za-z]{2,8})/);
+  if (!m) return null;
+  const term = m[1];
+  for (const n of NAV_INTENTS) {
+    if (n.label === term || n.label.includes(term) || term.includes(n.label)) return n;
+  }
   return null;
 }
 // 建议动作(点了直接发问)
