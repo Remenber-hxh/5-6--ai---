@@ -85,3 +85,41 @@ func TestElevatorNoRoomNoMachineFields(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildChatSourcesPrecision(t *testing.T) {
+	store := NewMemStore()
+	if err := ensurePromptTemplateSeeds(store); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	srv := &Server{store: store}
+	att := []*AttentionItem{{AssetID: "a1", AssetName: "HYZX-WJ-DT01", Title: "风险高", LastRecordID: "r1", Reasons: []string{"按钮异常"}}}
+
+	count := func(src []map[string]any, typ string) int {
+		n := 0
+		for _, x := range src {
+			if x["type"] == typ {
+				n++
+			}
+		}
+		return n
+	}
+
+	// 问检查项 → 只给标准源,不给设备源
+	s1 := srv.buildChatSources("灭火器怎么判过期", att)
+	if count(s1, "standard") == 0 {
+		t.Errorf("灭火器问句应出现标准源, got %v", s1)
+	}
+	if count(s1, "record")+count(s1, "asset") > 0 {
+		t.Errorf("灭火器问句不应出现设备源, got %v", s1)
+	}
+	// 问重点关注 → 给设备源
+	s2 := srv.buildChatSources("最近哪些设备要重点关注", att)
+	if count(s2, "asset") == 0 {
+		t.Errorf("重点关注应出现设备源, got %v", s2)
+	}
+	// 无关问句 → 空
+	s3 := srv.buildChatSources("你好", att)
+	if len(s3) != 0 {
+		t.Errorf("无关问句不应有来源, got %v", s3)
+	}
+}

@@ -1752,11 +1752,15 @@ function bindAiScaffoldActions(root) {
       if (!src) return;
       if (src.type === "record" && src.recordId) {
         state.selectedRecordId = src.recordId;
+        state.selectedProject = ""; // 清项目筛选,确保目标记录在列表里、不回退默认
+        state.recordFilters.project = ""; state.recordFilters.template = "";
         state.recordFilters.status = ""; state.recordFilters.keyword = ""; state.recordPage = 0;
         setPage("record");
+        requestAnimationFrame(() => document.querySelector(".content .selected, .content [data-record-select].active")?.scrollIntoView({ behavior: "smooth", block: "center" }));
       } else if (src.type === "asset" && src.assetId) {
         state.selectedAssetId = src.assetId;
-        state.filters.status = ""; state.filters.keyword = "";
+        state.selectedProject = "";
+        state.filters.assetType = ""; state.filters.status = ""; state.filters.keyword = "";
         setPage("ledger");
       } else if (src.type === "standard") {
         const box = document.getElementById("srcd-" + srcEl.dataset.srcMi);
