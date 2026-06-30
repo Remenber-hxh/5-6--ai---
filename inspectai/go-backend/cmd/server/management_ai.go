@@ -1208,30 +1208,164 @@ func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rangeKey := "7d" // 滚动近 7 天
+	s.handleWeeklyReport(w, project)
+}
 
-	overview, err := s.toolGetOverview(project, rangeKey)
+// 周报:7 模块管理型(结论/指标/重点资产/异常闭环/质量协同/下周安排/溯源)
+// 复用日报的记录-状态-任务聚合,搬到「近 7 天 vs 上 7 天」口径。
+func (s *Server) handleWeeklyReport(w http.ResponseWriter, project string) {
+	rangeKey := "7d"
+	ctx, err := s.buildInsightsContext(project, rangeKey)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "overview_failed", err.Error())
+		writeError(w, http.StatusInternalServerError, "weekly_failed", err.Error())
 		return
 	}
+	overview, _ := s.toolGetOverview(project, rangeKey)
 	attention, _ := s.toolListAttention(project, 8)
 	repeated, _ := s.toolListRepeatedIssues(project, 8)
 	quality, _ := s.toolGetInspectorQuality(rangeKey)
 	pending, _ := s.toolListPendingReviews(project, 15)
+	drift, _ := s.toolListNumericDrift(project)
 
-	// AI 综述(降级:规则版),复用 /management/analyze 的报告 prompt,kind=weekly 切周报口径
-	summary := ""
-	model := ""
-	isMock := true
+	// 点位 → 资产 id 映射(记录只带 pointId,溯源跳转要资产 id)
+	pointToAsset := map[string]string{}
+	for _, a := range ctx.assets {
+		if a.PointID != "" {
+			pointToAsset[a.PointID] = a.ID
+		}
+	}
+
+	// ---- 一次遍历:本周/上周分桶 + 异常闭环清单 + 质量计数 ----
+	assetRecent := map[string]bool{}
+	assetPrev := map[string]bool{}
+	statusCount := map[string]int{}
+	aiSuccess, retakes := 0, 0
+	issueClosure := []map[string]any{}
+	for _, r := range ctx.records {
+		t := recordTimestamp(r)
+		inRecent := !t.Before(ctx.rangeStart) && !t.After(ctx.rangeEnd)
+		inPrev := !t.Before(ctx.prevStart) && t.Before(ctx.prevEnd)
+		key := firstNonEmpty(r.PointID, r.ID)
+		if inRecent {
+			assetRecent[key] = true
+		}
+		if inPrev {
+			assetPrev[key] = true
+		}
+		if !inRecent {
+			continue
+		}
+		st := recordBusinessStatus(r)
+		statusCount[st]++
+		if r.RecognitionStatus == "recognized" {
+			aiSuccess++
+		}
+		if r.CaptureAttempts > 1 || r.RecognitionStatus == "retake_required" {
+			retakes++
+		}
+		if st == "异常" || st == "待复核" || st == "需补图" {
+			field, value := primaryAbnormalField(r)
+			assignee := r.Inspector
+			dueAt := ""
+			if r.EngineeringTaskID != "" {
+				if tk, e := s.store.GetEngineeringTask(r.EngineeringTaskID); e == nil && tk != nil {
+					assignee = firstNonEmpty(tk.AssigneeName, assignee)
+					dueAt = tk.DueAt
+				}
+			}
+			if assignee == "" {
+				assignee = "待指派"
+			}
+			issueClosure = append(issueClosure, map[string]any{
+				"issueName":  firstNonEmpty(field, "现场异常"),
+				"value":      value,
+				"foundAt":    t.Format("01/02"),
+				"recordNo":   firstNonEmpty(r.RecordNo, r.ID),
+				"recordId":   r.ID,
+				"assetId":    pointToAsset[r.PointID],
+				"assetName":  firstNonEmpty(r.PointName, r.TemplateName),
+				"status":     st,
+				"assignee":   assignee,
+				"dueAt":      dueAt,
+				"suggestion": weeklyIssueSuggestion(st, field),
+			})
+		}
+	}
+	if len(issueClosure) > 12 {
+		issueClosure = issueClosure[:12]
+	}
+
+	// 质量:复核留痕(本周窗口)
+	manualEdits, lowConf, noPhotoConfirm := 0, 0, 0
+	for _, e := range ctx.confirmRecent {
+		if e.CreatedAt.Before(ctx.rangeStart) || e.CreatedAt.After(ctx.rangeEnd) {
+			continue
+		}
+		if e.Action == "correct" {
+			manualEdits++
+		}
+		if e.AIConfidence > 0 && e.AIConfidence < 0.6 {
+			lowConf++
+		}
+		if (e.Action == "confirm" || e.Action == "correct") && !e.ViewedPhoto {
+			noPhotoConfirm++
+		}
+	}
+
+	// 闭环:复查任务完成数(本周 vs 上周)
+	closedRecent, closedPrev := 0, 0
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: project})
+	for _, tk := range tasks {
+		if tk.Status != engTaskStatusDone || tk.CompletedAt == "" {
+			continue
+		}
+		ct := parseFlexTime(tk.CompletedAt)
+		if ct.IsZero() {
+			continue
+		}
+		if !ct.Before(ctx.rangeStart) && !ct.After(ctx.rangeEnd) {
+			closedRecent++
+		} else if !ct.Before(ctx.prevStart) && ct.Before(ctx.prevEnd) {
+			closedPrev++
+		}
+	}
+
+	metrics := map[string]any{
+		"recordRecent": overview.RecordRecent, "recordPrev": overview.RecordPrev,
+		"assetInspectedRecent": len(assetRecent), "assetInspectedPrev": len(assetPrev),
+		"abnormalRecent": overview.AbnormalRecent, "abnormalPrev": overview.AbnormalPrev,
+		"closedRecent": closedRecent, "closedPrev": closedPrev,
+		"pendingReviews": overview.PendingReviews, "pendingApprovals": overview.PendingApprovals,
+		"needRetake": statusCount["需补图"], "lazyConfirmRate": overview.LazyConfirmRate,
+	}
+
+	// 重点资产增强
+	topRisk := make([]map[string]any, 0, len(attention))
+	for _, a := range attention {
+		topRisk = append(topRisk, map[string]any{
+			"assetId": a.AssetID, "assetName": a.AssetName,
+			"riskLevel": a.RiskLevel, "riskScore": a.RiskScore,
+			"mainIssue": firstNonEmpty(strings.Join(a.Reasons, "；"), a.Title),
+			"aiBasis":   a.Title, "suggestedAction": weeklySuggestAction(a),
+		})
+	}
+
+	// 下周工作安排(规则挑对象,纯展示)
+	nextActions := s.buildWeeklyNextActions(attention, repeated, drift, pending)
+
+	qualitySummary := map[string]any{
+		"aiSuccess": aiSuccess, "manualEdits": manualEdits,
+		"lowConfidenceFields": lowConf, "retakes": retakes,
+		"noPhotoConfirm": noPhotoConfirm, "repeatedFieldIssues": len(repeated),
+	}
+
+	// AI 综述(只写本周结论;降级走规则版)
+	summary, model, isMock := "", "", true
 	if s.analyticsClient != nil {
 		payload := map[string]any{
-			"kind":             "weekly",
-			"period":           "近 7 天",
-			"overview":         overview,
-			"attention":        attention,
-			"repeatedIssues":   repeated,
-			"inspectorQuality": quality,
+			"kind": "weekly", "period": "近 7 天",
+			"overview": overview, "attention": attention,
+			"repeatedIssues": repeated, "inspectorQuality": quality,
 		}
 		if resp, err := s.analyticsClient.Analyze(payload); err != nil {
 			log.Printf("WARN: weekly report analyze failed (降级规则版): %v", err)
@@ -1253,7 +1387,7 @@ func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"type":             reportType,
+		"type":             "weekly",
 		"rangeKey":         rangeKey,
 		"rangeStart":       overview.RangeStart,
 		"rangeEnd":         overview.RangeEnd,
@@ -1262,11 +1396,94 @@ func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) 
 		"model":            model,
 		"isMock":           isMock,
 		"overview":         overview,
-		"topRisk":          attention,
+		"metrics":          metrics,
+		"topRisk":          topRisk,
 		"repeatedIssues":   repeated,
 		"inspectorQuality": quality,
 		"pending":          pending,
+		"issueClosure":     issueClosure,
+		"qualitySummary":   qualitySummary,
+		"nextActions":      nextActions,
+		"traceability": map[string]any{
+			"sources":         []string{"巡检记录", "资产台账", "审批记录", "AI识别结果", "现场图片"},
+			"recordTraceable": true,
+			"assetTraceable":  true,
+		},
 	})
+}
+
+// 解析任务完成时间:兼容 RFC3339 与 "2006-01-02" 等
+func parseFlexTime(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	if len(s) >= 10 {
+		if t, err := time.Parse("2006-01-02", s[:10]); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// 异常项的处理建议(按业务状态,大白话)
+func weeklyIssueSuggestion(status, field string) string {
+	switch status {
+	case "需补图":
+		return "补拍清晰照片后复核"
+	case "待复核":
+		return "主管确认该项判定"
+	case "异常":
+		if field != "" {
+			return "现场核实「" + field + "」并整改"
+		}
+		return "现场核实并整改"
+	}
+	return "跟进处理"
+}
+
+// 重点资产的建议动作
+func weeklySuggestAction(a *AttentionItem) string {
+	if a.RiskLevel == "danger" {
+		return "安排专项现场复核"
+	}
+	return "下周复查跟进"
+}
+
+// 下周工作安排:规则挑对象 → 管理型工作项(纯展示,不落库)
+func (s *Server) buildWeeklyNextActions(attention []*AttentionItem, repeated []*RepeatedIssue, drift []*NumericDriftEntry, pending *PendingReviews) []map[string]any {
+	out := []map[string]any{}
+	seen := map[string]bool{}
+	add := func(item, target, trigger string) {
+		k := item + "|" + target
+		if target == "" || seen[k] || len(out) >= 6 {
+			return
+		}
+		seen[k] = true
+		out = append(out, map[string]any{
+			"workItem": item, "target": target,
+			"assignee": "待指派", "time": "下周", "trigger": trigger,
+		})
+	}
+	// 规则1:高风险/重点资产 → 专项复核
+	for _, a := range attention {
+		if a.RiskLevel == "danger" {
+			add("专项现场复核", a.AssetName, firstNonEmpty(strings.Join(a.Reasons, "；"), a.Title))
+		}
+	}
+	// 规则2:重复异常字段 → 字段复查
+	for _, ri := range repeated {
+		add("复查「"+firstNonEmpty(ri.FieldLabel, ri.FieldKey)+"」", ri.AssetName, fmt.Sprintf("近期该字段异常 %d 次", ri.Count))
+	}
+	// 规则3:数值漂移大 → 读数复核
+	for _, d := range drift {
+		add("读数复核", d.AssetName, fmt.Sprintf("「%s」较历史波动 %.0f%%", firstNonEmpty(d.FieldLabel, d.FieldKey), d.ChangeRate*100))
+	}
+	return out
 }
 
 // 规则版周报综述(AI 不可用时降级用),不编造、只用聚合数字。
