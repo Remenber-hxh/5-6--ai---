@@ -1181,6 +1181,24 @@ function isOccurrenceLabel(label = "") {
   if (label.includes("无异") || label.includes("无报警") || label.includes("无漏") || label.includes("无故障")) return false;
   return ["异常", "是否漏水", "是否报警", "有异响", "有异味"].some((k) => label.includes(k));
 }
+// 把「字段=值」翻成异常结论(待跟进块展示用):灭火器材未过期=否 → 灭火器材已过期
+function anomalyText(label = "", value = "") {
+  const v = String(value).trim();
+  if (["异常", "缺失", "破损", "故障"].includes(v)) return label + v;
+  if (v === "是" || v === "有") {
+    if (label.startsWith("是否")) return label.slice(2);
+    if (label.startsWith("有无")) return "有" + label.slice(2);
+    return label; // "有异响"之类本身就是异常表述
+  }
+  // v === "否":正向问句取反成异常结论
+  const neg = [
+    ["未过期", "已过期"], ["无卡阻", "有卡阻"], ["无杂物", "有杂物"],
+    ["完好", "破损"], ["有效", "失效"], ["齐全", "缺失"],
+    ["正常", "异常"], ["干净", "不整洁"], ["整洁", "不整洁"], ["顺畅", "不顺畅"],
+  ];
+  for (const [a, b] of neg) if (label.includes(a)) return label.replace(a, b);
+  return label + "不符合";
+}
 // 预览页 AI 总结正文：异常项拎成红色「待跟进」小块，正文去掉模板腔(待跟进/异常提示/低风险总结前后缀)
 function summaryBodyHTML(rec) {
   const flags = [];
@@ -1201,7 +1219,7 @@ function summaryBodyHTML(rec) {
   let html = "";
   if (flags.length) {
     html += `<div class="sum-flags"><div class="sum-flags-h">待跟进 · ${flags.length} 项</div>`
-      + flags.map(f => `<div class="sum-flag"><b>${escapeHTML(f.label)}</b><i>${escapeHTML(f.value)}</i></div>`).join("")
+      + flags.map(f => `<div class="sum-flag"><b>${escapeHTML(anomalyText(f.label, f.value))}</b></div>`).join("")
       + `</div>`;
   }
   if (text) html += `<div class="sum-text">${escapeHTML(text)}</div>`;
