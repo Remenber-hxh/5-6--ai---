@@ -1789,28 +1789,33 @@ var fieldPlain = map[string]string{
 	"alarm_device":       "测紧急报警/对讲。按警铃或对讲能接通、有响应,算合格;按了没反应、打不通,算不合格。",
 }
 
-// 权威来源:检查项 → {精确标准名, 官方标准系统链接}。链到稳定官方入口,标准名是准确引用。
+// 权威来源:检查项 → {精确标准名, 官方全文直达链接}。直链发布机关原文,点开即看该标准。
 type stdSource struct{ Name, URL string }
 
 const (
-	officialSysGB  = "https://openstd.samr.gov.cn/bzgk/gb/" // 国家标准全文公开系统(GB 标准)
-	officialSysTSG = "https://www.samr.gov.cn/"             // 市场监管总局(特种设备安全技术规范 TSG 发布机关)
+	// 市场监管总局官网发布的规范原文 PDF(samr.gov.cn 官方文件库)
+	urlTSGT5002 = "https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398888560704.pdf" // TSG T5002-2017 电梯维护保养规则
+	urlTSG08    = "https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398887853634.pdf" // TSG 08-2017 特种设备使用管理规则
+	// 全国标准信息公共服务平台的标准详情页(GB/T 18775)
+	urlGB18775 = "https://std.samr.gov.cn/gb/search/gbDetailed?id=71F772D7D1EBD3A7E05397BE0A0AB82A"
+	// 江苏消防救援总队(119.gov.cn)刊载的 GB 50444 全文
+	urlGB50444 = "https://js.119.gov.cn/202111/206aebe848d24575894f22639ff3e721_c_3b4857e24c0c4bab8ca4.html"
 )
 
 var fieldStandard = map[string]stdSource{
-	"extinguisher_valid": {"GB 50444《建筑灭火器配置验收及检查规范》", officialSysGB},
-	"anti_clip":          {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"door_smooth":        {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"floor_buttons":      {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"car_lighting":       {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"reg_mark":           {"TSG 08《特种设备使用管理规则》", officialSysTSG},
-	"fire_switch_glass":  {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"door_window_sign":   {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"room_clean":         {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"lighting_ac":        {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"rescue_device":      {"TSG T5002《电梯维护保养规则》", officialSysTSG},
-	"noise_smell":        {"GB/T 18775《电梯、自动扶梯和自动人行道维修规范》", officialSysGB},
-	"alarm_device":       {"TSG T5002《电梯维护保养规则》", officialSysTSG},
+	"extinguisher_valid": {"GB 50444-2008《建筑灭火器配置验收及检查规范》", urlGB50444},
+	"anti_clip":          {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"door_smooth":        {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"floor_buttons":      {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"car_lighting":       {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"reg_mark":           {"TSG 08-2017《特种设备使用管理规则》", urlTSG08},
+	"fire_switch_glass":  {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"door_window_sign":   {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"room_clean":         {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"lighting_ac":        {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"rescue_device":      {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
+	"noise_smell":        {"GB/T 18775《电梯、自动扶梯和自动人行道维修规范》", urlGB18775},
+	"alarm_device":       {"TSG T5002-2017《电梯维护保养规则》", urlTSGT5002},
 }
 
 var fieldAliases = map[string][]string{
