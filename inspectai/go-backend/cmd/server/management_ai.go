@@ -1160,6 +1160,32 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	if len(drift) > 8 {
 		drift = drift[:8]
 	}
+	// 本周计划/任务概览:让"巡检计划/本周任务"类问题有真数据可答,不再劝退
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: req.Project})
+	planDone, planDoing, planTodo, planOverdue := 0, 0, 0, 0
+	planItems := []map[string]any{}
+	for _, tk := range tasks {
+		switch tk.Status {
+		case engTaskStatusDone:
+			planDone++
+		case engTaskStatusProcessing:
+			planDoing++
+		case engTaskStatusOverdue:
+			planOverdue++
+		default:
+			planTodo++
+		}
+		if tk.Status != engTaskStatusDone && len(planItems) < 5 {
+			planItems = append(planItems, map[string]any{
+				"title": tk.Title, "status": tk.Status,
+				"assignee": tk.AssigneeName, "dueAt": tk.DueAt,
+			})
+		}
+	}
+	planTasks := map[string]any{
+		"total": len(tasks), "done": planDone, "processing": planDoing,
+		"notStarted": planTodo, "overdue": planOverdue, "openItems": planItems,
+	}
 	payload := map[string]any{
 		"message": req.Message,
 		"history": req.History,
@@ -1170,6 +1196,7 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 			"pendingReviews":   pending,
 			"inspectorQuality": quality,
 			"numericDrift":     drift,
+			"planTasks":        planTasks,
 			"rangeKey":         rangeKey,
 			"project":          req.Project,
 		},
@@ -1871,14 +1898,23 @@ func (s *Server) buildChatSources(question string, attention []*AttentionItem) [
 		}
 	}
 
-	// 2. 记录/资产:问句提到具体设备名,或带"异常类"意图(才给设备依据,否则不给)
-	anomalyIntent := containsAny(question, []string{"异常", "故障", "问题", "重点", "关注", "趋势", "风险", "复查", "隐患", "处理"})
+	// 2. 记录/资产:问句提到具体设备名,或带"设备异常类"意图(才给设备依据,否则不给)。
+	// 注意关键词要窄:「处理/问题」这类泛词会让审批/计划类问句误挂设备来源。
+	anomalyIntent := containsAny(question, []string{"异常", "故障", "重点", "关注", "趋势", "风险", "复查", "隐患"})
+	// 审批/计划/周报类问句明确不属于设备域,即使撞上关键词也不给设备来源
+	if containsAny(question, []string{"审批", "工单", "计划", "排班", "周报", "日报", "复核率"}) {
+		anomalyIntent = false
+	}
 	added := 0
 	for _, a := range attention {
-		hit := (a.AssetName != "" && strings.Contains(question, a.AssetName)) || (anomalyIntent && added < 2)
+		if a.AssetName == "" || seen["n:"+a.AssetName] {
+			continue // 同名资产(台账重复登记)只给一组来源,避免溯源行重复
+		}
+		hit := strings.Contains(question, a.AssetName) || (anomalyIntent && added < 2)
 		if !hit {
 			continue
 		}
+		seen["n:"+a.AssetName] = true
 		if a.LastRecordID != "" && !seen["r:"+a.LastRecordID] {
 			seen["r:"+a.LastRecordID] = true
 			out = append(out, map[string]any{

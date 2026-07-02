@@ -134,4 +134,15 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 	if len(s3) != 0 {
 		t.Errorf("无关问句不应有来源, got %v", s3)
 	}
+	// 审批/计划类问句撞上"处理"等泛词也不给设备来源
+	s4 := srv.buildChatSources("目前有哪些待审批工单需要处理？", att)
+	if len(s4) != 0 {
+		t.Errorf("审批问句不应挂设备来源, got %v", s4)
+	}
+	// 同名资产(台账重复)只给一组来源
+	att2 := append(att, &AttentionItem{AssetID: "a2", AssetName: "HYZX-WJ-DT01", Title: "重复登记", LastRecordID: "r2"})
+	s5 := srv.buildChatSources("最近哪些设备要重点关注", att2)
+	if count(s5, "asset") != 1 {
+		t.Errorf("同名资产应去重为 1 组, got %v", s5)
+	}
 }

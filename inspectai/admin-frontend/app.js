@@ -1257,14 +1257,21 @@ function navIntent(text) {
   }
   return null;
 }
-// 建议动作(点了直接发问)
+// 建议动作(点了直接发问;page = 回答后附「前往 X」快速跳转)
 const AGENT_ACTS = [
-  { q: "查看本周巡检计划", label: "查看本周巡检计划", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
-  { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", tone: "p", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
-  { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
-  { q: "分析本月异常趋势", label: "分析本月异常趋势", tone: "o", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
+  { q: "查看本周巡检计划", label: "查看本周巡检计划", page: "plan", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
+  { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", page: "approval", tone: "p", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
+  { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", page: "data", tone: "t", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
+  { q: "分析本月异常趋势", label: "分析本月异常趋势", page: "data", tone: "o", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
   { q: "生成本周巡检周报", label: "生成本周周报", tone: "b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5M8 9h2"/></svg>' },
 ];
+// 建议动作的快速跳转:问句 = AGENT_ACTS 原句时,附对应页面的「前往」chip
+function actJump(text) {
+  const hit = AGENT_ACTS.find((a) => a.q === text && a.page);
+  if (!hit) return null;
+  const nav = NAV_INTENTS.find((n) => n.page === hit.page);
+  return nav || null;
+}
 // 报告意图(命中则走 /report 接口,而非普通问答)
 const WEEKLY_REPORT_RE = /周报|周度报告|本周报告|生成.{0,4}周报|本周.{0,4}(报告|总结)/;
 const DAILY_REPORT_RE = /日报|今日(汇报|情况|报告|总结|管理)|今天.{0,3}(情况|汇报|怎么样)|生成.{0,4}日报/;
@@ -1990,7 +1997,7 @@ async function sendAiChat(message) {
       });
       const reply = res.reply || "AI 没有给出回复。";
       const { text, proposal } = extractActionProposal(reply);
-      msg = { role: "ai", text, proposal, navJump: navIntent(message), sources: res.sources || [], id: "aim_" + (++AI_CHAT_STATE.seq) };
+      msg = { role: "ai", text, proposal, navJump: navIntent(message) || actJump(message), sources: res.sources || [], id: "aim_" + (++AI_CHAT_STATE.seq) };
     }
     AI_CHAT_STATE.history.push(msg);
     document.getElementById("aiChatTyping")?.remove();
