@@ -1206,8 +1206,9 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "ai_call_failed", err.Error())
 		return
 	}
-	// 溯源:按问句精准匹配本地依据(标准模块/记录/资产),附在回复后
-	resp["sources"] = s.buildChatSources(req.Message, attention)
+	// 溯源:按问句+答案精准匹配本地依据(答案点名谁,就给谁的证据),附在回复后
+	replyText, _ := resp["reply"].(string)
+	resp["sources"] = s.buildChatSources(req.Message, replyText, attention)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -1860,8 +1861,9 @@ func containsAny(s string, kws []string) bool {
 	return false
 }
 
-// buildChatSources — 按问句精准匹配本地依据:命中检查项→标准模块;提到设备/带异常意图→记录+异常史
-func (s *Server) buildChatSources(question string, attention []*AttentionItem) []map[string]any {
+// buildChatSources — 按问句+答案精准匹配本地依据:命中检查项→标准模块;
+// 设备证据跟着答案走:答案/问句点名的设备才给,谁都没点名时只给风险最高的一台。总数封顶,避免溯源行拥挤。
+func (s *Server) buildChatSources(question, reply string, attention []*AttentionItem) []map[string]any {
 	out := []map[string]any{}
 	seen := map[string]bool{}
 
@@ -1898,38 +1900,49 @@ func (s *Server) buildChatSources(question string, attention []*AttentionItem) [
 		}
 	}
 
-	// 2. 记录/资产:问句提到具体设备名,或带"设备异常类"意图(才给设备依据,否则不给)。
+	// 2. 记录/资产:证据跟着答案走。
 	// 注意关键词要窄:「处理/问题」这类泛词会让审批/计划类问句误挂设备来源。
 	anomalyIntent := containsAny(question, []string{"异常", "故障", "重点", "关注", "趋势", "风险", "复查", "隐患"})
 	// 审批/计划/周报类问句明确不属于设备域,即使撞上关键词也不给设备来源
 	if containsAny(question, []string{"审批", "工单", "计划", "排班", "周报", "日报", "复核率"}) {
 		anomalyIntent = false
 	}
-	added := 0
-	for _, a := range attention {
+	mentioned := func(name string) bool {
+		return name != "" && (strings.Contains(question, name) || strings.Contains(reply, name))
+	}
+	addAsset := func(a *AttentionItem) {
 		if a.AssetName == "" || seen["n:"+a.AssetName] {
-			continue // 同名资产(台账重复登记)只给一组来源,避免溯源行重复
-		}
-		hit := strings.Contains(question, a.AssetName) || (anomalyIntent && added < 2)
-		if !hit {
-			continue
+			return // 同名资产(台账重复登记)只给一组来源
 		}
 		seen["n:"+a.AssetName] = true
-		if a.LastRecordID != "" && !seen["r:"+a.LastRecordID] {
-			seen["r:"+a.LastRecordID] = true
+		if a.LastRecordID != "" {
 			out = append(out, map[string]any{
 				"type": "record", "title": a.AssetName + " · 最近巡检记录",
 				"summary": strings.Join(a.Reasons, "；"), "recordId": a.LastRecordID,
 			})
 		}
-		if !seen["a:"+a.AssetID] {
-			seen["a:"+a.AssetID] = true
-			out = append(out, map[string]any{
-				"type": "asset", "title": a.AssetName + " · 异常史",
-				"summary": a.Title, "assetId": a.AssetID,
-			})
+		out = append(out, map[string]any{
+			"type": "asset", "title": a.AssetName + " · 异常史",
+			"summary": a.Title, "assetId": a.AssetID,
+		})
+	}
+	// 优先:答案/问句点名的设备(最多 2 台);都没点名时,有异常意图才给风险最高的 1 台
+	named := 0
+	for _, a := range attention {
+		if named >= 2 {
+			break
 		}
-		added++
+		if mentioned(a.AssetName) {
+			addAsset(a)
+			named++
+		}
+	}
+	if named == 0 && anomalyIntent && len(attention) > 0 {
+		addAsset(attention[0])
+	}
+	// 总数封顶,溯源行保持一行以内
+	if len(out) > 4 {
+		out = out[:4]
 	}
 	return out
 }

@@ -1498,8 +1498,8 @@ function renderChatBubble(m) {
   // AI 回复里的设备编号 / 记录号自动转成可点链接(命中真实数据才加,避免死链)
   if (cls === "ai") html = linkifyRefs(html);
   const card = cls === "ai" ? renderActionProposal(m) : "";
-  // 按提问意图给一个「前往 X 页」跳转 chip(复用全局 data-page-link)
-  const jump = (cls === "ai" && m.navJump)
+  // 「前往 X 页」跳转 chip:有建议动作卡时不再出(动作卡本身就是下一步,别堆两层按钮)
+  const jump = (cls === "ai" && m.navJump && !(m.proposal && !m.proposalDismissed))
     ? `<button type="button" class="ai-jump-chip" data-page-link="${m.navJump.page}">前往${escapeHTML(m.navJump.label)}<i>→</i></button>`
     : "";
   // 仅报告类长文附「导出 Word」(周报 / 生成报告 / 长文综述),不是每句都挂

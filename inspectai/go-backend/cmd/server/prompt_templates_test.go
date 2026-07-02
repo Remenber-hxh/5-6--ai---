@@ -105,7 +105,7 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 	}
 
 	// 问检查项 → 只给标准源,不给设备源
-	s1 := srv.buildChatSources("灭火器怎么判过期", att)
+	s1 := srv.buildChatSources("灭火器怎么判过期", "", att)
 	if count(s1, "standard") == 0 {
 		t.Errorf("灭火器问句应出现标准源, got %v", s1)
 	}
@@ -125,24 +125,39 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 		t.Errorf("灭火器问句不应出现设备源, got %v", s1)
 	}
 	// 问重点关注 → 给设备源
-	s2 := srv.buildChatSources("最近哪些设备要重点关注", att)
+	s2 := srv.buildChatSources("最近哪些设备要重点关注", "", att)
 	if count(s2, "asset") == 0 {
 		t.Errorf("重点关注应出现设备源, got %v", s2)
 	}
 	// 无关问句 → 空
-	s3 := srv.buildChatSources("你好", att)
+	s3 := srv.buildChatSources("你好", "", att)
 	if len(s3) != 0 {
 		t.Errorf("无关问句不应有来源, got %v", s3)
 	}
 	// 审批/计划类问句撞上"处理"等泛词也不给设备来源
-	s4 := srv.buildChatSources("目前有哪些待审批工单需要处理？", att)
+	s4 := srv.buildChatSources("目前有哪些待审批工单需要处理？", "", att)
 	if len(s4) != 0 {
 		t.Errorf("审批问句不应挂设备来源, got %v", s4)
 	}
 	// 同名资产(台账重复)只给一组来源
 	att2 := append(att, &AttentionItem{AssetID: "a2", AssetName: "HYZX-WJ-DT01", Title: "重复登记", LastRecordID: "r2"})
-	s5 := srv.buildChatSources("最近哪些设备要重点关注", att2)
+	s5 := srv.buildChatSources("最近哪些设备要重点关注", "", att2)
 	if count(s5, "asset") != 1 {
 		t.Errorf("同名资产应去重为 1 组, got %v", s5)
+	}
+	// 证据跟着答案走:答案只点名 K07 → 只给 K07,不给风险更高但没被提到的
+	att3 := []*AttentionItem{
+		{AssetID: "a1", AssetName: "HYZX-WJ-DT01", Title: "风险高", LastRecordID: "r1"},
+		{AssetID: "a3", AssetName: "K07", Title: "留意", LastRecordID: "r3"},
+	}
+	s6 := srv.buildChatSources("哪些设备要关注", "K07 电梯近期异常需留意。", att3)
+	if count(s6, "asset") != 1 {
+		t.Errorf("答案点名时应只给被点名设备, got %v", s6)
+	}
+	for _, x := range s6 {
+		title, _ := x["title"].(string)
+		if strings.Contains(title, "HYZX") {
+			t.Errorf("未被答案点名的设备不应出现: %v", s6)
+		}
 	}
 }
