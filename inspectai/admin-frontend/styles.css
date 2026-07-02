@@ -11375,3 +11375,19 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 .ai-src-official { color: rgba(150, 185, 255, 0.95); }
 .agent-home .ai-src-official { color: #9cc0ff !important; }
 .agent-home .ai-src-official:hover { color: #c9dcff !important; }
+
+/* 风险评分卡(drawer 弹层) */
+.risk-clickable { cursor: pointer; text-decoration: underline dotted rgba(120, 140, 160, 0.6); text-underline-offset: 3px; }
+.risk-clickable:hover { text-decoration-color: currentColor; }
+.risk-card { display: flex; flex-direction: column; gap: 14px; }
+.risk-card-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line, #e5eaf0); }
+.risk-card-head b { font-size: 15px; }
+.risk-card-head strong { font-size: 24px; margin-left: auto; }
+.risk-card-head strong em { font-style: normal; font-size: 12px; color: #8aa0b0; }
+.risk-row { display: flex; flex-direction: column; gap: 5px; }
+.risk-row-top { display: flex; align-items: baseline; justify-content: space-between; font-size: 13px; }
+.risk-row-top b em { font-style: normal; font-size: 11px; color: #8aa0b0; }
+.risk-bar { height: 6px; border-radius: 3px; background: rgba(15, 35, 55, 0.08); overflow: hidden; }
+.risk-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #f59e0b, #ef4444); }
+.risk-row p { margin: 0; font-size: 12px; color: #64748b; }
+.risk-card-note { font-size: 11.5px; color: #8aa0b0; line-height: 1.6; border-top: 1px solid var(--line, #e5eaf0); padding-top: 10px; }

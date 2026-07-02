@@ -2402,6 +2402,7 @@ function asideFindings(issues, attentionItems = []) {
     `;
   }
   if (attentionItems.length > 0) {
+    cacheRiskItems(attentionItems);
     return `
       <div class="aside-findings attention">
         <div class="aside-findings-head"><b>历史风险提醒</b><span>AI 趋势</span></div>
@@ -2415,7 +2416,7 @@ function asideFindings(issues, attentionItems = []) {
                   <b>${escapeHTML(it.assetName || "资产")}</b>
                   <span>${escapeHTML((it.reasons && it.reasons[0]) || "建议查看历史巡检变化")}</span>
                 </div>
-                <em>${it.riskScore}</em>
+                <em class="risk-clickable" data-risk-card="${escapeHTML(it.assetId)}" title="点击看评分依据">${it.riskScore}</em>
               </li>
             `;
           }).join("")}
@@ -3718,6 +3719,7 @@ function renderExceptionPage() {
   const insightKey = `month::${state.selectedProject || ""}`;
   if (!(insightKey in state.dataInsights)) loadDataInsights("month", state.selectedProject || "");
   const attentionItems = (state.dataInsights[insightKey]?.items || []).slice(0, 3);
+  cacheRiskItems(attentionItems);
   const activeCount = assets.length + pending.length;
   $("#pageMain").innerHTML = `
     <section class="panel exception-workbench">
@@ -3771,7 +3773,7 @@ function renderExceptionPage() {
             <article data-asset-select="${escapeHTML(it.assetId)}">
               <div><span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span><b>${escapeHTML(it.assetName || "资产")}</b></div>
               <p>${escapeHTML((it.reasons && it.reasons[0]) || "建议查看历史巡检变化")}</p>
-              <em>${it.riskScore} 分</em>
+              <em class="risk-clickable" data-risk-card="${escapeHTML(it.assetId)}" title="点击看评分依据">${it.riskScore} 分</em>
             </article>
           `).join("")}
         </div>
@@ -4292,11 +4294,41 @@ function humanizeFieldNames(text) {
 }
 
 // ③ 重点关注 Top 5
+// 风险评分卡:缓存最近渲染的关注项;点分数弹出各维度得分与依据
+const RISK_ATTN_CACHE = {};
+function cacheRiskItems(items) {
+  (items || []).forEach((it) => { if (it && it.assetId) RISK_ATTN_CACHE[it.assetId] = it; });
+}
+function openRiskCard(assetId) {
+  const it = RISK_ATTN_CACHE[assetId];
+  if (!it) return;
+  const rows = (it.breakdown || []).map((f) => `
+    <div class="risk-row">
+      <div class="risk-row-top">
+        <span>${escapeHTML(f.label)}</span>
+        <b>${f.score}<em> / ${f.max}</em></b>
+      </div>
+      <div class="risk-bar"><i style="width:${f.max ? Math.round((f.score / f.max) * 100) : 0}%"></i></div>
+      <p>${escapeHTML(humanizeFieldNames(f.basis || "—"))}</p>
+    </div>`).join("");
+  openDrawer("风险评分卡", `
+    <div class="risk-card">
+      <div class="risk-card-head">
+        <b>${escapeHTML(it.assetName || "")}</b>
+        <strong>${it.riskScore}<em>/100</em></strong>
+        <span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span>
+      </div>
+      ${rows || `<p class="risk-card-note">暂无评分明细。</p>`}
+      <p class="risk-card-note">百分制:≥70 高风险,40~69 需关注,&lt;40 正常。识别质量(补拍/人工修正)不计入设备风险,见周报「质量与 AI 协同」。</p>
+    </div>`);
+}
+
 function renderFocusBoard(insights) {
   if (!insights.items.length) {
     return `<section class="focus-board"><div class="focus-board-head"><h2>近期重点关注</h2></div><div class="empty-state">暂无需重点关注的资产</div></section>`;
   }
   const items = insights.items || [];
+  cacheRiskItems(items);
   const featured = items.find((item) => {
     const asset = state.assets.find((a) => a.id === item.assetId);
     return /电梯|elevator/i.test(`${item.assetName || ""} ${item.assetId || ""} ${asset?.assetName || ""} ${asset?.assetType || ""}`);
@@ -4309,7 +4341,7 @@ function renderFocusBoard(insights) {
         <span class="focus-board-count">${items.length} 台需关注</span>
       </div>
       <article class="focus-feature focus-${featured.riskLevel}" data-asset-select="${escapeHTML(featured.assetId)}">
-        <div class="focus-feature-top"><span>建议优先复核</span><strong>${featured.riskScore}<em>分</em></strong></div>
+        <div class="focus-feature-top"><span>建议优先复核</span><strong class="risk-clickable" data-risk-card="${escapeHTML(featured.assetId)}" title="点击看评分依据">${featured.riskScore}<em>分</em></strong></div>
         <h3>${escapeHTML(featured.assetName || "—")}</h3>
         <div class="focus-feature-reasons">${(featured.reasons || []).slice(0, 3).map((reason) => `<span>${escapeHTML(humanizeFieldNames(reason))}</span>`).join("")}</div>
         ${featured.action ? `<p>下一步：${escapeHTML(featured.action)}</p>` : ""}
@@ -4321,7 +4353,7 @@ function renderFocusBoard(insights) {
             <div class="focus-card-body">
               <div class="focus-card-head">
                 <b class="focus-card-name">${escapeHTML(it.assetName || "—")}</b>
-                <span class="focus-card-score">${it.riskScore}<em>分</em></span>
+                <span class="focus-card-score risk-clickable" data-risk-card="${escapeHTML(it.assetId)}" title="点击看评分依据">${it.riskScore}<em>分</em></span>
                 <span class="status ${it.riskLevel || "warning"}">${escapeHTML(riskAttentionLabel(it.riskLevel))}</span>
               </div>
               <p class="focus-card-summary">${escapeHTML(humanizeFieldNames((it.reasons && it.reasons[0]) || "建议查看历史巡检变化"))}</p>
@@ -6256,6 +6288,14 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       closeDrawer();
+      return;
+    }
+    // 风险评分卡:点分数看各维度得分依据(先于 data-asset-select,避免跳资产)
+    const riskCardEl = event.target.closest("[data-risk-card]");
+    if (riskCardEl) {
+      event.preventDefault();
+      event.stopPropagation();
+      openRiskCard(riskCardEl.dataset.riskCard);
       return;
     }
     const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;

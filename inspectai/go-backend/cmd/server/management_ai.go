@@ -389,16 +389,19 @@ func (s *Server) toolListNumericDrift(project string) ([]*NumericDriftEntry, err
 
 // ===== Tool 2: list_attention_assets (按 risk_score 排序的 Top N) =====
 
+// 风险评分:百分制,五个维度分项封顶,总分 0-100。
+// 状态40 + 近30天异常25 + 同字段重复15 + 数值漂移10 + 未巡检10 = 100。
+// 补拍/无法判定/人工修正 AI 属于「识别与复核质量」,不再计入设备风险分(见周报质量模块)。
 const (
-	pointStateDanger      = 60
-	pointStateWarning     = 35
-	pointRepeatAbnormal   = 12
-	pointSameFieldRepeat  = 15
-	pointRetake           = 8
-	pointUncertain        = 8
-	pointAIOverwrite      = 5
-	pointDrift            = 20
-	pointMissedSchedule   = 25
+	riskCapState    = 40 // 当前资产状态:异常40 / 待复核25
+	riskStateWarn   = 25
+	riskPerAbnormal = 8 // 近30天每次异常 8 分
+	riskCapAbnormal = 25
+	riskPerRepeat   = 5 // 同一字段每次重复异常 5 分
+	riskCapRepeat   = 15
+	riskPerDrift    = 5 // 每项数值超阈漂移 5 分
+	riskCapDrift    = 10
+	riskCapMissed   = 10 // 超7天未巡检
 )
 
 func (s *Server) toolListAttention(project string, limit int) ([]*AttentionItem, error) {
@@ -428,18 +431,29 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 	score := 0
 	reasons := []string{}
 	evidence := []ItemRef{}
-
-	level := normalizeAssetStatusLevel(a)
-	switch level {
-	case "danger":
-		score += pointStateDanger
-		reasons = append(reasons, "当前资产状态:异常")
-	case "warning":
-		score += pointStateWarning
-		reasons = append(reasons, "当前资产状态:待复核")
+	breakdown := make([]RiskFactor, 0, 5)
+	addFactor := func(label string, got, max int, basis string) {
+		if got > max {
+			got = max
+		}
+		score += got
+		breakdown = append(breakdown, RiskFactor{Label: label, Score: got, Max: max, Basis: basis})
+		if got > 0 && basis != "" {
+			reasons = append(reasons, basis)
+		}
 	}
 
-	// 历史快照:近 30d 异常次数 / 重复字段
+	// ① 当前状态(满分40)
+	stateScore, stateBasis := 0, "当前状态正常"
+	switch normalizeAssetStatusLevel(a) {
+	case "danger":
+		stateScore, stateBasis = riskCapState, "当前资产状态:异常"
+	case "warning":
+		stateScore, stateBasis = riskStateWarn, "当前资产状态:待复核"
+	}
+	addFactor("当前状态", stateScore, riskCapState, stateBasis)
+
+	// ② 近30天异常次数(每次8分,满分25)+ ③ 同字段重复(每次5分,满分15)
 	snaps, _ := s.store.ListAssetSnapshots(a.ID, 100, 0)
 	abnormalCnt := 0
 	fieldAbnormal := map[string]int{}
@@ -459,65 +473,39 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 			}
 		}
 	}
+	abnormalBasis := ""
 	if abnormalCnt > 0 {
-		score += abnormalCnt * pointRepeatAbnormal
-		reasons = append(reasons, "近 30 天异常 "+strconv.Itoa(abnormalCnt)+" 次")
+		abnormalBasis = "近 30 天异常 " + strconv.Itoa(abnormalCnt) + " 次"
 	}
+	addFactor("近30天异常", abnormalCnt*riskPerAbnormal, riskCapAbnormal, abnormalBasis)
+
+	repeatScore, repeatParts := 0, []string{}
 	for fk, c := range fieldAbnormal {
 		if c >= 2 {
-			score += c * pointSameFieldRepeat
-			reasons = append(reasons, "同一字段 "+fk+" 重复异常 "+strconv.Itoa(c)+" 次")
+			repeatScore += c * riskPerRepeat
+			repeatParts = append(repeatParts, "「"+fk+"」重复异常 "+strconv.Itoa(c)+" 次")
 		}
 	}
+	addFactor("同一问题反复出现", repeatScore, riskCapRepeat, strings.Join(repeatParts, "；"))
 
-	// 字段漂移
+	// ④ 数值漂移(每项5分,满分10)
 	driftCount := s.countAssetDrift(a.ID, ctx.rangeStart)
+	driftBasis := ""
 	if driftCount > 0 {
-		score += driftCount * pointDrift
-		reasons = append(reasons, "数值字段超阈漂移 "+strconv.Itoa(driftCount)+" 项")
+		driftBasis = "数值字段超阈漂移 " + strconv.Itoa(driftCount) + " 项"
 	}
+	addFactor("数值漂移", driftCount*riskPerDrift, riskCapDrift, driftBasis)
 
-	// 复核留痕:补拍/无判/AI 覆盖
-	retake, uncertain, overwritten := 0, 0, 0
-	for _, e := range ctx.confirmRecent {
-		rec, ok := ctx.recordsByID[e.RecordID]
-		if !ok || !recordTouchesAsset(rec, a) {
-			continue
-		}
-		switch e.Action {
-		case "uncertain":
-			uncertain++
-		case "correct":
-			overwritten++
-		}
-	}
-	for _, r := range ctx.records {
-		if !recordTouchesAsset(r, a) {
-			continue
-		}
-		if r.RecognitionStatus == "retake_required" {
-			retake++
-		}
-	}
-	if retake > 0 {
-		score += retake * pointRetake
-		reasons = append(reasons, "近 30 天补拍 "+strconv.Itoa(retake)+" 次")
-	}
-	if uncertain > 0 {
-		score += uncertain * pointUncertain
-		reasons = append(reasons, "人工无法判定 "+strconv.Itoa(uncertain)+" 次")
-	}
-	if overwritten > 0 {
-		score += overwritten * pointAIOverwrite
-		reasons = append(reasons, "人工修正 AI 识别 "+strconv.Itoa(overwritten)+" 次")
-	}
-
-	// 超过 7d 未巡
+	// ⑤ 巡检及时性(满分10)
+	missedScore, missedBasis := 0, ""
 	if !a.LastInspectedAt.IsZero() && ctx.now.Sub(a.LastInspectedAt) > 7*24*time.Hour {
-		score += pointMissedSchedule
-		reasons = append(reasons, "超过 7 天未巡检")
+		missedScore, missedBasis = riskCapMissed, "超过 7 天未巡检"
 	}
+	addFactor("巡检及时性", missedScore, riskCapMissed, missedBasis)
 
+	if score > 100 {
+		score = 100
+	}
 	if score < 5 {
 		return nil
 	}
@@ -527,10 +515,11 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 			Label: "最近一次巡检", Time: snaps[0].CreatedAt.Format("2006-01-02 15:04"),
 		})
 	}
+	// 百分制阈值:≥70 高风险,40-69 需关注
 	riskLevel := "normal"
-	if score >= 60 {
+	if score >= 70 {
 		riskLevel = "danger"
-	} else if score >= 25 {
+	} else if score >= 40 {
 		riskLevel = "warning"
 	}
 	title := a.AssetName
@@ -546,6 +535,7 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 		RiskLevel:   riskLevel,
 		Title:       title,
 		Reasons:     reasons,
+		Breakdown:   breakdown,
 		Action:      suggestActionFor(a, reasons),
 		LastRecordID: a.LastRecordID,
 		LastInspectedAt: a.LastInspectedAt.Format("2006-01-02 15:04"),

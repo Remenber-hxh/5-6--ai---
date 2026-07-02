@@ -351,7 +351,7 @@ MANAGEMENT_CHAT_SYSTEM = """你是「智巡」管理后台的 AI 助手,服务�
 
 上下文 JSON 给了其中几类的实时数据,各字段含义:
 - overview:整体规模与异常/待复核/待审批计数
-- topRiskAssets:风险最高的资产(风险分、异常次数、原因)
+- topRiskAssets:风险最高的资产(风险分、异常次数、原因)。风险分是**百分制(0-100)**:≥70 高风险、40-69 需关注;提到分数时可写"85 分(满分 100)"
 - repeatedIssues:重复出现的异常字段(哪台设备哪个字段反复异常、次数)
 - pendingReviews:待复核记录(needsReview)+ 待审批申请(pendingApprovals)
 - inspectorQuality:各巡检员质量(没看图就确认 noPhotoConfirm、人工修正等)

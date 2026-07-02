@@ -152,18 +152,27 @@ type FieldConfirmLog struct {
 
 // AttentionItem — Top-N 重点关注列表里的一条(后端 risk_score 算出来,AI 加摘要)。
 type AttentionItem struct {
-	AssetID         string    `json:"assetId"`
-	AssetName       string    `json:"assetName"`
-	AssetType       string    `json:"assetType,omitempty"`
-	Project         string    `json:"project,omitempty"`
-	RiskScore       int       `json:"riskScore"`
-	RiskLevel       string    `json:"riskLevel"` // normal / warning / danger
-	Title           string    `json:"title"`
-	Reasons         []string  `json:"reasons"`
-	Action          string    `json:"action,omitempty"`
-	LastRecordID    string    `json:"lastRecordId,omitempty"`
-	LastInspectedAt string    `json:"lastInspectedAt,omitempty"`
-	Evidence        []ItemRef `json:"evidence,omitempty"`
+	AssetID         string       `json:"assetId"`
+	AssetName       string       `json:"assetName"`
+	AssetType       string       `json:"assetType,omitempty"`
+	Project         string       `json:"project,omitempty"`
+	RiskScore       int          `json:"riskScore"`
+	RiskLevel       string       `json:"riskLevel"` // normal / warning / danger
+	Title           string       `json:"title"`
+	Reasons         []string     `json:"reasons"`
+	Breakdown       []RiskFactor `json:"breakdown,omitempty"` // 百分制评分卡:各维度得分/满分/依据
+	Action          string       `json:"action,omitempty"`
+	LastRecordID    string       `json:"lastRecordId,omitempty"`
+	LastInspectedAt string       `json:"lastInspectedAt,omitempty"`
+	Evidence        []ItemRef    `json:"evidence,omitempty"`
+}
+
+// RiskFactor — 风险分的单个维度(评分卡一行)。
+type RiskFactor struct {
+	Label string `json:"label"`
+	Score int    `json:"score"`
+	Max   int    `json:"max"`
+	Basis string `json:"basis,omitempty"`
 }
 
 // ItemRef — 可跳转的证据引用(资产 / 巡检记录 / 字段观测)。
