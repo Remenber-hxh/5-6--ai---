@@ -16,6 +16,7 @@ import {
   weeklyReport,
 } from "../api/mgmt";
 import { ChatSession, listSessions, saveSession } from "../lib/history";
+import { ensureLive2d, live2dHide, live2dSay, live2dShow } from "../lib/live2d";
 import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
 import "./agent.css";
 
@@ -58,7 +59,20 @@ export default function AgentHome() {
 
   useEffect(() => {
     listAssets().then(setAssets).catch(() => void 0);
+    // 看板娘:进 Agent 页滑入,离开滑出(全局单例,CDN 不可达时自动降级)
+    let alive = true;
+    void ensureLive2d().then((ok) => {
+      if (ok && alive) live2dShow();
+    });
+    return () => {
+      alive = false;
+      live2dHide();
+    };
   }, []);
+
+  useEffect(() => {
+    if (busy) live2dSay("正在分析,请稍候…", 6000, 4);
+  }, [busy]);
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
@@ -222,13 +236,13 @@ export default function AgentHome() {
       </div>
       <div style={st.composer}>
         <Input
+          className="agent-input"
           size="large"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onPressEnter={() => send(input)}
           placeholder="请输入您的问题,如:灭火器怎么维保"
           variant="borderless"
-          style={{ color: "#e9f3f1" }}
           disabled={busy}
         />
         <Button
