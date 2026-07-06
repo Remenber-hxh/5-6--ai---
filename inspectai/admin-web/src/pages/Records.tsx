@@ -32,8 +32,9 @@ export default function Records() {
     listRecords().then((list) => {
       setRecords(list);
       const focus = params.get("focus");
-      if (focus) {
-        const hit = list.find((r) => r.id === focus);
+      const focusNo = params.get("focusNo");
+      if (focus || focusNo) {
+        const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
         if (hit) setCurrent(hit);
       }
     });
@@ -122,7 +123,7 @@ export default function Records() {
         width={520}
         onClose={() => {
           setCurrent(null);
-          if (params.get("focus")) setParams({});
+          if (params.get("focus") || params.get("focusNo")) setParams({});
         }}
       >
         {current && (

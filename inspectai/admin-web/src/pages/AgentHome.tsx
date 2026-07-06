@@ -202,6 +202,8 @@ export default function AgentHome() {
           <MsgView
             key={m.id}
             m={m}
+            assets={assets}
+            onJump={(path) => nav(path)}
             onDispatch={dispatchProposal}
             onDismiss={(x) =>
               setMsgs((list) => list.map((y) => (y.id === x.id ? { ...y, proposalDismissed: true } : y)))
@@ -210,7 +212,8 @@ export default function AgentHome() {
           />
         ))}
         {busy && (
-          <div className="agent-typing" aria-label="智巡 Agent 思考中">
+          <div className="agent-typing" aria-label="智巡 Agent 分析中">
+            <span className="radar" />
             <i />
             <i />
             <i />
@@ -287,11 +290,15 @@ function renderBold(line: string) {
 
 function MsgView({
   m,
+  assets,
+  onJump,
   onDispatch,
   onDismiss,
   onSource,
 }: {
   m: Msg;
+  assets: AssetEntry[];
+  onJump: (path: string) => void;
   onDispatch: (m: Msg, extra: Record<string, string>) => void;
   onDismiss: (m: Msg) => void;
   onSource: (s: ChatSource) => void;
@@ -300,6 +307,29 @@ function MsgView({
   const [assignee, setAssignee] = useState("");
   const [dueAt, setDueAt] = useState("");
   const user = m.role === "user";
+
+  // 回复里的设备编号 / 记录号自动变链接(命中真实数据才加,避免死链)
+  function linkify(text: string, keyBase: string) {
+    const keys = assets
+      .map((a) => a.assetKey || "")
+      .filter((k) => k.length >= 3)
+      .sort((a, b) => b.length - a.length);
+    const pattern = [...keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "ZX-[A-Z0-9-]{6,}"].join("|");
+    if (!pattern) return [text];
+    const re = new RegExp(`(${pattern})`, "g");
+    return text.split(re).map((part, i) => {
+      if (i % 2 === 0) return part;
+      const asset = assets.find((a) => a.assetKey === part);
+      const path = asset
+        ? `/ledger?focus=${encodeURIComponent(asset.id)}`
+        : `/record?focusNo=${encodeURIComponent(part)}`;
+      return (
+        <a key={`${keyBase}_${i}`} onClick={() => onJump(path)} style={{ color: "#5cf0c4", cursor: "pointer" }}>
+          {part}
+        </a>
+      );
+    });
+  }
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -310,7 +340,9 @@ function MsgView({
       <div style={user ? st.userBubble : st.aiBubble}>
         {m.text.split("\n").map((line, i) => (
           <p key={i} style={{ margin: i ? "8px 0 0" : 0 }}>
-            {renderBold(line)}
+            {renderBold(line).map((node, j) =>
+              typeof node === "string" && !user ? <span key={j}>{linkify(node, `${i}_${j}`)}</span> : node,
+            )}
           </p>
         ))}
         {m.report &&

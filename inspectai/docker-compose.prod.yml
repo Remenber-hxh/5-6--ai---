@@ -188,6 +188,8 @@ services:
       - ./nginx/acme-webroot:/var/www/acme:ro
       # SSL 证书目录：acme.sh 装证书到这里，nginx 加 443 server block 时引用
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      # 新版管理后台静态产物(admin-web,构建后 commit 进仓库,服务器无需 node)
+      - ./admin-web/dist:/usr/share/nginx/admin-web:ro
     ports:
       - "80:80"
       - "443:443"

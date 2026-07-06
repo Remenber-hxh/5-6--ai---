@@ -25,6 +25,32 @@
   animation-delay: 0.3s;
 }
 
+/* 雷达扫描:识别/分析中的等待动效 */
+.agent-typing .radar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(62, 230, 180, 0.4);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.agent-typing .radar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(62, 230, 180, 0.85), transparent 65%);
+  animation: radarSweep 1.3s linear infinite;
+}
+
+@keyframes radarSweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes agentDot {
   0%,
   60%,

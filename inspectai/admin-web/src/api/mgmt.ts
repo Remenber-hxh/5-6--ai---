@@ -123,6 +123,169 @@ export function reviewChangeRequest(id: string, action: "approve" | "reject") {
   });
 }
 
+// ===== 巡检计划 / 工程任务 =====
+export interface EngineeringPlan {
+  id: string;
+  workContent?: string;
+  project?: string;
+  ownerName?: string;
+  planStart?: string;
+  planEnd?: string;
+  status?: string; // 待执行 / 执行中 / 待整改 / 已完成
+  frequency?: string;
+  pointName?: string;
+}
+
+export interface EngineeringTask {
+  id: string;
+  planItemId?: string;
+  title?: string;
+  assigneeName?: string;
+  dueAt?: string;
+  status?: string; // 待执行 / 进行中 / 待整改 / 已完成 / 逾期
+  taskType?: string;
+  assetId?: string;
+  completedAt?: string;
+  createdAt?: string;
+}
+
+export function listPlans() {
+  return api<{ plans: EngineeringPlan[] }>("/api/engineering/plans").then((d) => d.plans || []);
+}
+
+export function listTasks() {
+  return api<{ tasks: EngineeringTask[] }>("/api/engineering/tasks").then((d) => d.tasks || []);
+}
+
+export function setTaskStatus(id: string, status: string) {
+  return api(`/api/engineering/tasks/${encodeURIComponent(id)}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
+// 派发执行:创建(或复用)计划的执行任务并置「进行中」——两步契约与旧版一致
+export async function dispatchPlan(plan: EngineeringPlan) {
+  const res = await api<{ task?: { id?: string } }>("/api/engineering/tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      planItemId: plan.id,
+      title: `${plan.workContent || "工程计划"} 执行任务`,
+      assigneeName: plan.ownerName || "",
+      dueAt: plan.planEnd || "",
+      taskType: "巡检计划执行",
+      status: "进行中",
+      source: "manual",
+    }),
+  });
+  const taskId = res?.task?.id;
+  // 创建任务不会重算计划状态,必须再调一次状态更新
+  if (taskId) await setTaskStatus(taskId, "进行中");
+  return taskId;
+}
+
+// ===== 用户 / 日志 / 系统 =====
+export interface UserEntry {
+  id: string;
+  username?: string;
+  displayName?: string;
+  roleCode?: string;
+  roleName?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export function listUsers() {
+  return api<{ users: UserEntry[] }>("/api/users").then((d) => d.users || []);
+}
+
+export interface OperationLog {
+  id?: string;
+  actorName?: string;
+  action?: string;
+  targetType?: string;
+  targetId?: string;
+  createdAt?: string;
+  detail?: Record<string, unknown>;
+}
+
+export function listOperationLogs() {
+  return api<{ logs: OperationLog[] }>("/api/operation-logs?limit=100").then((d) => d.logs || []);
+}
+
+export function getHealth() {
+  return api<Record<string, unknown>>("/health");
+}
+
+// ===== 提示词模板 =====
+export interface PromptField {
+  code: string;
+  label: string;
+  group?: string;
+  mode?: string;
+  yesWhen?: string;
+  noWhen?: string;
+  skipWhen?: string;
+  note?: string;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name?: string;
+  scene?: string;
+  expectedPhotos?: string;
+  fields: PromptField[];
+}
+
+export function listPromptTemplates() {
+  return api<{ templates: PromptTemplate[]; modes: { value: string; label: string }[] }>(
+    "/api/prompt/templates",
+  );
+}
+
+export function getPromptTemplate(id: string) {
+  return api<PromptTemplate>(`/api/prompt/templates/${encodeURIComponent(id)}`);
+}
+
+export function savePromptTemplate(t: PromptTemplate) {
+  return api(`/api/prompt/templates/${encodeURIComponent(t.id)}`, {
+    method: "PUT",
+    body: JSON.stringify(t),
+  });
+}
+
+export function renderPromptTemplate(id: string) {
+  return api<{ prompt: string }>(`/api/prompt/templates/${encodeURIComponent(id)}/render`).then(
+    (d) => d.prompt || "",
+  );
+}
+
+// ===== 重点关注(数据看板) =====
+export function listAttention(limit = 8) {
+  return api<{ attention: AttentionItem[] }>(
+    `/api/management-ai/attention?limit=${limit}`,
+  ).then((d) => d.attention || []);
+}
+
+export interface RiskFactor {
+  label: string;
+  score: number;
+  max: number;
+  basis?: string;
+}
+
+export interface AttentionItem {
+  assetId: string;
+  assetName?: string;
+  riskScore?: number;
+  riskLevel?: string;
+  title?: string;
+  reasons?: string[];
+  breakdown?: RiskFactor[];
+  action?: string;
+  lastRecordId?: string;
+}
+
 // AI 回复里的动作提议块:<<ACTION>>{json}<<END>>
 export function extractActionProposal(reply: string): {
   text: string;
