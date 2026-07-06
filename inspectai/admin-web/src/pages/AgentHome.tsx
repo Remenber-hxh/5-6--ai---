@@ -30,19 +30,49 @@ interface Msg {
   proposalDismissed?: boolean;
   report?: any; // 周报/日报数据(结构化渲染)
   reportKind?: "weekly" | "daily";
+  navJump?: { path: string; label: string } | null; // 「前往 X」跳转 chip
 }
 
-// 预设场景(与旧版一致,演示动线的五个入口)
-const PRESETS = [
-  "查看本周巡检计划",
-  "目前有哪些待审批工单需要处理？",
-  "最近 30 天有哪些设备需要重点关注？",
-  "分析本月异常趋势",
-  "生成本周巡检周报",
+// 预设场景(问句/图标/色调与旧版 AGENT_ACTS 一致;page = 回答后附「前往 X」)
+const PRESETS: { q: string; label: string; page?: string; tone: string; svg: string }[] = [
+  { q: "查看本周巡检计划", label: "查看本周巡检计划", page: "/plan", tone: "#7fb0ff", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>' },
+  { q: "目前有哪些待审批工单需要处理？", label: "查询待审批工单", page: "/approval", tone: "#c4a7ff", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>' },
+  { q: "最近 30 天有哪些设备需要重点关注？", label: "定位异常设备", page: "/data", tone: "#3ee6b4", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>' },
+  { q: "分析本月异常趋势", label: "分析本月异常趋势", page: "/data", tone: "#ffc46b", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>' },
+  { q: "生成本周巡检周报", label: "生成本周周报", tone: "#7fb0ff", svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5M8 9h2"/></svg>' },
 ];
 
 const WEEKLY_RE = /周报|周度报告|本周报告/;
 const DAILY_RE = /日报|今日(汇报|情况|报告|总结|管理)/;
+
+// @页面 显式提及 → 跳转 chip(与旧版 navIntent 口径一致:只认 @,不按关键词猜)
+const NAV_PAGES = [
+  { path: "/approval", label: "审批中心" },
+  { path: "/ledger", label: "资产台账" },
+  { path: "/data", label: "数据看板" },
+  { path: "/record", label: "巡检记录" },
+  { path: "/plan", label: "巡检计划" },
+  { path: "/users", label: "用户与权限" },
+  { path: "/logs", label: "操作日志" },
+  { path: "/system", label: "系统管理" },
+];
+
+function navIntent(text: string): { path: string; label: string } | null {
+  const m = String(text || "").match(/@([一-龥A-Za-z]{2,8})/);
+  if (!m) return null;
+  const term = m[1];
+  for (const n of NAV_PAGES) {
+    if (n.label === term || n.label.includes(term) || term.includes(n.label)) return n;
+  }
+  return null;
+}
+
+function presetJump(q: string): { path: string; label: string } | null {
+  const hit = PRESETS.find((p) => p.q === q && p.page);
+  if (!hit) return null;
+  const nav = NAV_PAGES.find((n) => n.path === hit.page);
+  return nav || null;
+}
 
 let seq = 0;
 const mid = () => `m_${Date.now()}_${++seq}`;
@@ -123,7 +153,14 @@ export default function AgentHome() {
         const { text, proposal } = extractActionProposal(res.reply || "AI 没有给出回复。");
         setMsgs((m) => [
           ...m,
-          { id: mid(), role: "ai", text, proposal, sources: res.sources || [] },
+          {
+            id: mid(),
+            role: "ai",
+            text,
+            proposal,
+            sources: res.sources || [],
+            navJump: navIntent(q) || presetJump(q),
+          },
         ]);
       }
     } catch (e) {
@@ -176,14 +213,6 @@ export default function AgentHome() {
   return (
     <div style={st.page}>
       <div style={st.horizon} />
-      <div style={st.topBar}>
-        <Button size="small" ghost icon={<PlusOutlined />} onClick={newChat}>
-          新对话
-        </Button>
-        <Button size="small" ghost icon={<HistoryOutlined />} onClick={() => setHistOpen(true)}>
-          历史对话
-        </Button>
-      </div>
       <div ref={bodyRef} style={st.body}>
         {msgs.length === 0 && (
           <motion.div
@@ -199,14 +228,18 @@ export default function AgentHome() {
             <div style={st.presets}>
               {PRESETS.map((p, i) => (
                 <motion.button
-                  key={p}
+                  key={p.q}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 + i * 0.07 }}
                   style={st.preset}
-                  onClick={() => send(p)}
+                  onClick={() => send(p.q)}
                 >
-                  {p}
+                  <span
+                    style={{ width: 18, height: 18, display: "inline-flex", color: p.tone, flex: "none" }}
+                    dangerouslySetInnerHTML={{ __html: p.svg }}
+                  />
+                  {p.label}
                 </motion.button>
               ))}
             </div>
@@ -241,7 +274,7 @@ export default function AgentHome() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onPressEnter={() => send(input)}
-          placeholder="请输入您的问题,如:灭火器怎么维保"
+          placeholder="请输入您的问题,或直接 @相关页面,如:@巡检记录"
           variant="borderless"
           disabled={busy}
         />
@@ -252,6 +285,17 @@ export default function AgentHome() {
           onClick={() => send(input)}
           loading={busy}
         />
+      </div>
+      <div style={st.foot}>
+        <span style={{ color: "#7e94a0", fontSize: 12 }}>AI 生成的内容仅供参考,请以实际数据为准</span>
+        <span style={{ display: "flex", gap: 14 }}>
+          <a style={st.footLink} onClick={() => setHistOpen(true)}>
+            <HistoryOutlined /> 历史对话
+          </a>
+          <a style={st.footLink} onClick={newChat}>
+            <PlusOutlined /> 清空对话
+          </a>
+        </span>
       </div>
       <Drawer
         title="历史对话(保留 7 天)"
@@ -421,6 +465,11 @@ function MsgView({
         </div>
       )}
       {m.proposalDone && <div style={st.proposalDone}>✓ {m.proposalDone}</div>}
+      {m.navJump && !(m.proposal && !m.proposalDone && !m.proposalDismissed) && (
+        <button style={st.jumpChip} onClick={() => onJump(m.navJump!.path)}>
+          前往{m.navJump.label} →
+        </button>
+      )}
       {!!m.sources?.length && (
         <div style={st.srcRow}>
           <span style={{ color: "rgba(220,233,247,0.45)", fontSize: 12 }}>依据</span>
@@ -546,13 +595,28 @@ const st: Record<string, React.CSSProperties> = {
     background: "radial-gradient(120% 80% at 50% 120%, #0a2433 0%, #071521 38%, #050b12 70%)",
     margin: -20,
   },
-  topBar: {
+  foot: {
     position: "relative",
-    zIndex: 2,
+    zIndex: 1,
     display: "flex",
-    gap: 8,
-    justifyContent: "flex-end",
-    padding: "12px 16px 0",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 980,
+    margin: "0 auto",
+    padding: "0 4px 14px",
+  },
+  footLink: { color: "#8aa3ad", fontSize: 12, cursor: "pointer" },
+  jumpChip: {
+    marginTop: 8,
+    padding: "7px 14px",
+    border: 0,
+    borderRadius: 8,
+    background: "linear-gradient(135deg, #3ee6b4, #18c597)",
+    color: "#04241b",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
   },
   horizon: {
     position: "absolute",
@@ -585,6 +649,9 @@ const st: Record<string, React.CSSProperties> = {
   sub: { marginTop: 12, color: "#8aa3ad", fontSize: 14 },
   presets: { display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 48 },
   preset: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
     padding: "9px 16px",
     borderRadius: 10,
     border: "1px solid rgba(255,255,255,0.14)",
@@ -621,7 +688,7 @@ const st: Record<string, React.CSSProperties> = {
     alignItems: "center",
     width: "100%",
     maxWidth: 980,
-    margin: "0 auto 18px",
+    margin: "0 auto 8px",
     padding: 8,
     borderRadius: 16,
     background: "rgba(255,255,255,0.07)",
