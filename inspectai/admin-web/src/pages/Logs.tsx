@@ -28,7 +28,7 @@ export default function Logs() {
   return (
     <Card title="操作日志">
       <Table<OperationLog>
-        rowKey={(l, i) => l.id || String(i)}
+        rowKey={(l) => l.id || `${l.createdAt}_${l.targetId}_${l.action}`}
         loading={loading}
         dataSource={logs}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}

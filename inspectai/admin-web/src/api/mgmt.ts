@@ -262,9 +262,10 @@ export function renderPromptTemplate(id: string) {
 
 // ===== 重点关注(数据看板) =====
 export function listAttention(limit = 8) {
-  return api<{ attention: AttentionItem[] }>(
+  // 后端两条路径键名不同:实时计算返回 items,缓存回退返回 attention
+  return api<{ items?: AttentionItem[]; attention?: AttentionItem[] }>(
     `/api/management-ai/attention?limit=${limit}`,
-  ).then((d) => d.attention || []);
+  ).then((d) => d.items || d.attention || []);
 }
 
 export interface RiskFactor {

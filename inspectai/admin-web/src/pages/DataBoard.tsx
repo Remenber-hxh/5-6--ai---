@@ -57,7 +57,7 @@ export default function DataBoard() {
     }
     return {
       tooltip: { trigger: "axis" },
-      legend: { data: ["巡检量", "异常量"] },
+      legend: { data: ["巡检量", "异常量"], top: 4, right: 8 },
       grid: { left: 40, right: 16, top: 36, bottom: 28 },
       xAxis: { type: "category", data: days, axisLabel: { interval: 4 } },
       yAxis: { type: "value", minInterval: 1 },

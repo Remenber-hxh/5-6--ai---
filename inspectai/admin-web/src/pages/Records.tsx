@@ -167,7 +167,7 @@ export default function Records() {
                 </div>
                 <Table
                   size="small"
-                  rowKey={(_, i) => String(i)}
+                  rowKey={(l) => `${l.createdAt}_${l.fieldKey}_${l.action}`}
                   dataSource={logs.slice(-8).reverse()}
                   pagination={false}
                   columns={[
