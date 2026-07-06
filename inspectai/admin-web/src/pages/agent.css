@@ -1,0 +1,47 @@
+/* Agent 工作台的少量关键帧动画(内联样式写不了 keyframes) */
+.agent-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.agent-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3ee6b4;
+  animation: agentDot 1.2s ease-in-out infinite;
+}
+
+.agent-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.agent-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes agentDot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.agent-input::placeholder {
+  color: #7e94a0 !important;
+}
+
+.agent-input {
+  color: #e9f3f1 !important;
+}

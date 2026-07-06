@@ -2,6 +2,7 @@ import { Button, Card, Descriptions, Drawer, Popconfirm, Space, Table, Tag, mess
 import { useEffect, useState } from "react";
 
 import { ChangeRequest, listChangeRequests, reviewChangeRequest } from "../api/mgmt";
+import { fmtTime } from "../lib/status";
 
 const statusTag = (s?: string) =>
   s === "pending" ? (
@@ -52,7 +53,7 @@ export default function Approvals() {
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}
         columns={[
-          { title: "时间", dataIndex: "createdAt", width: 170, render: (v) => (v || "").slice(0, 16).replace("T", " ") },
+          { title: "时间", dataIndex: "createdAt", width: 150, render: (v) => fmtTime(v, true) },
           { title: "类型", dataIndex: "type", width: 120 },
           { title: "设备", dataIndex: "assetName" },
           { title: "申请人", dataIndex: "requesterName", width: 110 },

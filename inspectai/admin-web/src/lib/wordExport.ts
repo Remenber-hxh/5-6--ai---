@@ -31,6 +31,26 @@ export function exportWordDoc(filename: string, title: string, bodyHtml: string)
   URL.revokeObjectURL(a.href);
 }
 
+// 日报数据 → Word 正文(字段与 /report?type=daily 返回一致)
+export function buildDailyHtml(d: any): string {
+  const c = d.conclusion || {};
+  const ex = d.execution || {};
+  const as = d.assetStatus || {};
+  let h = `<h1>智巡 · 巡检日报</h1><p>${esc(d.date || "")} · ${esc(d.project || "全部项目")}</p>`;
+  h += `<h2>今日结论</h2><p>${c.hasAbnormal ? "今日有异常" : "今日无异常"} · 异常 ${c.abnormalCount ?? 0} · 待处理 ${c.pendingCount ?? 0} · 今日闭环 ${c.closedCount ?? 0}</p><p>${esc(d.summary || "")}</p>`;
+  h += `<h2>巡检执行</h2><table><tr><th>计划</th><th>已完成</th><th>进行中</th><th>逾期</th></tr><tr><td>${ex.plan ?? 0}</td><td>${ex.done ?? 0}</td><td>${ex.processing ?? 0}</td><td>${ex.overdue ?? 0}</td></tr></table>`;
+  h += `<h2>记录状态</h2><table><tr><th>今日巡检</th><th>正常</th><th>异常</th><th>待复核</th></tr><tr><td>${as.inspected ?? 0}</td><td>${as.normal ?? 0}</td><td>${as.abnormal ?? 0}</td><td>${as.pendingReview ?? 0}</td></tr></table>`;
+  const ab: any[] = d.abnormalList || [];
+  if (ab.length) {
+    h += `<h2>异常处理清单(${ab.length})</h2><table><tr><th>点位</th><th>异常字段</th><th>责任人</th><th>状态</th><th>记录号</th></tr>`;
+    ab.forEach((x) => {
+      h += `<tr><td>${esc(x.point)}</td><td>${esc(x.field)}</td><td>${esc(x.assignee)}</td><td>${esc(x.status)}</td><td>${esc(x.recordNo)}</td></tr>`;
+    });
+    h += `</table>`;
+  }
+  return h;
+}
+
 // 周报数据 → Word 正文(字段与 /report?type=weekly 返回一致)
 export function buildWeeklyHtml(d: any): string {
   const m = d.metrics || {};

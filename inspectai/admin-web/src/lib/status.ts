@@ -55,6 +55,16 @@ export function recordBusinessStatus(r: InspectionRecord): string {
   return "待复核";
 }
 
+// 时间展示:ISO 串 → "MM-DD HH:mm"(带年份场景用 full)
+export function fmtTime(iso?: string, full = false): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(0, 16).replace("T", " ");
+  const p = (n: number) => String(n).padStart(2, "0");
+  const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return full ? `${d.getFullYear()}-${md}` : md;
+}
+
 // antd Tag 颜色映射(红色只给真正异常,与设计规范一致)
 export function statusTagColor(status: string): string {
   switch (status) {

@@ -75,6 +75,29 @@ export function weeklyReport() {
   return api<any>("/api/management-ai/report?type=weekly");
 }
 
+export function dailyReport() {
+  return api<any>("/api/management-ai/report?type=daily");
+}
+
+export interface ConfirmLog {
+  action?: string; // confirm / correct / uncertain
+  fieldLabel?: string;
+  fieldKey?: string;
+  aiValue?: string;
+  finalValue?: string;
+  aiConfidence?: number;
+  viewedPhoto?: boolean;
+  durationMs?: number;
+  operator?: string;
+  createdAt?: string;
+}
+
+export function listConfirmLogs(recordId: string) {
+  return api<{ logs: ConfirmLog[] }>(
+    `/api/inspection/records/${encodeURIComponent(recordId)}/confirm-logs`,
+  ).then((d) => d.logs || []);
+}
+
 export function listAssets() {
   return api<{ assets: AssetEntry[] }>("/api/assets").then((d) => d.assets || []);
 }

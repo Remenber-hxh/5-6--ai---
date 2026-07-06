@@ -10,12 +10,14 @@ import {
   ChatSource,
   act,
   chat,
+  dailyReport,
   extractActionProposal,
   listAssets,
   weeklyReport,
 } from "../api/mgmt";
 import { ChatSession, listSessions, saveSession } from "../lib/history";
-import { buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
+import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
+import "./agent.css";
 
 interface Msg {
   id: string;
@@ -24,7 +26,9 @@ interface Msg {
   sources?: ChatSource[];
   proposal?: ActionProposal | null;
   proposalDone?: string; // 派发结果文案
-  report?: any; // 周报数据(结构化渲染)
+  proposalDismissed?: boolean;
+  report?: any; // 周报/日报数据(结构化渲染)
+  reportKind?: "weekly" | "daily";
 }
 
 // 预设场景(与旧版一致,演示动线的五个入口)
@@ -37,6 +41,7 @@ const PRESETS = [
 ];
 
 const WEEKLY_RE = /周报|周度报告|本周报告/;
+const DAILY_RE = /日报|今日(汇报|情况|报告|总结|管理)/;
 
 let seq = 0;
 const mid = () => `m_${Date.now()}_${++seq}`;
@@ -91,7 +96,13 @@ export default function AgentHome() {
         const d = await weeklyReport();
         setMsgs((m) => [
           ...m,
-          { id: mid(), role: "ai", text: d.summary || "本周周报已生成。", report: d },
+          { id: mid(), role: "ai", text: d.summary || "本周周报已生成。", report: d, reportKind: "weekly" },
+        ]);
+      } else if (DAILY_RE.test(q)) {
+        const d = await dailyReport();
+        setMsgs((m) => [
+          ...m,
+          { id: mid(), role: "ai", text: d.summary || "今日日报已生成。", report: d, reportKind: "daily" },
         ]);
       } else {
         const res = await chat(q, msgsToHistory(msgs));
@@ -111,7 +122,7 @@ export default function AgentHome() {
     }
   }
 
-  async function dispatchProposal(msg: Msg) {
+  async function dispatchProposal(msg: Msg, extra: Record<string, string> = {}) {
     const p = msg.proposal;
     if (!p) return;
     const asset = assets.find(
@@ -124,6 +135,7 @@ export default function AgentHome() {
     const params: Record<string, string> = {};
     if (p.assignee) params.assignee = p.assignee;
     if (p.dueAt) params.dueAt = p.dueAt;
+    for (const [k, v] of Object.entries(extra)) if (v) params[k] = v;
     try {
       const res = await act(p.type, asset.id, params);
       const detail = res.task
@@ -187,9 +199,23 @@ export default function AgentHome() {
           </motion.div>
         )}
         {msgs.map((m) => (
-          <MsgView key={m.id} m={m} onDispatch={dispatchProposal} onSource={onSourceClick} />
+          <MsgView
+            key={m.id}
+            m={m}
+            onDispatch={dispatchProposal}
+            onDismiss={(x) =>
+              setMsgs((list) => list.map((y) => (y.id === x.id ? { ...y, proposalDismissed: true } : y)))
+            }
+            onSource={onSourceClick}
+          />
         ))}
-        {busy && <div style={st.typing}>智巡 Agent 思考中…</div>}
+        {busy && (
+          <div className="agent-typing" aria-label="智巡 Agent 思考中">
+            <i />
+            <i />
+            <i />
+          </div>
+        )}
       </div>
       <div style={st.composer}>
         <Input
@@ -262,13 +288,17 @@ function renderBold(line: string) {
 function MsgView({
   m,
   onDispatch,
+  onDismiss,
   onSource,
 }: {
   m: Msg;
-  onDispatch: (m: Msg) => void;
+  onDispatch: (m: Msg, extra: Record<string, string>) => void;
+  onDismiss: (m: Msg) => void;
   onSource: (s: ChatSource) => void;
 }) {
   const [expanded, setExpanded] = useState<ChatSource | null>(null);
+  const [assignee, setAssignee] = useState("");
+  const [dueAt, setDueAt] = useState("");
   const user = m.role === "user";
   return (
     <motion.div
@@ -283,7 +313,8 @@ function MsgView({
             {renderBold(line)}
           </p>
         ))}
-        {m.report && <WeeklyReportView d={m.report} />}
+        {m.report &&
+          (m.reportKind === "daily" ? <DailyReportView d={m.report} /> : <WeeklyReportView d={m.report} />)}
       </div>
       {m.report && (
         <Button
@@ -292,17 +323,23 @@ function MsgView({
           icon={<DownloadOutlined />}
           style={{ marginTop: 8 }}
           onClick={() =>
-            exportWordDoc(
-              `智巡周报-${new Date().toISOString().slice(0, 10)}`,
-              "智巡 · 本周巡检周报",
-              buildWeeklyHtml(m.report),
-            )
+            m.reportKind === "daily"
+              ? exportWordDoc(
+                  `智巡日报-${new Date().toISOString().slice(0, 10)}`,
+                  "智巡 · 巡检日报",
+                  buildDailyHtml(m.report),
+                )
+              : exportWordDoc(
+                  `智巡周报-${new Date().toISOString().slice(0, 10)}`,
+                  "智巡 · 本周巡检周报",
+                  buildWeeklyHtml(m.report),
+                )
           }
         >
           导出 Word
         </Button>
       )}
-      {m.proposal && !m.proposalDone && (
+      {m.proposal && !m.proposalDone && !m.proposalDismissed && (
         <div style={st.proposal}>
           <div style={{ marginBottom: 6 }}>
             <span style={st.proposalTag}>建议动作</span> 派复检任务 · 目标设备{" "}
@@ -311,9 +348,30 @@ function MsgView({
           {m.proposal.reason && (
             <div style={{ color: "#9fb2ad", fontSize: 12, marginBottom: 8 }}>{m.proposal.reason}</div>
           )}
-          <Button type="primary" size="small" onClick={() => onDispatch(m)}>
-            确认派发
-          </Button>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <Input
+              size="small"
+              placeholder={m.proposal.assignee || "责任人(默认上次巡检人)"}
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              style={{ width: 180 }}
+            />
+            <Input
+              size="small"
+              placeholder={m.proposal.dueAt || "截止 YYYY-MM-DD"}
+              value={dueAt}
+              onChange={(e) => setDueAt(e.target.value)}
+              style={{ width: 150 }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button type="primary" size="small" onClick={() => onDispatch(m, { assignee, dueAt })}>
+              确认派发
+            </Button>
+            <Button size="small" ghost onClick={() => onDismiss(m)}>
+              忽略
+            </Button>
+          </div>
         </div>
       )}
       {m.proposalDone && <div style={st.proposalDone}>✓ {m.proposalDone}</div>}
@@ -339,6 +397,46 @@ function MsgView({
         </div>
       )}
     </motion.div>
+  );
+}
+
+// 日报:结论 + 执行 + 异常清单的紧凑渲染(数据同 /report?type=daily)
+function DailyReportView({ d }: { d: any }) {
+  const c = d.conclusion || {};
+  const ex = d.execution || {};
+  const ab: any[] = d.abnormalList || [];
+  return (
+    <div style={{ marginTop: 10, fontSize: 12.5 }}>
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ color: c.hasAbnormal ? "#ff8d7a" : "#3ee6b4", fontWeight: 600 }}>
+          {c.hasAbnormal ? "今日有异常" : "今日无异常"}
+        </span>
+        {" · 异常 "}
+        <b>{c.abnormalCount ?? 0}</b>
+        {" · 待处理 "}
+        <b>{c.pendingCount ?? 0}</b>
+        {" · 今日闭环 "}
+        <b>{c.closedCount ?? 0}</b>
+        {" · 任务 "}
+        <b>
+          {ex.done ?? 0}/{ex.plan ?? 0}
+        </b>
+      </div>
+      {ab.length > 0 && (
+        <table style={st.table}>
+          <tbody>
+            {ab.slice(0, 6).map((x, i) => (
+              <tr key={i}>
+                <td style={st.td}>{x.point}</td>
+                <td style={st.td}>{x.field}</td>
+                <td style={st.td}>{x.status}</td>
+                <td style={st.td}>{x.assignee}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
