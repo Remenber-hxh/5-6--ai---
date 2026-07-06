@@ -1,5 +1,5 @@
-import { SendOutlined } from "@ant-design/icons";
-import { Button, Input, message as antdMsg } from "antd";
+import { DownloadOutlined, HistoryOutlined, PlusOutlined, SendOutlined } from "@ant-design/icons";
+import { Button, Drawer, Empty, Input, List, message as antdMsg } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -14,6 +14,8 @@ import {
   listAssets,
   weeklyReport,
 } from "../api/mgmt";
+import { ChatSession, listSessions, saveSession } from "../lib/history";
+import { buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
 
 interface Msg {
   id: string;
@@ -45,6 +47,8 @@ export default function AgentHome() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [assets, setAssets] = useState<AssetEntry[]>([]);
+  const [histOpen, setHistOpen] = useState(false);
+  const [sessionId, setSessionId] = useState(() => mid());
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +57,28 @@ export default function AgentHome() {
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
-  }, [msgs, busy]);
+    // 会话随消息自动落盘(7 天保留)
+    if (msgs.length) {
+      const firstUser = msgs.find((m) => m.role === "user");
+      saveSession({
+        id: sessionId,
+        ts: Date.now(),
+        title: (firstUser?.text || "对话").slice(0, 30),
+        msgs,
+      });
+    }
+  }, [msgs, busy, sessionId]);
+
+  function newChat() {
+    setMsgs([]);
+    setSessionId(mid());
+  }
+
+  function restore(s: ChatSession) {
+    setMsgs(s.msgs as Msg[]);
+    setSessionId(s.id);
+    setHistOpen(false);
+  }
 
   async function send(question: string) {
     const q = question.trim();
@@ -125,6 +150,14 @@ export default function AgentHome() {
   return (
     <div style={st.page}>
       <div style={st.horizon} />
+      <div style={st.topBar}>
+        <Button size="small" ghost icon={<PlusOutlined />} onClick={newChat}>
+          新对话
+        </Button>
+        <Button size="small" ghost icon={<HistoryOutlined />} onClick={() => setHistOpen(true)}>
+          历史对话
+        </Button>
+      </div>
       <div ref={bodyRef} style={st.body}>
         {msgs.length === 0 && (
           <motion.div
@@ -177,6 +210,33 @@ export default function AgentHome() {
           loading={busy}
         />
       </div>
+      <Drawer
+        title="历史对话(保留 7 天)"
+        open={histOpen}
+        width={360}
+        onClose={() => setHistOpen(false)}
+      >
+        {listSessions().length === 0 ? (
+          <Empty description="暂无历史对话" />
+        ) : (
+          <List
+            dataSource={listSessions()}
+            renderItem={(s) => (
+              <List.Item style={{ cursor: "pointer" }} onClick={() => restore(s)}>
+                <List.Item.Meta
+                  title={s.title}
+                  description={new Date(s.ts).toLocaleString("zh-CN", {
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                />
+              </List.Item>
+            )}
+          />
+        )}
+      </Drawer>
     </div>
   );
 }
@@ -225,6 +285,23 @@ function MsgView({
         ))}
         {m.report && <WeeklyReportView d={m.report} />}
       </div>
+      {m.report && (
+        <Button
+          size="small"
+          ghost
+          icon={<DownloadOutlined />}
+          style={{ marginTop: 8 }}
+          onClick={() =>
+            exportWordDoc(
+              `智巡周报-${new Date().toISOString().slice(0, 10)}`,
+              "智巡 · 本周巡检周报",
+              buildWeeklyHtml(m.report),
+            )
+          }
+        >
+          导出 Word
+        </Button>
+      )}
       {m.proposal && !m.proposalDone && (
         <div style={st.proposal}>
           <div style={{ marginBottom: 6 }}>
@@ -324,6 +401,14 @@ const st: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     background: "radial-gradient(120% 80% at 50% 120%, #0a2433 0%, #071521 38%, #050b12 70%)",
     margin: -20,
+  },
+  topBar: {
+    position: "relative",
+    zIndex: 2,
+    display: "flex",
+    gap: 8,
+    justifyContent: "flex-end",
+    padding: "12px 16px 0",
   },
   horizon: {
     position: "absolute",
