@@ -5,20 +5,9 @@ import { useSearchParams } from "react-router-dom";
 
 import { ConfirmLog, listConfirmLogs, listRecords } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
-import { InspectionRecord, fmtTime, recordBusinessStatus, statusTagColor } from "../lib/status";
+import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
 
 const STATUS_OPTIONS = ["异常", "待复核", "需补图", "人工填写", "已完成", "正常"];
-
-// 图片地址口径与旧版 mediaUrl 一致:后端以 /storage/ 提供上传文件
-function mediaUrl(path?: string): string {
-  if (!path) return "";
-  if (/^https?:\/\//i.test(path)) return path;
-  const normalized = String(path).replace(/\\/g, "/");
-  const idx = normalized.indexOf("/storage/");
-  let p = idx >= 0 ? normalized.slice(idx + "/storage/".length) : normalized;
-  p = p.replace(/^\/?storage\//, "").replace(/^\/+/, "");
-  return `/storage/${encodeURI(p)}`;
-}
 
 export default function Records() {
   const [records, setRecords] = useState<InspectionRecord[]>([]);

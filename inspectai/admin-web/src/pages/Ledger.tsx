@@ -1,9 +1,10 @@
-import { Card, Descriptions, Drawer, Input, Select, Space, Table, Tag } from "antd";
+import { Card, Col, Descriptions, Drawer, Empty, Input, Row, Select, Space, Tag } from "antd";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { AssetEntry, listAssets, listRecords } from "../api/mgmt";
-import { InspectionRecord, fmtTime, recordBusinessStatus, statusTagColor } from "../lib/status";
+import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
 
 const levelTag = (a: AssetEntry) => {
   const s = a.lastStatus || "";
@@ -13,6 +14,7 @@ const levelTag = (a: AssetEntry) => {
   return <Tag color="green">正常</Tag>;
 };
 
+// 资产台账:卡片网格(带设备照片预览,与旧版一致)+ 详情抽屉(巡检轨迹)
 export default function Ledger() {
   const nav = useNavigate();
   const [assets, setAssets] = useState<AssetEntry[]>([]);
@@ -40,6 +42,18 @@ export default function Ledger() {
     [assets],
   );
 
+  // 资产 → 最近一张现场照片(取该点位最新带图记录)
+  const photoOf = useMemo(() => {
+    const map: Record<string, string> = {};
+    const sorted = [...records].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    for (const a of assets) {
+      const rec = sorted.find((r) => (r.pointId === a.pointId || r.id === a.lastRecordId) && r.images?.length);
+      const p = rec?.images?.[0];
+      if (p) map[a.id] = mediaUrl(p.path || p.url);
+    }
+    return map;
+  }, [assets, records]);
+
   const rows = useMemo(
     () =>
       assets.filter(
@@ -53,7 +67,6 @@ export default function Ledger() {
     [assets, kw, type],
   );
 
-  // 巡检轨迹:该资产点位的近 5 条记录(与旧版 renderAssetSide 口径一致)
   const trail = useMemo(() => {
     if (!current) return [];
     return records
@@ -64,7 +77,7 @@ export default function Ledger() {
 
   return (
     <Card
-      title="资产台账"
+      title={`资产台账(${rows.length} 台)`}
       extra={
         <Space>
           <Select
@@ -78,20 +91,61 @@ export default function Ledger() {
         </Space>
       }
     >
-      <Table<AssetEntry>
-        rowKey="id"
-        dataSource={rows}
-        pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 台` }}
-        onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}
-        columns={[
-          { title: "设备", dataIndex: "assetName" },
-          { title: "编号", dataIndex: "assetKey", width: 160 },
-          { title: "类型", dataIndex: "assetType", width: 140 },
-          { title: "项目", dataIndex: "project", width: 140 },
-          { title: "状态", width: 100, render: (_, r) => levelTag(r) },
-          { title: "最近巡检", width: 150, render: (_, r) => fmtTime(r.lastInspectedAt, true) },
-        ]}
-      />
+      {rows.length === 0 ? (
+        <Empty description="没有匹配的资产" />
+      ) : (
+        <Row gutter={[16, 16]}>
+          {rows.map((a, i) => (
+            <Col key={a.id} xs={24} sm={12} lg={8} xl={6}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.04, 0.4), duration: 0.3 }}
+              >
+                <Card
+                  hoverable
+                  size="small"
+                  onClick={() => setCurrent(a)}
+                  cover={
+                    photoOf[a.id] ? (
+                      <img
+                        src={photoOf[a.id]}
+                        alt=""
+                        style={{ height: 130, objectFit: "cover" }}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          height: 130,
+                          display: "grid",
+                          placeItems: "center",
+                          background: "#f0f3f7",
+                          color: "#9db0be",
+                          fontSize: 12,
+                        }}
+                      >
+                        暂无现场照片
+                      </div>
+                    )
+                  }
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {a.assetName}
+                    </b>
+                    {levelTag(a)}
+                  </div>
+                  <div style={{ color: "#8aa0b0", fontSize: 12, marginTop: 4 }}>
+                    {a.assetType || "—"} · {a.project || "—"}
+                  </div>
+                  <div style={{ color: "#8aa0b0", fontSize: 12 }}>最近巡检 {fmtTime(a.lastInspectedAt)}</div>
+                </Card>
+              </motion.div>
+            </Col>
+          ))}
+        </Row>
+      )}
       <Drawer
         title={current?.assetName || "资产详情"}
         open={!!current}
@@ -103,6 +157,13 @@ export default function Ledger() {
       >
         {current && (
           <>
+            {photoOf[current.id] && (
+              <img
+                src={photoOf[current.id]}
+                alt=""
+                style={{ width: "100%", height: 180, objectFit: "cover", borderRadius: 8, marginBottom: 14 }}
+              />
+            )}
             <Descriptions column={1} size="small">
               <Descriptions.Item label="编号">{current.assetKey || current.id}</Descriptions.Item>
               <Descriptions.Item label="类型">{current.assetType || "—"}</Descriptions.Item>
@@ -131,9 +192,7 @@ export default function Ledger() {
                       fontSize: 13,
                     }}
                   >
-                    <span style={{ color: "#8aa0b0", flex: "none" }}>
-                      {fmtTime(r.createdAt)}
-                    </span>
+                    <span style={{ color: "#8aa0b0", flex: "none" }}>{fmtTime(r.createdAt)}</span>
                     <Tag color={statusTagColor(s)} style={{ margin: 0 }}>
                       {s}
                     </Tag>

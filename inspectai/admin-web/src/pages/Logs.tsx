@@ -1,5 +1,5 @@
-import { Card, Table, Tag } from "antd";
-import { useEffect, useState } from "react";
+import { Card, Select, Space, Table, Tag } from "antd";
+import { useEffect, useMemo, useState } from "react";
 
 import { OperationLog, listOperationLogs } from "../api/mgmt";
 import { fmtTime } from "../lib/status";
@@ -18,6 +18,8 @@ const ACTION_LABEL: Record<string, string> = {
 export default function Logs() {
   const [logs, setLogs] = useState<OperationLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actor, setActor] = useState("");
+  const [action, setAction] = useState("");
 
   useEffect(() => {
     listOperationLogs()
@@ -25,12 +27,45 @@ export default function Logs() {
       .finally(() => setLoading(false));
   }, []);
 
+  const actors = useMemo(
+    () => Array.from(new Set(logs.map((l) => l.actorName).filter(Boolean))) as string[],
+    [logs],
+  );
+  const actions = useMemo(
+    () => Array.from(new Set(logs.map((l) => l.action).filter(Boolean))) as string[],
+    [logs],
+  );
+  const rows = useMemo(
+    () => logs.filter((l) => (!actor || l.actorName === actor) && (!action || l.action === action)),
+    [logs, actor, action],
+  );
+
   return (
-    <Card title="操作日志">
+    <Card
+      title="操作日志"
+      extra={
+        <Space>
+          <Select
+            allowClear
+            placeholder="按人筛选"
+            style={{ width: 140 }}
+            options={actors.map((a) => ({ value: a, label: a }))}
+            onChange={(v) => setActor(v || "")}
+          />
+          <Select
+            allowClear
+            placeholder="按动作筛选"
+            style={{ width: 150 }}
+            options={actions.map((a) => ({ value: a, label: ACTION_LABEL[a] || a }))}
+            onChange={(v) => setAction(v || "")}
+          />
+        </Space>
+      }
+    >
       <Table<OperationLog>
         rowKey={(l) => l.id || `${l.createdAt}_${l.targetId}_${l.action}`}
         loading={loading}
-        dataSource={logs}
+        dataSource={rows}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         columns={[
           { title: "时间", width: 160, render: (_, l) => fmtTime(l.createdAt, true) },

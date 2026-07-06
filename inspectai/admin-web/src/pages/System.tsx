@@ -15,10 +15,25 @@ export default function System() {
   }, []);
 
   const ok = health?.status === "ok";
+  const aiUrl = String(health?.aiServiceUrl || "");
+
+  const svcCard = (name: string, addr: string, good: boolean, label: string) => (
+    <Card size="small" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>
+          <b>{name}</b>
+          <div style={{ fontSize: 12, color: "#8aa0b0" }}>{addr || "未配置"}</div>
+        </span>
+        <Tag color={good ? "green" : "orange"}>{label}</Tag>
+      </div>
+    </Card>
+  );
 
   return (
     <Row gutter={16}>
       <Col span={12}>
+        {svcCard("Go API 服务", location.origin, ok, ok ? "运行中" : "待检查")}
+        {svcCard("AI 视觉/问答服务", aiUrl, Boolean(aiUrl), aiUrl ? "已配置" : "未配置")}
         <Card title="服务状态">
           {err && <Tag color="red">{err}</Tag>}
           {health && (

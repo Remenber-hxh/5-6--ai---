@@ -199,6 +199,32 @@ export function listUsers() {
   return api<{ users: UserEntry[] }>("/api/users").then((d) => d.users || []);
 }
 
+export function listRoles() {
+  return api<{ roles: { code: string; name: string }[] }>("/api/roles").then((d) => d.roles || []);
+}
+
+export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string }) {
+  return api("/api/users", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateUser(id: string, payload: { username?: string; displayName: string; roleCode: string }) {
+  return api(`/api/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function resetUserPassword(id: string, password: string) {
+  return api(`/api/users/${encodeURIComponent(id)}/password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function setUserStatus(id: string, status: "active" | "disabled") {
+  return api(`/api/users/${encodeURIComponent(id)}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export interface OperationLog {
   id?: string;
   actorName?: string;

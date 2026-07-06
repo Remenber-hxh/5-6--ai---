@@ -55,6 +55,17 @@ export function recordBusinessStatus(r: InspectionRecord): string {
   return "待复核";
 }
 
+// 图片地址口径与旧版 mediaUrl 一致:后端以 /storage/ 提供上传文件
+export function mediaUrl(path?: string): string {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = String(path).replace(/\\/g, "/");
+  const idx = normalized.indexOf("/storage/");
+  let p = idx >= 0 ? normalized.slice(idx + "/storage/".length) : normalized;
+  p = p.replace(/^\/?storage\//, "").replace(/^\/+/, "");
+  return `/storage/${encodeURI(p)}`;
+}
+
 // 时间展示:ISO 串 → "MM-DD HH:mm"(带年份场景用 full)
 export function fmtTime(iso?: string, full = false): string {
   if (!iso) return "—";

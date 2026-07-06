@@ -16,6 +16,24 @@ interface Overview {
   lazyConfirmRate?: number;
 }
 
+interface DriftEntry {
+  assetId?: string;
+  assetName?: string;
+  fieldKey?: string;
+  fieldLabel?: string;
+  changeRate?: number;
+}
+
+const legendDot = (bg: string): React.CSSProperties => ({
+  display: "inline-block",
+  width: 10,
+  height: 10,
+  borderRadius: 2,
+  background: bg,
+  margin: "0 4px 0 10px",
+  verticalAlign: "-1px",
+});
+
 const riskTag = (level?: string) =>
   level === "danger" ? (
     <Tag color="red">高风险</Tag>
@@ -31,15 +49,36 @@ export default function DataBoard() {
   const [ov, setOv] = useState<Overview>({});
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [records, setRecords] = useState<InspectionRecord[]>([]);
+  const [drifts, setDrifts] = useState<DriftEntry[]>([]);
   const [riskCard, setRiskCard] = useState<AttentionItem | null>(null);
 
   useEffect(() => {
-    api<{ overview?: Overview }>("/api/management-ai/snapshot?range=30d")
-      .then((d) => setOv(d.overview || {}))
+    api<{ overview?: Overview; numericDrifts?: DriftEntry[] }>("/api/management-ai/snapshot?range=30d")
+      .then((d) => {
+        setOv(d.overview || {});
+        setDrifts(d.numericDrifts || []);
+      })
       .catch(() => void 0);
     listAttention(8).then(setAttention).catch(() => void 0);
     listRecords().then(setRecords).catch(() => void 0);
   }, []);
+
+  // 状态热力图:近 30 天每日格,按当日最差业务状态着色
+  const heatCells = useMemo(() => {
+    const cells: { day: string; count: number; level: 0 | 1 | 2 | 3 }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const daily = records.filter((r) => (r.createdAt || "").slice(0, 10) === key);
+      let level: 0 | 1 | 2 | 3 = daily.length ? 1 : 0;
+      const statuses = daily.map(recordBusinessStatus);
+      if (statuses.some((s) => s === "待复核" || s === "需补图")) level = 2;
+      if (statuses.some((s) => s === "异常")) level = 3;
+      cells.push({ day: key.slice(5), count: daily.length, level });
+    }
+    return cells;
+  }, [records]);
 
   // 近 30 天按日聚合:巡检量 / 异常量(客户端聚合,与旧版口径一致)
   const trendOption = useMemo(() => {
@@ -89,6 +128,69 @@ export default function DataBoard() {
       <Card title="近 30 天巡检趋势" style={{ marginBottom: 16 }} size="small">
         <ReactECharts option={trendOption} style={{ height: 260 }} notMerge />
       </Card>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={14}>
+          <Card title="设备状态热力图(近 30 天)" size="small">
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "6px 0" }}>
+              {heatCells.map((c) => (
+                <div
+                  key={c.day}
+                  title={`${c.day} · 巡检 ${c.count} 次`}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 4,
+                    background:
+                      c.level === 3
+                        ? "#ef4444"
+                        : c.level === 2
+                          ? "#f59e0b"
+                          : c.level === 1
+                            ? "#12a968"
+                            : "#eef1f5",
+                    opacity: c.level === 1 ? Math.min(0.35 + c.count * 0.12, 1) : 1,
+                  }}
+                />
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: "#8aa0b0" }}>
+              <span style={legendDot("#eef1f5")} /> 无巡检 <span style={legendDot("#12a968")} /> 正常{" "}
+              <span style={legendDot("#f59e0b")} /> 待复核/补图 <span style={legendDot("#ef4444")} /> 有异常
+            </div>
+          </Card>
+        </Col>
+        <Col span={10}>
+          <Card title="数值字段漂移" size="small">
+            {drifts.length === 0 ? (
+              <div style={{ color: "#8aa0b0", fontSize: 13, padding: "8px 0" }}>近期无明显数值漂移</div>
+            ) : (
+              drifts.slice(0, 6).map((d, i) => {
+                const pct = Math.round((d.changeRate || 0) * 100);
+                return (
+                  <div
+                    key={`${d.assetId}_${d.fieldKey}_${i}`}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "7px 0",
+                      borderBottom: "1px solid #f0f2f5",
+                      fontSize: 13,
+                    }}
+                  >
+                    <span>
+                      {d.assetName} · {d.fieldLabel || d.fieldKey}
+                    </span>
+                    <b style={{ color: Math.abs(pct) >= 10 ? "#d4380d" : "#5b6b78" }}>
+                      {pct > 0 ? "+" : ""}
+                      {pct}%
+                    </b>
+                  </div>
+                );
+              })
+            )}
+          </Card>
+        </Col>
+      </Row>
       <Card title="近期重点关注" size="small">
         <Table<AttentionItem>
           rowKey="assetId"
