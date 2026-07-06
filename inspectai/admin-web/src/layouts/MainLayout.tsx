@@ -1,34 +1,23 @@
 import {
-  ApartmentOutlined,
   AuditOutlined,
-  CalendarOutlined,
-  DashboardOutlined,
   DatabaseOutlined,
   FileSearchOutlined,
-  FileTextOutlined,
   LogoutOutlined,
-  SettingOutlined,
-  TeamOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import { Avatar, Dropdown, Layout, Menu } from "antd";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { isMgmtRole, useAuth } from "../store/auth";
+import { useAuth } from "../store/auth";
 
 const { Sider, Header, Content } = Layout;
 
-// 导航与旧版一一对应,逐页迁移时往 routes 里挂真页面即可
+// 只挂四个核心页;其余功能仍在旧版 admin-frontend
 const NAV = [
-  { key: "/", icon: <DashboardOutlined />, label: "首页" },
-  { key: "/plan", icon: <CalendarOutlined />, label: "巡检计划" },
-  { key: "/record", icon: <FileSearchOutlined />, label: "巡检记录" },
+  { key: "/", icon: <RobotOutlined />, label: "Agent 工作台" },
   { key: "/ledger", icon: <DatabaseOutlined />, label: "资产台账" },
+  { key: "/record", icon: <FileSearchOutlined />, label: "巡检记录" },
   { key: "/approval", icon: <AuditOutlined />, label: "审批中心" },
-  { key: "/data", icon: <ApartmentOutlined />, label: "数据看板" },
-  { key: "/users", icon: <TeamOutlined />, label: "用户与权限" },
-  { key: "/logs", icon: <FileTextOutlined />, label: "操作日志" },
-  { key: "/system", icon: <SettingOutlined />, label: "系统管理" },
-  { key: "/prompts", icon: <FileTextOutlined />, label: "提示词模板", mgmtOnly: true },
 ];
 
 export default function MainLayout() {
@@ -38,9 +27,7 @@ export default function MainLayout() {
 
   if (!loggedIn) return <Navigate to="/login" replace />;
 
-  const items = NAV.filter((n) => !n.mgmtOnly || isMgmtRole(user)).map(
-    ({ key, icon, label }) => ({ key, icon, label }),
-  );
+  const items = NAV.map(({ key, icon, label }) => ({ key, icon, label }));
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
