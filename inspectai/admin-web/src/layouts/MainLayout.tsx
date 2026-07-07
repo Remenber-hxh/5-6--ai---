@@ -16,6 +16,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Select, Tooltip } from "antd";
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -200,7 +201,15 @@ export default function MainLayout() {
           </Badge>
         </Header>
         <Content style={{ padding: 20, background: "#f5f7fa" }}>
-          <Outlet />
+          {/* 页面切换轻过渡:淡入+8px 上浮,0.25s,不打扰操作 */}
+          <motion.div
+            key={loc.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <Outlet />
+          </motion.div>
         </Content>
       </Layout>
     </Layout>

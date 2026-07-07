@@ -26,14 +26,14 @@ export default function Login() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.horizon} />
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, ease: "easeOut" }}
         style={styles.card}
       >
-        <div style={styles.brand}>
+        <div style={{ ...styles.brand, display: "flex", alignItems: "center", gap: 8 }}>
+          <img src="logo.svg" alt="" style={{ width: 24, height: 24 }} />
           JADEAST <span style={{ color: "#3ee6b4" }}>| 智巡</span>
         </div>
         <h1 style={styles.title}>管理后台登录</h1>
@@ -59,22 +59,13 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: "100vh",
     display: "grid",
     placeItems: "center",
-    background: "radial-gradient(120% 80% at 50% 120%, #0a2433 0%, #071521 38%, #050b12 70%)",
+    // 与旧版同配方:辉光 + 暗化叠加 + 科技巡检背景图
+    background:
+      "radial-gradient(circle at 50% 44%, rgba(34, 160, 255, 0.10), transparent 30%)," +
+      "linear-gradient(180deg, rgba(1, 10, 26, 0.15), rgba(1, 10, 26, 0.45))," +
+      "url('login-bg.png') center / cover no-repeat, #020814",
     position: "relative",
     overflow: "hidden",
-  },
-  horizon: {
-    position: "absolute",
-    left: "50%",
-    bottom: "-72vw",
-    transform: "translateX(-50%)",
-    width: "160vw",
-    height: "80vw",
-    borderRadius: "50%",
-    background: "#050b12",
-    borderTop: "2px solid rgba(170, 255, 230, 0.85)",
-    boxShadow: "0 -10px 80px 6px rgba(62, 230, 180, 0.35)",
-    pointerEvents: "none",
   },
   card: {
     position: "relative",
