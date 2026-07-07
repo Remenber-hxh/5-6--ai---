@@ -1,19 +1,9 @@
 import {
-  ApartmentOutlined,
-  AuditOutlined,
-  CalendarOutlined,
-  DatabaseOutlined,
-  FileSearchOutlined,
-  FileTextOutlined,
-  FormOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
-  RobotOutlined,
   SettingOutlined,
-  TeamOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Select, Tooltip } from "antd";
 import { motion } from "motion/react";
@@ -26,19 +16,21 @@ import { useUi } from "../store/ui";
 
 const { Sider, Header, Content } = Layout;
 
-// 导航顺序与旧版一致(记录在台账前)
+// 图标 = 旧版定制 SVG(public/nav);顺序与旧版一致(记录在台账前)
+const ico = (name: string) => <img className="nav-ico" src={`nav/${name}.svg`} alt="" />;
+
 const NAV = [
-  { key: "/", icon: <RobotOutlined />, label: "首页" },
-  { key: "/plan", icon: <CalendarOutlined />, label: "巡检计划" },
-  { key: "/record", icon: <FileSearchOutlined />, label: "巡检记录" },
-  { key: "/ledger", icon: <DatabaseOutlined />, label: "资产台账" },
-  { key: "/approval", icon: <AuditOutlined />, label: "审批中心" },
-  { key: "/data", icon: <ApartmentOutlined />, label: "数据看板" },
-  { key: "/profile", icon: <UserOutlined />, label: "个人首页" },
-  { key: "/users", icon: <TeamOutlined />, label: "用户与权限" },
-  { key: "/logs", icon: <FileTextOutlined />, label: "操作日志" },
-  { key: "/system", icon: <SettingOutlined />, label: "系统管理" },
-  { key: "/prompts", icon: <FormOutlined />, label: "提示词模板", mgmtOnly: true },
+  { key: "/", icon: ico("nav-home"), label: "首页" },
+  { key: "/plan", icon: ico("nav-plan"), label: "巡检计划" },
+  { key: "/record", icon: ico("nav-record"), label: "巡检记录" },
+  { key: "/ledger", icon: ico("nav-asset"), label: "资产台账" },
+  { key: "/approval", icon: ico("nav-approval"), label: "审批中心" },
+  { key: "/data", icon: ico("nav-data"), label: "数据看板" },
+  { key: "/profile", icon: ico("nav-profile"), label: "个人首页" },
+  { key: "/users", icon: ico("nav-users"), label: "用户与权限" },
+  { key: "/logs", icon: ico("nav-logs"), label: "操作日志" },
+  { key: "/system", icon: ico("nav-system"), label: "系统管理" },
+  { key: "/prompts", icon: ico("nav-prompt"), label: "提示词模板", mgmtOnly: true },
 ];
 
 const COLLAPSE_KEY = "inspectai_sider_collapsed";
@@ -95,24 +87,15 @@ export default function MainLayout() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              padding: collapsed ? "16px 0 12px" : "16px 18px 12px",
+              padding: collapsed ? "14px 0 10px" : "14px 14px 10px",
               justifyContent: collapsed ? "center" : "flex-start",
             }}
           >
-            <img src="logo.svg" alt="智巡" style={{ width: 30, height: 30, flex: "none" }} />
-            {!collapsed && (
-              <span
-                style={{
-                  color: "#eef6f4",
-                  fontWeight: 800,
-                  letterSpacing: "0.06em",
-                  fontSize: 15,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                JADEAST <span style={{ color: "#3ee6b4", fontWeight: 500 }}>智巡</span>
-              </span>
+            {collapsed ? (
+              <img src="logo.svg" alt="智巡" style={{ width: 26, height: 26 }} />
+            ) : (
+              // 旧版设计好的品牌字标(深底变体:文字提亮,渐变图形不动)
+              <img src="brand-logo-dark.svg" alt="JADEAST 智巡" style={{ width: 150, display: "block" }} />
             )}
           </div>
           <Menu
