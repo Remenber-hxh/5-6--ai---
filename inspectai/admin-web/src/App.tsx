@@ -25,6 +25,21 @@ export default function App() {
           colorPrimary: "#12a968",
           borderRadius: 8,
         },
+        components: {
+          // 侧边导航:品牌深海军蓝,选中品牌绿,悬停青绿微光(与 Agent 页深色同族)
+          Layout: { siderBg: "#0b1626", triggerBg: "#0b1626" },
+          Menu: {
+            darkItemBg: "transparent",
+            darkSubMenuItemBg: "transparent",
+            darkItemColor: "rgba(214, 228, 240, 0.72)",
+            darkItemHoverBg: "rgba(62, 230, 180, 0.08)",
+            darkItemHoverColor: "#eef6f4",
+            darkItemSelectedBg: "#12a968",
+            darkItemSelectedColor: "#04241b",
+            itemBorderRadius: 8,
+            itemMarginInline: 10,
+          },
+        },
       }}
     >
       <HashRouter>

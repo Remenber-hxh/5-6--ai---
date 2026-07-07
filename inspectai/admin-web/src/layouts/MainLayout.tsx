@@ -7,10 +7,13 @@ import {
   FileTextOutlined,
   FormOutlined,
   LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   ReloadOutlined,
   RobotOutlined,
   SettingOutlined,
   TeamOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Select, Tooltip } from "antd";
 import { useEffect, useState } from "react";
@@ -30,12 +33,14 @@ const NAV = [
   { key: "/ledger", icon: <DatabaseOutlined />, label: "资产台账" },
   { key: "/approval", icon: <AuditOutlined />, label: "审批中心" },
   { key: "/data", icon: <ApartmentOutlined />, label: "数据看板" },
-  { key: "/profile", icon: <TeamOutlined />, label: "个人首页" },
+  { key: "/profile", icon: <UserOutlined />, label: "个人首页" },
   { key: "/users", icon: <TeamOutlined />, label: "用户与权限" },
   { key: "/logs", icon: <FileTextOutlined />, label: "操作日志" },
   { key: "/system", icon: <SettingOutlined />, label: "系统管理" },
   { key: "/prompts", icon: <FormOutlined />, label: "提示词模板", mgmtOnly: true },
 ];
+
+const COLLAPSE_KEY = "inspectai_sider_collapsed";
 
 export default function MainLayout() {
   const nav = useNavigate();
@@ -44,6 +49,7 @@ export default function MainLayout() {
   const { project, setProject } = useUi();
   const [pending, setPending] = useState(0);
   const [projects, setProjects] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -64,21 +70,49 @@ export default function MainLayout() {
   const items = NAV.filter((n) => !n.mgmtOnly || isMgmtRole(user)).map(
     ({ key, icon, label }) => ({ key, icon, label }),
   );
+  const pageTitle = NAV.find((n) => n.key === loc.pathname)?.label || "";
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+  }
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Sider theme="dark" width={208}>
+      <Sider
+        theme="dark"
+        width={208}
+        collapsedWidth={64}
+        collapsible
+        collapsed={collapsed}
+        trigger={null}
+        style={{ background: "#0b1626" }}
+      >
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <div
             style={{
-              color: "#eef6f4",
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              padding: "18px 20px 14px",
-              fontSize: 15,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: collapsed ? "16px 0 12px" : "16px 18px 12px",
+              justifyContent: collapsed ? "center" : "flex-start",
             }}
           >
-            JADEAST <span style={{ color: "#3ee6b4", fontWeight: 500 }}>智巡后台</span>
+            <img src="logo.svg" alt="智巡" style={{ width: 30, height: 30, flex: "none" }} />
+            {!collapsed && (
+              <span
+                style={{
+                  color: "#eef6f4",
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                  fontSize: 15,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                JADEAST <span style={{ color: "#3ee6b4", fontWeight: 500 }}>智巡</span>
+              </span>
+            )}
           </div>
           <Menu
             theme="dark"
@@ -86,7 +120,7 @@ export default function MainLayout() {
             selectedKeys={[loc.pathname]}
             items={items}
             onClick={({ key }) => nav(key)}
-            style={{ flex: 1 }}
+            style={{ flex: 1, background: "transparent" }}
           />
           {/* 用户块固定在侧边栏底部(与旧版一致) */}
           <Dropdown
@@ -110,18 +144,21 @@ export default function MainLayout() {
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
-                padding: "14px 16px",
+                padding: collapsed ? "14px 0" : "14px 16px",
+                justifyContent: collapsed ? "center" : "flex-start",
                 cursor: "pointer",
                 borderTop: "1px solid rgba(255,255,255,0.08)",
               }}
             >
-              <Avatar size={30} style={{ background: "rgba(255,255,255,0.12)", flex: "none" }}>
+              <Avatar size={30} style={{ background: "rgba(62,230,180,0.18)", color: "#3ee6b4", flex: "none" }}>
                 {(user?.displayName || "?").slice(0, 1)}
               </Avatar>
-              <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
-                <b style={{ color: "#eef6f4", fontSize: 13 }}>{user?.displayName || user?.username}</b>
-                <small style={{ color: "#8aa3ad", fontSize: 11 }}>{user?.roleName || user?.roleCode}</small>
-              </span>
+              {!collapsed && (
+                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
+                  <b style={{ color: "#eef6f4", fontSize: 13 }}>{user?.displayName || user?.username}</b>
+                  <small style={{ color: "#8aa3ad", fontSize: 11 }}>{user?.roleName || user?.roleCode}</small>
+                </span>
+              )}
             </div>
           </Dropdown>
         </div>
@@ -130,17 +167,24 @@ export default function MainLayout() {
         <Header
           style={{
             background: "#fff",
-            padding: "0 20px",
+            padding: "0 16px 0 8px",
             display: "flex",
             alignItems: "center",
             gap: 10,
             borderBottom: "1px solid #eef1f5",
           }}
         >
+          <Button
+            type="text"
+            aria-label="收起/展开侧边栏"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={toggleCollapsed}
+          />
+          <b style={{ fontSize: 15 }}>{pageTitle}</b>
           <Select
             allowClear
             placeholder="全部项目"
-            style={{ width: 160, marginRight: "auto" }}
+            style={{ width: 160, marginLeft: 12, marginRight: "auto" }}
             value={project || undefined}
             options={projects.map((p) => ({ value: p, label: p }))}
             onChange={(v) => setProject(v || "")}
