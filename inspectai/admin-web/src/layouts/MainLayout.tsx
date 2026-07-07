@@ -61,7 +61,8 @@ export default function MainLayout() {
   }
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    // 固定框架:侧栏/顶栏钉死,只有内容区滚动(长页面不再把头像框滚走)
+    <Layout style={{ height: "100vh", overflow: "hidden" }}>
       <Sider
         theme="dark"
         width={208}
@@ -69,7 +70,7 @@ export default function MainLayout() {
         collapsible
         collapsed={collapsed}
         trigger={null}
-        style={{ background: "#0b1626" }}
+        style={{ background: "#0b1626", height: "100vh" }}
       >
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <div
@@ -93,7 +94,7 @@ export default function MainLayout() {
             selectedKeys={[loc.pathname]}
             items={items}
             onClick={({ key }) => nav(key)}
-            style={{ flex: 1, background: "transparent" }}
+            style={{ flex: 1, background: "transparent", overflowY: "auto" }}
           />
           {/* 用户块固定在侧边栏底部(与旧版一致) */}
           <Dropdown
@@ -136,7 +137,7 @@ export default function MainLayout() {
           </Dropdown>
         </div>
       </Sider>
-      <Layout>
+      <Layout style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
         <Header
           style={{
             background: "#0b1626",
@@ -145,6 +146,7 @@ export default function MainLayout() {
             alignItems: "center",
             gap: 10,
             borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+            flex: "none",
           }}
         >
           <Button
@@ -177,7 +179,7 @@ export default function MainLayout() {
             </Button>
           </Badge>
         </Header>
-        <Content style={{ padding: 20, background: "#f5f7fa" }}>
+        <Content style={{ padding: 20, background: "#f5f7fa", flex: 1, overflowY: "auto" }}>
           {/* 页面切换轻过渡:淡入+8px 上浮,0.25s,不打扰操作 */}
           <motion.div
             key={loc.pathname}
