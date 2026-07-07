@@ -258,7 +258,6 @@ export default function Plan() {
                       <CountUp value={n} />
                     </b>
                   </div>
-                  <div style={{ color: "#9db0be", fontSize: 11, marginTop: 2 }}>{b.sub}</div>
                   {/* 底部占比条 */}
                   <div
                     style={{

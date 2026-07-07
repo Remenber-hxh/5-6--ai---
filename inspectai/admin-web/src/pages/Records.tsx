@@ -1,5 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Drawer, Empty, Image, Input, Select, Skeleton, Space, Table, Tag } from "antd";
+import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -10,16 +10,26 @@ import { useUi } from "../store/ui";
 
 const STATUS_OPTIONS = ["异常", "待复核", "需补图", "人工填写", "已完成", "正常"];
 
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", padding: "6px 0", fontSize: 13.5 }}>
+      <span style={{ width: 62, flex: "none", color: "#8aa0b0" }}>{label}</span>
+      <b style={{ color: "#1c2b3a", fontWeight: 600, wordBreak: "break-all" }}>{children}</b>
+    </div>
+  );
+}
+
+// 巡检记录:旧版双栏——左列表 + 右侧常驻记录详情面板(照片/字段/复核留痕)
 export default function Records() {
   const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [status, setStatus] = useState<string>("");
   const [kw, setKw] = useState("");
   const [tpl, setTpl] = useState("");
   const { project } = useUi();
-  const [current, setCurrent] = useState<InspectionRecord | null>(null);
+  const [selId, setSelId] = useState("");
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
 
   useEffect(() => {
     listRecords()
@@ -27,20 +37,12 @@ export default function Records() {
         setRecords(list);
         const focus = params.get("focus");
         const focusNo = params.get("focusNo");
-        if (focus || focusNo) {
-          const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
-          if (hit) setCurrent(hit);
-        }
+        const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
+        if (hit) setSelId(hit.id);
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 复核留痕随抽屉懒加载
-  useEffect(() => {
-    setLogs([]);
-    if (current) listConfirmLogs(current.id).then(setLogs).catch(() => void 0);
-  }, [current]);
 
   const rows = useMemo(
     () =>
@@ -56,6 +58,20 @@ export default function Records() {
       ),
     [records, status, kw, tpl, project],
   );
+
+  // 首行自动选中(右侧面板不留白,与计划页一致)
+  useEffect(() => {
+    if (!selId || !rows.some((r) => r.id === selId)) setSelId(rows[0]?.id || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  const current = rows.find((r) => r.id === selId) || null;
+
+  // 复核留痕随选中记录懒加载
+  useEffect(() => {
+    setLogs([]);
+    if (selId) listConfirmLogs(selId).then(setLogs).catch(() => void 0);
+  }, [selId]);
 
   function doExport() {
     exportCsv(
@@ -79,23 +95,28 @@ export default function Records() {
 
   if (loading && records.length === 0) {
     return (
-      <Card title="巡检记录">
-        <Skeleton active paragraph={{ rows: 8 }} />
-      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
+        <Card title="巡检记录">
+          <Skeleton active paragraph={{ rows: 8 }} />
+        </Card>
+        <Card size="small">
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </Card>
+      </div>
     );
   }
 
   const hasFilter = Boolean(status || tpl || kw);
+  const curStatus = current ? recordBusinessStatus(current) : "";
 
   return (
-    <Card
-      title="巡检记录"
-      extra={
-        <Space>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
+      <Card title="巡检记录" size="small">
+        <Space style={{ marginBottom: 14 }} wrap>
           <Select
             allowClear
             placeholder="按状态筛选"
-            style={{ width: 140 }}
+            style={{ width: 130 }}
             options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
             onChange={(v) => setStatus(v || "")}
           />
@@ -103,80 +124,96 @@ export default function Records() {
             allowClear
             showSearch
             placeholder="按模板筛选"
-            style={{ width: 170 }}
-            options={Array.from(new Set(records.map((r) => r.templateName).filter(Boolean))).map((t) => ({ value: t, label: t }))}
+            style={{ width: 160 }}
+            options={Array.from(new Set(records.map((r) => r.templateName).filter(Boolean))).map((t) => ({
+              value: t,
+              label: t,
+            }))}
             onChange={(v) => setTpl(v || "")}
           />
-          <Input.Search allowClear placeholder="搜点位 / 编号 / 巡检员" style={{ width: 220 }} onSearch={setKw} />
+          <Input.Search allowClear placeholder="搜点位 / 编号 / 巡检员" style={{ width: 200 }} onSearch={setKw} />
           <Button icon={<DownloadOutlined />} onClick={doExport}>
             导出
           </Button>
         </Space>
-      }
-    >
-      <Table<InspectionRecord>
-        rowKey="id"
-        size="middle"
-        locale={{
-          emptyText: (
-            <Empty description={hasFilter ? "没有匹配的记录" : "暂无巡检记录"}>
-              {hasFilter && (
-                <Button
-                  onClick={() => {
-                    setStatus("");
-                    setTpl("");
-                    setKw("");
-                  }}
-                >
-                  清除筛选
-                </Button>
-              )}
-            </Empty>
-          ),
-        }}
-        dataSource={rows}
-        pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
-        onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}
-        columns={[
-          { title: "时间", dataIndex: "createdAt", width: 150, render: (v) => fmtTime(v, true) },
-          { title: "点位", dataIndex: "pointName" },
-          { title: "模板", dataIndex: "templateName", width: 180 },
-          { title: "巡检员", dataIndex: "inspector", width: 110 },
-          {
-            title: "状态",
-            width: 100,
-            render: (_, r) => {
-              const s = recordBusinessStatus(r);
-              return <Tag color={statusTagColor(s)}>{s}</Tag>;
+        <Table<InspectionRecord>
+          rowKey="id"
+          size="middle"
+          locale={{
+            emptyText: (
+              <Empty description={hasFilter ? "没有匹配的记录" : "暂无巡检记录"}>
+                {hasFilter && (
+                  <Button
+                    onClick={() => {
+                      setStatus("");
+                      setTpl("");
+                      setKw("");
+                    }}
+                  >
+                    清除筛选
+                  </Button>
+                )}
+              </Empty>
+            ),
+          }}
+          dataSource={rows}
+          pagination={{ pageSize: 15, showTotal: (t) => `共 ${t} 条` }}
+          rowClassName={(r) => (r.id === selId ? "row-selected" : "")}
+          onRow={(r) => ({ onClick: () => setSelId(r.id), style: { cursor: "pointer" } })}
+          columns={[
+            { title: "时间", dataIndex: "createdAt", width: 140, render: (v) => fmtTime(v, true) },
+            { title: "点位", dataIndex: "pointName", ellipsis: true },
+            { title: "巡检员", dataIndex: "inspector", width: 90 },
+            {
+              title: "状态",
+              width: 96,
+              render: (_, r) => {
+                const s = recordBusinessStatus(r);
+                return <Tag color={statusTagColor(s)}>{s}</Tag>;
+              },
             },
-          },
-          { title: "编号", dataIndex: "recordNo", width: 220, render: (v, r) => v || r.id },
-        ]}
-      />
-      <Drawer
-        title="记录详情"
-        open={!!current}
-        width={520}
-        onClose={() => {
-          setCurrent(null);
-          if (params.get("focus") || params.get("focusNo")) setParams({});
-        }}
-      >
-        {current && (
-          <>
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="编号">{current.recordNo || current.id}</Descriptions.Item>
-              <Descriptions.Item label="点位">{current.pointName || "—"}</Descriptions.Item>
-              <Descriptions.Item label="巡检员">{current.inspector || "—"}</Descriptions.Item>
-              <Descriptions.Item label="AI 总结">
+            { title: "编号", dataIndex: "recordNo", width: 210, ellipsis: true, render: (v, r) => v || r.id },
+          ]}
+        />
+      </Card>
+
+      {/* 右侧常驻记录详情面板 */}
+      <div style={{ position: "sticky", top: 0, maxHeight: "calc(100vh - 104px)", overflowY: "auto" }}>
+        {current ? (
+          <Card
+            size="small"
+            title={
+              <Space>
+                <span style={{ borderLeft: "3px solid #12a968", paddingLeft: 8 }}>记录详情</span>
+                <Tag color={statusTagColor(curStatus)}>{curStatus}</Tag>
+              </Space>
+            }
+          >
+            <div>
+              <FieldRow label="编号">{current.recordNo || current.id}</FieldRow>
+              <FieldRow label="时间">{fmtTime(current.createdAt, true)}</FieldRow>
+              <FieldRow label="项目">{current.project || "—"}</FieldRow>
+              <FieldRow label="点位">{current.pointName || "—"}</FieldRow>
+              <FieldRow label="模板">{current.templateName || "—"}</FieldRow>
+              <FieldRow label="巡检员">{current.inspector || "—"}</FieldRow>
+            </div>
+            <div style={{ margin: "8px 0 4px", borderTop: "1px solid #f0f2f5", paddingTop: 10 }}>
+              <div style={{ color: "#8aa0b0", fontSize: 13, marginBottom: 4 }}>AI 总结</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.7 }}>
                 {current.aiSummary || current.report || "暂无总结"}
-              </Descriptions.Item>
-            </Descriptions>
+              </div>
+            </div>
             {!!current.images?.length && (
               <Image.PreviewGroup>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 4px" }}>
                   {current.images.slice(0, 6).map((img, i) => (
-                    <Image key={i} width={88} height={88} style={{ objectFit: "cover", borderRadius: 6 }} src={mediaUrl(img.path || img.url)} />
+                    <Image
+                      key={i}
+                      width={82}
+                      height={82}
+                      style={{ objectFit: "cover", borderRadius: 6 }}
+                      src={mediaUrl(img.path || img.url)}
+                    />
                   ))}
                 </div>
               </Image.PreviewGroup>
@@ -186,19 +223,20 @@ export default function Records() {
               rowKey={(f) => f.code || f.label || ""}
               dataSource={current.fields || []}
               pagination={false}
+              style={{ marginTop: 10 }}
               columns={[
                 { title: "字段", render: (_, f) => f.label || f.code },
                 { title: "值", render: (_, f) => f.value || f.aiValue || "—" },
                 {
                   title: "置信度",
-                  width: 90,
+                  width: 78,
                   render: (_, f) => (f.confidence ? `${Math.round(f.confidence * 100)}%` : "—"),
                 },
               ]}
             />
             {logs.length > 0 && (
               <>
-                <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>
+                <div style={{ margin: "14px 0 8px", fontWeight: 700, fontSize: 13.5 }}>
                   复核留痕(共 {logs.length} 次字段确认)
                 </div>
                 <Table
@@ -210,7 +248,7 @@ export default function Records() {
                     { title: "字段", render: (_, l) => l.fieldLabel || l.fieldKey || "—" },
                     {
                       title: "动作",
-                      width: 70,
+                      width: 64,
                       render: (_, l) => {
                         const map: Record<string, [string, string]> = {
                           confirm: ["确认", "green"],
@@ -223,21 +261,21 @@ export default function Records() {
                     },
                     {
                       title: "看图",
-                      width: 70,
-                      render: (_, l) => (l.viewedPhoto ? "看图" : <span style={{ color: "#d4380d" }}>未看图</span>),
-                    },
-                    {
-                      title: "置信度",
-                      width: 80,
-                      render: (_, l) => (l.aiConfidence ? `${Math.round(l.aiConfidence * 100)}%` : "—"),
+                      width: 64,
+                      render: (_, l) =>
+                        l.viewedPhoto ? "看图" : <span style={{ color: "#d4380d" }}>未看图</span>,
                     },
                   ]}
                 />
               </>
             )}
-          </>
+          </Card>
+        ) : (
+          <Card size="small">
+            <Empty description="点击左侧记录查看详情" />
+          </Card>
         )}
-      </Drawer>
-    </Card>
+      </div>
+    </div>
   );
 }
