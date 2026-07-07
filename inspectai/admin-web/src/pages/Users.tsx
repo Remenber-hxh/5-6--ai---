@@ -148,7 +148,7 @@ export default function Users() {
         open={!!editing}
         onOk={submit}
         onCancel={() => setEditing(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" requiredMark={false}>
           <Form.Item name="username" label="账号" rules={[{ required: true, message: "请输入账号" }]}>
@@ -176,7 +176,7 @@ export default function Users() {
         open={!!pwdUser}
         onOk={submitPwd}
         onCancel={() => setPwdUser(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={pwdForm} layout="vertical" requiredMark={false}>
           <Form.Item name="password" label="新密码" rules={[{ required: true, min: 6, message: "至少 6 位" }]}>

@@ -5,14 +5,13 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Avatar, Badge, Button, Dropdown, Layout, Menu, Select, Tooltip } from "antd";
+import { Avatar, Badge, Button, Dropdown, Layout, Menu, Tooltip } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { listAssets, listChangeRequests } from "../api/mgmt";
+import { listChangeRequests } from "../api/mgmt";
 import { isMgmtRole, useAuth } from "../store/auth";
-import { useUi } from "../store/ui";
 
 const { Sider, Header, Content } = Layout;
 
@@ -39,9 +38,7 @@ export default function MainLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, loggedIn, logout } = useAuth();
-  const { project, setProject } = useUi();
   const [pending, setPending] = useState(0);
-  const [projects, setProjects] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
 
   useEffect(() => {
@@ -51,19 +48,11 @@ export default function MainLayout() {
       .catch(() => void 0);
   }, [loggedIn, loc.pathname]);
 
-  useEffect(() => {
-    if (!loggedIn) return;
-    listAssets()
-      .then((as) => setProjects(Array.from(new Set(as.map((a) => a.project).filter(Boolean))) as string[]))
-      .catch(() => void 0);
-  }, [loggedIn]);
-
   if (!loggedIn) return <Navigate to="/login" replace />;
 
   const items = NAV.filter((n) => !n.mgmtOnly || isMgmtRole(user)).map(
     ({ key, icon, label }) => ({ key, icon, label }),
   );
-  const pageTitle = NAV.find((n) => n.key === loc.pathname)?.label || "";
 
   function toggleCollapsed() {
     const next = !collapsed;
@@ -150,37 +139,42 @@ export default function MainLayout() {
       <Layout>
         <Header
           style={{
-            background: "#fff",
+            background: "#0b1626",
             padding: "0 16px 0 8px",
             display: "flex",
             alignItems: "center",
             gap: 10,
-            borderBottom: "1px solid #eef1f5",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
           }}
         >
           <Button
             type="text"
             aria-label="收起/展开侧边栏"
+            style={{ color: "#cfe0ea" }}
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={toggleCollapsed}
           />
-          <b style={{ fontSize: 15 }}>{pageTitle}</b>
-          <Select
-            allowClear
-            placeholder="全部项目"
-            style={{ width: 160, marginLeft: 12, marginRight: "auto" }}
-            value={project || undefined}
-            options={projects.map((p) => ({ value: p, label: p }))}
-            onChange={(v) => setProject(v || "")}
-          />
+          <span style={{ marginRight: "auto" }} />
           <Tooltip title="刷新">
-            <Button type="text" icon={<ReloadOutlined />} onClick={() => window.location.reload()} />
+            <Button
+              type="text"
+              style={{ color: "#cfe0ea" }}
+              icon={<ReloadOutlined />}
+              onClick={() => window.location.reload()}
+            />
           </Tooltip>
           <Tooltip title="系统配置">
-            <Button type="text" icon={<SettingOutlined />} onClick={() => nav("/system")} />
+            <Button
+              type="text"
+              style={{ color: "#cfe0ea" }}
+              icon={<SettingOutlined />}
+              onClick={() => nav("/system")}
+            />
           </Tooltip>
           <Badge count={pending} size="small" offset={[-4, 2]}>
-            <Button onClick={() => nav("/approval")}>待审批</Button>
+            <Button ghost style={{ borderColor: "rgba(62, 230, 180, 0.45)", color: "#3ee6b4" }} onClick={() => nav("/approval")}>
+              待审批
+            </Button>
           </Badge>
         </Header>
         <Content style={{ padding: 20, background: "#f5f7fa" }}>

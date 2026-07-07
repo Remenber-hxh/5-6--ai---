@@ -205,7 +205,7 @@ export default function Plan() {
       <Modal
         title={editing === "new" ? "新建计划" : "编辑计划"}
         open={!!editing}
-        destroyOnClose
+        destroyOnHidden
         onCancel={() => setEditing(null)}
         onOk={async () => {
           const v = await form.validateFields();
