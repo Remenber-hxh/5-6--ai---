@@ -200,6 +200,7 @@ export default function Plan() {
                 <div
                   key={b.key}
                   onClick={() => setBucket(active ? "" : b.key)}
+                  className="plan-bucket-cell"
                   style={{
                     position: "relative",
                     padding: "18px 18px 16px",
@@ -327,11 +328,12 @@ export default function Plan() {
                 { title: "计划名称", dataIndex: "workContent" },
                 { title: "项目", dataIndex: "project", width: 100 },
                 { title: "类型 / 点位", dataIndex: "category", width: 120, render: (v) => v || "—" },
-                { title: "周期", dataIndex: "cycleText", width: 110, render: (v) => v || "—" },
+                { title: "周期", dataIndex: "cycleText", width: 130, ellipsis: true, render: (v) => v || "—" },
                 { title: "责任人", dataIndex: "ownerName", width: 90 },
                 {
                   title: "计划节点",
-                  width: 150,
+                  width: 160,
+                  ellipsis: true,
                   render: (_, p) => [p.planStart, p.planEnd].filter(Boolean).join(" 至 ") || p.planEnd || "—",
                 },
                 { title: "状态", width: 88, render: (_, p) => bucketTag(p.status) },
@@ -373,6 +375,19 @@ export default function Plan() {
                 current={taskStep(selTask.status)}
                 items={[{ title: "待执行" }, { title: "进行中" }, { title: "已完成" }]}
                 style={{ margin: "18px 0 10px" }}
+                progressDot={(_dot, { index, status }) => (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: index === taskStep(selTask.status) ? 12 : 9,
+                      height: index === taskStep(selTask.status) ? 12 : 9,
+                      borderRadius: "50%",
+                      background:
+                        status === "finish" ? "#12a968" : status === "process" ? "#246bfe" : "#d9dee4",
+                      boxShadow: status === "process" ? "0 0 0 3px rgba(36, 107, 254, 0.18)" : undefined,
+                    }}
+                  />
+                )}
               />
               <div style={{ color: "#5b6b78", fontSize: 13, marginBottom: 14 }}>
                 {selTask.status === "已完成"
@@ -383,22 +398,22 @@ export default function Plan() {
               </div>
               <Space direction="vertical" style={{ width: "100%" }}>
                 {(selTask.status === "待执行" || !selTask.status) && (
-                  <Button type="primary" block onClick={() => onTaskAction(selTask, "进行中")}>
+                  <Button type="primary" size="large" block onClick={() => onTaskAction(selTask, "进行中")}>
                     下发到移动端
                   </Button>
                 )}
                 {(selTask.status === "进行中" || selTask.status === "待整改") && (
-                  <Button type="primary" block onClick={() => onTaskAction(selTask, "已完成")}>
+                  <Button type="primary" size="large" block onClick={() => onTaskAction(selTask, "已完成")}>
                     标记完成
                   </Button>
                 )}
                 {selTask.status === "已完成" ? (
-                  <Button block onClick={() => onTaskAction(selTask, "待执行")}>
+                  <Button size="large" block onClick={() => onTaskAction(selTask, "待执行")}>
                     重开任务
                   </Button>
                 ) : (
                   <Popconfirm title="确认取消该任务?" onConfirm={() => onTaskAction(selTask, "已取消")}>
-                    <Button block>取消任务</Button>
+                    <Button size="large" block>取消任务</Button>
                   </Popconfirm>
                 )}
                 <Button block type="text" onClick={() => setSelTaskId("")}>
@@ -432,7 +447,7 @@ export default function Plan() {
               <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
                 {planStatusBucket(selPlan.status) === "pending" && (
                   <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(selPlan)}>
-                    <Button type="primary" block>
+                    <Button type="primary" size="large" block>
                       派发执行任务
                     </Button>
                   </Popconfirm>

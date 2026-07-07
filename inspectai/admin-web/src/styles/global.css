@@ -73,3 +73,24 @@ body {
 .row-selected td:first-child {
   box-shadow: inset 3px 0 0 #12a968;
 }
+
+/* 卡片标题:旧版 panel-head 字重 */
+.ant-card-head-title {
+  font-weight: 700 !important;
+}
+
+/* 表头:旧版灰字浅底 */
+.ant-table-thead > tr > th {
+  color: #64748b !important;
+  background: #fbfcfe !important;
+  font-weight: 600 !important;
+}
+
+/* 计划页状态卡 hover:浅色抬升 */
+.plan-bucket-cell {
+  transition: background 0.15s ease;
+}
+
+.plan-bucket-cell:hover {
+  background: #f6f9fc !important;
+}
