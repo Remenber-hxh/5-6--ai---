@@ -1,6 +1,7 @@
-import { Card, Col, Drawer, Progress, Row, Statistic, Table, Tag } from "antd";
+import { Card, Col, Drawer, Progress, Row, Table, Tag } from "antd";
+import anime from "animejs";
 import ReactECharts from "echarts-for-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { AttentionItem, InspectorQualityRow, RepeatedIssue, listAttention, listRecords } from "../api/mgmt";
@@ -34,6 +35,26 @@ const legendDot = (bg: string): React.CSSProperties => ({
   margin: "0 4px 0 10px",
   verticalAlign: "-1px",
 });
+
+// Anime.js 数字滚动:数据到位后从 0 滚到目标值
+function CountUp({ value }: { value: number }) {
+  const [display, setDisplay] = useState(0);
+  const prev = useRef(0);
+  useEffect(() => {
+    const obj = { v: prev.current };
+    const a = anime({
+      targets: obj,
+      v: value,
+      round: 1,
+      duration: 900,
+      easing: "easeOutCubic",
+      update: () => setDisplay(obj.v),
+    });
+    prev.current = value;
+    return () => a.pause();
+  }, [value]);
+  return <>{display}</>;
+}
 
 const riskTag = (level?: string) =>
   level === "danger" ? (
@@ -125,11 +146,11 @@ export default function DataBoard() {
     };
   }, [records, project]);
 
-  const cards = [
-    { title: "资产总数", value: ov.assetTotal },
-    { title: "近 30 天巡检", value: ov.recordRecent },
-    { title: "近 30 天异常", value: ov.abnormalRecent },
-    { title: "待复核 / 待审批", value: `${ov.pendingReviews ?? 0} / ${ov.pendingApprovals ?? 0}` },
+  const cards: { title: string; num?: number; text?: string }[] = [
+    { title: "资产总数", num: ov.assetTotal },
+    { title: "近 30 天巡检", num: ov.recordRecent },
+    { title: "近 30 天异常", num: ov.abnormalRecent },
+    { title: "待复核 / 待审批", text: `${ov.pendingReviews ?? 0} / ${ov.pendingApprovals ?? 0}` },
   ];
 
   return (
@@ -138,7 +159,10 @@ export default function DataBoard() {
         {cards.map((c) => (
           <Col span={6} key={c.title}>
             <Card size="small">
-              <Statistic title={c.title} value={c.value ?? "—"} />
+              <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 14, marginBottom: 4 }}>{c.title}</div>
+              <div style={{ fontSize: 24, color: "rgba(0,0,0,0.88)" }}>
+                {c.text !== undefined ? c.text : c.num !== undefined ? <CountUp value={c.num} /> : "—"}
+              </div>
             </Card>
           </Col>
         ))}
