@@ -5,15 +5,26 @@ import type { Oml2dEvents, Oml2dMethods, Oml2dProperties } from "oh-my-live2d";
 type Oml2d = Oml2dProperties & Oml2dMethods & Oml2dEvents;
 
 let instance: Oml2d | null = null;
-let loading = false;
+let container: HTMLDivElement | null = null;
+let loadingPromise: Promise<Oml2d | null> | null = null;
 
-export async function ensureLive2d(): Promise<Oml2d | null> {
-  if (instance) return instance;
-  if (loading) return null;
-  loading = true;
+export function ensureLive2d(): Promise<Oml2d | null> {
+  if (instance) return Promise.resolve(instance);
+  // 并发调用(如 StrictMode 双挂载)复用同一个加载 Promise,而不是返回 null 放弃
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = doLoad();
+  return loadingPromise;
+}
+
+async function doLoad(): Promise<Oml2d | null> {
   try {
     const { loadOml2d } = await import("oh-my-live2d");
+    // 自有容器:显隐由我们控制(滑出动画不可靠,离开 Agent 页直接藏容器)
+    container = document.createElement("div");
+    container.style.display = "none";
+    document.body.appendChild(container);
     instance = loadOml2d({
+      parentElement: container,
       dockedPosition: "right", // 右下角,不遮左侧导航
       sayHello: false,
       menus: { disable: true },
@@ -37,9 +48,8 @@ export async function ensureLive2d(): Promise<Oml2d | null> {
     }) as unknown as Oml2d;
     return instance;
   } catch {
-    return null; // CDN 不可达时降级:无看板娘,功能不受影响
-  } finally {
-    loading = false;
+    loadingPromise = null; // 失败允许下次重试;成功后保持单例
+    return null; // 模型加载失败时降级:无看板娘,功能不受影响
   }
 }
 
@@ -48,9 +58,10 @@ export function live2dSay(text: string, duration = 4000, priority = 4) {
 }
 
 export function live2dShow() {
+  if (container) container.style.display = "";
   void instance?.stageSlideIn();
 }
 
 export function live2dHide() {
-  void instance?.stageSlideOut();
+  if (container) container.style.display = "none";
 }
