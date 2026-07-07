@@ -1,9 +1,12 @@
-import { Card, Col, Descriptions, Drawer, Empty, Input, Row, Select, Space, Tag } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Descriptions, Drawer, Empty, Input, Popconfirm, Row, Select, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, listAssets, listRecords } from "../api/mgmt";
+import { AssetEntry, EngineeringTask, listAssets, listRecords, listTasks, markAssetNormal } from "../api/mgmt";
+import { exportCsv } from "../lib/csv";
+import { useUi } from "../store/ui";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
 
 const levelTag = (a: AssetEntry) => {
@@ -22,12 +25,21 @@ export default function Ledger() {
   const [kw, setKw] = useState("");
   const [type, setType] = useState("");
   const [current, setCurrent] = useState<AssetEntry | null>(null);
+  const [tasks, setTasks] = useState<EngineeringTask[]>([]);
+  const { project } = useUi();
   const [params, setParams] = useSearchParams();
 
+  async function reload() {
+    const as = await listAssets();
+    setAssets(as);
+    if (current) setCurrent(as.find((x) => x.id === current.id) || null);
+  }
+
   useEffect(() => {
-    Promise.all([listAssets(), listRecords()]).then(([as, rs]) => {
+    Promise.all([listAssets(), listRecords(), listTasks()]).then(([as, rs, ts]) => {
       setAssets(as);
       setRecords(rs);
+      setTasks(ts);
       const focus = params.get("focus");
       if (focus) {
         const hit = as.find((a) => a.id === focus);
@@ -58,13 +70,14 @@ export default function Ledger() {
     () =>
       assets.filter(
         (a) =>
+          (!project || a.project === project) &&
           (!type || a.assetType === type) &&
           (!kw ||
             (a.assetName || "").includes(kw) ||
             (a.assetKey || "").includes(kw) ||
             (a.project || "").includes(kw)),
       ),
-    [assets, kw, type],
+    [assets, kw, type, project],
   );
 
   const trail = useMemo(() => {
@@ -88,6 +101,26 @@ export default function Ledger() {
             onChange={(v) => setType(v || "")}
           />
           <Input.Search allowClear placeholder="搜设备名 / 编号 / 项目" style={{ width: 240 }} onSearch={setKw} />
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() =>
+              exportCsv(
+                `智巡-资产台账-${new Date().toISOString().slice(0, 10)}`,
+                ["设备", "编号", "类型", "项目", "点位", "状态", "最近巡检"],
+                rows.map((a) => [
+                  a.assetName || "",
+                  a.assetKey || a.id,
+                  a.assetType || "",
+                  a.project || "",
+                  a.pointName || "",
+                  a.lastStatus || "正常",
+                  fmtTime(a.lastInspectedAt, true),
+                ]),
+              )
+            }
+          >
+            导出
+          </Button>
         </Space>
       }
     >
@@ -172,6 +205,47 @@ export default function Ledger() {
               <Descriptions.Item label="状态">{levelTag(current)}</Descriptions.Item>
               <Descriptions.Item label="最近巡检">{fmtTime(current.lastInspectedAt, true)}</Descriptions.Item>
             </Descriptions>
+            {(() => {
+              const follow = tasks.filter((t) => t.assetId === current.id && t.status === "待整改");
+              return follow.length ? (
+                <div
+                  onClick={() => nav("/plan")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 12px",
+                    margin: "12px 0",
+                    borderRadius: 8,
+                    background: "rgba(224,57,43,0.07)",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  <Tag color="red" style={{ margin: 0 }}>待整改</Tag>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {follow[0].title}
+                  </span>
+                  <span style={{ color: "#d4380d" }}>查看任务 →</span>
+                </div>
+              ) : null;
+            })()}
+            {(current.lastStatus === "异常" || current.lastStatus === "待复核" || current.statusLevel === "danger" || current.statusLevel === "warning") && (
+              <Popconfirm
+                title="确认复核后标记该资产为正常?关联的待整改任务将自动销账。"
+                onConfirm={async () => {
+                  try {
+                    await markAssetNormal(current);
+                    message.success("已标记正常,关联任务自动销账");
+                    await reload();
+                  } catch (e) {
+                    message.error(e instanceof Error ? e.message : "操作失败");
+                  }
+                }}
+              >
+                <Button type="primary" style={{ margin: "12px 0" }}>标记正常</Button>
+              </Popconfirm>
+            )}
             <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
             {trail.length === 0 ? (
               <div style={{ color: "#8aa0b0", fontSize: 13 }}>暂无巡检记录</div>

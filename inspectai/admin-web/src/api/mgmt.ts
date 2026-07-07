@@ -153,6 +153,36 @@ export function listPlans() {
   return api<{ plans: EngineeringPlan[] }>("/api/engineering/plans").then((d) => d.plans || []);
 }
 
+// 新建/编辑计划(旧版同为 POST upsert;字段口径一致)
+export function savePlan(p: {
+  id?: string;
+  workContent: string;
+  project?: string;
+  category?: string;
+  ownerName?: string;
+  cycleText?: string;
+  planEnd?: string;
+  scopeDesc?: string;
+  remark?: string;
+}) {
+  return api("/api/engineering/plans", {
+    method: "POST",
+    body: JSON.stringify({ status: "待执行", source: "manual", ...p }),
+  });
+}
+
+// 资产标记正常(恢复正常三路径之一,自动销账)
+export function markAssetNormal(a: AssetEntry) {
+  return api(`/api/assets/${encodeURIComponent(a.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      assetName: a.assetName,
+      lastStatus: "正常",
+      lastSummary: "后台复核后标记正常。",
+    }),
+  });
+}
+
 export function listTasks() {
   return api<{ tasks: EngineeringTask[] }>("/api/engineering/tasks").then((d) => d.tasks || []);
 }
@@ -288,10 +318,28 @@ export function renderPromptTemplate(id: string) {
 
 // ===== 重点关注(数据看板) =====
 export function listAttention(limit = 8) {
-  // 后端两条路径键名不同:实时计算返回 items,缓存回退返回 attention
-  return api<{ items?: AttentionItem[]; attention?: AttentionItem[] }>(
+  // 后端两条路径键名不同:实时计算返回 items,缓存回退返回 attention;summary 为 AI 洞察综述
+  return api<{ items?: AttentionItem[]; attention?: AttentionItem[]; summary?: string }>(
     `/api/management-ai/attention?limit=${limit}`,
-  ).then((d) => d.items || d.attention || []);
+  ).then((d) => ({ items: d.items || d.attention || [], summary: d.summary || "" }));
+}
+
+export interface RepeatedIssue {
+  assetId?: string;
+  assetName?: string;
+  fieldKey?: string;
+  fieldLabel?: string;
+  count?: number;
+  issue?: string;
+  lastTime?: string;
+}
+
+export interface InspectorQualityRow {
+  operator?: string;
+  total?: number;
+  noPhotoConfirm?: number;
+  corrections?: number;
+  avgDurationMs?: number;
 }
 
 export interface RiskFactor {

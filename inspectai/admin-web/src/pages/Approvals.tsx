@@ -1,5 +1,6 @@
-import { Button, Card, Descriptions, Drawer, Popconfirm, Space, Table, Tag, message } from "antd";
-import { useEffect, useState } from "react";
+import { Button, Card, Descriptions, Drawer, Popconfirm, Segmented, Space, Table, Tag, message } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ChangeRequest, listChangeRequests, reviewChangeRequest } from "../api/mgmt";
 import { fmtTime } from "../lib/status";
@@ -19,6 +20,8 @@ export default function Approvals() {
   const [rows, setRows] = useState<ChangeRequest[]>([]);
   const [current, setCurrent] = useState<ChangeRequest | null>(null);
   const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState("待审批");
+  const nav = useNavigate();
 
   async function load() {
     setLoading(true);
@@ -44,12 +47,21 @@ export default function Approvals() {
     }
   }
 
+  const shown = useMemo(() => {
+    if (filter === "待审批") return rows.filter((r) => r.status === "pending");
+    if (filter === "已处理") return rows.filter((r) => r.status !== "pending");
+    return rows;
+  }, [rows, filter]);
+
   return (
-    <Card title="审批中心">
+    <Card
+      title="审批中心"
+      extra={<Segmented options={["待审批", "已处理", "全部"]} value={filter} onChange={(v) => setFilter(String(v))} />}
+    >
       <Table<ChangeRequest>
         rowKey="id"
         loading={loading}
-        dataSource={rows}
+        dataSource={shown}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}
         columns={[
@@ -98,6 +110,11 @@ export default function Approvals() {
                 <Descriptions.Item label="审批备注">{current.reviewNote}</Descriptions.Item>
               )}
             </Descriptions>
+            {current.recordId && (
+              <Button style={{ marginTop: 12 }} onClick={() => nav("/record?focus=" + encodeURIComponent(current.recordId!))}>
+                查看原始记录 →
+              </Button>
+            )}
             {current.status === "pending" && (
               <Space style={{ marginTop: 16 }}>
                 <Popconfirm title="确认通过该申请?" onConfirm={() => review(current.id, "approve")}>

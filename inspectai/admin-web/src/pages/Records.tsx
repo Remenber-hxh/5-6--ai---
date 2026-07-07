@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { ConfirmLog, listConfirmLogs, listRecords } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
+import { useUi } from "../store/ui";
 
 const STATUS_OPTIONS = ["异常", "待复核", "需补图", "人工填写", "已完成", "正常"];
 
@@ -13,6 +14,8 @@ export default function Records() {
   const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [status, setStatus] = useState<string>("");
   const [kw, setKw] = useState("");
+  const [tpl, setTpl] = useState("");
+  const { project } = useUi();
   const [current, setCurrent] = useState<InspectionRecord | null>(null);
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
   const [params, setParams] = useSearchParams();
@@ -40,20 +43,23 @@ export default function Records() {
     () =>
       records.filter(
         (r) =>
+          (!project || r.project === project) &&
+          (!tpl || r.templateName === tpl) &&
           (!status || recordBusinessStatus(r) === status) &&
           (!kw ||
             (r.pointName || "").includes(kw) ||
             (r.recordNo || "").includes(kw) ||
             (r.inspector || "").includes(kw)),
       ),
-    [records, status, kw],
+    [records, status, kw, tpl, project],
   );
 
   function doExport() {
     exportCsv(
       `智巡-巡检记录-${new Date().toISOString().slice(0, 10)}`,
-      ["记录编号", "巡检时间", "项目", "点位", "模板", "巡检人", "业务状态", "AI 总结"],
-      rows.map((r) => [
+      ["序号", "记录编号", "巡检时间", "所属项目", "巡检点位", "模板", "巡检人", "业务状态", "拍照次数", "字段明细", "AI 总结"],
+      rows.map((r, i) => [
+        i + 1,
         r.recordNo || r.id,
         fmtTime(r.createdAt, true),
         r.project || "",
@@ -61,7 +67,9 @@ export default function Records() {
         r.templateName || "",
         r.inspector || "",
         recordBusinessStatus(r),
-        (r.aiSummary || r.report || "").slice(0, 120),
+        r.captureAttempts ?? "",
+        (r.fields || []).map((f) => (f.label || f.code) + "=" + (f.value || f.aiValue || "")).join(";"),
+        (r.aiSummary || r.report || "").slice(0, 200),
       ]),
     );
   }
@@ -77,6 +85,14 @@ export default function Records() {
             style={{ width: 140 }}
             options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
             onChange={(v) => setStatus(v || "")}
+          />
+          <Select
+            allowClear
+            showSearch
+            placeholder="按模板筛选"
+            style={{ width: 170 }}
+            options={Array.from(new Set(records.map((r) => r.templateName).filter(Boolean))).map((t) => ({ value: t, label: t }))}
+            onChange={(v) => setTpl(v || "")}
           />
           <Input.Search allowClear placeholder="搜点位 / 编号 / 巡检员" style={{ width: 220 }} onSearch={setKw} />
           <Button icon={<DownloadOutlined />} onClick={doExport}>

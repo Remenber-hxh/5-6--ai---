@@ -3,7 +3,8 @@ import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { AttentionItem, listAttention, listRecords } from "../api/mgmt";
+import { AttentionItem, InspectorQualityRow, RepeatedIssue, listAttention, listRecords } from "../api/mgmt";
+import { useUi } from "../store/ui";
 import { api } from "../api/client";
 import { InspectionRecord, fmtTime, recordBusinessStatus } from "../lib/status";
 
@@ -50,18 +51,35 @@ export default function DataBoard() {
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [drifts, setDrifts] = useState<DriftEntry[]>([]);
+  const [summary, setSummary] = useState("");
+  const [repeated, setRepeated] = useState<RepeatedIssue[]>([]);
+  const [quality, setQuality] = useState<InspectorQualityRow[]>([]);
+  const { project } = useUi();
   const [riskCard, setRiskCard] = useState<AttentionItem | null>(null);
 
   useEffect(() => {
-    api<{ overview?: Overview; numericDrifts?: DriftEntry[] }>("/api/management-ai/snapshot?range=30d")
+    const q = project ? "&project=" + encodeURIComponent(project) : "";
+    api<{
+      overview?: Overview;
+      numericDrifts?: DriftEntry[];
+      repeatedIssues?: RepeatedIssue[];
+      inspectorQuality?: InspectorQualityRow[];
+    }>("/api/management-ai/snapshot?range=30d" + q)
       .then((d) => {
         setOv(d.overview || {});
         setDrifts(d.numericDrifts || []);
+        setRepeated(d.repeatedIssues || []);
+        setQuality(d.inspectorQuality || []);
       })
       .catch(() => void 0);
-    listAttention(8).then(setAttention).catch(() => void 0);
+    listAttention(8)
+      .then((d) => {
+        setAttention(d.items);
+        setSummary(d.summary);
+      })
+      .catch(() => void 0);
     listRecords().then(setRecords).catch(() => void 0);
-  }, []);
+  }, [project]);
 
   // 状态热力图:近 30 天每日格,按当日最差业务状态着色
   const heatCells = useMemo(() => {
@@ -70,7 +88,7 @@ export default function DataBoard() {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      const daily = records.filter((r) => (r.createdAt || "").slice(0, 10) === key);
+      const daily = records.filter((r) => (!project || r.project === project) && (r.createdAt || "").slice(0, 10) === key);
       let level: 0 | 1 | 2 | 3 = daily.length ? 1 : 0;
       const statuses = daily.map(recordBusinessStatus);
       if (statuses.some((s) => s === "待复核" || s === "需补图")) level = 2;
@@ -78,7 +96,7 @@ export default function DataBoard() {
       cells.push({ day: key.slice(5), count: daily.length, level });
     }
     return cells;
-  }, [records]);
+  }, [records, project]);
 
   // 近 30 天按日聚合:巡检量 / 异常量(客户端聚合,与旧版口径一致)
   const trendOption = useMemo(() => {
@@ -90,7 +108,7 @@ export default function DataBoard() {
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       days.push(key.slice(5));
-      const daily = records.filter((r) => (r.createdAt || "").slice(0, 10) === key);
+      const daily = records.filter((r) => (!project || r.project === project) && (r.createdAt || "").slice(0, 10) === key);
       total.push(daily.length);
       abnormal.push(daily.filter((r) => recordBusinessStatus(r) === "异常").length);
     }
@@ -105,7 +123,7 @@ export default function DataBoard() {
         { name: "异常量", type: "line", smooth: true, data: abnormal, color: "#ef4444" },
       ],
     };
-  }, [records]);
+  }, [records, project]);
 
   const cards = [
     { title: "资产总数", value: ov.assetTotal },
@@ -191,6 +209,11 @@ export default function DataBoard() {
           </Card>
         </Col>
       </Row>
+      {summary && (
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <b style={{ color: "#12a968" }}>AI 洞察:</b> {summary}
+        </Card>
+      )}
       <Card title="近期重点关注" size="small">
         <Table<AttentionItem>
           rowKey="assetId"
@@ -218,6 +241,49 @@ export default function DataBoard() {
           ]}
         />
       </Card>
+      <Row gutter={16} style={{ marginTop: 16 }}>
+        <Col span={12}>
+          <Card title="重复异常" size="small">
+            <Table<RepeatedIssue>
+              rowKey={(r) => (r.assetId || "") + "_" + (r.fieldKey || "")}
+              size="small"
+              dataSource={repeated}
+              pagination={false}
+              columns={[
+                { title: "设备", dataIndex: "assetName" },
+                { title: "问题", render: (_, r) => r.fieldLabel || r.fieldKey || r.issue || "—" },
+                { title: "次数", dataIndex: "count", width: 70 },
+                { title: "最近", width: 120, render: (_, r) => fmtTime(r.lastTime) },
+              ]}
+            />
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card title="巡检质量(复核行为)" size="small">
+            <Table<InspectorQualityRow>
+              rowKey={(r) => r.operator || ""}
+              size="small"
+              dataSource={quality}
+              pagination={false}
+              columns={[
+                { title: "巡检员", dataIndex: "operator" },
+                { title: "确认总数", dataIndex: "total", width: 90 },
+                {
+                  title: "未看图确认",
+                  width: 110,
+                  render: (_, r) =>
+                    (r.noPhotoConfirm || 0) > 0 ? (
+                      <b style={{ color: "#d4380d" }}>{r.noPhotoConfirm}</b>
+                    ) : (
+                      0
+                    ),
+                },
+                { title: "人工修正", dataIndex: "corrections", width: 90 },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
       <Drawer title="风险评分卡" open={!!riskCard} width={420} onClose={() => setRiskCard(null)}>
         {riskCard && (
           <div>

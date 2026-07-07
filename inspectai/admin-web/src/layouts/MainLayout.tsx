@@ -12,12 +12,13 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { Avatar, Badge, Button, Dropdown, Layout, Menu, Tooltip } from "antd";
+import { Avatar, Badge, Button, Dropdown, Layout, Menu, Select, Tooltip } from "antd";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { listChangeRequests } from "../api/mgmt";
+import { listAssets, listChangeRequests } from "../api/mgmt";
 import { isMgmtRole, useAuth } from "../store/auth";
+import { useUi } from "../store/ui";
 
 const { Sider, Header, Content } = Layout;
 
@@ -29,6 +30,7 @@ const NAV = [
   { key: "/ledger", icon: <DatabaseOutlined />, label: "资产台账" },
   { key: "/approval", icon: <AuditOutlined />, label: "审批中心" },
   { key: "/data", icon: <ApartmentOutlined />, label: "数据看板" },
+  { key: "/profile", icon: <TeamOutlined />, label: "个人首页" },
   { key: "/users", icon: <TeamOutlined />, label: "用户与权限" },
   { key: "/logs", icon: <FileTextOutlined />, label: "操作日志" },
   { key: "/system", icon: <SettingOutlined />, label: "系统管理" },
@@ -39,7 +41,9 @@ export default function MainLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, loggedIn, logout } = useAuth();
+  const { project, setProject } = useUi();
   const [pending, setPending] = useState(0);
+  const [projects, setProjects] = useState<string[]>([]);
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -47,6 +51,13 @@ export default function MainLayout() {
       .then((rs) => setPending(rs.filter((r) => r.status === "pending").length))
       .catch(() => void 0);
   }, [loggedIn, loc.pathname]);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    listAssets()
+      .then((as) => setProjects(Array.from(new Set(as.map((a) => a.project).filter(Boolean))) as string[]))
+      .catch(() => void 0);
+  }, [loggedIn]);
 
   if (!loggedIn) return <Navigate to="/login" replace />;
 
@@ -121,12 +132,19 @@ export default function MainLayout() {
             background: "#fff",
             padding: "0 20px",
             display: "flex",
-            justifyContent: "flex-end",
             alignItems: "center",
             gap: 10,
             borderBottom: "1px solid #eef1f5",
           }}
         >
+          <Select
+            allowClear
+            placeholder="全部项目"
+            style={{ width: 160, marginRight: "auto" }}
+            value={project || undefined}
+            options={projects.map((p) => ({ value: p, label: p }))}
+            onChange={(v) => setProject(v || "")}
+          />
           <Tooltip title="刷新">
             <Button type="text" icon={<ReloadOutlined />} onClick={() => window.location.reload()} />
           </Tooltip>

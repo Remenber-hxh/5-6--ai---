@@ -10,6 +10,7 @@ import Ledger from "./pages/Ledger";
 import Login from "./pages/Login";
 import Logs from "./pages/Logs";
 import Plan from "./pages/Plan";
+import Profile from "./pages/Profile";
 import Prompts from "./pages/Prompts";
 import Records from "./pages/Records";
 import System from "./pages/System";
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="/record" element={<Records />} />
             <Route path="/approval" element={<Approvals />} />
             <Route path="/data" element={<DataBoard />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/users" element={<Users />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/system" element={<System />} />

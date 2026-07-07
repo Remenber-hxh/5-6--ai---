@@ -81,9 +81,16 @@ export default function Prompts() {
               <div style={lbl}>模板名称</div>
               <Input value={current.name} onChange={(e) => setCurrent({ ...current, name: e.target.value })} />
             </Col>
-            <Col span={16}>
+            <Col span={10}>
               <div style={lbl}>场景描述</div>
               <Input value={current.scene} onChange={(e) => setCurrent({ ...current, scene: e.target.value })} />
+            </Col>
+            <Col span={6}>
+              <div style={lbl}>必拍照片要求</div>
+              <Input
+                value={current.expectedPhotos}
+                onChange={(e) => setCurrent({ ...current, expectedPhotos: e.target.value })}
+              />
             </Col>
           </Row>
           <Table<PromptField>

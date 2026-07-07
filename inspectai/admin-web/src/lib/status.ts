@@ -17,6 +17,7 @@ export interface InspectionRecord {
   inspector?: string;
   project?: string;
   manualRequired?: boolean;
+  captureAttempts?: number;
   recognitionStatus?: string;
   submitted?: boolean;
   submittedAt?: string;

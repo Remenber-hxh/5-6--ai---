@@ -1,4 +1,5 @@
-import { Button, Card, Col, Popconfirm, Row, Space, Statistic, Table, Tag, message } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Space, Statistic, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -7,8 +8,10 @@ import {
   dispatchPlan,
   listPlans,
   listTasks,
+  savePlan,
   setTaskStatus,
 } from "../api/mgmt";
+import { useUi } from "../store/ui";
 import { fmtTime } from "../lib/status";
 
 const planTag = (s?: string) => {
@@ -33,6 +36,9 @@ export default function Plan() {
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
+  const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
+  const { project } = useUi();
+  const [form] = Form.useForm();
 
   async function load() {
     setLoading(true);
@@ -49,15 +55,20 @@ export default function Plan() {
     void load();
   }, []);
 
+  const planRows = useMemo(
+    () => plans.filter((p) => !project || p.project === project),
+    [plans, project],
+  );
+
   const stats = useMemo(() => {
     const c = { 待执行: 0, 执行中: 0, 待整改: 0, 已完成: 0 } as Record<string, number>;
-    plans.forEach((p) => {
+    planRows.forEach((p) => {
       const s = p.status === "进行中" ? "执行中" : p.status || "待执行";
       if (s in c) c[s] += 1;
       else c["待执行"] += 1;
     });
     return c;
-  }, [plans]);
+  }, [planRows]);
 
   const taskRows = useMemo(
     () => tasks.filter((t) => !statusFilter || t.status === statusFilter),
@@ -99,12 +110,20 @@ export default function Plan() {
           </Col>
         ))}
       </Row>
-      <Card title="巡检计划" style={{ marginBottom: 16 }}>
+      <Card
+        title="巡检计划"
+        style={{ marginBottom: 16 }}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing("new"); form.resetFields(); }}>
+            新建计划
+          </Button>
+        }
+      >
         <Table<EngineeringPlan>
           rowKey="id"
           size="small"
           loading={loading}
-          dataSource={plans}
+          dataSource={planRows}
           pagination={{ pageSize: 10 }}
           columns={[
             { title: "计划内容", dataIndex: "workContent" },
@@ -114,15 +133,32 @@ export default function Plan() {
             { title: "状态", width: 100, render: (_, p) => planTag(p.status) },
             {
               title: "操作",
-              width: 140,
-              render: (_, p) =>
-                !p.status || p.status === "待执行" ? (
-                  <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(p)}>
-                    <Button type="primary" size="small">
-                      派发执行任务
-                    </Button>
-                  </Popconfirm>
-                ) : null,
+              width: 200,
+              render: (_, p) => (
+                <Space onClick={(e) => e.stopPropagation()}>
+                  {(!p.status || p.status === "待执行") && (
+                    <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(p)}>
+                      <Button type="primary" size="small">
+                        派发执行任务
+                      </Button>
+                    </Popconfirm>
+                  )}
+                  <a
+                    onClick={() => {
+                      setEditing(p);
+                      form.setFieldsValue({
+                        workContent: p.workContent,
+                        project: p.project,
+                        ownerName: p.ownerName,
+                        cycleText: p.frequency,
+                        planEnd: p.planEnd,
+                      });
+                    }}
+                  >
+                    编辑
+                  </a>
+                </Space>
+              ),
             },
           ]}
         />
@@ -166,6 +202,44 @@ export default function Plan() {
           ]}
         />
       </Card>
+      <Modal
+        title={editing === "new" ? "新建计划" : "编辑计划"}
+        open={!!editing}
+        destroyOnClose
+        onCancel={() => setEditing(null)}
+        onOk={async () => {
+          const v = await form.validateFields();
+          try {
+            await savePlan({ ...(editing !== "new" && editing ? { id: editing.id } : {}), ...v });
+            message.success("计划已保存");
+            setEditing(null);
+            await load();
+          } catch (e) {
+            message.error(e instanceof Error ? e.message : "保存失败");
+          }
+        }}
+      >
+        <Form form={form} layout="vertical" requiredMark={false}>
+          <Form.Item name="workContent" label="计划内容" rules={[{ required: true, message: "请输入计划内容" }]}>
+            <Input placeholder="如:会议中心电梯月度巡检" />
+          </Form.Item>
+          <Form.Item name="project" label="项目">
+            <Input placeholder="如:会议中心" />
+          </Form.Item>
+          <Form.Item name="ownerName" label="负责人">
+            <Input />
+          </Form.Item>
+          <Form.Item name="cycleText" label="频次">
+            <Input placeholder="如:每日 09:00 / 每周一" />
+          </Form.Item>
+          <Form.Item name="planEnd" label="截止日期">
+            <Input placeholder="YYYY-MM-DD" />
+          </Form.Item>
+          <Form.Item name="remark" label="备注">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
