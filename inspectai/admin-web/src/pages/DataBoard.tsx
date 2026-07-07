@@ -1,12 +1,12 @@
 import { Card, Col, Drawer, Progress, Row, Table, Tag } from "antd";
-import anime from "animejs";
 import ReactECharts from "echarts-for-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { AttentionItem, InspectorQualityRow, RepeatedIssue, listAttention, listRecords } from "../api/mgmt";
 import { useUi } from "../store/ui";
 import { api } from "../api/client";
+import CountUp from "../components/CountUp";
 import { InspectionRecord, fmtTime, recordBusinessStatus } from "../lib/status";
 
 interface Overview {
@@ -35,26 +35,6 @@ const legendDot = (bg: string): React.CSSProperties => ({
   margin: "0 4px 0 10px",
   verticalAlign: "-1px",
 });
-
-// Anime.js 数字滚动:数据到位后从 0 滚到目标值
-function CountUp({ value }: { value: number }) {
-  const [display, setDisplay] = useState(0);
-  const prev = useRef(0);
-  useEffect(() => {
-    const obj = { v: prev.current };
-    const a = anime({
-      targets: obj,
-      v: value,
-      round: 1,
-      duration: 900,
-      easing: "easeOutCubic",
-      update: () => setDisplay(obj.v),
-    });
-    prev.current = value;
-    return () => a.pause();
-  }, [value]);
-  return <>{display}</>;
-}
 
 const riskTag = (level?: string) =>
   level === "danger" ? (

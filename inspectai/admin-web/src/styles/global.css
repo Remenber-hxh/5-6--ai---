@@ -64,3 +64,12 @@ body {
   height: 16px;
   vertical-align: -3px;
 }
+
+/* 表格选中行:旧版口径——浅绿底 + 左侧绿色竖条 */
+.row-selected td {
+  background: rgba(18, 169, 104, 0.07) !important;
+}
+
+.row-selected td:first-child {
+  box-shadow: inset 3px 0 0 #12a968;
+}

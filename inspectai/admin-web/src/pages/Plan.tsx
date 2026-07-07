@@ -1,5 +1,4 @@
-import { PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Tag, message } from "antd";
+import { ConfigProvider, Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Space, Steps, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -24,11 +23,11 @@ function planStatusBucket(status = ""): Bucket {
   return "overdue"; // 需跟进:待整改 / 未排期 / 暂停 等
 }
 
-const BUCKETS: { key: Bucket; label: string; sub: string; color: string }[] = [
-  { key: "pending", label: "待执行", sub: "未开始", color: "#8aa0b0" },
-  { key: "processing", label: "进行中", sub: "现场处理", color: "#1499ff" },
-  { key: "overdue", label: "需跟进", sub: "复核 / 异常", color: "#ef4b3f" },
-  { key: "done", label: "已完成", sub: "结果入库", color: "#12a968" },
+const BUCKETS: { key: Bucket; label: string; color: string }[] = [
+  { key: "pending", label: "待执行", color: "#f5a524" },
+  { key: "processing", label: "进行中", color: "#246bfe" },
+  { key: "overdue", label: "需跟进", color: "#ef4b3f" },
+  { key: "done", label: "已完成", color: "#12a968" },
 ];
 
 const bucketTag = (status?: string) => {
@@ -48,17 +47,30 @@ const taskTag = (s?: string) => {
   if (s === "已完成") return <Tag color="green">已完成</Tag>;
   if (s === "逾期") return <Tag color="volcano">逾期</Tag>;
   if (s === "已取消") return <Tag>已取消</Tag>;
-  return <Tag>待执行</Tag>;
+  return <Tag color="orange">需跟进</Tag>;
 };
 
-// 巡检计划:完全按旧版整改——状态卡(占比条/点击筛选) + 复查任务区块 + 七列计划表 + 详情抽屉
+// 详情面板字段行(旧版 label/value 样式)
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", padding: "7px 0", fontSize: 13.5 }}>
+      <span style={{ width: 74, flex: "none", color: "#8aa0b0" }}>{label}</span>
+      <b style={{ color: "#1c2b3a", fontWeight: 600 }}>{children}</b>
+    </div>
+  );
+}
+
+// 巡检计划:完全依照旧版样式——连排状态卡 / 复查任务 / 工具栏筛选 / 右侧常驻详情面板
 export default function Plan() {
   const [plans, setPlans] = useState<EngineeringPlan[]>([]);
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [bucket, setBucket] = useState<"" | Bucket>("");
-  const [currentPlan, setCurrentPlan] = useState<EngineeringPlan | null>(null);
-  const [currentTask, setCurrentTask] = useState<EngineeringTask | null>(null);
+  const [freq, setFreq] = useState("");
+  const [proj, setProj] = useState("");
+  const [kw, setKw] = useState("");
+  const [selPlanId, setSelPlanId] = useState("");
+  const [selTaskId, setSelTaskId] = useState("");
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
   const { project } = useUi();
   const [form] = Form.useForm();
@@ -69,8 +81,6 @@ export default function Plan() {
       const [ps, ts] = await Promise.all([listPlans(), listTasks()]);
       setPlans(ps);
       setTasks(ts);
-      setCurrentPlan((cur) => (cur ? ps.find((p) => p.id === cur.id) || null : null));
-      setCurrentTask((cur) => (cur ? ts.find((t) => t.id === cur.id) || null : null));
     } finally {
       setLoading(false);
     }
@@ -86,7 +96,6 @@ export default function Plan() {
     [plans, project],
   );
 
-  // 复查任务:未挂计划的在途任务(异常检出 / AI 派单),归「需跟进」桶
   const recheckTasks = useMemo(
     () =>
       tasks
@@ -101,16 +110,43 @@ export default function Plan() {
     realPlans.forEach((p) => {
       c[planStatusBucket(p.status)] += 1;
     });
-    c.overdue += recheckTasks.length; // 需跟进口径并入复查任务,避免"有待整改却显示 0"
+    c.overdue += recheckTasks.length; // 需跟进并入复查任务
     return c;
   }, [realPlans, recheckTasks]);
 
   const total = Math.max(counts.pending + counts.processing + counts.overdue + counts.done, 1);
 
-  const rows = useMemo(
-    () => (bucket ? realPlans.filter((p) => planStatusBucket(p.status) === bucket) : realPlans),
-    [realPlans, bucket],
+  const projects = useMemo(
+    () => Array.from(new Set(realPlans.map((p) => p.project).filter(Boolean))) as string[],
+    [realPlans],
   );
+  const freqs = useMemo(
+    () => Array.from(new Set(realPlans.map((p) => p.cycleText).filter(Boolean))) as string[],
+    [realPlans],
+  );
+
+  const rows = useMemo(
+    () =>
+      realPlans.filter(
+        (p) =>
+          (!bucket || planStatusBucket(p.status) === bucket) &&
+          (!proj || p.project === proj) &&
+          (!freq || p.cycleText === freq) &&
+          (!kw || (p.workContent || "").includes(kw) || (p.category || "").includes(kw)),
+      ),
+    [realPlans, bucket, proj, freq, kw],
+  );
+
+  // 默认选中首行(旧版行为:右侧面板不留白)
+  useEffect(() => {
+    if (!selTaskId && (!selPlanId || !rows.some((r) => r.id === selPlanId))) {
+      setSelPlanId(rows[0]?.id || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  const selPlan = rows.find((p) => p.id === selPlanId) || null;
+  const selTask = tasks.find((t) => t.id === selTaskId) || null;
 
   const planTaskOf = (p: EngineeringPlan) =>
     tasks.find((t) => t.id === p.latestTaskId) || tasks.find((t) => t.planItemId === p.id) || null;
@@ -137,201 +173,300 @@ export default function Plan() {
 
   const showRecheck = (bucket === "" || bucket === "overdue") && recheckTasks.length > 0;
 
+  // 任务步骤:待执行 → 进行中 → 已完成
+  const taskStep = (s?: string) => (s === "已完成" ? 2 : s === "进行中" || s === "待整改" ? 1 : 0);
+
   return (
-    <div>
-      {/* 状态卡:数字 + 占比条,点击筛选(再点取消) */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 16 }}>
-        {BUCKETS.map((b) => {
-          const n = counts[b.key];
-          const active = bucket === b.key;
-          return (
-            <div
-              key={b.key}
-              onClick={() => setBucket(active ? "" : b.key)}
-              style={{
-                background: "#fff",
-                borderRadius: 10,
-                padding: "14px 16px 12px",
-                cursor: "pointer",
-                border: active ? `1.5px solid ${b.color}` : "1.5px solid transparent",
-                boxShadow: "0 1px 2px rgba(15, 35, 55, 0.04)",
-                transition: "border-color 0.15s",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <span style={{ color: "#5b6b78", fontSize: 13 }}>{b.label}</span>
-                <small style={{ color: "#9db0be", fontSize: 11 }}>{b.sub}</small>
-              </div>
-              <div
-                style={{
-                  fontSize: 26,
-                  fontWeight: 700,
-                  margin: "2px 0 8px",
-                  color: n > 0 && b.key === "overdue" ? "#cf1322" : undefined,
-                }}
-              >
-                {n}
-              </div>
-              <div style={{ height: 4, borderRadius: 2, background: "#eef1f5", overflow: "hidden" }}>
-                <div
-                  style={{
-                    width: `${Math.round((n / total) * 100)}%`,
-                    height: "100%",
-                    background: b.color,
-                    borderRadius: 2,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 复查任务:未挂计划的在途任务(与旧版同区块) */}
-      {showRecheck && (
-        <Card
-          title="复查任务"
-          extra={
-            <span style={{ color: "#9db0be", fontSize: 12 }}>
-              异常检出 / AI 派单生成,未挂工程计划;复检合格后自动销账
-            </span>
-          }
-          size="small"
-          style={{ marginBottom: 16 }}
-        >
-          <Table<EngineeringTask>
-            rowKey="id"
-            size="small"
-            dataSource={recheckTasks}
-            pagination={false}
-            onRow={(t) => ({ onClick: () => setCurrentTask(t), style: { cursor: "pointer" } })}
-            columns={[
-              { title: "设备 / 任务", render: (_, t) => t.title || "异常复查" },
-              { title: "项目", dataIndex: "project", width: 130 },
-              { title: "责任人", dataIndex: "assigneeName", width: 110 },
-              { title: "截止", dataIndex: "dueAt", width: 120 },
-              { title: "状态", width: 100, render: (_, t) => taskTag(t.status) },
-            ]}
-          />
-        </Card>
-      )}
-
-      {/* 巡检任务表:旧版七列 */}
-      <Card
-        title="巡检任务"
-        extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              setEditing("new");
-              form.resetFields();
+    // 旧版此页主色为蓝(操作按钮/链接),页内局部覆盖主题
+    <ConfigProvider theme={{ token: { colorPrimary: "#246bfe" } }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 372px", gap: 16, alignItems: "start" }}>
+        <div>
+          {/* 状态卡:白底连排,角标色块 + 大数字 + 底部占比条(旧版样式) */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              background: "#fff",
+              borderRadius: 10,
+              overflow: "hidden",
+              marginBottom: 16,
+              boxShadow: "0 1px 2px rgba(15, 35, 55, 0.04)",
             }}
           >
-            新建计划
-          </Button>
-        }
-      >
-        <Table<EngineeringPlan>
-          rowKey="id"
-          size="small"
-          loading={loading}
-          dataSource={rows}
-          pagination={{ pageSize: 12, showTotal: (t) => `共 ${t} 条` }}
-          onRow={(p) => ({ onClick: () => setCurrentPlan(p), style: { cursor: "pointer" } })}
-          columns={[
-            { title: "计划名称", dataIndex: "workContent" },
-            { title: "项目", dataIndex: "project", width: 110 },
-            { title: "类型 / 点位", dataIndex: "category", width: 130, render: (v) => v || "—" },
-            { title: "周期", dataIndex: "cycleText", width: 120, render: (v) => v || "—" },
-            { title: "责任人", dataIndex: "ownerName", width: 100 },
-            {
-              title: "计划节点",
-              width: 170,
-              render: (_, p) => [p.planStart, p.planEnd].filter(Boolean).join(" 至 ") || p.planEnd || "—",
-            },
-            { title: "状态", width: 90, render: (_, p) => bucketTag(p.status) },
-          ]}
-        />
-      </Card>
+            {BUCKETS.map((b, i) => {
+              const n = counts[b.key];
+              const active = bucket === b.key;
+              return (
+                <div
+                  key={b.key}
+                  onClick={() => setBucket(active ? "" : b.key)}
+                  style={{
+                    position: "relative",
+                    padding: "18px 18px 16px",
+                    cursor: "pointer",
+                    borderLeft: i ? "1px solid #eef1f5" : "none",
+                    background: active ? `${b.color}0d` : "#fff",
+                    outline: active ? `1px solid ${b.color}55` : "none",
+                    outlineOffset: -1,
+                  }}
+                >
+                  {/* 左上角色块角标 */}
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 14,
+                      width: 4,
+                      height: 18,
+                      background: b.color,
+                      borderRadius: "0 2px 2px 0",
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: "#334759", fontSize: 14, fontWeight: 600 }}>{b.label}</span>
+                    <b style={{ fontSize: 30, fontWeight: 800, color: "#101d2c" }}>{n}</b>
+                  </div>
+                  {/* 底部占比条 */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      bottom: 0,
+                      height: 4,
+                      width: `${Math.max(Math.round((n / total) * 100), n > 0 ? 8 : 0)}%`,
+                      background: b.color,
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
 
-      {/* 计划详情抽屉(旧版右侧详情卡) */}
-      <Drawer title="工程计划详情" open={!!currentPlan} width={440} onClose={() => setCurrentPlan(null)}>
-        {currentPlan && (
-          <>
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="计划名称">{currentPlan.workContent || "—"}</Descriptions.Item>
-              <Descriptions.Item label="项目">{currentPlan.project || "—"}</Descriptions.Item>
-              <Descriptions.Item label="类别">{currentPlan.category || "—"}</Descriptions.Item>
-              <Descriptions.Item label="责任人">{currentPlan.ownerName || "—"}</Descriptions.Item>
-              <Descriptions.Item label="周期">{currentPlan.cycleText || "—"}</Descriptions.Item>
-              <Descriptions.Item label="计划节点">
-                {[currentPlan.planStart, currentPlan.planEnd].filter(Boolean).join(" 至 ") || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="预算">
-                {currentPlan.budgetAmount ? `${Number(currentPlan.budgetAmount).toLocaleString()} 元` : "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="状态">{bucketTag(currentPlan.status)}</Descriptions.Item>
-            </Descriptions>
-            <Space style={{ marginTop: 16 }} wrap>
-              {planStatusBucket(currentPlan.status) === "pending" && (
-                <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(currentPlan)}>
-                  <Button type="primary">派发执行任务</Button>
-                </Popconfirm>
-              )}
-              {planTaskOf(currentPlan) && (
-                <Button onClick={() => setCurrentTask(planTaskOf(currentPlan))}>查看任务进度</Button>
-              )}
+          {/* 复查任务 */}
+          {showRecheck && (
+            <Card title="复查任务" size="small" style={{ marginBottom: 16 }}>
+              <Table<EngineeringTask>
+                rowKey="id"
+                size="small"
+                dataSource={recheckTasks}
+                pagination={false}
+                rowClassName={(t) => (t.id === selTaskId ? "row-selected" : "")}
+                onRow={(t) => ({
+                  onClick: () => {
+                    setSelTaskId(t.id);
+                  },
+                  style: { cursor: "pointer" },
+                })}
+                columns={[
+                  { title: "设备 / 任务", render: (_, t) => <b>{t.title || "异常复查"}</b> },
+                  { title: "项目", dataIndex: "project", width: 130 },
+                  { title: "责任人", dataIndex: "assigneeName", width: 110 },
+                  { title: "截止", dataIndex: "dueAt", width: 120, render: (v) => <b>{v || "—"}</b> },
+                  { title: "状态", width: 100, render: (_, t) => taskTag(t.status) },
+                ]}
+              />
+            </Card>
+          )}
+
+          {/* 巡检任务:工具栏(项目/频次/状态/搜索/新建) + 七列表 */}
+          <Card title="巡检任务" size="small">
+            <Space style={{ marginBottom: 14 }} wrap>
+              <Select
+                allowClear
+                placeholder="全部项目"
+                style={{ width: 130 }}
+                options={projects.map((p) => ({ value: p, label: p }))}
+                onChange={(v) => setProj(v || "")}
+              />
+              <Select
+                allowClear
+                placeholder="全部频次"
+                style={{ width: 150 }}
+                options={freqs.map((f) => ({ value: f, label: f }))}
+                onChange={(v) => setFreq(v || "")}
+              />
+              <Select
+                allowClear
+                placeholder="全部状态"
+                style={{ width: 120 }}
+                value={bucket || undefined}
+                options={BUCKETS.map((b) => ({ value: b.key, label: b.label }))}
+                onChange={(v) => setBucket((v as Bucket) || "")}
+              />
+              <Input.Search
+                allowClear
+                placeholder="搜索计划 / 点位"
+                style={{ width: 180 }}
+                onSearch={setKw}
+              />
               <Button
+                type="primary"
                 onClick={() => {
-                  setEditing(currentPlan);
-                  form.setFieldsValue({
-                    workContent: currentPlan.workContent,
-                    project: currentPlan.project,
-                    category: currentPlan.category,
-                    ownerName: currentPlan.ownerName,
-                    cycleText: currentPlan.cycleText,
-                    planEnd: currentPlan.planEnd,
-                  });
+                  setEditing("new");
+                  form.resetFields();
                 }}
               >
-                编辑计划
+                新建计划
               </Button>
             </Space>
-          </>
-        )}
-      </Drawer>
+            <Table<EngineeringPlan>
+              rowKey="id"
+              size="small"
+              loading={loading}
+              dataSource={rows}
+              pagination={{ pageSize: 12, showTotal: (t) => `共 ${t} 条` }}
+              rowClassName={(p) => (p.id === selPlanId && !selTaskId ? "row-selected" : "")}
+              onRow={(p) => ({
+                onClick: () => {
+                  setSelPlanId(p.id);
+                  setSelTaskId("");
+                },
+                style: { cursor: "pointer" },
+              })}
+              columns={[
+                { title: "计划名称", dataIndex: "workContent" },
+                { title: "项目", dataIndex: "project", width: 100 },
+                { title: "类型 / 点位", dataIndex: "category", width: 120, render: (v) => v || "—" },
+                { title: "周期", dataIndex: "cycleText", width: 110, render: (v) => v || "—" },
+                { title: "责任人", dataIndex: "ownerName", width: 90 },
+                {
+                  title: "计划节点",
+                  width: 150,
+                  render: (_, p) => [p.planStart, p.planEnd].filter(Boolean).join(" 至 ") || p.planEnd || "—",
+                },
+                { title: "状态", width: 88, render: (_, p) => bucketTag(p.status) },
+              ]}
+            />
+          </Card>
+        </div>
 
-      {/* 任务详情抽屉(与移动端挂钩的执行任务) */}
-      <Drawer title="任务进度" open={!!currentTask} width={420} onClose={() => setCurrentTask(null)}>
-        {currentTask && (
-          <>
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="任务">{currentTask.title || "—"}</Descriptions.Item>
-              <Descriptions.Item label="项目">{currentTask.project || "—"}</Descriptions.Item>
-              <Descriptions.Item label="责任人">{currentTask.assigneeName || "—"}</Descriptions.Item>
-              <Descriptions.Item label="截止">{currentTask.dueAt || "—"}</Descriptions.Item>
-              <Descriptions.Item label="状态">{taskTag(currentTask.status)}</Descriptions.Item>
-              {currentTask.completedAt && (
-                <Descriptions.Item label="完成时间">{currentTask.completedAt}</Descriptions.Item>
+        {/* 右侧常驻详情面板(旧版 aside) */}
+        <div style={{ position: "sticky", top: 0 }}>
+          {selTask ? (
+            <Card
+              size="small"
+              title={
+                <Space>
+                  <span style={{ borderLeft: "3px solid #246bfe", paddingLeft: 8 }}>任务详情</span>
+                  {taskTag(selTask.status)}
+                </Space>
+              }
+            >
+              <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{selTask.title || "异常复查"}</h3>
+              <div style={{ borderTop: "1px solid #f0f2f5" }}>
+                <FieldRow label="项目">{selTask.project || "—"}</FieldRow>
+                <FieldRow label="点位">{(selTask as { category?: string }).category || "—"}</FieldRow>
+                <FieldRow label="责任人">{selTask.assigneeName || "—"}</FieldRow>
+                <FieldRow label="频次">{selTask.taskType || "异常复查"}</FieldRow>
+                <FieldRow label="截止">{selTask.dueAt || "—"}</FieldRow>
+              </div>
+              {(selTask as { workContent?: string }).workContent && (
+                <div style={{ margin: "6px 0 2px" }}>
+                  <div style={{ color: "#8aa0b0", fontSize: 13 }}>说明</div>
+                  <div style={{ fontSize: 13.5, marginTop: 2 }}>
+                    {(selTask as { workContent?: string }).workContent}
+                  </div>
+                </div>
               )}
-            </Descriptions>
-            <Space style={{ marginTop: 16 }}>
-              {(currentTask.status === "待执行" || !currentTask.status) && (
-                <Button type="primary" onClick={() => onTaskAction(currentTask, "进行中")}>
-                  下发到移动端
+              <Steps
+                size="small"
+                current={taskStep(selTask.status)}
+                items={[{ title: "待执行" }, { title: "进行中" }, { title: "已完成" }]}
+                style={{ margin: "18px 0 10px" }}
+              />
+              <div style={{ color: "#5b6b78", fontSize: 13, marginBottom: 14 }}>
+                {selTask.status === "已完成"
+                  ? "任务已完成,结果已入库"
+                  : selTask.status === "待执行" || !selTask.status
+                    ? "尚未下发,巡检员移动端不可见"
+                    : "已下发,巡检员可在移动端执行"}
+              </div>
+              <Space direction="vertical" style={{ width: "100%" }}>
+                {(selTask.status === "待执行" || !selTask.status) && (
+                  <Button type="primary" block onClick={() => onTaskAction(selTask, "进行中")}>
+                    下发到移动端
+                  </Button>
+                )}
+                {(selTask.status === "进行中" || selTask.status === "待整改") && (
+                  <Button type="primary" block onClick={() => onTaskAction(selTask, "已完成")}>
+                    标记完成
+                  </Button>
+                )}
+                {selTask.status === "已完成" ? (
+                  <Button block onClick={() => onTaskAction(selTask, "待执行")}>
+                    重开任务
+                  </Button>
+                ) : (
+                  <Popconfirm title="确认取消该任务?" onConfirm={() => onTaskAction(selTask, "已取消")}>
+                    <Button block>取消任务</Button>
+                  </Popconfirm>
+                )}
+                <Button block type="text" onClick={() => setSelTaskId("")}>
+                  返回计划详情
                 </Button>
-              )}
-              {(currentTask.status === "进行中" || currentTask.status === "待整改") && (
-                <Button onClick={() => onTaskAction(currentTask, "已完成")}>标记完成</Button>
-              )}
-              {currentTask.status === "已完成" && (
-                <Button onClick={() => onTaskAction(currentTask, "待执行")}>重开</Button>
-              )}
-            </Space>
-          </>
-        )}
-      </Drawer>
+              </Space>
+            </Card>
+          ) : selPlan ? (
+            <Card
+              size="small"
+              title={
+                <Space>
+                  <span style={{ borderLeft: "3px solid #246bfe", paddingLeft: 8 }}>计划详情</span>
+                  {bucketTag(selPlan.status)}
+                </Space>
+              }
+            >
+              <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{selPlan.workContent || "—"}</h3>
+              <div style={{ borderTop: "1px solid #f0f2f5" }}>
+                <FieldRow label="项目">{selPlan.project || "—"}</FieldRow>
+                <FieldRow label="类别">{selPlan.category || "—"}</FieldRow>
+                <FieldRow label="责任人">{selPlan.ownerName || "—"}</FieldRow>
+                <FieldRow label="周期">{selPlan.cycleText || "—"}</FieldRow>
+                <FieldRow label="计划节点">
+                  {[selPlan.planStart, selPlan.planEnd].filter(Boolean).join(" 至 ") || "—"}
+                </FieldRow>
+                <FieldRow label="预算">
+                  {selPlan.budgetAmount ? `${Number(selPlan.budgetAmount).toLocaleString()} 元` : "—"}
+                </FieldRow>
+              </div>
+              <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
+                {planStatusBucket(selPlan.status) === "pending" && (
+                  <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(selPlan)}>
+                    <Button type="primary" block>
+                      派发执行任务
+                    </Button>
+                  </Popconfirm>
+                )}
+                {planTaskOf(selPlan) && (
+                  <Button block onClick={() => setSelTaskId(planTaskOf(selPlan)!.id)}>
+                    查看任务进度
+                  </Button>
+                )}
+                <Button
+                  block
+                  onClick={() => {
+                    setEditing(selPlan);
+                    form.setFieldsValue({
+                      workContent: selPlan.workContent,
+                      project: selPlan.project,
+                      category: selPlan.category,
+                      ownerName: selPlan.ownerName,
+                      cycleText: selPlan.cycleText,
+                      planEnd: selPlan.planEnd,
+                    });
+                  }}
+                >
+                  编辑计划
+                </Button>
+              </Space>
+            </Card>
+          ) : (
+            <Card size="small">
+              <Empty description="点击左侧计划或任务查看详情" />
+            </Card>
+          )}
+        </div>
+      </div>
 
       {/* 新建 / 编辑计划 */}
       <Modal
@@ -345,7 +480,6 @@ export default function Plan() {
             await savePlan({ ...(editing !== "new" && editing ? { id: editing.id } : {}), ...v });
             message.success("计划已保存");
             setEditing(null);
-            setCurrentPlan(null);
             await load();
           } catch (e) {
             message.error(e instanceof Error ? e.message : "保存失败");
@@ -376,6 +510,6 @@ export default function Plan() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </ConfigProvider>
   );
 }
