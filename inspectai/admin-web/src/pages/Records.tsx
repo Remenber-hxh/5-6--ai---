@@ -1,5 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Drawer, Image, Input, Select, Space, Table, Tag } from "antd";
+import { Button, Card, Descriptions, Drawer, Empty, Image, Input, Select, Skeleton, Space, Table, Tag } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -18,18 +18,21 @@ export default function Records() {
   const { project } = useUi();
   const [current, setCurrent] = useState<InspectionRecord | null>(null);
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [params, setParams] = useSearchParams();
 
   useEffect(() => {
-    listRecords().then((list) => {
-      setRecords(list);
-      const focus = params.get("focus");
-      const focusNo = params.get("focusNo");
-      if (focus || focusNo) {
-        const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
-        if (hit) setCurrent(hit);
-      }
-    });
+    listRecords()
+      .then((list) => {
+        setRecords(list);
+        const focus = params.get("focus");
+        const focusNo = params.get("focusNo");
+        if (focus || focusNo) {
+          const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
+          if (hit) setCurrent(hit);
+        }
+      })
+      .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -74,6 +77,16 @@ export default function Records() {
     );
   }
 
+  if (loading && records.length === 0) {
+    return (
+      <Card title="巡检记录">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </Card>
+    );
+  }
+
+  const hasFilter = Boolean(status || tpl || kw);
+
   return (
     <Card
       title="巡检记录"
@@ -104,6 +117,23 @@ export default function Records() {
       <Table<InspectionRecord>
         rowKey="id"
         size="middle"
+        locale={{
+          emptyText: (
+            <Empty description={hasFilter ? "没有匹配的记录" : "暂无巡检记录"}>
+              {hasFilter && (
+                <Button
+                  onClick={() => {
+                    setStatus("");
+                    setTpl("");
+                    setKw("");
+                  }}
+                >
+                  清除筛选
+                </Button>
+              )}
+            </Empty>
+          ),
+        }}
         dataSource={rows}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}

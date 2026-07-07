@@ -1,5 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Drawer, Empty, Input, Popconfirm, Row, Select, Space, Tag, message } from "antd";
+import { Button, Card, Col, Descriptions, Drawer, Empty, Input, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -27,6 +27,7 @@ export default function Ledger() {
   const [current, setCurrent] = useState<AssetEntry | null>(null);
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const { project } = useUi();
+  const [loading, setLoading] = useState(true);
   const [params, setParams] = useSearchParams();
 
   async function reload() {
@@ -45,6 +46,7 @@ export default function Ledger() {
         const hit = as.find((a) => a.id === focus);
         if (hit) setCurrent(hit);
       }
+      setLoading(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -124,8 +126,21 @@ export default function Ledger() {
         </Space>
       }
     >
-      {rows.length === 0 ? (
-        <Empty description="没有匹配的资产" />
+      {loading && assets.length === 0 ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : rows.length === 0 ? (
+        <Empty description={kw || type ? "没有匹配的资产" : "暂无资产"}>
+          {(kw || type) && (
+            <Button
+              onClick={() => {
+                setKw("");
+                setType("");
+              }}
+            >
+              清除筛选
+            </Button>
+          )}
+        </Empty>
       ) : (
         <Row gutter={[16, 16]}>
           {rows.map((a, i) => (

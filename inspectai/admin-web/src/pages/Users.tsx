@@ -1,5 +1,5 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useState } from "react";
 
 import {
@@ -96,6 +96,14 @@ export default function Users() {
     } catch (e) {
       message.error(e instanceof Error ? e.message : "操作失败");
     }
+  }
+
+  if (loading && users.length === 0) {
+    return (
+      <Card title="用户与权限">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </Card>
+    );
   }
 
   return (

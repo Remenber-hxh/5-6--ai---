@@ -1,4 +1,4 @@
-import { Card, Select, Space, Table, Tag } from "antd";
+import { Card, Select, Skeleton, Space, Table, Tag } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { OperationLog, listOperationLogs } from "../api/mgmt";
@@ -39,6 +39,14 @@ export default function Logs() {
     () => logs.filter((l) => (!actor || l.actorName === actor) && (!action || l.action === action)),
     [logs, actor, action],
   );
+
+  if (loading && logs.length === 0) {
+    return (
+      <Card title="操作日志">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </Card>
+    );
+  }
 
   return (
     <Card

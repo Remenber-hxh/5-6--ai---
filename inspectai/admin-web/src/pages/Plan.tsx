@@ -1,4 +1,4 @@
-import { ConfigProvider, Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Space, Steps, Table, Tag, message } from "antd";
+import { Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -177,9 +177,35 @@ export default function Plan() {
   // 任务步骤:待执行 → 进行中 → 已完成
   const taskStep = (s?: string) => (s === "已完成" ? 2 : s === "进行中" || s === "待整改" ? 1 : 0);
 
+  // 首次加载:骨架屏(结构先行,不闪转圈)
+  if (loading && plans.length === 0) {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
+        <div>
+          <Card size="small" style={{ marginBottom: 16 }}>
+            <Skeleton active paragraph={{ rows: 1 }} />
+          </Card>
+          <Card size="small">
+            <Skeleton active paragraph={{ rows: 8 }} />
+          </Card>
+        </div>
+        <Card size="small">
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </Card>
+      </div>
+    );
+  }
+
+  const hasFilter = Boolean(bucket || proj || freq || kw);
+  const clearFilters = () => {
+    setBucket("");
+    setProj("");
+    setFreq("");
+    setKw("");
+  };
+
   return (
-    // 旧版此页主色为蓝(操作按钮/链接),页内局部覆盖主题
-    <ConfigProvider theme={{ token: { colorPrimary: "#246bfe" } }}>
+    <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
         <div>
           {/* 状态卡:白底连排,角标色块 + 大数字 + 底部占比条(旧版样式) */}
@@ -320,6 +346,13 @@ export default function Plan() {
               rowKey="id"
               size="middle"
               loading={loading}
+              locale={{
+                emptyText: (
+                  <Empty description={hasFilter ? "没有匹配的计划" : "暂无巡检计划"}>
+                    {hasFilter && <Button onClick={clearFilters}>清除筛选</Button>}
+                  </Empty>
+                ),
+              }}
               dataSource={rows}
               pagination={{ pageSize: 12, showTotal: (t) => `共 ${t} 条` }}
               rowClassName={(p) => (p.id === selPlanId && !selTaskId ? "row-selected" : "")}
@@ -355,7 +388,7 @@ export default function Plan() {
               size="small"
               title={
                 <Space>
-                  <span style={{ borderLeft: "3px solid #246bfe", paddingLeft: 8 }}>任务详情</span>
+                  <span style={{ borderLeft: "3px solid #12a968", paddingLeft: 8 }}>任务详情</span>
                   {taskTag(selTask.status)}
                 </Space>
               }
@@ -435,7 +468,7 @@ export default function Plan() {
               size="small"
               title={
                 <Space>
-                  <span style={{ borderLeft: "3px solid #246bfe", paddingLeft: 8 }}>计划详情</span>
+                  <span style={{ borderLeft: "3px solid #12a968", paddingLeft: 8 }}>计划详情</span>
                   {bucketTag(selPlan.status)}
                 </Space>
               }
@@ -537,6 +570,6 @@ export default function Plan() {
           </Form.Item>
         </Form>
       </Modal>
-    </ConfigProvider>
+    </>
   );
 }

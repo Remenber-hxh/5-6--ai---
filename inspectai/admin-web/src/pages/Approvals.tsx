@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Drawer, Popconfirm, Segmented, Space, Table, Tag, message } from "antd";
+import { Button, Card, Descriptions, Drawer, Empty, Popconfirm, Segmented, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -53,6 +53,14 @@ export default function Approvals() {
     return rows;
   }, [rows, filter]);
 
+  if (loading && rows.length === 0) {
+    return (
+      <Card title="审批中心">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </Card>
+    );
+  }
+
   return (
     <Card
       title="审批中心"
@@ -62,6 +70,15 @@ export default function Approvals() {
         rowKey="id"
         size="middle"
         loading={loading}
+        locale={{
+          emptyText: (
+            <Empty description={filter === "待审批" ? "当前没有待审批的申请" : "暂无记录"}>
+              {filter === "待审批" && rows.length > 0 && (
+                <Button onClick={() => setFilter("全部")}>查看全部</Button>
+              )}
+            </Empty>
+          ),
+        }}
         dataSource={shown}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}
