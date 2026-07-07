@@ -128,18 +128,23 @@ export interface EngineeringPlan {
   id: string;
   workContent?: string;
   project?: string;
+  category?: string;
   ownerName?: string;
   planStart?: string;
   planEnd?: string;
   status?: string; // 待执行 / 执行中 / 待整改 / 已完成
-  frequency?: string;
-  pointName?: string;
+  cycleText?: string;
+  scopeDesc?: string;
+  budgetAmount?: number;
+  latestTaskId?: string;
+  source?: string;
 }
 
 export interface EngineeringTask {
   id: string;
   planItemId?: string;
   title?: string;
+  project?: string;
   assigneeName?: string;
   dueAt?: string;
   status?: string; // 待执行 / 进行中 / 待整改 / 已完成 / 逾期
