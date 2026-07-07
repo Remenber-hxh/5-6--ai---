@@ -109,6 +109,7 @@ export default function Users() {
     >
       <Table<UserEntry>
         rowKey="id"
+        size="middle"
         loading={loading}
         dataSource={users}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 人` }}

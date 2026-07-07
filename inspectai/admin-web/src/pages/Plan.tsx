@@ -10,6 +10,7 @@ import {
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
+import CountUp from "../components/CountUp";
 import { useUi } from "../store/ui";
 
 // ===== 旧版口径:计划状态 → 四桶 =====
@@ -23,11 +24,11 @@ function planStatusBucket(status = ""): Bucket {
   return "overdue"; // 需跟进:待整改 / 未排期 / 暂停 等
 }
 
-const BUCKETS: { key: Bucket; label: string; color: string }[] = [
-  { key: "pending", label: "待执行", color: "#f5a524" },
-  { key: "processing", label: "进行中", color: "#246bfe" },
-  { key: "overdue", label: "需跟进", color: "#ef4b3f" },
-  { key: "done", label: "已完成", color: "#12a968" },
+const BUCKETS: { key: Bucket; label: string; sub: string; color: string }[] = [
+  { key: "pending", label: "待执行", sub: "未开始", color: "#f5a524" },
+  { key: "processing", label: "进行中", sub: "现场处理", color: "#246bfe" },
+  { key: "overdue", label: "需跟进", sub: "复核 / 异常", color: "#ef4b3f" },
+  { key: "done", label: "已完成", sub: "结果入库", color: "#12a968" },
 ];
 
 const bucketTag = (status?: string) => {
@@ -179,7 +180,7 @@ export default function Plan() {
   return (
     // 旧版此页主色为蓝(操作按钮/链接),页内局部覆盖主题
     <ConfigProvider theme={{ token: { colorPrimary: "#246bfe" } }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 372px", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
         <div>
           {/* 状态卡:白底连排,角标色块 + 大数字 + 底部占比条(旧版样式) */}
           <div
@@ -196,6 +197,8 @@ export default function Plan() {
             {BUCKETS.map((b, i) => {
               const n = counts[b.key];
               const active = bucket === b.key;
+              // 红色纪律:需跟进为 0 时不亮红,红色只在真有事时出现
+              const color = b.key === "overdue" && n === 0 ? "#9db0be" : b.color;
               return (
                 <div
                   key={b.key}
@@ -206,8 +209,8 @@ export default function Plan() {
                     padding: "18px 18px 16px",
                     cursor: "pointer",
                     borderLeft: i ? "1px solid #eef1f5" : "none",
-                    background: active ? `${b.color}0d` : "#fff",
-                    outline: active ? `1px solid ${b.color}55` : "none",
+                    background: active ? `${color}0d` : "#fff",
+                    outline: active ? `1px solid ${color}55` : "none",
                     outlineOffset: -1,
                   }}
                 >
@@ -219,14 +222,17 @@ export default function Plan() {
                       top: 14,
                       width: 4,
                       height: 18,
-                      background: b.color,
+                      background: color,
                       borderRadius: "0 2px 2px 0",
                     }}
                   />
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ color: "#334759", fontSize: 14, fontWeight: 600 }}>{b.label}</span>
-                    <b style={{ fontSize: 30, fontWeight: 800, color: "#101d2c" }}>{n}</b>
+                    <b style={{ fontSize: 30, fontWeight: 800, color: "#101d2c" }}>
+                      <CountUp value={n} />
+                    </b>
                   </div>
+                  <div style={{ color: "#9db0be", fontSize: 11, marginTop: 2 }}>{b.sub}</div>
                   {/* 底部占比条 */}
                   <div
                     style={{
@@ -235,7 +241,7 @@ export default function Plan() {
                       bottom: 0,
                       height: 4,
                       width: `${Math.max(Math.round((n / total) * 100), n > 0 ? 8 : 0)}%`,
-                      background: b.color,
+                      background: color,
                     }}
                   />
                 </div>
@@ -248,7 +254,7 @@ export default function Plan() {
             <Card title="复查任务" size="small" style={{ marginBottom: 16 }}>
               <Table<EngineeringTask>
                 rowKey="id"
-                size="small"
+                size="middle"
                 dataSource={recheckTasks}
                 pagination={false}
                 rowClassName={(t) => (t.id === selTaskId ? "row-selected" : "")}
@@ -312,7 +318,7 @@ export default function Plan() {
             </Space>
             <Table<EngineeringPlan>
               rowKey="id"
-              size="small"
+              size="middle"
               loading={loading}
               dataSource={rows}
               pagination={{ pageSize: 12, showTotal: (t) => `共 ${t} 条` }}
@@ -396,7 +402,10 @@ export default function Plan() {
                     ? "尚未下发,巡检员移动端不可见"
                     : "已下发,巡检员可在移动端执行"}
               </div>
-              <Space direction="vertical" style={{ width: "100%" }}>
+              <Space
+                direction="vertical"
+                style={{ width: "100%", borderTop: "1px solid #f0f2f5", paddingTop: 14 }}
+              >
                 {(selTask.status === "待执行" || !selTask.status) && (
                   <Button type="primary" size="large" block onClick={() => onTaskAction(selTask, "进行中")}>
                     下发到移动端
@@ -444,7 +453,10 @@ export default function Plan() {
                   {selPlan.budgetAmount ? `${Number(selPlan.budgetAmount).toLocaleString()} 元` : "—"}
                 </FieldRow>
               </div>
-              <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
+              <Space
+                direction="vertical"
+                style={{ width: "100%", marginTop: 12, borderTop: "1px solid #f0f2f5", paddingTop: 14 }}
+              >
                 {planStatusBucket(selPlan.status) === "pending" && (
                   <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(selPlan)}>
                     <Button type="primary" size="large" block>

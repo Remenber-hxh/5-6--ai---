@@ -103,6 +103,7 @@ export default function Records() {
     >
       <Table<InspectionRecord>
         rowKey="id"
+        size="middle"
         dataSource={rows}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         onRow={(r) => ({ onClick: () => setCurrent(r), style: { cursor: "pointer" } })}

@@ -145,7 +145,7 @@ export default function MainLayout() {
             display: "flex",
             alignItems: "center",
             gap: 10,
-            borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+            borderBottom: "1px solid rgba(62, 230, 180, 0.35)",
             flex: "none",
           }}
         >

@@ -63,6 +63,7 @@ export default function Logs() {
       }
     >
       <Table<OperationLog>
+        size="middle"
         rowKey={(l) => l.id || `${l.createdAt}_${l.targetId}_${l.action}`}
         loading={loading}
         dataSource={rows}

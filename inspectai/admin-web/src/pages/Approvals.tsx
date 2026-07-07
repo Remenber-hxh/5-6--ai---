@@ -60,6 +60,7 @@ export default function Approvals() {
     >
       <Table<ChangeRequest>
         rowKey="id"
+        size="middle"
         loading={loading}
         dataSource={shown}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
