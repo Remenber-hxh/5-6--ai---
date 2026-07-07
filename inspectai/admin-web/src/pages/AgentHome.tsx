@@ -87,9 +87,18 @@ export default function AgentHome() {
   const [sessionId, setSessionId] = useState(() => mid());
   const bodyRef = useRef<HTMLDivElement>(null);
 
+  const [petOn, setPetOn] = useState(() => localStorage.getItem("inspectai_live2d") !== "off");
+
   useEffect(() => {
     listAssets().then(setAssets).catch(() => void 0);
-    // 看板娘:进 Agent 页滑入,离开滑出(全局单例,CDN 不可达时自动降级)
+  }, []);
+
+  // 看板娘:开关持久化;关闭时连引擎/模型都不加载(省 1.3MB 包 + 2.7MB 模型)
+  useEffect(() => {
+    if (!petOn) {
+      live2dHide();
+      return;
+    }
     let alive = true;
     void ensureLive2d().then((ok) => {
       if (ok && alive) live2dShow();
@@ -98,7 +107,13 @@ export default function AgentHome() {
       alive = false;
       live2dHide();
     };
-  }, []);
+  }, [petOn]);
+
+  function togglePet() {
+    const next = !petOn;
+    setPetOn(next);
+    localStorage.setItem("inspectai_live2d", next ? "on" : "off");
+  }
 
   useEffect(() => {
     if (busy) live2dSay("正在分析,请稍候…", 6000, 4);
@@ -289,6 +304,9 @@ export default function AgentHome() {
       <div style={st.foot}>
         <span style={{ color: "#7e94a0", fontSize: 12 }}>AI 生成的内容仅供参考,请以实际数据为准</span>
         <span style={{ display: "flex", gap: 14 }}>
+          <a style={st.footLink} onClick={togglePet}>
+            {petOn ? "隐藏看板娘" : "显示看板娘"}
+          </a>
           <a style={st.footLink} onClick={() => setHistOpen(true)}>
             <HistoryOutlined /> 历史对话
           </a>
