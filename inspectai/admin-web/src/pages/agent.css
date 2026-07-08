@@ -82,3 +82,81 @@
   height: 0;
   display: none;
 }
+
+/* ===== 巡检机芯(AgentMachine):持续运转走 CSS,busy 提速发光,对话时退为氛围 ===== */
+.agent-machine {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: min(64vh, 560px);
+  height: min(64vh, 560px);
+  transform: translate(-50%, -52%);
+  pointer-events: none;
+  opacity: 0.9;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.agent-machine.dim {
+  opacity: 0.2;
+  transform: translate(-50%, -52%) scale(0.94);
+}
+
+.agm-rotate-slow {
+  animation: agmSpin 80s linear infinite;
+  transform-origin: 300px 300px;
+}
+
+.agm-rotate-rev {
+  animation: agmSpin 110s linear infinite reverse;
+  transform-origin: 300px 300px;
+}
+
+.agm-sweep {
+  animation: agmSpin 5.2s linear infinite;
+  transform-origin: 300px 300px;
+}
+
+.agent-machine.busy .agm-sweep {
+  animation-duration: 1.8s;
+}
+
+.agent-machine.busy {
+  opacity: 1;
+}
+
+.agent-machine.busy .agm-rotate-slow {
+  filter: drop-shadow(0 0 12px rgba(62, 230, 180, 0.5)) !important;
+}
+
+.agm-scan {
+  animation: agmScanDrift 7s ease-in-out infinite alternate;
+}
+
+.agm-pulse {
+  animation: agmPulse 3s ease-in-out infinite;
+  transform-origin: 300px 300px;
+}
+
+@keyframes agmSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes agmScanDrift {
+  from { transform: translateY(-5px); }
+  to   { transform: translateY(5px); }
+}
+
+@keyframes agmPulse {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(1.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agm-rotate-slow,
+  .agm-rotate-rev,
+  .agm-sweep,
+  .agm-scan,
+  .agm-pulse {
+    animation: none;
+  }
+}

@@ -15,6 +15,7 @@ import {
   listAssets,
   weeklyReport,
 } from "../api/mgmt";
+import AgentMachine from "../components/AgentMachine";
 import { ChatSession, listSessions, removeSession, saveSession } from "../lib/history";
 import { ensureLive2d, live2dHide, live2dSay, live2dShow } from "../lib/live2d";
 import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
@@ -234,6 +235,7 @@ export default function AgentHome() {
   return (
     <div style={st.page}>
       <div style={st.horizon} />
+      <AgentMachine busy={busy} dim={msgs.length > 0} />
       <div ref={bodyRef} className="agent-body" style={st.body}>
         {msgs.length === 0 && (
           <motion.div
