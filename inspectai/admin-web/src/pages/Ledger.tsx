@@ -1,5 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Drawer, Empty, Input, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
+import { Button, Card, Col, Descriptions, Empty, Input, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -28,7 +28,7 @@ export default function Ledger() {
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const { project } = useUi();
   const [loading, setLoading] = useState(true);
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
 
   async function reload() {
     const as = await listAssets();
@@ -90,8 +90,17 @@ export default function Ledger() {
       .slice(0, 5);
   }, [current, records]);
 
+  // 默认选中首个资产(右侧面板不留白,与计划/记录页一致)
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (!current || !rows.some((a) => a.id === current.id)) setCurrent(rows[0] || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
     <Card
+      size="small"
       title={`资产台账(${rows.length} 台)`}
       extra={
         <Space>
@@ -144,7 +153,7 @@ export default function Ledger() {
       ) : (
         <Row gutter={[16, 16]}>
           {rows.map((a, i) => (
-            <Col key={a.id} xs={24} sm={12} lg={8} xl={6}>
+            <Col key={a.id} xs={24} sm={12} xl={8}>
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -194,22 +203,24 @@ export default function Ledger() {
           ))}
         </Row>
       )}
-      <Drawer
-        title={current?.assetName || "资产详情"}
-        open={!!current}
-        width={470}
-        onClose={() => {
-          setCurrent(null);
-          if (params.get("focus")) setParams({});
-        }}
-      >
-        {current && (
-          <>
+    </Card>
+      <div style={{ position: "sticky", top: 0, maxHeight: "calc(100vh - 104px)", overflowY: "auto" }}>
+        {current ? (
+          <Card
+            size="small"
+            title={
+              <Space>
+                <span style={{ borderLeft: "3px solid #12a968", paddingLeft: 8 }}>资产详情</span>
+                {levelTag(current)}
+              </Space>
+            }
+          >
+            <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{current.assetName}</h3>
             {photoOf[current.id] && (
               <img
                 src={photoOf[current.id]}
                 alt=""
-                style={{ width: "100%", height: 180, objectFit: "cover", borderRadius: 8, marginBottom: 14 }}
+                style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 8, marginBottom: 12 }}
               />
             )}
             <Descriptions column={1} size="small">
@@ -217,7 +228,6 @@ export default function Ledger() {
               <Descriptions.Item label="类型">{current.assetType || "—"}</Descriptions.Item>
               <Descriptions.Item label="项目">{current.project || "—"}</Descriptions.Item>
               <Descriptions.Item label="点位">{current.pointName || "—"}</Descriptions.Item>
-              <Descriptions.Item label="状态">{levelTag(current)}</Descriptions.Item>
               <Descriptions.Item label="最近巡检">{fmtTime(current.lastInspectedAt, true)}</Descriptions.Item>
             </Descriptions>
             {(() => {
@@ -258,7 +268,7 @@ export default function Ledger() {
                   }
                 }}
               >
-                <Button type="primary" style={{ margin: "12px 0" }}>标记正常</Button>
+                <Button type="primary" size="large" block style={{ margin: "12px 0" }}>标记正常</Button>
               </Popconfirm>
             )}
             <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
@@ -299,9 +309,13 @@ export default function Ledger() {
                 );
               })
             )}
-          </>
+          </Card>
+        ) : (
+          <Card size="small">
+            <Empty description="点击左侧资产查看详情" />
+          </Card>
         )}
-      </Drawer>
-    </Card>
+      </div>
+    </div>
   );
 }
