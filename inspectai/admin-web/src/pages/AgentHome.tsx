@@ -15,7 +15,7 @@ import {
   listAssets,
   weeklyReport,
 } from "../api/mgmt";
-import AgentMachine from "../components/AgentMachine";
+import DotField from "../components/DotField";
 import { ChatSession, listSessions, removeSession, saveSession } from "../lib/history";
 import { ensureLive2d, live2dHide, live2dSay, live2dShow } from "../lib/live2d";
 import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
@@ -234,8 +234,7 @@ export default function AgentHome() {
 
   return (
     <div style={st.page} className={msgs.length ? "agent-chatting" : ""}>
-      <div className={`agent-horizon${msgs.length ? " off" : ""}`} style={st.horizon} />
-      <AgentMachine busy={busy} dim={msgs.length > 0} />
+      <DotField active={msgs.length > 0} busy={busy} />
       {msgs.length === 0 && (
         <motion.div
           className="agent-hero"
@@ -248,8 +247,7 @@ export default function AgentHome() {
             INSPECTAI · AGENT CORE
           </div>
           <div className="agent-hero-title">
-            你好,我是
-            <br />
+            <span className="eyebrow">你好,我是</span>
             <span className="brand">智巡 Agent</span>
           </div>
           <div className="agent-hero-sub">您身边的智能巡检助手,随时为您服务</div>
@@ -259,12 +257,13 @@ export default function AgentHome() {
                 key={p.q}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 + i * 0.07 }}
+                transition={{ delay: 0.15 + i * 0.06 }}
                 style={st.preset}
                 onClick={() => send(p.q)}
               >
                 <span
-                  style={{ width: 18, height: 18, display: "inline-flex", color: p.tone, flex: "none" }}
+                  className="preset-ico"
+                  style={{ width: 17, height: 17, display: "inline-flex", flex: "none" }}
                   dangerouslySetInnerHTML={{ __html: p.svg }}
                 />
                 {p.label}
@@ -685,19 +684,6 @@ const st: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
-  },
-  horizon: {
-    position: "absolute",
-    left: "50%",
-    top: "58%",
-    transform: "translateX(-50%)",
-    width: 2200,
-    height: 2200,
-    borderRadius: "50%",
-    background: "#050b12",
-    borderTop: "2px solid rgba(170,255,230,0.85)",
-    boxShadow: "0 -10px 80px 6px rgba(62,230,180,0.4)",
-    pointerEvents: "none",
   },
   body: {
     position: "relative",

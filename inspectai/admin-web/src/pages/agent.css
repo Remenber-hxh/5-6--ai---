@@ -83,47 +83,10 @@
   display: none;
 }
 
-/* ===== 巡检机芯(AgentMachine):官网式右置主视觉;动画全由 anime.js v4 驱动 ===== */
-.agent-machine {
-  position: absolute;
-  right: 3%;
-  top: 46%;
-  width: min(80vh, 660px);
-  height: min(80vh, 660px);
-  transform: translateY(-52%);
-  pointer-events: none;
-  opacity: 0.96;
-  transition: opacity 0.6s ease, transform 0.6s ease;
-}
-
-/* 对话态:机芯完全退场,让对话内容独占视觉,不再有右侧裁切的半圆 */
-.agent-machine.dim {
-  opacity: 0;
-  transform: translateY(-52%) scale(0.9);
-}
-
-.agent-machine.busy {
-  opacity: 1;
-}
-
-.agent-machine.busy .agm-rotate-slow {
-  filter: drop-shadow(0 0 13px rgba(62, 230, 180, 0.55)) !important;
-}
-
-/* 内芯示波器:每根横线绕自身中心做 scaleX 伸缩(anime 驱动) */
-.agm-scanline {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-/* 地平线弧:对话开始后淡出,避免与内容/机芯圆弧打架 */
-.agent-horizon {
-  transition: opacity 0.55s ease;
-}
-
-.agent-horizon.off {
-  opacity: 0;
-}
+/* DotField: point-matrix background driven by anime.js grid stagger */
+.dotfield{position:absolute;inset:0;display:grid;justify-items:center;align-items:center;pointer-events:none;z-index:0;opacity:1;transition:opacity .6s ease}
+.dotfield.dim{opacity:.28}
+.dotfield-dot{width:3px;height:3px;border-radius:50%;background:#3ee6b4;opacity:.05}
 
 /* 对话态背景:纯净深色 + 顶部一道极淡品牌光带,不抢对话气泡 */
 .agent-chatting::before {
@@ -174,16 +137,25 @@
 }
 
 .agent-hero-title {
-  margin-top: 22px;
-  font-size: 48px;
-  line-height: 1.16;
-  font-weight: 900;
-  color: #eef6f4;
-  letter-spacing: 0.5px;
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-hero-title .eyebrow {
+  font-size: 19px;
+  font-weight: 500;
+  color: #8aa3ad;
+  letter-spacing: 1px;
 }
 
 .agent-hero-title .brand {
-  background: linear-gradient(92deg, #3ee6b4 10%, #7effd2 55%, #b6ffe6 95%);
+  font-size: 64px;
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: 1px;
+  background: linear-gradient(96deg, #eef6f4 0%, #b6ffe6 45%, #3ee6b4 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -200,31 +172,29 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 36px;
-  max-width: 430px;
+  margin-top: 40px;
+  max-width: 500px;
 }
 
-/* 窄屏回退:机芯居中做氛围,hero 回到居中 */
-@media (max-width: 1220px) {
-  .agent-machine {
-    right: auto;
-    left: 50%;
-    transform: translate(-50%, -52%);
-    opacity: 0.3;
-  }
+/* 预设按钮图标统一单色(去彩色) */
+.preset-ico {
+  color: #7fe8c6;
+  opacity: 0.85;
+}
 
-  .agent-machine.dim {
-    opacity: 0;
-    transform: translate(-50%, -52%) scale(0.9);
-  }
-
+/* 窄屏回退:hero 居中,点阵铺满做氛围 */
+@media (max-width: 1180px) {
   .agent-hero {
     left: 0;
     right: 0;
-    top: 18%;
+    top: 16%;
     margin: 0 auto;
     text-align: center;
-    max-width: 620px;
+    max-width: 640px;
+  }
+
+  .agent-hero-title {
+    align-items: center;
   }
 
   .agent-hero-presets {
