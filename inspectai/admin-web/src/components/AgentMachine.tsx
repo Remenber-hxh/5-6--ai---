@@ -47,7 +47,7 @@ function scanLines() {
     const stepped = Math.max(Math.ceil(diamond / 21) * 21 - 5, 0);
     const half = Math.min(circHalf - 4, stepped);
     if (half < 6) continue;
-    out.push({ y, half, op: dy < 45 ? 0.2 : dy < 100 ? 0.15 : 0.11 });
+    out.push({ y, half, op: dy < 45 ? 0.34 : dy < 100 ? 0.24 : 0.15 });
   }
   return out;
 }
@@ -94,6 +94,15 @@ function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
       spin(".agm-orbit", 3800, -1); // 内核电子轨道
 
       list.push(
+        // 内芯示波器:每根横线 scaleX 伸缩,从中心向两端错峰 → 波形实时 morph(致敬原版)
+        animate(".agm-scanline", {
+          scaleX: [{ to: 0.42 }, { to: 1.2 }, { to: 0.78 }],
+          duration: reduce ? 0 : 2800,
+          ease: "inOutSine",
+          alternate: true,
+          loop: !reduce,
+          delay: reduce ? 0 : stagger(36, { from: "center" }),
+        }),
         animate(".agm-scan", {
           translateY: [-5, 5],
           duration: reduce ? 0 : 7000,
@@ -245,14 +254,15 @@ function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
           <circle className="agm-fade" cx={CX} cy={CY} r={CORE_R} fill="url(#agm-core-glow)" />
           <g className="agm-scan agm-fade">
             {SCAN_LINES.map((l) => (
-              <line
+              <rect
                 key={l.y}
-                x1={CX - l.half}
-                x2={CX + l.half}
-                y1={l.y}
-                y2={l.y}
-                stroke={`rgba(62,230,180,${l.op})`}
-                strokeWidth={3}
+                className="agm-scanline"
+                x={CX - l.half}
+                y={l.y - 1.4}
+                width={l.half * 2}
+                height={2.8}
+                rx={1.4}
+                fill={`rgba(62,230,180,${l.op})`}
               />
             ))}
           </g>

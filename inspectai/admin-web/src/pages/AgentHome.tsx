@@ -233,8 +233,8 @@ export default function AgentHome() {
   }
 
   return (
-    <div style={st.page}>
-      <div style={st.horizon} />
+    <div style={st.page} className={msgs.length ? "agent-chatting" : ""}>
+      <div className={`agent-horizon${msgs.length ? " off" : ""}`} style={st.horizon} />
       <AgentMachine busy={busy} dim={msgs.length > 0} />
       {msgs.length === 0 && (
         <motion.div
