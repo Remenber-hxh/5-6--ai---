@@ -236,38 +236,44 @@ export default function AgentHome() {
     <div style={st.page}>
       <div style={st.horizon} />
       <AgentMachine busy={busy} dim={msgs.length > 0} />
+      {msgs.length === 0 && (
+        <motion.div
+          className="agent-hero"
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="agent-hero-badge">
+            <span className="agent-hero-dot" />
+            INSPECTAI · AGENT CORE
+          </div>
+          <div className="agent-hero-title">
+            你好,我是
+            <br />
+            <span className="brand">智巡 Agent</span>
+          </div>
+          <div className="agent-hero-sub">您身边的智能巡检助手,随时为您服务</div>
+          <div className="agent-hero-presets">
+            {PRESETS.map((p, i) => (
+              <motion.button
+                key={p.q}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 + i * 0.07 }}
+                style={st.preset}
+                onClick={() => send(p.q)}
+              >
+                <span
+                  style={{ width: 18, height: 18, display: "inline-flex", color: p.tone, flex: "none" }}
+                  dangerouslySetInnerHTML={{ __html: p.svg }}
+                />
+                {p.label}
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+      )}
       <div ref={bodyRef} className="agent-body" style={st.body}>
-        {msgs.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            style={st.hero}
-          >
-            <div style={st.hi}>
-              你好,我是 <span style={{ color: "#3ee6b4" }}>智巡 Agent</span>
-            </div>
-            <div style={st.sub}>您身边的智能巡检助手,随时为您服务</div>
-            <div style={st.presets}>
-              {PRESETS.map((p, i) => (
-                <motion.button
-                  key={p.q}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 + i * 0.07 }}
-                  style={st.preset}
-                  onClick={() => send(p.q)}
-                >
-                  <span
-                    style={{ width: 18, height: 18, display: "inline-flex", color: p.tone, flex: "none" }}
-                    dangerouslySetInnerHTML={{ __html: p.svg }}
-                  />
-                  {p.label}
-                </motion.button>
-              ))}
-            </div>
-          </motion.div>
-        )}
         {msgs.map((m) => (
           <MsgView
             key={m.id}
@@ -706,10 +712,6 @@ const st: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 12,
   },
-  hero: { textAlign: "center", marginTop: "14vh" },
-  hi: { fontSize: 36, fontWeight: 800, color: "#eef6f4" },
-  sub: { marginTop: 12, color: "#8aa3ad", fontSize: 14 },
-  presets: { display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 48 },
   preset: {
     display: "inline-flex",
     alignItems: "center",
