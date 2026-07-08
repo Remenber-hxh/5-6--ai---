@@ -540,8 +540,8 @@ button {
   position: absolute;
   inset: 36px;
   border-radius: 50%;
-  background: var(--ind-cyan);
-  box-shadow: 0 0 0 6px rgba(22,194,213,0.18), 0 0 18px rgba(22,194,213,0.45);
+  background: #12a968;
+  box-shadow: 0 0 0 6px rgba(18,169,104,0.16), 0 0 18px rgba(62,230,180,0.5);
   animation: orbitPulse 1.6s ease-in-out infinite;
 }
 .orbit-ring {
@@ -549,14 +549,14 @@ button {
   inset: 0;
   border-radius: 50%;
   border: 2px solid transparent;
-  border-top-color: var(--wx-blue);
-  border-right-color: var(--wx-blue);
+  border-top-color: #12a968;
+  border-right-color: #12a968;
   animation: spin 1.4s linear infinite;
 }
 .orbit-ring-2 {
   inset: 14px;
-  border-top-color: var(--ind-cyan);
-  border-left-color: var(--ind-cyan);
+  border-top-color: #3ee6b4;
+  border-left-color: #3ee6b4;
   border-right-color: transparent;
   border-bottom-color: transparent;
   animation: spin 2.2s linear infinite reverse;
@@ -607,9 +607,9 @@ button {
 @keyframes stepDot {
   0%, 100% { background: var(--wx-line); transform: scale(1); box-shadow: none; }
   10%, 33% {
-    background: var(--ind-cyan);
+    background: #12a968;
     transform: scale(1.4);
-    box-shadow: 0 0 0 3px var(--ind-cyan-soft);
+    box-shadow: 0 0 0 3px rgba(18,169,104,0.16);
   }
 }
 
@@ -620,8 +620,8 @@ button {
 .loading-tags span {
   font-size: 11px;
   padding: 3px 10px;
-  background: var(--wx-blue-soft);
-  color: var(--wx-blue);
+  background: rgba(18, 169, 104, 0.10);
+  color: #0e8a57;
   border-radius: 999px;
   letter-spacing: 0.25px;
 }
@@ -3263,3 +3263,30 @@ body:has(#app[data-scene="camera"]) {
 }
 .task-start::after { content: "›"; font-size: 17px; line-height: 1; margin-top: -1px; }
 .task-start:active { background: rgba(0, 122, 255, 0.18); }
+
+/* ===== 等待剧本(analyze):JS 驱动的步骤高亮,替代 CSS 循环 ===== */
+.loading-steps.scripted .step { animation: none; }
+.loading-steps.scripted .step .step-dot { animation: none; }
+/* loading 场景恒为暗色(#app[data-scene="loading"] 主题),高亮用实色 */
+.loading-steps.scripted .step.on { color: #f2fdff; font-weight: 600; }
+.loading-steps.scripted .step.on .step-dot {
+  background: #3ee6b4;
+  transform: scale(1.4);
+  box-shadow: 0 0 0 3px rgba(62, 230, 180, 0.2);
+}
+.loading-steps.scripted .step.done { color: rgba(217, 241, 247, 0.45); }
+.loading-steps.scripted .step.done .step-dot { background: rgba(62, 230, 180, 0.55); }
+
+/* 阶段文案切换的进场动画 */
+.loading-msg.msg-in { animation: msgIn 0.35s ease; }
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 场景切换淡入(只动透明度,不碰布局与 fixed 定位) */
+.scene.active { animation: sceneIn 0.22s ease; }
+@keyframes sceneIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

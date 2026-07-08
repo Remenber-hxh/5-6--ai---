@@ -161,6 +161,8 @@ const state = {
   pendingImageIds: [],
   record: null,
   pollTimer: null,
+  loadingTimer: null,      // 等待剧本轮播定时器
+  loadingStepsHTML: "",    // 默认三步列表的原始 HTML(classify 用)
   forceManual: false,
   retakePending: false,
   retakeTarget: null,      // 异常资产「重新拍照复检」上下文:{ templateId, pointId, assetNo, assetName }
@@ -220,6 +222,68 @@ function toast(msg) {
   el._timer = setTimeout(() => el.classList.remove("show"), 2400);
 }
 
+// ===== 等待剧本:analyze 实测约 30 秒(生成耗时压不动),
+// 用阶段文案轮播把冷场变成"AI 工作直播";不给死数字承诺 =====
+const LOADING_SCRIPTS = {
+  classify: [
+    { t: 0, msg: "AI 正在识别场景…" },
+    { t: 4, msg: "正在匹配日报模板…" },
+  ],
+  analyze: [
+    { t: 0,  msg: "正在逐张查看照片…",       step: 0 },
+    { t: 6,  msg: "正在核对模板判定规则…",   step: 1 },
+    { t: 13, msg: "正在提取设备状态与读数…", step: 2 },
+    { t: 21, msg: "正在核验异常与风险…",     step: 2 },
+    { t: 28, msg: "正在生成巡检结论…",       step: 3 },
+    { t: 38, msg: "即将完成，正在整理字段…", step: 3 },
+  ],
+};
+const ANALYZE_STEPS = ["逐张查看照片", "核对模板判定规则", "提取设备状态 / 表计读数", "生成巡检结论"];
+
+function startLoadingScript(kind) {
+  stopLoadingScript();
+  const script = LOADING_SCRIPTS[kind];
+  const ol = $("#loadingSteps");
+  if (!script || !ol) return;
+  if (!state.loadingStepsHTML) state.loadingStepsHTML = ol.innerHTML;
+  if (kind === "analyze") {
+    ol.classList.add("scripted");
+    ol.innerHTML = ANALYZE_STEPS.map((t, i) =>
+      `<li class="step" data-i="${i}"><span class="step-dot"></span><span class="step-text">${t}</span></li>`
+    ).join("");
+  } else {
+    ol.classList.remove("scripted");
+    ol.innerHTML = state.loadingStepsHTML;
+  }
+  const started = Date.now();
+  const tick = () => {
+    const sec = (Date.now() - started) / 1000;
+    let cur = script[0];
+    for (const it of script) if (sec >= it.t) cur = it;
+    const msgEl = $("#loadingMsg");
+    if (msgEl && msgEl.textContent !== cur.msg) {
+      msgEl.classList.remove("msg-in");
+      void msgEl.offsetWidth; // 重新触发进场动画
+      msgEl.textContent = cur.msg;
+      msgEl.classList.add("msg-in");
+    }
+    if (kind === "analyze" && typeof cur.step === "number") {
+      ol.querySelectorAll(".step").forEach((li) => {
+        const i = Number(li.dataset.i);
+        li.classList.toggle("on", i === cur.step);
+        li.classList.toggle("done", i < cur.step);
+      });
+    }
+  };
+  tick();
+  state.loadingTimer = setInterval(tick, 500);
+}
+
+function stopLoadingScript() {
+  clearInterval(state.loadingTimer);
+  state.loadingTimer = null;
+}
+
 const PROGRESS = { login: 0, camera: 0, tasks: 0, loading: 15, classify: 30, form: 60, preview: 85, ledger: 100, asset: 100, approvals: 100 };
 const TITLES = {
   login: "登录",
@@ -235,6 +299,7 @@ const TITLES = {
 };
 
 function setScene(name) {
+  stopLoadingScript();
   if (name === "camera") hideRetakeModal();
   state.scene = name;
   const appRoot = $("#app");
@@ -541,7 +606,7 @@ async function doLogout() {
 
 async function classifyAndProceed(files) {
   setScene("loading");
-  $("#loadingMsg").textContent = "AI 正在识别场景…";
+  startLoadingScript("classify");
   $("#loadingSub").textContent = `已选择 ${files.length} 张图片`;
   try {
     const result = await API.classify(files);
@@ -656,8 +721,8 @@ async function setManualMode() {
 
 async function beginAnalysis() {
   setScene("loading");
-  $("#loadingMsg").textContent = "AI 正在识别字段…";
-  $("#loadingSub").textContent = `分析 ${state.record.images.length} 张图片，约需 5-15 秒`;
+  startLoadingScript("analyze");
+  $("#loadingSub").textContent = `已上传 ${state.record.images.length} 张照片 · 多字段并行识别`;
   try {
     const taskOrFallback = await API.startAnalysis(state.record.id);
     if (taskOrFallback && taskOrFallback.action === "manual_fallback") {
@@ -699,7 +764,10 @@ function pollTask() {
           showRetakeModal(task.errorMessage || state.record.retakeReason || "识别不稳定，请重拍");
         }
       } else {
-        $("#loadingSub").textContent = `任务进度 ${task.progress?.processed || 0}/${task.progress?.total || 0}`;
+        const total = task.progress?.total || 0;
+        if (total > 1) {
+          $("#loadingSub").textContent = `已完成 ${task.progress?.processed || 0}/${total} 张照片`;
+        }
       }
     } catch (err) {
       clearInterval(state.pollTimer);
@@ -2361,7 +2429,7 @@ async function init() {
         showRetakeModal(state.record.retakeReason || "识别不稳定，请重拍");
       } else if (state.record.recognitionStatus === "processing") {
         setScene("loading");
-        $("#loadingMsg").textContent = "AI 正在识别字段…";
+        startLoadingScript("analyze");
         $("#loadingSub").textContent = "正在恢复识别任务";
         pollTask();
       } else {
