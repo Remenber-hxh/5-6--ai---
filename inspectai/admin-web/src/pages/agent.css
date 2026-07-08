@@ -71,3 +71,14 @@
 .agent-input {
   color: #e9f3f1 !important;
 }
+
+/* 消息区隐藏滚动条(仍可滚动),与旧版 agent 页一致 */
+.agent-body {
+  scrollbar-width: none;
+}
+
+.agent-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

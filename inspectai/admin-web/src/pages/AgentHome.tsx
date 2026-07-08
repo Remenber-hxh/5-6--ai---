@@ -15,7 +15,7 @@ import {
   listAssets,
   weeklyReport,
 } from "../api/mgmt";
-import { ChatSession, listSessions, saveSession } from "../lib/history";
+import { ChatSession, listSessions, removeSession, saveSession } from "../lib/history";
 import { ensureLive2d, live2dHide, live2dSay, live2dShow } from "../lib/live2d";
 import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
 import "./agent.css";
@@ -24,6 +24,7 @@ interface Msg {
   id: string;
   role: "user" | "ai";
   text: string;
+  ts?: number;
   sources?: ChatSource[];
   proposal?: ActionProposal | null;
   proposalDone?: string; // 派发结果文案
@@ -84,8 +85,10 @@ export default function AgentHome() {
   const [busy, setBusy] = useState(false);
   const [assets, setAssets] = useState<AssetEntry[]>([]);
   const [histOpen, setHistOpen] = useState(false);
+  const [histTick, setHistTick] = useState(0);
   const [sessionId, setSessionId] = useState(() => mid());
   const bodyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<any>(null);
 
   const [petOn, setPetOn] = useState(() => localStorage.getItem("inspectai_live2d") !== "off");
 
@@ -148,20 +151,20 @@ export default function AgentHome() {
     const q = question.trim();
     if (!q || busy) return;
     setInput("");
-    setMsgs((m) => [...m, { id: mid(), role: "user", text: q }]);
+    setMsgs((m) => [...m, { id: mid(), role: "user", text: q, ts: Date.now() }]);
     setBusy(true);
     try {
       if (WEEKLY_RE.test(q)) {
         const d = await weeklyReport();
         setMsgs((m) => [
           ...m,
-          { id: mid(), role: "ai", text: d.summary || "本周周报已生成。", report: d, reportKind: "weekly" },
+          { id: mid(), role: "ai", text: d.summary || "本周周报已生成。", report: d, reportKind: "weekly", ts: Date.now() },
         ]);
       } else if (DAILY_RE.test(q)) {
         const d = await dailyReport();
         setMsgs((m) => [
           ...m,
-          { id: mid(), role: "ai", text: d.summary || "今日日报已生成。", report: d, reportKind: "daily" },
+          { id: mid(), role: "ai", text: d.summary || "今日日报已生成。", report: d, reportKind: "daily", ts: Date.now() },
         ]);
       } else {
         const res = await chat(q, msgsToHistory(msgs));
@@ -175,16 +178,19 @@ export default function AgentHome() {
             proposal,
             sources: res.sources || [],
             navJump: navIntent(q) || presetJump(q),
+            ts: Date.now(),
           },
         ]);
       }
     } catch (e) {
       setMsgs((m) => [
         ...m,
-        { id: mid(), role: "ai", text: e instanceof Error ? e.message : "请求失败,请稍后再试" },
+        { id: mid(), role: "ai", text: e instanceof Error ? e.message : "请求失败,请稍后再试", ts: Date.now() },
       ]);
     } finally {
       setBusy(false);
+      // 回答落地后重新聚焦输入框,连续提问不用再点
+      setTimeout(() => inputRef.current?.focus?.(), 50);
     }
   }
 
@@ -228,7 +234,7 @@ export default function AgentHome() {
   return (
     <div style={st.page}>
       <div style={st.horizon} />
-      <div ref={bodyRef} style={st.body}>
+      <div ref={bodyRef} className="agent-body" style={st.body}>
         {msgs.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 14 }}
@@ -284,6 +290,7 @@ export default function AgentHome() {
       </div>
       <div style={st.composer}>
         <Input
+          ref={inputRef}
           className="agent-input"
           size="large"
           value={input}
@@ -325,9 +332,26 @@ export default function AgentHome() {
           <Empty description="暂无历史对话" />
         ) : (
           <List
+            key={histTick}
             dataSource={listSessions()}
             renderItem={(s) => (
-              <List.Item style={{ cursor: "pointer" }} onClick={() => restore(s)}>
+              <List.Item
+                style={{ cursor: "pointer" }}
+                onClick={() => restore(s)}
+                actions={[
+                  <a
+                    key="del"
+                    style={{ color: "#d4380d" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSession(s.id);
+                      setHistTick((t) => t + 1);
+                    }}
+                  >
+                    删除
+                  </a>,
+                ]}
+              >
                 <List.Item.Meta
                   title={s.title}
                   description={new Date(s.ts).toLocaleString("zh-CN", {
@@ -424,6 +448,24 @@ function MsgView({
         {m.report &&
           (m.reportKind === "daily" ? <DailyReportView d={m.report} /> : <WeeklyReportView d={m.report} />)}
       </div>
+      {m.ts && (
+        <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 11, color: "rgba(138, 163, 173, 0.6)" }}>
+          <span>
+            {new Date(m.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+          </span>
+          {!user && (
+            <a
+              style={{ color: "rgba(138, 163, 173, 0.75)", cursor: "pointer" }}
+              onClick={() => {
+                navigator.clipboard?.writeText(m.text);
+                antdMsg.success("已复制回答");
+              }}
+            >
+              复制
+            </a>
+          )}
+        </div>
+      )}
       {m.report && (
         <Button
           size="small"
