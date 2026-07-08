@@ -1,4 +1,4 @@
-import { Button, Card, Col, Input, Modal, Row, Select, Space, Table, message } from "antd";
+import { Button, Card, Col, Input, Modal, Row, Select, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useState } from "react";
 
 import {
@@ -17,25 +17,46 @@ export default function Prompts() {
   const [current, setCurrent] = useState<PromptTemplate | null>(null);
   const [preview, setPreview] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    listPromptTemplates().then((d) => {
-      setTemplates(d.templates || []);
-      setModes(d.modes || []);
-      if (d.templates?.length) void select(d.templates[0].id);
-    });
+    listPromptTemplates()
+      .then((d) => {
+        setTemplates(d.templates || []);
+        setModes(d.modes || []);
+        if (d.templates?.length) void select(d.templates[0].id);
+      })
+      .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function select(id: string) {
     const t = await getPromptTemplate(id);
     setCurrent(t);
+    setDirty(false);
+  }
+
+  // 切换模板前拦未保存改动(判定规则改一半丢了会直接影响识别)
+  function switchTemplate(id: string) {
+    if (!dirty) return void select(id);
+    Modal.confirm({
+      title: "当前模板有未保存的修改",
+      content: "切换后未保存的判定规则修改会丢失,确认切换?",
+      okText: "放弃修改并切换",
+      cancelText: "留在本页",
+      onOk: () => void select(id),
+    });
+  }
+
+  function patch(next: PromptTemplate) {
+    setCurrent(next);
+    setDirty(true);
   }
 
   function patchField(idx: number, key: keyof PromptField, value: string) {
     if (!current) return;
-    const fields = current.fields.map((f, i) => (i === idx ? { ...f, [key]: value } : f));
-    setCurrent({ ...current, fields });
+    patch({ ...current, fields: current.fields.map((f, i) => (i === idx ? { ...f, [key]: value } : f)) });
   }
 
   async function save() {
@@ -43,6 +64,7 @@ export default function Prompts() {
     setSaving(true);
     try {
       await savePromptTemplate(current);
+      setDirty(false);
       message.success("已保存,识别立即使用新规则");
     } catch (e) {
       message.error(e instanceof Error ? e.message : "保存失败");
@@ -56,19 +78,33 @@ export default function Prompts() {
     setPreview(await renderPromptTemplate(current.id));
   }
 
+  if (loading && !current) {
+    return (
+      <Card title="提示词模板">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </Card>
+    );
+  }
+
   return (
     <Card
-      title="提示词模板"
+      size="small"
+      title={
+        <Space>
+          提示词模板
+          {dirty && <Tag color="orange">未保存</Tag>}
+        </Space>
+      }
       extra={
         <Space>
           <Select
             style={{ width: 220 }}
             value={current?.id}
             options={templates.map((t) => ({ value: t.id, label: t.name || t.id }))}
-            onChange={(v) => void select(v)}
+            onChange={switchTemplate}
           />
           <Button onClick={doPreview}>预览完整 Prompt</Button>
-          <Button type="primary" loading={saving} onClick={save}>
+          <Button type="primary" loading={saving} disabled={!dirty} onClick={save}>
             保存
           </Button>
         </Space>
@@ -79,17 +115,17 @@ export default function Prompts() {
           <Row gutter={12} style={{ marginBottom: 12 }}>
             <Col span={8}>
               <div style={lbl}>模板名称</div>
-              <Input value={current.name} onChange={(e) => setCurrent({ ...current, name: e.target.value })} />
+              <Input value={current.name} onChange={(e) => patch({ ...current, name: e.target.value })} />
             </Col>
             <Col span={10}>
               <div style={lbl}>场景描述</div>
-              <Input value={current.scene} onChange={(e) => setCurrent({ ...current, scene: e.target.value })} />
+              <Input value={current.scene} onChange={(e) => patch({ ...current, scene: e.target.value })} />
             </Col>
             <Col span={6}>
               <div style={lbl}>必拍照片要求</div>
               <Input
                 value={current.expectedPhotos}
-                onChange={(e) => setCurrent({ ...current, expectedPhotos: e.target.value })}
+                onChange={(e) => patch({ ...current, expectedPhotos: e.target.value })}
               />
             </Col>
           </Row>
@@ -100,7 +136,18 @@ export default function Prompts() {
             pagination={false}
             scroll={{ x: 1100 }}
             columns={[
-              { title: "字段", dataIndex: "code", width: 150, fixed: "left", render: (v, f) => `${f.label}\n(${v})` },
+              {
+                title: "字段",
+                dataIndex: "code",
+                width: 150,
+                fixed: "left",
+                render: (v, f) => (
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{f.label}</div>
+                    <div style={{ color: "#8aa0b0", fontSize: 12 }}>{v}</div>
+                  </div>
+                ),
+              },
               {
                 title: "判定模式",
                 width: 150,
