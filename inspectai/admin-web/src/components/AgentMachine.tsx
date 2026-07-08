@@ -1,10 +1,11 @@
-import anime from "animejs";
+import { animate, createScope, createTimeline, stagger, svg, utils } from "animejs";
 import { memo, useEffect, useRef } from "react";
 
-// 巡检机芯 — 致敬 animejs.com 的"精密仪器"语言,换成智巡的语义:
+// 巡检机芯 — 致敬 animejs.com 的"精密仪器"语言,换成智巡语义:
 // 外圈四段状态弧(绿=正常/蓝=进行/橙=待办/红=异常)+ 刻度环反向缓转
-// 内芯横向扫描线 + 数据点链沿波形轨道行进 + 雷达扫掠 + 呼吸核
-// 纪律:只 transform/opacity;持续动画走 CSS;点链单 rAF 可平滑变速;busy 时提速发光
+// 内芯扫描线 + 数据点链沿波形轨道行进 + 雷达扫掠 + 呼吸核
+// 全部动画由 anime.js v4 驱动:createScope 管生命周期与 reduced-motion,
+// createDrawable 画线入场,createMotionPath(offset) 做点链相位,.speed 实时变速
 const CX = 300;
 const CY = 300;
 
@@ -30,73 +31,109 @@ const ARCS = [
 const CORE_R = 168;
 const DOTS = 12;
 const WAVE = "M 150 300 Q 212 224, 300 300 T 450 300";
+const ORIGIN = { transformOrigin: "300px 300px" } as const;
 
 function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const speedRef = useRef({ cur: 1, target: 1 });
+  const rootRef = useRef<HTMLDivElement>(null);
+  // 可变速的动画实例(busy 时整机提速)
+  const spinning = useRef<{ speed: number }[]>([]);
+  const speedProxy = useRef({ s: 1 });
+  const speedTween = useRef<{ pause: () => void } | null>(null);
 
-  speedRef.current.target = busy ? 3 : 1;
-
-  // 数据点链:单 rAF 沿波形轨道行进,速度朝目标值缓动(busy 平滑提速)
   useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const path = svg.querySelector<SVGPathElement>(".agm-wave");
-    const dots = Array.from(svg.querySelectorAll<SVGCircleElement>(".agm-dot"));
-    if (!path || dots.length === 0) return;
-    const len = path.getTotalLength();
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      dots.forEach((d, i) => {
-        const p = path.getPointAtLength((i / dots.length) * len);
-        d.setAttribute("cx", String(p.x));
-        d.setAttribute("cy", String(p.y));
-      });
-      return;
-    }
-    let raf = 0;
-    let t = 0;
-    let last = performance.now();
-    const tick = (now: number) => {
-      raf = requestAnimationFrame(tick);
-      const dt = Math.min(now - last, 64) / 1000;
-      last = now;
-      if (document.hidden) return;
-      const s = speedRef.current;
-      s.cur += (s.target - s.cur) * Math.min(dt * 3, 1);
-      t = (t + dt * 0.11 * s.cur) % 1;
-      for (let i = 0; i < dots.length; i++) {
-        const frac = (t + i / dots.length) % 1;
-        const p = path.getPointAtLength(frac * len);
-        dots[i].setAttribute("cx", String(p.x));
-        dots[i].setAttribute("cy", String(p.y));
-        // 链头亮、链尾淡(i=0 是头)
-        dots[i].style.opacity = String(0.35 + 0.65 * (1 - i / dots.length));
+    if (!rootRef.current) return;
+    const scope = createScope({
+      root: rootRef.current,
+      mediaQueries: { reduceMotion: "(prefers-reduced-motion)" },
+    }).add((self) => {
+      const reduce = Boolean(self?.matches.reduceMotion);
+      const list: { speed: number }[] = [];
+
+      // 入场:状态弧逐段画线 + 其余元素错峰淡入
+      if (reduce) {
+        utils.set([".agm-fade"], { opacity: 1 });
+      } else {
+        createTimeline({ defaults: { ease: "outCubic" } })
+          .add(svg.createDrawable(".agm-arc"), { draw: ["0 0", "0 1"], duration: 900, delay: stagger(130) })
+          .add(".agm-fade", { opacity: [0, 1], duration: 700, delay: stagger(90) }, "-=650");
       }
+
+      // 持续运转(reduced-motion 下 duration 0 = 静止定格)
+      const spin = (sel: string, duration: number, dir: 1 | -1) =>
+        list.push(
+          animate(sel, {
+            rotate: 360 * dir,
+            duration: reduce ? 0 : duration,
+            ease: "linear",
+            loop: !reduce,
+          }),
+        );
+      spin(".agm-rotate-slow", 80000, 1);
+      spin(".agm-rotate-rev", 110000, -1);
+      spin(".agm-sweep", 5200, 1);
+
+      list.push(
+        animate(".agm-scan", {
+          translateY: [-5, 5],
+          duration: reduce ? 0 : 7000,
+          ease: "inOutSine",
+          alternate: true,
+          loop: !reduce,
+        }),
+        animate(".agm-pulse", {
+          r: [5, 7.5],
+          opacity: [0.9, 0.45],
+          duration: reduce ? 0 : 1500,
+          ease: "inOutSine",
+          alternate: true,
+          loop: !reduce,
+        }),
+      );
+
+      // 数据点链:createMotionPath 的 offset 参数给出相位,天然成链
+      const wave = rootRef.current!.querySelector<SVGPathElement>(".agm-wave");
+      if (wave) {
+        const dots = rootRef.current!.querySelectorAll<SVGCircleElement>(".agm-dot");
+        dots.forEach((dot, i) => {
+          utils.set(dot, { opacity: 0.35 + 0.65 * (1 - i / DOTS) });
+          list.push(
+            animate(dot, {
+              ...svg.createMotionPath(wave, i / DOTS),
+              duration: reduce ? 0 : 9000,
+              ease: "linear",
+              loop: !reduce,
+            }),
+          );
+        });
+      }
+      spinning.current = list;
+    });
+    return () => {
+      spinning.current = [];
+      scope.revert();
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
   }, []);
 
-  // 机芯启动:状态弧逐段画入 + 刻度环/内芯淡入(anime.js 画线,一次性)
+  // busy → 整机平滑提速 3x(实时改 .speed,anime v4 playbackRate)
   useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const arcs = svg.querySelectorAll(".agm-arc");
-    anime.set(arcs, { strokeDashoffset: 100 });
-    const tl = anime.timeline({ easing: "easeOutCubic" });
-    tl.add({ targets: arcs, strokeDashoffset: [100, 0], duration: 900, delay: anime.stagger(130) });
-    tl.add(
-      { targets: svg.querySelectorAll(".agm-fade"), opacity: [0, 1], duration: 700, delay: anime.stagger(90) },
-      "-=650",
-    );
-    return () => tl.pause();
-  }, []);
+    speedTween.current?.pause();
+    speedTween.current = animate(speedProxy.current, {
+      s: busy ? 3 : 1,
+      duration: 700,
+      ease: "outQuad",
+      onUpdate: () => {
+        const s = speedProxy.current.s;
+        for (const a of spinning.current) a.speed = s;
+      },
+    });
+    return () => {
+      speedTween.current?.pause();
+    };
+  }, [busy]);
 
   return (
-    <div className={`agent-machine${busy ? " busy" : ""}${dim ? " dim" : ""}`} aria-hidden>
-      <svg ref={svgRef} viewBox="0 0 600 600" width="100%" height="100%">
+    <div ref={rootRef} className={`agent-machine${busy ? " busy" : ""}${dim ? " dim" : ""}`} aria-hidden>
+      <svg viewBox="0 0 600 600" width="100%" height="100%">
         <defs>
           <clipPath id="agm-core-clip">
             <circle cx={CX} cy={CY} r={CORE_R} />
@@ -112,8 +149,8 @@ function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
           </linearGradient>
         </defs>
 
-        {/* 外圈状态弧(缓转 80s) */}
-        <g className="agm-rotate-slow" style={{ filter: "drop-shadow(0 0 6px rgba(62,230,180,0.25))" }}>
+        {/* 外圈状态弧(缓转) */}
+        <g className="agm-rotate-slow" style={{ ...ORIGIN, filter: "drop-shadow(0 0 6px rgba(62,230,180,0.25))" }}>
           {ARCS.map((a) => (
             <path
               key={a.color}
@@ -123,14 +160,12 @@ function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
               strokeWidth={5}
               strokeLinecap="round"
               fill="none"
-              pathLength={100}
-              strokeDasharray={100}
             />
           ))}
         </g>
 
-        {/* 刻度环(反向 110s) */}
-        <g className="agm-rotate-rev agm-fade">
+        {/* 刻度环(反向) */}
+        <g className="agm-rotate-rev agm-fade" style={ORIGIN}>
           <circle
             cx={CX}
             cy={CY}
@@ -146,7 +181,7 @@ function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
         <circle className="agm-fade" cx={CX} cy={CY} r={212} fill="none" stroke="rgba(159,220,204,0.14)" strokeWidth={1} />
         <circle className="agm-fade" cx={CX} cy={CY} r={CORE_R + 8} fill="none" stroke="rgba(62,230,180,0.22)" strokeWidth={1.5} />
 
-        {/* 内芯:横向扫描线(整组缓慢升降)+ 波形轨道 + 数据点链 + 雷达扫掠 */}
+        {/* 内芯:扫描线(升降)+ 波形轨道 + 数据点链 + 雷达扫掠 */}
         <g clipPath="url(#agm-core-clip)">
           <g className="agm-scan agm-fade">
             {Array.from({ length: 40 }, (_, i) => {
@@ -165,13 +200,13 @@ function AgentMachineInner({ busy, dim }: { busy: boolean; dim: boolean }) {
               );
             })}
           </g>
-          <g className="agm-sweep agm-fade">
+          <g className="agm-sweep agm-fade" style={ORIGIN}>
             <path d={`M ${CX} ${CY} L ${CX + CORE_R} ${CY - 58} A ${CORE_R} ${CORE_R} 0 0 1 ${CX + CORE_R} ${CY + 58} Z`} fill="url(#agm-sweep-grad)" />
           </g>
           <path className="agm-wave agm-fade" d={WAVE} fill="none" stroke="rgba(62,230,180,0.16)" strokeWidth={1.5} />
-          <g className="agm-dots agm-fade">
+          <g className="agm-fade">
             {Array.from({ length: DOTS }, (_, i) => (
-              <circle key={i} className="agm-dot" r={i === 0 ? 4 : 3} fill="#3ee6b4" cx={CX} cy={CY} />
+              <circle key={i} className="agm-dot" r={i === 0 ? 4 : 3} fill="#3ee6b4" cx={0} cy={0} />
             ))}
           </g>
         </g>
