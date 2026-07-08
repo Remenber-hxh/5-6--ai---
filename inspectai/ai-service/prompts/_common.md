@@ -17,16 +17,16 @@ JSON schema：
 {
   "recognitionStatus": "recognized" | "retake_required",
   "retakeReason": "若 recognitionStatus=retake_required 则给出原因（中文，<40字）",
-  "observations": ["每张图你看到的客观事实，按图顺序", "..."],
+  "observations": ["每张图一句客观事实，按图顺序，每句不超过 12 字", "..."],
   "recognizedFields": [
     {
       "code": "字段编码（必须严格等于输入字段清单里某个 code）",
       "value": "字段值（按字段 kind 给：number 给数字字符串、choice 给选项之一、text 给短文本）",
       "confidence": 0.0,
-      "reason": "判断依据（哪张图、看到什么）"
+      "reason": "判断依据，不超过 10 字（如：图2屏显温度）"
     }
   ],
-  "warnings": ["可选提示，比如部分图模糊但不影响主字段"]
+  "warnings": ["可选，最多 2 条，每条不超过 15 字"]
 }
 ```
 
@@ -93,5 +93,5 @@ USER 消息会带 1-5 张图。每张图你都要看。
 
 - 不要拒绝回复（"我无法识别"是错误回复，应该返回 retake_required JSON）
 - 不要建议人怎么做
-- 不要解释你的推理过程（reason 字段里短说一句即可）
+- 不要解释你的推理过程（reason 不超过 10 字；输出越短，现场等待越短）
 - 不要带 emoji

@@ -231,14 +231,12 @@ const LOADING_SCRIPTS = {
   ],
   analyze: [
     { t: 0,  msg: "正在逐张查看照片…",       step: 0 },
-    { t: 6,  msg: "正在核对模板判定规则…",   step: 1 },
-    { t: 13, msg: "正在提取设备状态与读数…", step: 2 },
-    { t: 21, msg: "正在核验异常与风险…",     step: 2 },
-    { t: 28, msg: "正在生成巡检结论…",       step: 3 },
-    { t: 38, msg: "即将完成，正在整理字段…", step: 3 },
+    { t: 7,  msg: "正在核对模板判定规则…",   step: 1 },
+    { t: 16, msg: "正在生成巡检结论…",       step: 2 },
+    { t: 30, msg: "即将完成，正在整理字段…", step: 2 },
   ],
 };
-const ANALYZE_STEPS = ["逐张查看照片", "核对模板判定规则", "提取设备状态 / 表计读数", "生成巡检结论"];
+const ANALYZE_STEPS = ["逐张查看照片", "核对模板判定规则", "生成巡检结论"];
 
 function startLoadingScript(kind) {
   stopLoadingScript();
