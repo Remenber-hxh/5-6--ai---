@@ -16,6 +16,7 @@ import {
   weeklyReport,
 } from "../api/mgmt";
 import DotField from "../components/DotField";
+import ScrambleText from "../components/ScrambleText";
 import { ChatSession, listSessions, removeSession, saveSession } from "../lib/history";
 import { ensureLive2d, live2dHide, live2dSay, live2dShow } from "../lib/live2d";
 import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
@@ -244,13 +245,12 @@ export default function AgentHome() {
         >
           <div className="agent-hero-badge">
             <span className="agent-hero-dot" />
-            INSPECTAI · AGENT CORE
+            <ScrambleText text="INSPECTAI · AGENT CORE" />
           </div>
           <div className="agent-hero-title">
-            <span className="eyebrow">你好,我是</span>
             <span className="brand">智巡 Agent</span>
           </div>
-          <div className="agent-hero-sub">您身边的智能巡检助手,随时为您服务</div>
+          <div className="agent-hero-sub">智能巡检 · 随时待命</div>
           <div className="agent-hero-presets">
             {PRESETS.map((p, i) => (
               <motion.button
