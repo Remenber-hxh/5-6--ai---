@@ -696,6 +696,7 @@ const st: Record<string, React.CSSProperties> = {
     margin: "0 auto",
     display: "flex",
     flexDirection: "column",
+    justifyContent: "flex-end", // 短对话贴底生长(像正常聊天应用),不再把输入框推到屏幕底部留出大片死区
     gap: 12,
   },
   preset: {

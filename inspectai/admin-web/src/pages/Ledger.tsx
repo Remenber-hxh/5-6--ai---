@@ -1,10 +1,10 @@
-import { DownloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Descriptions, Empty, Input, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, EngineeringTask, listAssets, listRecords, listTasks, markAssetNormal } from "../api/mgmt";
+import { AssetEntry, EngineeringTask, listAssets, listRecords, listTasks, markAssetNormal, uploadAssetCover } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
 import { useUi } from "../store/ui";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
@@ -25,6 +25,7 @@ export default function Ledger() {
   const [kw, setKw] = useState("");
   const [type, setType] = useState("");
   const [current, setCurrent] = useState<AssetEntry | null>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const { project } = useUi();
   const [loading, setLoading] = useState(true);
@@ -34,6 +35,20 @@ export default function Ledger() {
     const as = await listAssets();
     setAssets(as);
     if (current) setCurrent(as.find((x) => x.id === current.id) || null);
+  }
+  async function changeCover(file?: File | null) {
+    if (!current || !file) return;
+    setCoverUploading(true);
+    try {
+      const updated = await uploadAssetCover(current.id, file);
+      setAssets((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setCurrent(updated);
+      message.success("标准图已更新");
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "上传失败");
+    } finally {
+      setCoverUploading(false);
+    }
   }
 
   useEffect(() => {
@@ -61,6 +76,11 @@ export default function Ledger() {
     const map: Record<string, string> = {};
     const sorted = [...records].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     for (const a of assets) {
+      const preferred = a.coverImage?.path || a.coverImage?.url || a.coverImagePath || a.lastPhotoPath;
+      if (preferred) {
+        map[a.id] = mediaUrl(preferred);
+        continue;
+      }
       const rec = sorted.find((r) => (r.pointId === a.pointId || r.id === a.lastRecordId) && r.images?.length);
       const p = rec?.images?.[0];
       if (p) map[a.id] = mediaUrl(p.path || p.url);
@@ -90,6 +110,8 @@ export default function Ledger() {
       .slice(0, 5);
   }, [current, records]);
 
+  const currentPhoto = current ? photoOf[current.id] : "";
+  const coverInputId = current ? `asset-cover-${current.id}` : "asset-cover";
   // 默认选中首个资产(右侧面板不留白,与计划/记录页一致)
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
@@ -216,13 +238,48 @@ export default function Ledger() {
             }
           >
             <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{current.assetName}</h3>
-            {photoOf[current.id] && (
-              <img
-                src={photoOf[current.id]}
-                alt=""
-                style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 8, marginBottom: 12 }}
+            <div style={{ marginBottom: 12 }}>
+              {currentPhoto ? (
+                <img
+                  src={currentPhoto}
+                  alt=""
+                  style={{ width: "100%", height: 176, objectFit: "cover", borderRadius: 10, display: "block" }}
+                />
+              ) : (
+                <div
+                  style={{
+                    height: 176,
+                    display: "grid",
+                    placeItems: "center",
+                    background: "linear-gradient(135deg, #f2f6f8, #e8eef3)",
+                    borderRadius: 10,
+                    color: "#8aa0b0",
+                    fontSize: 13,
+                  }}
+                >
+                  暂无标准图
+                </div>
+              )}
+              <input
+                id={coverInputId}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                style={{ display: "none" }}
+                onChange={(event) => {
+                  void changeCover(event.currentTarget.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
               />
-            )}
+              <Button
+                block
+                icon={<UploadOutlined />}
+                loading={coverUploading}
+                style={{ marginTop: 8 }}
+                onClick={() => document.getElementById(coverInputId)?.click()}
+              >
+                {currentPhoto ? "\u66f4\u6362\u6807\u51c6\u56fe" : "\u4e0a\u4f20\u6807\u51c6\u56fe"}
+              </Button>
+            </div>
             <Descriptions column={1} size="small">
               <Descriptions.Item label="编号">{current.assetKey || current.id}</Descriptions.Item>
               <Descriptions.Item label="类型">{current.assetType || "—"}</Descriptions.Item>

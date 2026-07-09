@@ -236,7 +236,32 @@ async function api(path, options = {}) {
   if (!res.ok) throw new Error(data.message || data.error || `请求失败 ${res.status}`);
   return data;
 }
-
+async function apiForm(path, formData) {
+  let res;
+  const request = () => fetch(state.apiBase + path, {
+    method: "POST",
+    body: formData,
+    headers: apiHeaders(false),
+    credentials: "include",
+  });
+  try {
+    res = await request();
+  } catch (error) {
+    const fallback = defaultApiBase();
+    if (state.apiBase !== fallback) {
+      state.apiBase = fallback;
+      localStorage.setItem(API_BASE_KEY, fallback);
+      res = await request();
+    } else {
+      throw error;
+    }
+  }
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+  if (!res.ok) throw new Error(data.message || data.error || `请求失败 ${res.status}`);
+  return data;
+}
 async function safeApi(path, fallback) {
   try {
     return await api(path);
@@ -685,6 +710,7 @@ function renderTrendCard(field) {
 function collectAssetPhotos(asset, history = []) {
   const paths = [];
   if (asset?.coverImage?.path) paths.push(asset.coverImage.path);
+  if (asset?.coverImagePath) paths.push(asset.coverImagePath);
   if (asset?.lastPhotoPath) paths.push(asset.lastPhotoPath);
   for (const record of history) {
     for (const image of record.images || []) {
@@ -5427,7 +5453,7 @@ function renderAssetFull(asset) {
     ${renderLoadErrorBanner(`assetDetail:${asset.id}`)}
     <div class="asset-card asset-card-v2 asset-card-full">
       <section class="asset-side-hero">
-        <div class="asset-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : ""}</div>
+        <div class="asset-photo">${photos[0] ? `<img src="${escapeHTML(photos[0])}" alt="">` : ""}</div><div class="asset-cover-actions"><button class="ghost" type="button" data-asset-cover="${escapeHTML(asset.id)}">\u66f4\u6362\u6807\u51c6\u56fe</button><input id="assetCoverInput" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
         <div class="asset-side-intro">
           <div class="asset-title"><h3>${escapeHTML(asset.assetName || "未命名资产")}</h3><span class="pill ${statusClass(asset.lastStatus)}">${escapeHTML(asset.lastStatus || "未巡检")}</span></div>
           <div class="kv-list asset-side-kv">
@@ -5680,6 +5706,12 @@ function saveSystemConfigFromSide() {
   loadData(false);
 }
 
+async function uploadAssetCover(assetId, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const data = await apiForm(`/api/assets/${encodeURIComponent(assetId)}/cover`, form);
+  return data.asset;
+}
 async function saveAsset(id, body) {
   await api(`/api/assets/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -6316,6 +6348,17 @@ function bindEvents() {
     const normalId = event.target.closest("[data-asset-normal]")?.dataset.assetNormal;
     const reviewBtn = event.target.closest("[data-request-review]");
     const userBadge = event.target.closest(".admin-user");
+    const coverBtn = event.target.closest("[data-asset-cover]");
+    if (coverBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const input = document.getElementById("assetCoverInput");
+      if (input) {
+        input.dataset.assetId = coverBtn.dataset.assetCover || "";
+        input.click();
+      }
+      return;
+    }
     if (reviewBtn) {
       event.preventDefault();
       event.stopPropagation();
@@ -6406,6 +6449,27 @@ function bindEvents() {
     }
   });
 
+
+  document.addEventListener("change", async (event) => {
+    if (event.target.id !== "assetCoverInput") return;
+    const input = event.target;
+    const file = input.files && input.files[0];
+    const assetId = input.dataset.assetId || state.selectedAssetId;
+    input.value = "";
+    if (!assetId || !file) return;
+    try {
+      const updated = await uploadAssetCover(assetId, file);
+      if (updated) {
+        state.assets = state.assets.map((asset) => asset.id === updated.id ? updated : asset);
+        state.selectedAssetId = updated.id;
+        openDrawer((updated.assetName || "资产") + " · 完整档案", renderAssetFull(updated));
+      }
+      render();
+      toast("\u6807\u51c6\u56fe\u5df2\u66f4\u65b0");
+    } catch (error) {
+      toast(error.message || "\u4e0a\u4f20\u5931\u8d25");
+    }
+  });
   document.addEventListener("submit", async (event) => {
     if (event.target.id === "loginForm") {
       event.preventDefault();

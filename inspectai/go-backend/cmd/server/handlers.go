@@ -989,6 +989,14 @@ func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 	if a.StatusOrder == 0 {
 		a.StatusOrder = statusOrder(a.LastStatus)
 	}
+	if a.CoverImagePath != "" {
+		img := ImageInfo{
+			ID:       "asset_cover_" + sanitizeAssetIdent(a.ID),
+			FileName: filepath.Base(a.CoverImagePath),
+			Path:     a.CoverImagePath,
+		}
+		a.CoverImage = &img
+	}
 	if a.LastRecordID == "" {
 		return
 	}
@@ -1001,7 +1009,9 @@ func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 	}
 	if len(rec.Images) > 0 {
 		img := rec.Images[0]
-		a.CoverImage = &img
+		if a.CoverImage == nil {
+			a.CoverImage = &img
+		}
 		if a.LastPhotoPath == "" {
 			a.LastPhotoPath = img.Path
 		}
@@ -1017,7 +1027,9 @@ func (s *Server) sanitizeAssetsForRequest(r *http.Request, assets []*AssetEntry)
 		clean := *asset
 		if clean.LastRecordID != "" {
 			if rec, err := s.store.GetRecord(clean.LastRecordID); err == nil && !s.canAccessRecord(r, rec, false) {
-				clean.CoverImage = nil
+				if clean.CoverImagePath == "" {
+					clean.CoverImage = nil
+				}
 				clean.LastPhotoPath = ""
 			}
 		}
@@ -1179,6 +1191,14 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetReport(w, r, id)
 		return
 	}
+	if id := strings.TrimSuffix(rest, "/cover"); id != rest {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetCoverUpload(w, r, id)
+		return
+	}
 	if id := strings.TrimSuffix(rest, "/status-events"); id != rest {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
@@ -1199,6 +1219,45 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
 	}
+}
+
+func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "only supervisors can update asset cover image")
+		return
+	}
+	if _, err := s.store.GetAsset(id); err != nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "asset not found")
+		return
+	}
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_multipart", err.Error())
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		file, header, err = r.FormFile("image")
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing_file", "missing multipart file field: file")
+		return
+	}
+	file.Close()
+	img, err := saveMultipartFile(filepath.Join(s.storageDir, "assets", sanitizeAssetIdent(id)), header, 15<<20)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "save_failed", err.Error())
+		return
+	}
+	asset, err := s.store.UpdateAssetCover(id, img.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update_failed", err.Error())
+		return
+	}
+	s.enrichAssetForDisplay(asset)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"asset":      s.sanitizeAssetsForRequest(r, []*AssetEntry{asset})[0],
+		"coverImage": asset.CoverImage,
+	})
 }
 
 // handleAssetRecords —— §3 按资产分页翻完整历史（查 asset_snapshots，不受记录列表窗口限制）

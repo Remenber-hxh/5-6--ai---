@@ -281,11 +281,12 @@ type AssetEntry struct {
 	LastInspectedAt time.Time `json:"lastInspectedAt"`
 	LastInspector   string    `json:"lastInspector,omitempty"`
 	LastPhotoPath   string    `json:"lastPhotoPath,omitempty"`
+	CoverImagePath  string    `json:"coverImagePath,omitempty"` // 主管指定的封面图路径，入库
 	InspectionCount int       `json:"inspectionCount"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 
-	// CoverImage 仅 list 接口动态填充，不入库。取自最近一次巡检的第一张图。
+	// CoverImage 仅 API 展示时动态填充，不入库。优先取 CoverImagePath，回退到最近一次巡检的第一张图。
 	CoverImage *ImageInfo `json:"coverImage,omitempty"`
 }
 

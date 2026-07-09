@@ -40,6 +40,8 @@ type Store interface {
 	ListAssets() ([]*AssetEntry, error)
 	GetAsset(id string) (*AssetEntry, error)
 	UpdateAssetMeta(id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
+	// UpdateAssetCover 仅更新主管指定的封面图路径 cover_image_path。
+	UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error)
 
 	// §3 资产长期台账 + 字段级趋势底座（幂等写入，按 asset_id 完整翻历史）
 	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
@@ -329,6 +331,9 @@ func (s *MemStore) upsertAssetLocked(asset *AssetEntry) error {
 		existing.AssetName = asset.AssetName
 		existing.LastInspector = asset.LastInspector
 		existing.LastPhotoPath = asset.LastPhotoPath
+		if asset.CoverImagePath != "" {
+			existing.CoverImagePath = asset.CoverImagePath
+		}
 		existing.InspectionCount++
 		existing.UpdatedAt = now
 	} else {
@@ -401,6 +406,18 @@ func (s *MemStore) GetAsset(id string) (*AssetEntry, error) {
 	if !ok {
 		return nil, sql.ErrNoRows
 	}
+	return a, nil
+}
+
+func (s *MemStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.assets[id]
+	if !ok {
+		return nil, sql.ErrNoRows
+	}
+	a.CoverImagePath = coverImagePath
+	a.UpdatedAt = time.Now()
 	return a, nil
 }
 
@@ -677,6 +694,7 @@ func (s *SQLiteStore) ensureAssetDisplaySchema() error {
 		{"status_order", "ALTER TABLE assets ADD COLUMN status_order INT NOT NULL DEFAULT 99", "ALTER TABLE assets ADD COLUMN status_order INTEGER NOT NULL DEFAULT 99"},
 		{"last_inspector", "ALTER TABLE assets ADD COLUMN last_inspector VARCHAR(64) NOT NULL DEFAULT ''", "ALTER TABLE assets ADD COLUMN last_inspector TEXT NOT NULL DEFAULT ''"},
 		{"last_photo_path", "ALTER TABLE assets ADD COLUMN last_photo_path VARCHAR(512) NOT NULL DEFAULT ''", "ALTER TABLE assets ADD COLUMN last_photo_path TEXT NOT NULL DEFAULT ''"},
+		{"cover_image_path", "ALTER TABLE assets ADD COLUMN cover_image_path VARCHAR(512) NOT NULL DEFAULT ''", "ALTER TABLE assets ADD COLUMN cover_image_path TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, col := range columns {
 		exists, err := s.hasColumn("assets", col.name)
@@ -1255,8 +1273,8 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 			                    asset_type, asset_key, asset_name, last_record_id,
 			                    last_status, status_level, status_order, last_summary,
 			                    last_inspected_at, last_inspector, last_photo_path,
-			                    inspection_count, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+			                    cover_image_path, inspection_count, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 			ON DUPLICATE KEY UPDATE
 				project_code     = VALUES(project_code),
 				project          = VALUES(project),
@@ -1273,6 +1291,7 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 				last_inspected_at = VALUES(last_inspected_at),
 				last_inspector    = VALUES(last_inspector),
 				last_photo_path   = VALUES(last_photo_path),
+				cover_image_path  = CASE WHEN VALUES(cover_image_path) <> '' THEN VALUES(cover_image_path) ELSE cover_image_path END,
 				inspection_count  = inspection_count + 1,
 				updated_at        = VALUES(updated_at)`
 	} else {
@@ -1281,8 +1300,8 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 			                    asset_type, asset_key, asset_name, last_record_id,
 			                    last_status, status_level, status_order, last_summary,
 			                    last_inspected_at, last_inspector, last_photo_path,
-			                    inspection_count, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+			                    cover_image_path, inspection_count, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				project_code     = excluded.project_code,
 				project          = excluded.project,
@@ -1299,6 +1318,7 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 				last_inspected_at = excluded.last_inspected_at,
 				last_inspector    = excluded.last_inspector,
 				last_photo_path   = excluded.last_photo_path,
+				cover_image_path  = CASE WHEN excluded.cover_image_path <> '' THEN excluded.cover_image_path ELSE cover_image_path END,
 				inspection_count  = inspection_count + 1,
 				updated_at        = excluded.updated_at`
 	}
@@ -1306,7 +1326,7 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 		asset.ID, asset.ProjectCode, asset.Project, asset.PointID, asset.TemplateID,
 		asset.AssetType, asset.AssetKey, asset.AssetName, asset.LastRecordID,
 		asset.LastStatus, asset.StatusLevel, asset.StatusOrder, asset.LastSummary,
-		lastInspected, asset.LastInspector, asset.LastPhotoPath, now, now,
+		lastInspected, asset.LastInspector, asset.LastPhotoPath, asset.CoverImagePath, now, now,
 	)
 	return err
 }
@@ -1339,7 +1359,7 @@ func (s *SQLiteStore) ListAssets() ([]*AssetEntry, error) {
 		       asset_type, asset_key, asset_name, last_record_id,
 		       last_status, status_level, status_order, last_summary,
 		       last_inspected_at, last_inspector, last_photo_path,
-		       inspection_count, created_at, updated_at
+		       cover_image_path, inspection_count, created_at, updated_at
 		FROM assets ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -1366,7 +1386,7 @@ func getAssetExec(queryer sqlQueryer, id string) (*AssetEntry, error) {
 		       asset_type, asset_key, asset_name, last_record_id,
 		       last_status, status_level, status_order, last_summary,
 		       last_inspected_at, last_inspector, last_photo_path,
-		       inspection_count, created_at, updated_at
+		       cover_image_path, inspection_count, created_at, updated_at
 		FROM assets WHERE id=?`, id)
 	return scanAsset(row)
 }
@@ -1378,6 +1398,27 @@ func (s *SQLiteStore) UpdateAssetMeta(id, name, status, summary string) (*AssetE
 		return nil, err
 	}
 	return s.GetAsset(id)
+}
+
+// UpdateAssetCover 仅更新封面图路径 cover_image_path，其余字段不动。
+func (s *SQLiteStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error) {
+	if err := updateAssetCoverExec(s.db, id, coverImagePath); err != nil {
+		return nil, err
+	}
+	return s.GetAsset(id)
+}
+
+func updateAssetCoverExec(exec sqlExecutor, id, coverImagePath string) error {
+	now := time.Now().Format(time.RFC3339Nano)
+	res, err := exec.Exec(`
+		UPDATE assets SET cover_image_path = ?, updated_at = ? WHERE id = ?`, coverImagePath, now, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func updateAssetMetaExec(exec sqlExecutor, id, name, status, summary string) error {
@@ -1416,7 +1457,7 @@ func scanAsset(row scanner) (*AssetEntry, error) {
 		&a.ID, &a.ProjectCode, &a.Project, &a.PointID, &a.TemplateID,
 		&a.AssetType, &a.AssetKey, &a.AssetName, &lastRecordID,
 		&a.LastStatus, &a.StatusLevel, &a.StatusOrder, &a.LastSummary,
-		&lastInspectedStr, &a.LastInspector, &a.LastPhotoPath,
+		&lastInspectedStr, &a.LastInspector, &a.LastPhotoPath, &a.CoverImagePath,
 		&a.InspectionCount, &createdStr, &updatedStr,
 	)
 	if err != nil {

@@ -11391,3 +11391,23 @@ body.sidebar-collapsed .sidebar-user > b { width: 34px; height: 34px; }
 .risk-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #f59e0b, #ef4444); }
 .risk-row p { margin: 0; font-size: 12px; color: #64748b; }
 .risk-card-note { font-size: 11.5px; color: #8aa0b0; line-height: 1.6; border-top: 1px solid var(--line, #e5eaf0); padding-top: 10px; }
+
+.asset-cover-actions {
+  margin: 8px 0 0;
+  display: flex;
+  justify-content: flex-start;
+}
+.asset-cover-actions .ghost {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(18, 169, 104, 0.34);
+  border-radius: 999px;
+  background: rgba(18, 169, 104, 0.08);
+  color: var(--green);
+  font-weight: 700;
+  cursor: pointer;
+}
+.asset-cover-actions .ghost:hover {
+  border-color: rgba(18, 169, 104, 0.62);
+  background: rgba(18, 169, 104, 0.14);
+}

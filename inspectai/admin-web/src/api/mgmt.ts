@@ -26,6 +26,13 @@ export interface ActionProposal {
   reason?: string;
 }
 
+export interface AssetImageInfo {
+  id?: string;
+  fileName?: string;
+  path?: string;
+  url?: string;
+}
+
 export interface AssetEntry {
   id: string;
   assetKey?: string;
@@ -38,6 +45,18 @@ export interface AssetEntry {
   lastStatus?: string;
   lastInspectedAt?: string;
   lastRecordId?: string;
+  lastPhotoPath?: string;
+  coverImagePath?: string;
+  coverImage?: AssetImageInfo;
+}
+
+export function uploadAssetCover(assetId: string, file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return api<{ asset: AssetEntry }>(`/api/assets/${encodeURIComponent(assetId)}/cover`, {
+    method: "POST",
+    body,
+  }).then((d) => d.asset);
 }
 
 export interface ChangeRequest {
@@ -364,7 +383,12 @@ export interface AttentionItem {
   breakdown?: RiskFactor[];
   action?: string;
   lastRecordId?: string;
+  lastPhotoPath?: string;
+  coverImagePath?: string;
+  coverImage?: AssetImageInfo;
 }
+
+
 
 // AI 回复里的动作提议块:<<ACTION>>{json}<<END>>
 export function extractActionProposal(reply: string): {
