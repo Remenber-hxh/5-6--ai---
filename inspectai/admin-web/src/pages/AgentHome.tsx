@@ -254,11 +254,12 @@ export default function AgentHome() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="agent-hero-title">
+          <h1 className="agent-hero-title">
             <span className="brand">
-              {greeting()},{displayName}
+              <span className="greet">{greeting()},</span>
+              <span className="name">{displayName}</span>
             </span>
-          </div>
+          </h1>
         </motion.div>
       )}
       <div ref={bodyRef} className="agent-body" style={st.body}>

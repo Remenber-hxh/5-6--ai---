@@ -115,28 +115,28 @@
 }
 
 .agent-hero-title {
-  margin-top: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  margin: 24px 0 0;
 }
 
-.agent-hero-title .eyebrow {
-  font-size: 19px;
-  font-weight: 500;
-  color: #8aa3ad;
-  letter-spacing: 1px;
-}
-
+/* 问候标题:细字重哑光问候词 + 中字重亮白名字,层级出高级感;去糖果渐变 */
 .agent-hero-title .brand {
-  font-size: 64px;
-  line-height: 1.05;
-  font-weight: 900;
-  letter-spacing: 1px;
-  background: linear-gradient(96deg, #eef6f4 0%, #b6ffe6 45%, #3ee6b4 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 4px;
+  font-size: 46px;
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+}
+
+.agent-hero-title .brand .greet {
+  font-weight: 400;
+  color: #8497a1;
+}
+
+.agent-hero-title .brand .name {
+  font-weight: 600;
+  color: #eef6f4;
 }
 
 /* 预设按钮图标统一单色(去彩色) */
