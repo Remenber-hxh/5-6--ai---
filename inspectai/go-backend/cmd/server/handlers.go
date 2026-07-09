@@ -1226,7 +1226,8 @@ func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusForbidden, "forbidden", "only supervisors can update asset cover image")
 		return
 	}
-	if _, err := s.store.GetAsset(id); err != nil {
+	prev, err := s.store.GetAsset(id)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "asset not found")
 		return
 	}
@@ -1250,12 +1251,23 @@ func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, 
 	}
 	asset, err := s.store.UpdateAssetCover(id, img.Path)
 	if err != nil {
+		// DB 更新失败:回滚刚落盘的文件,避免留下孤儿
+		_ = os.Remove(img.Path)
 		writeError(w, http.StatusInternalServerError, "update_failed", err.Error())
 		return
 	}
+	// 换图成功:删掉上一张封面文件(仅当确是旧封面且与新图不同,不动巡检记录图)
+	if prev.CoverImagePath != "" && prev.CoverImagePath != img.Path {
+		_ = os.Remove(prev.CoverImagePath)
+	}
 	s.enrichAssetForDisplay(asset)
+	sanitized := s.sanitizeAssetsForRequest(r, []*AssetEntry{asset})
+	if len(sanitized) == 0 {
+		writeError(w, http.StatusInternalServerError, "sanitize_failed", "asset unavailable after update")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"asset":      s.sanitizeAssetsForRequest(r, []*AssetEntry{asset})[0],
+		"asset":      sanitized[0],
 		"coverImage": asset.CoverImage,
 	})
 }
