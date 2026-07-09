@@ -25,6 +25,12 @@
   animation-delay: 0.3s;
 }
 
+.agent-typing-label {
+  color: #9fb2ad;
+  font-size: 13px;
+  margin: 0 1px;
+}
+
 /* 雷达扫描:识别/分析中的等待动效 */
 .agent-typing .radar {
   width: 18px;
@@ -108,34 +114,6 @@
   text-align: left;
 }
 
-.agent-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  letter-spacing: 3px;
-  font-weight: 600;
-  color: #7fe8c6;
-  border: 1px solid rgba(62, 230, 180, 0.35);
-  border-radius: 999px;
-  padding: 5px 14px 5px 11px;
-  background: rgba(62, 230, 180, 0.06);
-}
-
-.agent-hero-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #3ee6b4;
-  box-shadow: 0 0 6px rgba(62, 230, 180, 0.9);
-  animation: agentHeroDot 1.8s ease-in-out infinite;
-}
-
-@keyframes agentHeroDot {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
-}
-
 .agent-hero-title {
   margin-top: 24px;
   display: flex;
@@ -161,21 +139,6 @@
   color: transparent;
 }
 
-.agent-hero-sub {
-  margin-top: 16px;
-  color: #8aa3ad;
-  font-size: 14.5px;
-  letter-spacing: 0.3px;
-}
-
-.agent-hero-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 40px;
-  max-width: 500px;
-}
-
 /* 预设按钮图标统一单色(去彩色) */
 .preset-ico {
   color: #7fe8c6;
@@ -195,10 +158,5 @@
 
   .agent-hero-title {
     align-items: center;
-  }
-
-  .agent-hero-presets {
-    justify-content: center;
-    max-width: none;
   }
 }

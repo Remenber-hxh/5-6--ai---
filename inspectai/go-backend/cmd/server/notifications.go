@@ -83,24 +83,24 @@ func (s *Server) adminURL() string {
 }
 
 func (s *Server) adminChangeRequestURL(id string) string {
-	return s.adminPageURL("approval", map[string]string{"requestId": id})
+	return s.adminPageURL("approval", map[string]string{"focus": id})
 }
 
 func (s *Server) adminRecordURL(id string) string {
-	return s.adminPageURL("record", map[string]string{"recordId": id})
+	return s.adminPageURL("record", map[string]string{"focus": id})
 }
 
 func (s *Server) adminAssetURL(id string) string {
-	return s.adminPageURL("ledger", map[string]string{"assetId": id})
+	return s.adminPageURL("ledger", map[string]string{"focus": id})
 }
 
-func (s *Server) adminPageURL(page string, params map[string]string) string {
+// adminPageURL 生成新版管理后台(admin-web / v2)的深链。
+// v2 用 HashRouter,路由形如 https://<host>/v2/#/approval?focus=xxx。
+// 旧版 /admin/?page=xxx 保留但不再作为入口。
+func (s *Server) adminPageURL(route string, params map[string]string) string {
 	base := strings.TrimRight(firstNonEmpty(s.publicBaseURL, "https://ai-demo.jadeastech.com"), "/")
+	route = strings.Trim(strings.TrimSpace(route), "/")
 	values := url.Values{}
-	page = strings.TrimSpace(page)
-	if page != "" {
-		values.Set("page", page)
-	}
 	for key, value := range params {
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
@@ -108,10 +108,15 @@ func (s *Server) adminPageURL(page string, params map[string]string) string {
 			values.Set(key, value)
 		}
 	}
-	if encoded := values.Encode(); encoded != "" {
-		return base + "/admin/?" + encoded
+	encoded := values.Encode()
+	if route == "" && encoded == "" {
+		return base + "/v2/"
 	}
-	return base + "/admin/"
+	hash := "/" + route
+	if encoded != "" {
+		hash += "?" + encoded
+	}
+	return base + "/v2/#" + hash
 }
 
 func markdownLink(text, href string) string {

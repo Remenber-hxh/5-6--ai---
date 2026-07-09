@@ -43,11 +43,12 @@ function DotFieldInner({ active, busy }: { active: boolean; busy: boolean }) {
     }).add((self) => {
       if (self?.matches.reduceMotion) return;
       const a = animate(".dotfield-dot", {
-        opacity: [{ to: 0.42 }, { to: 0.05 }],
-        scale: [{ to: 1.9 }, { to: 1 }],
-        delay: stagger(70, { grid: [grid.cols, grid.rows], from: "center" }),
+        // 静息态从 .05 提到 .16(常驻可见的点阵纹理),波峰 .55 + 更大缩放(清晰的扩散脉冲)
+        opacity: [{ to: 0.55 }, { to: 0.16 }],
+        scale: [{ to: 2.2 }, { to: 1 }],
+        delay: stagger(60, { grid: [grid.cols, grid.rows], from: "center" }),
         loop: true,
-        loopDelay: 850,
+        loopDelay: 600,
         ease: "inOutSine",
         duration: 900,
       });

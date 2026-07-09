@@ -16,10 +16,10 @@ import {
   weeklyReport,
 } from "../api/mgmt";
 import DotField from "../components/DotField";
-import ScrambleText from "../components/ScrambleText";
 import { ChatSession, listSessions, removeSession, saveSession } from "../lib/history";
 import { ensureLive2d, live2dHide, live2dSay, live2dShow } from "../lib/live2d";
 import { buildDailyHtml, buildWeeklyHtml, exportWordDoc } from "../lib/wordExport";
+import { useAuth } from "../store/auth";
 import "./agent.css";
 
 interface Msg {
@@ -80,8 +80,19 @@ function presetJump(q: string): { path: string; label: string } | null {
 let seq = 0;
 const mid = () => `m_${Date.now()}_${++seq}`;
 
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 6) return "凌晨好";
+  if (h < 12) return "上午好";
+  if (h < 14) return "中午好";
+  if (h < 18) return "下午好";
+  return "晚上好";
+}
+
 export default function AgentHome() {
   const nav = useNavigate();
+  const { user } = useAuth();
+  const displayName = user?.displayName || user?.username || "访客";
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -243,32 +254,10 @@ export default function AgentHome() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="agent-hero-badge">
-            <span className="agent-hero-dot" />
-            <ScrambleText text="INSPECTAI · AGENT CORE" />
-          </div>
           <div className="agent-hero-title">
-            <span className="brand">智巡 Agent</span>
-          </div>
-          <div className="agent-hero-sub">智能巡检 · 随时待命</div>
-          <div className="agent-hero-presets">
-            {PRESETS.map((p, i) => (
-              <motion.button
-                key={p.q}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 + i * 0.06 }}
-                style={st.preset}
-                onClick={() => send(p.q)}
-              >
-                <span
-                  className="preset-ico"
-                  style={{ width: 17, height: 17, display: "inline-flex", flex: "none" }}
-                  dangerouslySetInnerHTML={{ __html: p.svg }}
-                />
-                {p.label}
-              </motion.button>
-            ))}
+            <span className="brand">
+              {greeting()},{displayName}
+            </span>
           </div>
         </motion.div>
       )}
@@ -287,14 +276,41 @@ export default function AgentHome() {
           />
         ))}
         {busy && (
-          <div className="agent-typing" aria-label="智巡 Agent 分析中">
+          <div className="agent-typing" aria-label="智巡 Agent 思考中">
             <span className="radar" />
+            <span className="agent-typing-label">思考中</span>
             <i />
             <i />
             <i />
           </div>
         )}
       </div>
+      {msgs.length === 0 && (
+        <motion.div
+          style={st.presetsRow}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          {PRESETS.map((p, i) => (
+            <motion.button
+              key={p.q}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 + i * 0.06 }}
+              style={st.preset}
+              onClick={() => send(p.q)}
+            >
+              <span
+                className="preset-ico"
+                style={{ width: 17, height: 17, display: "inline-flex", flex: "none" }}
+                dangerouslySetInnerHTML={{ __html: p.svg }}
+              />
+              {p.label}
+            </motion.button>
+          ))}
+        </motion.div>
+      )}
       <div style={st.composer}>
         <Input
           ref={inputRef}
@@ -698,6 +714,18 @@ const st: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     justifyContent: "flex-end", // 短对话贴底生长(像正常聊天应用),不再把输入框推到屏幕底部留出大片死区
     gap: 12,
+  },
+  presetsRow: {
+    position: "relative",
+    zIndex: 1,
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+    maxWidth: 980,
+    margin: "0 auto 14px",
+    padding: "0 4px",
   },
   preset: {
     display: "inline-flex",

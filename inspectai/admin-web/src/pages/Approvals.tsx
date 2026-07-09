@@ -1,6 +1,6 @@
 import { Button, Card, Empty, Popconfirm, Segmented, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { ChangeRequest, listChangeRequests, reviewChangeRequest } from "../api/mgmt";
 import { fmtTime } from "../lib/status";
@@ -32,6 +32,8 @@ export default function Approvals() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("待审批");
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const focus = params.get("focus") || "";
 
   async function load() {
     setLoading(true);
@@ -45,6 +47,15 @@ export default function Approvals() {
   useEffect(() => {
     void load();
   }, []);
+
+  // 通知深链 /v2/#/approval?focus=xxx:切到「全部」并选中该申请(可能已处理,不在待审批里)
+  useEffect(() => {
+    if (focus && rows.some((r) => r.id === focus)) {
+      setFilter("全部");
+      setSelId(focus);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, focus]);
 
   async function review(id: string, action: "approve" | "reject") {
     try {
