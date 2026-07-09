@@ -1,5 +1,6 @@
 import { Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import {
   EngineeringPlan,
@@ -75,6 +76,8 @@ export default function Plan() {
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
   const { project } = useUi();
   const [form] = Form.useForm();
+  const [params] = useSearchParams();
+  const focusTask = params.get("task") || "";
 
   async function load() {
     setLoading(true);
@@ -137,6 +140,15 @@ export default function Plan() {
       ),
     [realPlans, bucket, proj, freq, kw],
   );
+
+  // Agent 派发后深链 /plan?task=xxx:切「全部」并选中该复查任务(右侧详情面板直出)
+  useEffect(() => {
+    if (focusTask && tasks.some((t) => t.id === focusTask)) {
+      setBucket("");
+      setSelTaskId(focusTask);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, focusTask]);
 
   // 默认选中首行(旧版行为:右侧面板不留白)
   useEffect(() => {

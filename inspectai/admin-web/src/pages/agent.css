@@ -1,12 +1,11 @@
 /* Agent 工作台的少量关键帧动画(内联样式写不了 keyframes) */
+/* 思考中:无框轻量指示(align-self 防止被 column flex 拉满整行) */
 .agent-typing {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: 5px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 2px 0;
 }
 
 .agent-typing i {
@@ -70,6 +69,59 @@
   }
 }
 
+/* ===== agent 响应时的动态效果:流光「思考中」(无框) ===== */
+.agent-typing .agent-typing-label {
+  font-weight: 600;
+  background: linear-gradient(90deg, #7effd2 0%, #f2fbf7 28%, #7effd2 56%, #f2fbf7 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: agentShimmer 1.7s linear infinite;
+}
+@keyframes agentShimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+/* ===== 高级 CTA 按钮(查看任务详情 / 前往 / 打开台账·记录) ===== */
+.agent-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 15px;
+  border-radius: 10px;
+  border: 1px solid rgba(62, 230, 180, 0.3);
+  background: linear-gradient(135deg, rgba(62, 230, 180, 0.15), rgba(24, 197, 151, 0.07));
+  color: #7effd2;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: transform 0.18s ease, box-shadow 0.25s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.agent-cta:hover {
+  transform: translateY(-1px);
+  border-color: rgba(62, 230, 180, 0.6);
+  box-shadow: 0 6px 18px rgba(62, 230, 180, 0.2);
+  background: linear-gradient(135deg, rgba(62, 230, 180, 0.24), rgba(24, 197, 151, 0.12));
+}
+.agent-cta:active {
+  transform: translateY(0);
+}
+
+/* 输入框:聚焦时品牌绿微光(高级感) */
+.agent-composer {
+  transition: border-color 0.25s ease, box-shadow 0.3s ease;
+}
+.agent-composer:focus-within {
+  border-color: rgba(62, 230, 180, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(62, 230, 180, 0.08), 0 10px 30px rgba(0, 20, 16, 0.3);
+}
+
 .agent-input::placeholder {
   color: #7e94a0 !important;
 }
@@ -81,6 +133,12 @@
 /* 消息区隐藏滚动条(仍可滚动),与旧版 agent 页一致 */
 .agent-body {
   scrollbar-width: none;
+}
+
+/* 短对话贴底 + 长内容可滚:首个消息 margin-top:auto 把内容推到底,
+   内容超高时 auto 收缩为 0,正常滚动(替代会卡住滚动的 justify-content:flex-end) */
+.agent-body > :first-child {
+  margin-top: auto;
 }
 
 .agent-body::-webkit-scrollbar {
@@ -137,6 +195,51 @@
 .agent-hero-title .brand .name {
   font-weight: 600;
   color: #eef6f4;
+}
+
+/* ===== 今日快照:问候语下方的实时状态条(0 态灰 / 有事项品牌琥珀点亮) ===== */
+.agent-snap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 26px;
+}
+.agent-snap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #9fb2bd;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.18s ease;
+}
+.agent-snap-chip:hover {
+  border-color: rgba(126, 255, 210, 0.4);
+  background: rgba(126, 255, 210, 0.06);
+  transform: translateY(-1px);
+}
+.agent-snap-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(159, 178, 189, 0.5);
+}
+.agent-snap-chip i.warn {
+  background: #ffc46b;
+  box-shadow: 0 0 8px rgba(255, 196, 107, 0.6);
+}
+.agent-snap-chip b {
+  font-size: 16px;
+  font-weight: 700;
+  color: #dfeae8;
+  font-variant-numeric: tabular-nums;
+}
+.agent-snap-chip b.warn {
+  color: #ffc46b;
 }
 
 /* 预设按钮图标统一单色(去彩色) */
