@@ -446,11 +446,60 @@ function setFooter(name) {
 
 // ===== 拍照入口 =====
 
+// 拍照即压缩:长边 1600 / JPEG 0.82(与服务端 try_compress 口径一致)。
+// 手机原图 4-8MB → 约 300-600KB,弱网上传提速一个量级;任何一步失败都回退原图,绝不阻断上传。
+const COMPRESS_MAX_EDGE = 1600;
+const COMPRESS_QUALITY = 0.82;
+const COMPRESS_SKIP_BYTES = 500 * 1024; // 小于 500KB 不折腾
+
+async function decodeImage(file) {
+  // createImageBitmap 自动应用 EXIF 方向(竖拍不横躺);老内核回退 <img>
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch (err) { /* 继续走 img 回退 */ }
+  }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+    img.src = url;
+  });
+}
+
+async function compressImage(file) {
+  if (!/^image\//.test(file.type) || file.size <= COMPRESS_SKIP_BYTES) return file;
+  try {
+    const bmp = await decodeImage(file);
+    const w = bmp.width || bmp.naturalWidth;
+    const h = bmp.height || bmp.naturalHeight;
+    if (!w || !h) return file;
+    const ratio = Math.min(1, COMPRESS_MAX_EDGE / Math.max(w, h));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+    canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    if (bmp.close) bmp.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", COMPRESS_QUALITY));
+    if (!blob || blob.size >= file.size) return file; // 压完反而大(或失败)就用原图
+    const name = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch (err) {
+    return file;
+  }
+}
+
+async function compressImages(files) {
+  return Promise.all(files.map(compressImage));
+}
+
 function bindFilePicker(inputId) {
   $(inputId).addEventListener("change", async (e) => {
-    const files = Array.from(e.target.files || []);
+    const picked = Array.from(e.target.files || []);
     e.target.value = "";  // 允许同一文件重选
-    if (!files.length) return;
+    if (!picked.length) return;
+    const files = await compressImages(picked);
     if (state.retakePending && state.record?.id) {
       await uploadRetakeImages(files);
       return;
