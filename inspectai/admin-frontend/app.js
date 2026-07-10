@@ -159,7 +159,7 @@ function businessCode(value = "", fallback = "NA") {
 }
 
 function recordProjectCode(project = "") {
-  const map = { "会议中心": "HYZX", "紫涵雅集": "ZHYJ" };
+  const map = { "会议中心": "HYZX", "紫菡雅集": "ZHYJ" };
   return map[project] || businessCode(project, "PROJ");
 }
 

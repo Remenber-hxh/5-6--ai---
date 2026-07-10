@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 当前恢复完整业务入口：紫涵雅集 + 会议中心相关模板均可选。
+// 当前恢复完整业务入口：紫菡雅集 + 会议中心相关模板均可选。
 // 只有已沉淀 prompt 的模板接 AI；其他模板保留人工填写路径，避免生成假识别结果。
 
 func reportTemplates() []ReportTemplate {
@@ -14,7 +14,7 @@ func reportTemplates() []ReportTemplate {
 		{
 			ID:        "zihan_energy",
 			Name:      "能耗抄表",
-			Project:   "紫涵雅集",
+			Project:   "紫菡雅集",
 			AssetType: "能耗表组",
 			MaxImages: 20,
 			Featured:  true,
@@ -34,7 +34,7 @@ func reportTemplates() []ReportTemplate {
 		{
 			ID:        "zihan_daily",
 			Name:      "综合巡检",
-			Project:   "紫涵雅集",
+			Project:   "紫菡雅集",
 			AssetType: "综合巡检点",
 			MaxImages: 20,
 			Featured:  true,
@@ -266,8 +266,8 @@ func reportTemplates() []ReportTemplate {
 // 静态点位列表 — 与模板一一对应，前端默认只显示 Featured=true 的
 func seedPoints() []Point {
 	return []Point{
-		{ID: "p_zihan_energy", Project: "紫涵雅集", Name: "能耗抄表点位", Type: "能耗抄表", Location: "园区水电表点位", TemplateID: "zihan_energy", Featured: true},
-		{ID: "p_zihan_daily", Project: "紫涵雅集", Name: "综合巡检点位", Type: "综合巡检", Location: "园区", TemplateID: "zihan_daily", Featured: true},
+		{ID: "p_zihan_energy", Project: "紫菡雅集", Name: "能耗抄表点位", Type: "能耗抄表", Location: "园区水电表点位", TemplateID: "zihan_energy", Featured: true},
+		{ID: "p_zihan_daily", Project: "紫菡雅集", Name: "综合巡检点位", Type: "综合巡检", Location: "园区", TemplateID: "zihan_daily", Featured: true},
 		{ID: "p_hot_water", Project: "会议中心", Name: "热水机房", Type: "日常巡检", Location: "B1 机房", TemplateID: "hot_water_room", Featured: true},
 		{ID: "p_fire_pump", Project: "会议中心", Name: "消防泵房", Type: "日常巡检", Location: "B1 水泵房", TemplateID: "fire_pump", Featured: true},
 		{ID: "p_ups", Project: "会议中心", Name: "UPS 机房", Type: "日常巡检", Location: "B1 设备区", TemplateID: "ups_room", Featured: true},

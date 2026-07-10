@@ -34,7 +34,7 @@ func businessProjectCode(project string) string {
 	switch strings.TrimSpace(project) {
 	case "会议中心":
 		return "HYZX"
-	case "紫涵雅集":
+	case "紫菡雅集":
 		return "ZHYJ"
 	default:
 		return businessCode(project, "PROJ")

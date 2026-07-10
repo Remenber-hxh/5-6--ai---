@@ -3245,7 +3245,7 @@ func recordTouchesAsset(rec *Record, asset *AssetEntry) bool {
 }
 
 func isLegacyZihanAggregateAsset(a *AssetEntry) bool {
-	if a == nil || a.Project != "紫涵雅集" {
+	if a == nil || a.Project != "紫菡雅集" {
 		return false
 	}
 	switch a.TemplateID {

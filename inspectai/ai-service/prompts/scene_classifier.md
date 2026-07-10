@@ -113,7 +113,7 @@
 ```json
 {
   "templateId": "zihan_energy",
-  "templateName": "紫涵雅集能耗抄表",
+  "templateName": "紫菡雅集能耗抄表",
   "confidence": 0.94,
   "reason": "LCD屏显示EP电能标识符，蓝底白字典型能耗表特征",
   "alternatives": [],
@@ -128,7 +128,7 @@
 ```json
 {
   "templateId": "zihan_daily",
-  "templateName": "紫涵雅集每日综合巡检",
+  "templateName": "紫菡雅集每日综合巡检",
   "confidence": 0.88,
   "reason": "屏显示湿度%和温度℃双圆环，是除湿机典型UI",
   "alternatives": [
@@ -194,4 +194,4 @@
 - 不要给 templateId 之外的值（这是固定枚举）
 - 不要在 reason 里超过 30 字
 - 不要返回 retake_required（场景分类失败 ≠ 字段识别失败，不要阻塞用户）
-- 不要把会议中心模板误判为紫涵雅集综合巡检；有明确会议中心设备特征时，优先返回对应会议中心模板
+- 不要把会议中心模板误判为紫菡雅集综合巡检；有明确会议中心设备特征时，优先返回对应会议中心模板
