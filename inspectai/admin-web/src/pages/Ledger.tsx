@@ -1,10 +1,10 @@
-import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Empty, Input, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, UploadOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, EngineeringTask, listAssets, listRecords, listTasks, markAssetNormal, uploadAssetCover } from "../api/mgmt";
+import { AssetEntry, EngineeringTask, deleteAsset, listAssets, listRecords, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
 import { useUi } from "../store/ui";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
@@ -26,6 +26,8 @@ export default function Ledger() {
   const [type, setType] = useState("");
   const [current, setCurrent] = useState<AssetEntry | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm] = Form.useForm();
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const { project } = useUi();
   const [loading, setLoading] = useState(true);
@@ -236,6 +238,68 @@ export default function Ledger() {
                 {levelTag(current)}
               </Space>
             }
+            extra={
+              <Dropdown
+                trigger={["click"]}
+                menu={{
+                  items: [
+                    {
+                      key: "cover",
+                      icon: <UploadOutlined />,
+                      label: currentPhoto ? "更换标准图" : "上传标准图",
+                    },
+                    {
+                      key: "edit",
+                      icon: <EditOutlined />,
+                      label: "编辑资产",
+                    },
+                    { type: "divider" },
+                    {
+                      key: "delete",
+                      icon: <DeleteOutlined />,
+                      label: "删除资产",
+                      danger: true,
+                    },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === "cover") document.getElementById(coverInputId)?.click();
+                    else if (key === "edit") {
+                      editForm.setFieldsValue({
+                        assetName: current.assetName,
+                        lastStatus: current.lastStatus || "正常",
+                        lastSummary: current.lastSummary || "",
+                      });
+                      setEditing(true);
+                    } else if (key === "delete") {
+                      Modal.confirm({
+                        title: "删除该资产?",
+                        content: "台账、快照与趋势数据将删除;历史巡检记录保留。存在未完成整改任务时无法删除。",
+                        okText: "删除",
+                        okButtonProps: { danger: true },
+                        onOk: async () => {
+                          try {
+                            await deleteAsset(current.id);
+                            message.success("资产已删除");
+                            setCurrent(null);
+                            await reload();
+                          } catch (e) {
+                            message.error(e instanceof Error ? e.message : "删除失败");
+                          }
+                        },
+                      });
+                    }
+                  },
+                }}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MoreOutlined />}
+                  loading={coverUploading}
+                  style={{ color: "#98a8b3" }}
+                />
+              </Dropdown>
+            }
           >
             <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{current.assetName}</h3>
             <div style={{ marginBottom: 12 }}>
@@ -270,15 +334,6 @@ export default function Ledger() {
                   event.currentTarget.value = "";
                 }}
               />
-              <Button
-                block
-                icon={<UploadOutlined />}
-                loading={coverUploading}
-                style={{ marginTop: 8 }}
-                onClick={() => document.getElementById(coverInputId)?.click()}
-              >
-                {currentPhoto ? "\u66f4\u6362\u6807\u51c6\u56fe" : "\u4e0a\u4f20\u6807\u51c6\u56fe"}
-              </Button>
             </div>
             <Descriptions column={1} size="small">
               <Descriptions.Item label="编号">{current.assetKey || current.id}</Descriptions.Item>
@@ -328,6 +383,38 @@ export default function Ledger() {
                 <Button type="primary" size="large" block style={{ margin: "12px 0" }}>标记正常</Button>
               </Popconfirm>
             )}
+            <Modal
+              title="编辑资产"
+              open={editing}
+              onCancel={() => setEditing(false)}
+              onOk={() => editForm.submit()}
+              destroyOnClose
+            >
+              <Form
+                form={editForm}
+                layout="vertical"
+                onFinish={async (v) => {
+                  try {
+                    await updateAsset(current.id, v);
+                    message.success("已保存");
+                    setEditing(false);
+                    await reload();
+                  } catch (e) {
+                    message.error(e instanceof Error ? e.message : "保存失败");
+                  }
+                }}
+              >
+                <Form.Item name="assetName" label="资产名称" rules={[{ required: true, message: "请输入名称" }]}>
+                  <Input maxLength={64} />
+                </Form.Item>
+                <Form.Item name="lastStatus" label="状态">
+                  <Select options={["正常", "异常", "待复核", "待维修"].map((s) => ({ value: s, label: s }))} />
+                </Form.Item>
+                <Form.Item name="lastSummary" label="摘要">
+                  <Input.TextArea rows={3} maxLength={200} />
+                </Form.Item>
+              </Form>
+            </Modal>
             <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
             {trail.length === 0 ? (
               <div style={{ color: "#8aa0b0", fontSize: 13 }}>暂无巡检记录</div>

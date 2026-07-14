@@ -11,7 +11,7 @@ import {
 interface AuthState {
   user: CurrentUser | null;
   loggedIn: boolean;
-  login: (username: string, password: string) => Promise<CurrentUser>;
+  login: (username: string, password: string) => Promise<{ user: CurrentUser; mustChangePassword?: boolean }>;
   logout: () => void;
 }
 
@@ -19,9 +19,9 @@ export const useAuth = create<AuthState>((set) => ({
   user: getStoredUser(),
   loggedIn: Boolean(getToken()),
   async login(username, password) {
-    const user = await apiLogin(username, password);
-    set({ user, loggedIn: true });
-    return user;
+    const res = await apiLogin(username, password);
+    set({ user: res.user, loggedIn: true });
+    return res;
   },
   logout() {
     apiLogout();

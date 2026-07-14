@@ -79,16 +79,24 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   return data as T;
 }
 
-export async function login(username: string, password: string): Promise<CurrentUser> {
-  const data = await api<{ token?: string; user?: CurrentUser }>("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
+export interface LoginResult {
+  user: CurrentUser;
+  mustChangePassword?: boolean; // 仍在使用默认密码,前端须强提示修改
+}
+
+export async function login(username: string, password: string): Promise<LoginResult> {
+  const data = await api<{ token?: string; user?: CurrentUser; mustChangePassword?: boolean }>(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    },
+  );
   if (data.token) setToken(data.token);
   const user = (data.user || null) as CurrentUser | null;
   if (!user) throw new ApiError(500, "登录响应缺少用户信息");
   setStoredUser(user);
-  return user;
+  return { user, mustChangePassword: data.mustChangePassword };
 }
 
 export function logout() {

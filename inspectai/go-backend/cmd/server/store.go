@@ -42,6 +42,8 @@ type Store interface {
 	UpdateAssetMeta(id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
 	// UpdateAssetCover 仅更新主管指定的封面图路径 cover_image_path。
 	UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error)
+	// DeleteAsset 删除资产及其快照/字段观测(巡检记录保留作历史证据)。
+	DeleteAsset(id string) error
 
 	// §3 资产长期台账 + 字段级趋势底座（幂等写入，按 asset_id 完整翻历史）
 	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
@@ -407,6 +409,30 @@ func (s *MemStore) GetAsset(id string) (*AssetEntry, error) {
 		return nil, sql.ErrNoRows
 	}
 	return a, nil
+}
+
+func (s *MemStore) DeleteAsset(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.assets[id]; !ok {
+		return sql.ErrNoRows
+	}
+	delete(s.assets, id)
+	snaps := s.assetSnapshots[:0]
+	for _, sn := range s.assetSnapshots {
+		if sn.AssetID != id {
+			snaps = append(snaps, sn)
+		}
+	}
+	s.assetSnapshots = snaps
+	obs := s.fieldObs[:0]
+	for _, o := range s.fieldObs {
+		if o.AssetID != id {
+			obs = append(obs, o)
+		}
+	}
+	s.fieldObs = obs
+	return nil
 }
 
 func (s *MemStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error) {
@@ -1398,6 +1424,29 @@ func (s *SQLiteStore) UpdateAssetMeta(id, name, status, summary string) (*AssetE
 		return nil, err
 	}
 	return s.GetAsset(id)
+}
+
+// DeleteAsset 事务删除资产 + 快照 + 字段观测;巡检记录保留(历史证据不随资产消失)。
+func (s *SQLiteStore) DeleteAsset(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM assets WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	if _, err := tx.Exec(`DELETE FROM asset_snapshots WHERE asset_id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM field_observations WHERE asset_id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UpdateAssetCover 仅更新封面图路径 cover_image_path，其余字段不动。

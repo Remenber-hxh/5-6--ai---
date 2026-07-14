@@ -3,8 +3,10 @@ import { Button, Card, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, 
 import { useEffect, useState } from "react";
 
 import {
+  Department,
   UserEntry,
   createUser,
+  listDepartments,
   listRoles,
   listUsers,
   resetUserPassword,
@@ -29,6 +31,7 @@ const FALLBACK_ROLES = [
 export default function Users() {
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [roles, setRoles] = useState(FALLBACK_ROLES);
+  const [depts, setDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<UserEntry | null | "new">(null);
   const [pwdUser, setPwdUser] = useState<UserEntry | null>(null);
@@ -49,12 +52,19 @@ export default function Users() {
     listRoles()
       .then((rs) => rs.length && setRoles(rs))
       .catch(() => void 0);
+    listDepartments().then(setDepts).catch(() => void 0);
   }, []);
 
   function openEdit(u: UserEntry | "new") {
     setEditing(u);
     if (u === "new") form.resetFields();
-    else form.setFieldsValue({ username: u.username, displayName: u.displayName, roleCode: u.roleCode });
+    else
+      form.setFieldsValue({
+        username: u.username,
+        displayName: u.displayName,
+        roleCode: u.roleCode,
+        departmentId: u.departmentId || undefined,
+      });
   }
 
   async function submit() {
@@ -64,7 +74,7 @@ export default function Users() {
         await createUser(v);
         message.success("用户已创建");
       } else if (editing) {
-        await updateUser(editing.id, { displayName: v.displayName, roleCode: v.roleCode });
+        await updateUser(editing.id, { displayName: v.displayName, roleCode: v.roleCode, departmentId: v.departmentId });
         message.success("用户已更新");
       }
       setEditing(null);
@@ -125,6 +135,7 @@ export default function Users() {
           { title: "姓名", dataIndex: "displayName" },
           { title: "账号", dataIndex: "username", width: 150 },
           { title: "角色", width: 130, render: (_, u) => roleTag(u.roleCode, u.roleName) },
+          { title: "部门", width: 130, render: (_, u) => u.departmentName || "—" },
           {
             title: "状态",
             width: 90,
@@ -168,6 +179,13 @@ export default function Users() {
           </Form.Item>
           <Form.Item name="roleCode" label="角色" rules={[{ required: true, message: "请选择角色" }]}>
             <Select options={roles.map((r) => ({ value: r.code, label: r.name }))} />
+          </Form.Item>
+          <Form.Item name="departmentId" label="部门">
+            <Select
+              allowClear
+              placeholder="默认部门"
+              options={depts.map((d) => ({ value: d.id, label: d.name }))}
+            />
           </Form.Item>
           {editing === "new" && (
             <Form.Item

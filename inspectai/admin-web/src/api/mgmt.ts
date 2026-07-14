@@ -43,6 +43,7 @@ export interface AssetEntry {
   pointName?: string;
   statusLevel?: string;
   lastStatus?: string;
+  lastSummary?: string;
   lastInspectedAt?: string;
   lastRecordId?: string;
   lastPhotoPath?: string;
@@ -238,6 +239,19 @@ export async function dispatchPlan(plan: EngineeringPlan) {
   return taskId;
 }
 
+// 主管直接修改台账字段(其余角色走修改申请审批流)
+export function updateAsset(id: string, patch: { assetName?: string; lastStatus?: string; lastSummary?: string }) {
+  return api<{ asset: AssetEntry }>(`/api/assets/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+// 删除资产(主管;巡检记录保留作历史证据,有在途整改任务会被后端拦下)
+export function deleteAsset(id: string) {
+  return api<{ deleted: boolean }>(`/api/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 // ===== 用户 / 日志 / 系统 =====
 export interface UserEntry {
   id: string;
@@ -245,8 +259,20 @@ export interface UserEntry {
   displayName?: string;
   roleCode?: string;
   roleName?: string;
+  departmentId?: string;
+  departmentName?: string;
   status?: string;
   createdAt?: string;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  parentId?: string;
+}
+
+export function listDepartments() {
+  return api<{ departments: Department[] }>("/api/departments").then((d) => d.departments || []);
 }
 
 export function listUsers() {
@@ -257,11 +283,11 @@ export function listRoles() {
   return api<{ roles: { code: string; name: string }[] }>("/api/roles").then((d) => d.roles || []);
 }
 
-export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string }) {
+export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string; departmentId?: string }) {
   return api("/api/users", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function updateUser(id: string, payload: { username?: string; displayName: string; roleCode: string }) {
+export function updateUser(id: string, payload: { username?: string; displayName: string; roleCode: string; departmentId?: string }) {
   return api(`/api/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
 }
 

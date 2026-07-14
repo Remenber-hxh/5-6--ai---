@@ -38,10 +38,18 @@ secrets:
   wework_bot_webhook:
     file: ./secrets/wework_bot_webhook
 
+# 容器日志统一上限:json-file 默认无限增长,跑数月会吃满磁盘
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
+    logging: *default-logging
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -72,6 +80,7 @@ services:
       context: .
       dockerfile: ai-service/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       AI_SERVICE_ADDR: 0.0.0.0
@@ -114,6 +123,7 @@ services:
       context: .
       dockerfile: go-backend/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       BACKEND_ADDR: ":8080"
@@ -166,6 +176,7 @@ services:
       context: .
       dockerfile: admin-frontend/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     expose:
       - "80"
     depends_on:
@@ -181,6 +192,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       # 首次部署默认走 HTTP-only bootstrap；deploy-linux.sh 检测到证书后自动切 HTTPS。
       - ${INSPECTAI_NGINX_CONF:-./nginx/nginx.bootstrap.conf}:/etc/nginx/nginx.conf:ro

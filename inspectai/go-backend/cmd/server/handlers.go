@@ -382,6 +382,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	// 防爆破:同一用户名+IP 连续失败 5 次锁 10 分钟
+	guardKey := loginGuardKey(req.Username, r)
+	if locked, retryAfter := s.loginGuard.locked(guardKey); locked {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+		writeError(w, http.StatusTooManyRequests, "login_locked",
+			fmt.Sprintf("失败次数过多,请 %d 分钟后再试", (retryAfter+59)/60))
+		return
+	}
 	user, session, err := s.store.AuthenticateUser(req.Username, req.Password)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -391,10 +399,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusUnauthorized
 			code = "invalid_credentials"
 			msg = "账号或密码错误"
+			if s.loginGuard.fail(guardKey) {
+				_ = s.store.CreateOperationLog(&OperationLog{
+					ActorName:  req.Username,
+					Action:     "login_locked",
+					TargetType: "user",
+					Detail:     map[string]any{"username": req.Username, "reason": "连续失败触发锁定"},
+				})
+			}
 		}
 		writeError(w, status, code, msg)
 		return
 	}
+	s.loginGuard.success(guardKey)
 	s.setAuthCookie(w, r, session.Token, int(sessionTTL.Seconds()))
 	_ = s.store.CreateOperationLog(&OperationLog{
 		UserID:     user.ID,
@@ -404,11 +421,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		TargetID:   user.ID,
 		Detail:     map[string]any{"username": user.Username, "role": user.RoleCode},
 	})
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"user":      user,
 		"token":     session.Token,
 		"expiresAt": session.ExpiresAt,
-	})
+	}
+	// 默认密码仍在使用 → 前端强提示修改
+	if req.Password == defaultAdminPass {
+		resp["mustChangePassword"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -1216,9 +1238,50 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleGetAsset(w, r, rest)
 	case http.MethodPatch:
 		s.handlePatchAsset(w, r, rest)
+	case http.MethodDelete:
+		s.handleDeleteAsset(w, r, rest)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
 	}
+}
+
+// handleDeleteAsset 删除资产:主管权限;有在途复查任务的先拦下(避免任务悬空);
+// 巡检记录保留作历史证据,封面图文件一并清理。
+func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "only supervisors can delete assets")
+		return
+	}
+	asset, err := s.store.GetAsset(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "asset not found")
+		return
+	}
+	tasks, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{})
+	if err == nil {
+		for _, t := range tasks {
+			if t.AssetID == id && t.Status != "已完成" && t.Status != "已取消" {
+				writeError(w, http.StatusConflict, "asset_has_open_tasks",
+					"该资产存在未完成的复查/整改任务,请先完成或取消任务后再删除")
+				return
+			}
+		}
+	}
+	if err := s.store.DeleteAsset(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+	if asset.CoverImagePath != "" {
+		_ = os.Remove(asset.CoverImagePath)
+	}
+	_ = s.store.CreateOperationLog(&OperationLog{
+		ActorName:  s.currentUserName(r),
+		Action:     "delete_asset",
+		TargetType: "asset",
+		TargetID:   id,
+		Detail:     map[string]any{"assetName": asset.AssetName, "project": asset.Project},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
 }
 
 func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, id string) {
@@ -1869,6 +1932,11 @@ func recentImagesForAnalysis(images []ImageInfo, maxImages int) []ImageInfo {
 }
 
 func (s *Server) runAnalysis(taskID, recordID string) {
+	// 并发闸:同时进行的视觉识别有上限(INSPECTAI_AI_CONCURRENCY,默认 3),
+	// 超出的排队等待;免费档限流下无脑并发只会整体更慢。
+	s.aiSem <- struct{}{}
+	defer func() { <-s.aiSem }()
+
 	_ = s.store.UpdateTask(taskID, func(t *AITask) {
 		t.Status = "processing"
 	})

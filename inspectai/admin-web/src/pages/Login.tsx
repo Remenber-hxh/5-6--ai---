@@ -1,5 +1,5 @@
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Form, Input, message } from "antd";
+import { Button, Form, Input, Modal, message } from "antd";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -15,7 +15,16 @@ export default function Login() {
   async function onFinish(values: { username: string; password: string }) {
     setLoading(true);
     try {
-      await login(values.username.trim(), values.password);
+      const res = await login(values.username.trim(), values.password);
+      if (res.mustChangePassword) {
+        Modal.warning({
+          title: "请立即修改默认密码",
+          content: "当前账号仍在使用系统默认密码,存在安全风险。请前往「用户与权限」重置为强密码后再继续使用。",
+          okText: "去修改",
+          onOk: () => nav("/users", { replace: true }),
+        });
+        return;
+      }
       nav("/", { replace: true });
     } catch (e) {
       message.error(e instanceof Error ? e.message : "登录失败");
