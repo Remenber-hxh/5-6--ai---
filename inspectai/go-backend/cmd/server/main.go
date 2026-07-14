@@ -25,6 +25,8 @@ type Server struct {
 	authToken          string
 	supervisorToken    string
 	corsAllowedOrigins map[string]bool
+	aiSem              chan struct{} // AI 识别并发闸:防止多巡检员同时提交打爆 ai-service
+	loginGuard         *loginGuard   // 登录防爆破:连续失败锁定
 }
 
 func main() {
@@ -46,7 +48,7 @@ func main() {
 		publicBaseURL = "https://" + strings.TrimRight(strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(weworkTrustedDomain), "https://"), "http://"), "/")
 	}
 	if publicBaseURL == "" {
-		publicBaseURL = "https://ai-demo.jadeastech.com"
+		publicBaseURL = "https://jadeast.cloud"
 	}
 	weworkClient, err := NewWeWorkClient(WeWorkConfig{
 		BaseURL:   getenv("WEWORK_API_BASE_URL", "https://qyapi.weixin.qq.com"),
@@ -133,6 +135,13 @@ func main() {
 		weworkBot:          weworkBotClient,
 		publicBaseURL:      publicBaseURL,
 		corsAllowedOrigins: corsAllowedOrigins,
+		aiSem:              make(chan struct{}, aiConcurrencyFromEnv()),
+		loginGuard:         newLoginGuard(),
+	}
+	// 安全自检:两个静态 token 都未配置时,本地免鉴权(localNoAuthAllowed)处于放行状态,
+	// 仅允许用于开发环境;生产部署必须通过 secrets 配置。
+	if authToken == "" && supervisorToken == "" {
+		log.Printf("WARN: INSPECTAI_AUTH_TOKEN / INSPECTAI_SUPERVISOR_TOKEN 均未配置,本地回环免鉴权已生效 —— 仅限开发环境,生产环境严禁此状态")
 	}
 	if err := server.ensureAssetLedgerFromRecords(); err != nil {
 		log.Printf("WARN: asset ledger backfill failed: %v", err)

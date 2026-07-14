@@ -101,8 +101,8 @@ echo
 
 # 首次部署还没有证书，必须先用 HTTP-only 配置完成 ACME challenge。
 # 证书安装后再次运行本脚本，会自动切换为 HTTPS 配置。
-HTTPS_CERT="$ROOT_DIR/nginx/ssl/ai-demo.jadeastech.com.crt"
-HTTPS_KEY="$ROOT_DIR/nginx/ssl/ai-demo.jadeastech.com.key"
+HTTPS_CERT="$ROOT_DIR/nginx/ssl/jadeast.cloud.crt"
+HTTPS_KEY="$ROOT_DIR/nginx/ssl/jadeast.cloud.key"
 if [ -s "$HTTPS_CERT" ] && [ -s "$HTTPS_KEY" ]; then
   export INSPECTAI_NGINX_CONF="./nginx/nginx.conf"
   PUBLIC_SCHEME="https"

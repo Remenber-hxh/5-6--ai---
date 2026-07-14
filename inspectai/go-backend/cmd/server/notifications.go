@@ -98,7 +98,7 @@ func (s *Server) adminAssetURL(id string) string {
 // v2 用 HashRouter,路由形如 https://<host>/v2/#/approval?focus=xxx。
 // 旧版 /admin/?page=xxx 保留但不再作为入口。
 func (s *Server) adminPageURL(route string, params map[string]string) string {
-	base := strings.TrimRight(firstNonEmpty(s.publicBaseURL, "https://ai-demo.jadeastech.com"), "/")
+	base := strings.TrimRight(firstNonEmpty(s.publicBaseURL, "https://jadeast.cloud"), "/")
 	route = strings.Trim(strings.TrimSpace(route), "/")
 	values := url.Values{}
 	for key, value := range params {

@@ -89,7 +89,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T ai-servic
 
 ```bash
 # .env.prod 只填非敏感项
-WEWORK_TRUSTED_DOMAIN=ai-demo.jadeastech.com
+WEWORK_TRUSTED_DOMAIN=jadeast.cloud
 WEWORK_API_BASE_URL=https://qyapi.weixin.qq.com
 WEWORK_CORP_ID=wwxxxxxxxxxxxxxxxx
 WEWORK_AGENT_ID=1000002
@@ -103,7 +103,7 @@ bash scripts/deploy-linux.sh
 发送测试消息：
 
 ```bash
-curl -X POST "https://ai-demo.jadeastech.com/api/wework/message" \
+curl -X POST "https://jadeast.cloud/api/wework/message" \
   -H "Content-Type: application/json" \
   -H "X-InspectAI-Token: <INSPECTAI_SUPERVISOR_TOKEN>" \
   -d '{
@@ -138,7 +138,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-deps -
 检查是否启用：
 
 ```bash
-curl -fsS https://ai-demo.jadeastech.com/health
+curl -fsS https://jadeast.cloud/health
 # 应包含："weworkBot": true
 ```
 
@@ -153,7 +153,7 @@ curl -fsS https://ai-demo.jadeastech.com/health
 ```bash
 TOKEN="$(cat secrets/inspectai_supervisor_token)"
 
-curl -X POST "https://ai-demo.jadeastech.com/api/wework/group-message" \
+curl -X POST "https://jadeast.cloud/api/wework/group-message" \
   -H "Content-Type: application/json" \
   -H "X-InspectAI-Token: $TOKEN" \
   -d '{
@@ -165,7 +165,7 @@ curl -X POST "https://ai-demo.jadeastech.com/api/wework/group-message" \
 发送 Markdown 消息：
 
 ```bash
-curl -X POST "https://ai-demo.jadeastech.com/api/wework/group-message" \
+curl -X POST "https://jadeast.cloud/api/wework/group-message" \
   -H "Content-Type: application/json" \
   -H "X-InspectAI-Token: $TOKEN" \
   -d '{
@@ -176,28 +176,28 @@ curl -X POST "https://ai-demo.jadeastech.com/api/wework/group-message" \
 
 ## 5. 首次部署签发 HTTPS 证书
 
-前置条件：域名 `ai-demo.jadeastech.com` 已解析到服务器公网 IP，云平台安全组已开放 `80` 和 `443`。
+前置条件：域名 `jadeast.cloud` 已解析到服务器公网 IP，云平台安全组已开放 `80` 和 `443`。
 
 ```bash
 # 1. 首次运行 deploy-linux.sh 后，先确认 HTTP 引导可访问
-curl -fsS http://ai-demo.jadeastech.com/health
+curl -fsS http://jadeast.cloud/health
 
 # 2. 安装 acme.sh 并通过 nginx 暴露的 webroot 签发 Let's Encrypt 证书
 curl https://get.acme.sh | sh -s email=your-email@example.com
 ~/.acme.sh/acme.sh --issue \
   --server letsencrypt \
   --webroot "$PWD/nginx/acme-webroot" \
-  -d ai-demo.jadeastech.com
+  -d jadeast.cloud
 
 # 3. 安装证书。reloadcmd 用于后续自动续期；首次安装后仍需执行下一步切配置
-~/.acme.sh/acme.sh --install-cert -d ai-demo.jadeastech.com \
-  --key-file "$PWD/nginx/ssl/ai-demo.jadeastech.com.key" \
-  --fullchain-file "$PWD/nginx/ssl/ai-demo.jadeastech.com.crt" \
+~/.acme.sh/acme.sh --install-cert -d jadeast.cloud \
+  --key-file "$PWD/nginx/ssl/jadeast.cloud.key" \
+  --fullchain-file "$PWD/nginx/ssl/jadeast.cloud.crt" \
   --reloadcmd "cd '$PWD' && docker compose --env-file .env.prod -f docker-compose.prod.yml restart nginx"
 
 # 4. 再跑一次部署脚本。脚本检测到证书后会自动启用 HTTPS 配置
 bash scripts/deploy-linux.sh
-curl -fsS https://ai-demo.jadeastech.com/health
+curl -fsS https://jadeast.cloud/health
 ```
 
 ## 6. 验证密钥确实不在 env / process list 中
