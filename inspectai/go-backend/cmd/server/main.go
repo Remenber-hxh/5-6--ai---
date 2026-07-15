@@ -27,6 +27,7 @@ type Server struct {
 	corsAllowedOrigins map[string]bool
 	aiSem              chan struct{} // AI 识别并发闸:防止多巡检员同时提交打爆 ai-service
 	loginGuard         *loginGuard   // 登录防爆破:连续失败锁定
+	permCache          permCache     // 角色×能力矩阵缓存(见 permissions.go)
 }
 
 func main() {
@@ -142,6 +143,10 @@ func main() {
 	// 仅允许用于开发环境;生产部署必须通过 secrets 配置。
 	if authToken == "" && supervisorToken == "" {
 		log.Printf("WARN: INSPECTAI_AUTH_TOKEN / INSPECTAI_SUPERVISOR_TOKEN 均未配置,本地回环免鉴权已生效 —— 仅限开发环境,生产环境严禁此状态")
+	}
+	if err := server.loadPermissions(); err != nil {
+		log.Printf("WARN: 权限矩阵加载失败,使用默认值: %v", err)
+		server.permCache.set(defaultPermMatrix())
 	}
 	if err := server.ensureAssetLedgerFromRecords(); err != nil {
 		log.Printf("WARN: asset ledger backfill failed: %v", err)

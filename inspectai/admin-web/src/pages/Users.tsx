@@ -1,18 +1,22 @@
-import { PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Table, Tag, message } from "antd";
+import { PlusOutlined, SaveOutlined } from "@ant-design/icons";
+import { Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Table, Tag, Tooltip, message } from "antd";
 import { useEffect, useState } from "react";
 
 import {
   Department,
+  PermDef,
   UserEntry,
   createUser,
+  getPermissions,
   listDepartments,
   listRoles,
   listUsers,
   resetUserPassword,
+  savePermissions,
   setUserStatus,
   updateUser,
 } from "../api/mgmt";
+import { useAuth } from "../store/auth";
 import { fmtTime } from "../lib/status";
 
 const roleTag = (code?: string, name?: string) => {
@@ -28,10 +32,21 @@ const FALLBACK_ROLES = [
   { code: "inspector", name: "巡检员" },
 ];
 
+// 权限矩阵可配置的角色列(admin 恒全通过,只展示不可改)
+const MATRIX_ROLES = [
+  { code: "manager", name: "经理" },
+  { code: "supervisor", name: "主管" },
+  { code: "inspector", name: "巡检员" },
+];
+
 export default function Users() {
+  const { user: me } = useAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [roles, setRoles] = useState(FALLBACK_ROLES);
   const [depts, setDepts] = useState<Department[]>([]);
+  const [permCatalog, setPermCatalog] = useState<PermDef[]>([]);
+  const [matrix, setMatrix] = useState<Record<string, string[]>>({});
+  const [savingPerms, setSavingPerms] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<UserEntry | null | "new">(null);
   const [pwdUser, setPwdUser] = useState<UserEntry | null>(null);
@@ -53,7 +68,38 @@ export default function Users() {
       .then((rs) => rs.length && setRoles(rs))
       .catch(() => void 0);
     listDepartments().then(setDepts).catch(() => void 0);
+    if (me?.roleCode === "admin") {
+      getPermissions()
+        .then((d) => {
+          setPermCatalog(d.catalog || []);
+          setMatrix(d.matrix || {});
+        })
+        .catch(() => void 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function togglePerm(permKey: string, roleCode: string, checked: boolean) {
+    setMatrix((m) => {
+      const cur = new Set(m[permKey] || []);
+      if (checked) cur.add(roleCode);
+      else cur.delete(roleCode);
+      return { ...m, [permKey]: Array.from(cur) };
+    });
+  }
+
+  async function submitPerms() {
+    setSavingPerms(true);
+    try {
+      const res = await savePermissions(matrix);
+      setMatrix(res.matrix || matrix);
+      message.success("权限矩阵已保存,接口立即生效;菜单可见性在下次登录后更新");
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSavingPerms(false);
+    }
+  }
 
   function openEdit(u: UserEntry | "new") {
     setEditing(u);
@@ -117,6 +163,7 @@ export default function Users() {
   }
 
   return (
+    <>
     <Card
       title="用户与权限"
       extra={
@@ -212,5 +259,60 @@ export default function Users() {
         </Form>
       </Modal>
     </Card>
+    {me?.roleCode === "admin" && permCatalog.length > 0 && (
+      <Card
+        title="角色权限矩阵"
+        style={{ marginTop: 16 }}
+        extra={
+          <Button type="primary" icon={<SaveOutlined />} loading={savingPerms} onClick={submitPerms}>
+            保存
+          </Button>
+        }
+      >
+        <Table<PermDef>
+          rowKey="key"
+          size="middle"
+          pagination={false}
+          dataSource={permCatalog}
+          columns={[
+            {
+              title: "能力",
+              width: 220,
+              render: (_, p) => (
+                <Tooltip title={p.desc}>
+                  <span>
+                    {p.label}
+                    {p.locked && <Tag style={{ marginLeft: 8 }}>固定</Tag>}
+                  </span>
+                </Tooltip>
+              ),
+            },
+            {
+              title: "管理员",
+              width: 90,
+              align: "center" as const,
+              render: () => <Checkbox checked disabled />,
+            },
+            ...MATRIX_ROLES.map((role) => ({
+              title: role.name,
+              width: 90,
+              align: "center" as const,
+              render: (_: unknown, p: PermDef) => (
+                <Checkbox
+                  disabled={p.locked}
+                  checked={(matrix[p.key] || []).includes(role.code)}
+                  onChange={(e) => togglePerm(p.key, role.code, e.target.checked)}
+                />
+              ),
+            })),
+            {
+              title: "说明",
+              render: (_, p) => <span style={{ color: "#8aa0b0", fontSize: 12.5 }}>{p.desc}</span>,
+            },
+          ]}
+        />
+      </Card>
+    )}
+    </>
   );
 }

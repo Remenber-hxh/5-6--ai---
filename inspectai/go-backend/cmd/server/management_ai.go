@@ -1953,7 +1953,7 @@ func (s *Server) buildChatSources(question, reply string, attention []*Attention
 // 由后端按 type 校验、调现有内部逻辑、权限门控 + 审计。模型永远碰不到真实 API。
 
 func (s *Server) handleManagementAct(w http.ResponseWriter, r *http.Request) {
-	if !s.requireSupervisorAccess(w, r) {
+	if !s.requirePermission(w, r, "task_dispatch") {
 		return
 	}
 	var req struct {

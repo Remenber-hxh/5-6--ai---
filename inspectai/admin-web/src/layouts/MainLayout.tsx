@@ -10,28 +10,29 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import { hasPerm } from "../api/client";
 import { listChangeRequests } from "../api/mgmt";
-import { isMgmtRole, useAuth } from "../store/auth";
+import { useAuth } from "../store/auth";
 
 const { Sider, Header, Content } = Layout;
 
 // 图标 = 旧版定制 SVG(public/nav);顺序与旧版一致(记录在台账前)
 const ico = (name: string) => <img className="nav-ico" src={`nav/${name}.svg`} alt="" />;
 
-// 菜单门控:mgmtOnly = 管理角色(admin/manager/supervisor);adminOnly = 仅系统管理员。
-// 与后端强制权限对齐(审批/台账修改 hasSupervisorAccess,用户管理 hasAdminAccess)。
+// 菜单门控:perm = 权限矩阵能力键(后台可视化配置);adminOnly = 仅系统管理员(固定)。
+// 与后端路由权限表(routes.go)同源对齐。
 const NAV = [
   { key: "/", icon: ico("nav-home"), label: "首页" },
   { key: "/plan", icon: ico("nav-plan"), label: "巡检计划" },
   { key: "/record", icon: ico("nav-record"), label: "巡检记录" },
   { key: "/ledger", icon: ico("nav-asset"), label: "资产台账" },
-  { key: "/approval", icon: ico("nav-approval"), label: "审批中心", mgmtOnly: true },
+  { key: "/approval", icon: ico("nav-approval"), label: "审批中心", perm: "approval_review" },
   { key: "/data", icon: ico("nav-data"), label: "数据看板" },
   { key: "/profile", icon: ico("nav-profile"), label: "个人首页" },
   { key: "/users", icon: ico("nav-users"), label: "用户与权限", adminOnly: true },
-  { key: "/logs", icon: ico("nav-logs"), label: "操作日志", adminOnly: true },
+  { key: "/logs", icon: ico("nav-logs"), label: "操作日志", perm: "audit_view" },
   { key: "/system", icon: ico("nav-system"), label: "系统管理", adminOnly: true },
-  { key: "/prompts", icon: ico("nav-prompt"), label: "提示词模板", mgmtOnly: true },
+  { key: "/prompts", icon: ico("nav-prompt"), label: "提示词模板", perm: "prompt_manage" },
 ];
 
 const COLLAPSE_KEY = "inspectai_sider_collapsed";
@@ -54,8 +55,8 @@ export default function MainLayout() {
 
   const items = NAV.filter(
     (n) =>
-      (!n.mgmtOnly || isMgmtRole(user)) &&
-      (!n.adminOnly || user?.roleCode === "admin"),
+      (!n.adminOnly || user?.roleCode === "admin") &&
+      (!n.perm || hasPerm(user, n.perm)),
   ).map(({ key, icon, label }) => ({ key, icon, label }));
 
   function toggleCollapsed() {

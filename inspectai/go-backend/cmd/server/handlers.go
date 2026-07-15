@@ -42,7 +42,7 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 	// 精确匹配走路由权限表(routes.go):先表层准入,再进 handler
 	for _, rt := range apiRoutes {
 		if r.URL.Path == rt.path && r.Method == rt.method {
-			if !s.allow(w, r, rt.guard) {
+			if !s.allow(w, r, rt) {
 				return
 			}
 			rt.handle(s, w, r)
@@ -373,6 +373,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"user":      user,
 		"token":     session.Token,
 		"expiresAt": session.ExpiresAt,
+		"perms":     s.permsForRole(user.RoleCode),
 	}
 	// 默认密码仍在使用 → 前端强提示修改
 	if req.Password == defaultAdminPass {
@@ -383,7 +384,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-		writeJSON(w, http.StatusOK, map[string]any{"user": user})
+		writeJSON(w, http.StatusOK, map[string]any{"user": user, "perms": s.permsForRole(user.RoleCode)})
 		return
 	}
 	role := s.userRole(r)
@@ -442,8 +443,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSendWeWorkMessage(w http.ResponseWriter, r *http.Request) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可发送企业微信消息")
+	if !s.requirePermission(w, r, "wework_send") {
 		return
 	}
 	if s.wework == nil || !s.wework.Enabled() {
@@ -502,8 +502,7 @@ func (s *Server) handleSendWeWorkMessage(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleSendWeWorkGroupMessage(w http.ResponseWriter, r *http.Request) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可发送企业微信群机器人消息")
+	if !s.requirePermission(w, r, "wework_send") {
 		return
 	}
 	if s.weworkBot == nil || !s.weworkBot.Enabled() {
@@ -841,8 +840,7 @@ func isValidRoleCode(code string) bool {
 }
 
 func (s *Server) handleListOperationLogs(w http.ResponseWriter, r *http.Request) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "需要管理权限")
+	if !s.requirePermission(w, r, "audit_view") {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -1196,8 +1194,7 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 // handleCreateAsset 手工新增资产建档:主管权限。
 // 巡检提交仍走 UpsertAsset 自动建档;此接口用于"设备先入台账、还没巡过"的场景,巡检数从 0 起。
 func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "仅主管可新增资产")
+	if !s.requirePermission(w, r, "asset_manage") {
 		return
 	}
 	var req struct {
@@ -1261,8 +1258,7 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 // handleDeleteAsset 删除资产:主管权限;有在途复查任务的先拦下(避免任务悬空);
 // 巡检记录保留作历史证据,封面图文件一并清理。
 func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request, id string) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "only supervisors can delete assets")
+	if !s.requirePermission(w, r, "asset_manage") {
 		return
 	}
 	asset, err := s.store.GetAsset(id)
@@ -1298,8 +1294,7 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request, id st
 }
 
 func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, id string) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "only supervisors can update asset cover image")
+	if !s.requirePermission(w, r, "asset_manage") {
 		return
 	}
 	prev, err := s.store.GetAsset(id)
@@ -1534,10 +1529,8 @@ func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request, id strin
 }
 
 func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id string) {
-	// 仅主管可直接 PATCH；其他角色必须走 /api/change-requests 审批流。
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden",
-			"仅主管可直接修改台账；请提交修改申请 POST /api/change-requests")
+	// 有 asset_manage 能力可直接 PATCH;其他角色必须走 /api/change-requests 审批流。
+	if !s.requirePermission(w, r, "asset_manage") {
 		return
 	}
 	var req struct {
@@ -3771,8 +3764,7 @@ func rollbackAdoptedImages(tmpDir string, moved []ImageInfo) {
 }
 
 func (s *Server) handleApproveChangeRequest(w http.ResponseWriter, r *http.Request, id string) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "仅主管可审批")
+	if !s.requirePermission(w, r, "approval_review") {
 		return
 	}
 	var req struct {
@@ -3801,8 +3793,7 @@ func (s *Server) handleApproveChangeRequest(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleRejectChangeRequest(w http.ResponseWriter, r *http.Request, id string) {
-	if !s.hasSupervisorAccess(r) {
-		writeError(w, http.StatusForbidden, "forbidden", "仅主管可审批")
+	if !s.requirePermission(w, r, "approval_review") {
 		return
 	}
 	var req struct {

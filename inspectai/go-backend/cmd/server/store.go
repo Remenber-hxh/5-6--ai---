@@ -133,6 +133,14 @@ type PromptTemplateStore interface {
 	UpsertPromptTemplate(t PromptTemplate) error
 }
 
+// PermissionStore — 角色×能力 权限矩阵(后台可视化配置)
+type PermissionStore interface {
+	// ListRolePermissions 返回 permKey -> 允许的角色 code 列表
+	ListRolePermissions() (map[string][]string, error)
+	// ReplaceRolePermissions 全量覆盖矩阵(事务)
+	ReplaceRolePermissions(matrix map[string][]string) error
+}
+
 // Store — 全量组合(装配层用;业务模块请依赖上面的最小域接口)
 type Store interface {
 	RecordStore
@@ -145,6 +153,7 @@ type Store interface {
 	EngineeringStore
 	SubmissionStore
 	PromptTemplateStore
+	PermissionStore
 
 	Close() error
 }
@@ -189,6 +198,7 @@ type MemStore struct {
 	engPlans       map[string]*EngineeringPlanItem
 	engTasks       map[string]*EngineeringTask
 	promptTpls     map[string]PromptTemplate
+	rolePerms      map[string][]string
 }
 
 type memUser struct {
@@ -209,6 +219,7 @@ func NewMemStore() *MemStore {
 		engPlans:       map[string]*EngineeringPlanItem{},
 		engTasks:       map[string]*EngineeringTask{},
 		promptTpls:     map[string]PromptTemplate{},
+		rolePerms:      defaultPermMatrix(),
 	}
 }
 
@@ -461,6 +472,28 @@ func (s *MemStore) GetAsset(id string) (*AssetEntry, error) {
 		return nil, sql.ErrNoRows
 	}
 	return a, nil
+}
+
+// ===== 权限矩阵:MemStore 实现 =====
+
+func (s *MemStore) ListRolePermissions() (map[string][]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string][]string{}
+	for k, v := range s.rolePerms {
+		out[k] = append([]string{}, v...)
+	}
+	return out, nil
+}
+
+func (s *MemStore) ReplaceRolePermissions(matrix map[string][]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rolePerms = map[string][]string{}
+	for k, v := range matrix {
+		s.rolePerms[k] = append([]string{}, v...)
+	}
+	return nil
 }
 
 func (s *MemStore) CreateAsset(asset *AssetEntry) error {
@@ -1464,6 +1497,44 @@ func (s *SQLiteStore) UpdateAssetMeta(id, name, status, summary string) (*AssetE
 		return nil, err
 	}
 	return s.GetAsset(id)
+}
+
+// ===== 权限矩阵:SQLiteStore(SQLite + MySQL)实现 =====
+
+func (s *SQLiteStore) ListRolePermissions() (map[string][]string, error) {
+	rows, err := s.db.Query(`SELECT perm_key, role_code FROM role_permissions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var k, role string
+		if err := rows.Scan(&k, &role); err != nil {
+			return nil, err
+		}
+		out[k] = append(out[k], role)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ReplaceRolePermissions(matrix map[string][]string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM role_permissions`); err != nil {
+		return err
+	}
+	for k, roles := range matrix {
+		for _, role := range roles {
+			if _, err := tx.Exec(`INSERT INTO role_permissions (perm_key, role_code) VALUES (?, ?)`, k, role); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // CreateAsset 手工建档:纯 INSERT,重复主键即报错(与巡检驱动的 UpsertAsset 区分,巡检数从 0 起)。

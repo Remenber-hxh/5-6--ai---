@@ -290,6 +290,25 @@ export function listDepartments() {
   return api<{ departments: Department[] }>("/api/departments").then((d) => d.departments || []);
 }
 
+// ===== 角色×能力 权限矩阵(仅 admin) =====
+export interface PermDef {
+  key: string;
+  label: string;
+  desc: string;
+  locked: boolean;
+}
+
+export function getPermissions() {
+  return api<{ catalog: PermDef[]; matrix: Record<string, string[]> }>("/api/permissions");
+}
+
+export function savePermissions(matrix: Record<string, string[]>) {
+  return api<{ matrix: Record<string, string[]> }>("/api/permissions", {
+    method: "PUT",
+    body: JSON.stringify({ matrix }),
+  });
+}
+
 export function listUsers() {
   return api<{ users: UserEntry[] }>("/api/users").then((d) => d.users || []);
 }

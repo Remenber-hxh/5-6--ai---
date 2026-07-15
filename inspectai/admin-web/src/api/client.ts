@@ -8,6 +8,14 @@ export interface CurrentUser {
   displayName: string;
   roleCode: string; // admin / manager / supervisor / inspector
   roleName?: string;
+  perms?: string[]; // 登录时下发的能力键列表(权限矩阵)
+}
+
+// 能力检查:admin 全通过,其余看登录时下发的列表
+export function hasPerm(user: CurrentUser | null, key: string): boolean {
+  if (!user) return false;
+  if (user.roleCode === "admin") return true;
+  return (user.perms || []).includes(key);
 }
 
 export function getToken(): string {
@@ -85,7 +93,7 @@ export interface LoginResult {
 }
 
 export async function login(username: string, password: string): Promise<LoginResult> {
-  const data = await api<{ token?: string; user?: CurrentUser; mustChangePassword?: boolean }>(
+  const data = await api<{ token?: string; user?: CurrentUser; perms?: string[]; mustChangePassword?: boolean }>(
     "/api/auth/login",
     {
       method: "POST",
@@ -95,6 +103,7 @@ export async function login(username: string, password: string): Promise<LoginRe
   if (data.token) setToken(data.token);
   const user = (data.user || null) as CurrentUser | null;
   if (!user) throw new ApiError(500, "登录响应缺少用户信息");
+  user.perms = data.perms || [];
   setStoredUser(user);
   return { user, mustChangePassword: data.mustChangePassword };
 }

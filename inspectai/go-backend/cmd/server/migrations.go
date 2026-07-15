@@ -27,6 +27,36 @@ var migrationList = []migration{
 	{2, "asset_display_columns", (*SQLiteStore).ensureAssetDisplaySchema},
 	{3, "record_ownership", (*SQLiteStore).ensureRecordOwnershipSchema},
 	{4, "prompt_templates", (*SQLiteStore).ensurePromptTemplateSchema},
+	{5, "role_permissions", (*SQLiteStore).migRolePermissions},
+}
+
+// 005 — 角色×能力权限矩阵表 + 默认值(=引入前的固化行为)
+func (s *SQLiteStore) migRolePermissions() error {
+	stmt := `CREATE TABLE IF NOT EXISTS role_permissions (
+		perm_key TEXT NOT NULL,
+		role_code TEXT NOT NULL,
+		PRIMARY KEY (perm_key, role_code))`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS role_permissions (
+			perm_key VARCHAR(64) NOT NULL,
+			role_code VARCHAR(32) NOT NULL,
+			PRIMARY KEY (perm_key, role_code)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return err
+	}
+	for k, roles := range defaultPermMatrix() {
+		for _, role := range roles {
+			// 幂等:主键冲突即已种过
+			if s.dialect == "mysql" {
+				_, _ = s.db.Exec(`INSERT IGNORE INTO role_permissions (perm_key, role_code) VALUES (?, ?)`, k, role)
+			} else {
+				_, _ = s.db.Exec(`INSERT OR IGNORE INTO role_permissions (perm_key, role_code) VALUES (?, ?)`, k, role)
+			}
+		}
+	}
+	return nil
 }
 
 // runMigrations 按序应用未记账的迁移。

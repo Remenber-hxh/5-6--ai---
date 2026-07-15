@@ -345,7 +345,7 @@ func promptModeOptions() []map[string]string {
 
 // GET /api/prompt/templates —— 模板列表(给后台选择)
 func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Request) {
-	if !s.requireSupervisorAccess(w, r) {
+	if !s.requirePermission(w, r, "prompt_manage") {
 		return
 	}
 	tpls, err := s.store.ListPromptTemplates()
@@ -364,7 +364,7 @@ func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Reques
 // /api/prompt/templates/{id}        GET 取详情 / PUT 保存
 // /api/prompt/templates/{id}/render GET 预览渲染
 func (s *Server) handlePromptTemplateRoutes(w http.ResponseWriter, r *http.Request) {
-	if !s.requireSupervisorAccess(w, r) {
+	if !s.requirePermission(w, r, "prompt_manage") {
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/prompt/templates/")
