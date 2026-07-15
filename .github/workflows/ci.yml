@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Go 后端(vet + test + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: inspectai/go-backend/go.sum
+      - name: vet
+        run: cd inspectai/go-backend && go vet ./...
+      - name: test
+        run: cd inspectai/go-backend && go test ./...
+      - name: build
+        run: cd inspectai/go-backend && go build ./...
+
+  admin-web:
+    name: 管理后台(tsc + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: inspectai/admin-web/package-lock.json
+      - name: install
+        run: cd inspectai/admin-web && npm ci
+      - name: typecheck
+        run: cd inspectai/admin-web && npx tsc --noEmit
+      - name: build
+        run: cd inspectai/admin-web && npm run build
