@@ -1,10 +1,10 @@
-import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, PlusOutlined, UploadOutlined } from "@ant-design/icons";
+import { AutoComplete, Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, EngineeringTask, deleteAsset, listAssets, listRecords, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
+import { AssetEntry, EngineeringTask, createAsset, deleteAsset, listAssets, listRecords, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
 import { useUi } from "../store/ui";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
@@ -28,6 +28,8 @@ export default function Ledger() {
   const [coverUploading, setCoverUploading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editForm] = Form.useForm();
+  const [creating, setCreating] = useState(false);
+  const [createForm] = Form.useForm();
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const { project } = useUi();
   const [loading, setLoading] = useState(true);
@@ -70,6 +72,10 @@ export default function Ledger() {
 
   const types = useMemo(
     () => Array.from(new Set(assets.map((a) => a.assetType).filter(Boolean))) as string[],
+    [assets],
+  );
+  const projects = useMemo(
+    () => Array.from(new Set(assets.map((a) => a.project).filter(Boolean))) as string[],
     [assets],
   );
 
@@ -136,6 +142,9 @@ export default function Ledger() {
             onChange={(v) => setType(v || "")}
           />
           <Input.Search allowClear placeholder="搜设备名 / 编号 / 项目" style={{ width: 240 }} onSearch={setKw} />
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { createForm.resetFields(); setCreating(true); }}>
+            新增资产
+          </Button>
           <Button
             icon={<DownloadOutlined />}
             onClick={() =>
@@ -460,6 +469,54 @@ export default function Ledger() {
           </Card>
         )}
       </div>
+      <Modal
+        title="新增资产"
+        open={creating}
+        onCancel={() => setCreating(false)}
+        onOk={() => createForm.submit()}
+        destroyOnClose
+      >
+        <Form
+          form={createForm}
+          layout="vertical"
+          requiredMark={false}
+          onFinish={async (v) => {
+            try {
+              const created = await createAsset(v);
+              message.success("资产已建档(未巡检)");
+              setCreating(false);
+              await reload();
+              setCurrent(created);
+            } catch (e) {
+              message.error(e instanceof Error ? e.message : "创建失败");
+            }
+          }}
+        >
+          <Form.Item name="project" label="项目" rules={[{ required: true, message: "请输入项目" }]}>
+            <AutoComplete
+              options={projects.map((p) => ({ value: p }))}
+              placeholder="选择或输入项目名"
+              filterOption={(input, opt) => String(opt?.value || "").includes(input)}
+            />
+          </Form.Item>
+          <Form.Item name="assetKey" label="设备编号" rules={[{ required: true, message: "请输入编号" }]}>
+            <Input placeholder="如 K08 / XFBF-2" maxLength={64} />
+          </Form.Item>
+          <Form.Item name="assetName" label="设备名称" rules={[{ required: true, message: "请输入名称" }]}>
+            <Input maxLength={64} />
+          </Form.Item>
+          <Form.Item name="assetType" label="设备类型">
+            <AutoComplete
+              options={types.map((t) => ({ value: t }))}
+              placeholder="如 有机房电梯 / 消防泵房"
+              filterOption={(input, opt) => String(opt?.value || "").includes(input)}
+            />
+          </Form.Item>
+          <Form.Item name="summary" label="备注">
+            <Input.TextArea rows={2} maxLength={200} placeholder="选填" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

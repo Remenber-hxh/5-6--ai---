@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -44,6 +45,8 @@ type Store interface {
 	UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error)
 	// DeleteAsset 删除资产及其快照/字段观测(巡检记录保留作历史证据)。
 	DeleteAsset(id string) error
+	// CreateAsset 手工建档(区别于巡检提交的 UpsertAsset:巡检数从 0 起,重复 ID 报错)。
+	CreateAsset(asset *AssetEntry) error
 
 	// §3 资产长期台账 + 字段级趋势底座（幂等写入，按 asset_id 完整翻历史）
 	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
@@ -409,6 +412,20 @@ func (s *MemStore) GetAsset(id string) (*AssetEntry, error) {
 		return nil, sql.ErrNoRows
 	}
 	return a, nil
+}
+
+func (s *MemStore) CreateAsset(asset *AssetEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.assets[asset.ID]; ok {
+		return errors.New("asset already exists")
+	}
+	now := time.Now()
+	asset.CreatedAt = now
+	asset.UpdatedAt = now
+	asset.InspectionCount = 0
+	s.assets[asset.ID] = asset
+	return nil
 }
 
 func (s *MemStore) DeleteAsset(id string) error {
@@ -1424,6 +1441,27 @@ func (s *SQLiteStore) UpdateAssetMeta(id, name, status, summary string) (*AssetE
 		return nil, err
 	}
 	return s.GetAsset(id)
+}
+
+// CreateAsset 手工建档:纯 INSERT,重复主键即报错(与巡检驱动的 UpsertAsset 区分,巡检数从 0 起)。
+func (s *SQLiteStore) CreateAsset(asset *AssetEntry) error {
+	now := time.Now().Format(time.RFC3339Nano)
+	_, err := s.db.Exec(`
+		INSERT INTO assets (id, project_code, project, point_id, template_id,
+		                    asset_type, asset_key, asset_name, last_record_id,
+		                    last_status, status_level, status_order, last_summary,
+		                    last_inspected_at, last_inspector, last_photo_path,
+		                    cover_image_path, inspection_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, NULL, '', '', '', 0, ?, ?)`,
+		asset.ID, asset.ProjectCode, asset.Project, asset.PointID, asset.TemplateID,
+		asset.AssetType, asset.AssetKey, asset.AssetName,
+		asset.LastStatus, asset.StatusLevel, asset.StatusOrder, asset.LastSummary,
+		now, now,
+	)
+	if err != nil && (strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE")) {
+		return errors.New("asset already exists")
+	}
+	return err
 }
 
 // DeleteAsset 事务删除资产 + 快照 + 字段观测;巡检记录保留(历史证据不随资产消失)。

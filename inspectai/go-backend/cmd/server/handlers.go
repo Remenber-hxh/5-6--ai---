@@ -88,6 +88,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleAIChat(w, r)
 	case r.URL.Path == "/api/assets/summary" && r.Method == http.MethodGet:
 		s.handleAssetSummary(w, r)
+	case r.URL.Path == "/api/assets" && r.Method == http.MethodPost:
+		s.handleCreateAsset(w, r)
 	case r.URL.Path == "/api/assets" && r.Method == http.MethodGet:
 		s.handleListAssets(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/assets/"):
@@ -1243,6 +1245,71 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
 	}
+}
+
+// handleCreateAsset 手工新增资产建档:主管权限。
+// 巡检提交仍走 UpsertAsset 自动建档;此接口用于"设备先入台账、还没巡过"的场景,巡检数从 0 起。
+func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
+	if !s.hasSupervisorAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅主管可新增资产")
+		return
+	}
+	var req struct {
+		Project    string `json:"project"`
+		AssetType  string `json:"assetType"`
+		AssetKey   string `json:"assetKey"`
+		AssetName  string `json:"assetName"`
+		TemplateID string `json:"templateId"`
+		PointID    string `json:"pointId"`
+		Summary    string `json:"summary"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	req.Project = strings.TrimSpace(req.Project)
+	req.AssetKey = strings.TrimSpace(req.AssetKey)
+	req.AssetName = strings.TrimSpace(req.AssetName)
+	req.AssetType = strings.TrimSpace(req.AssetType)
+	if req.Project == "" || req.AssetKey == "" || req.AssetName == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "项目 / 编号 / 名称 均不能为空")
+		return
+	}
+	tplPart := strings.TrimSpace(req.TemplateID)
+	if tplPart == "" {
+		tplPart = "manual"
+	}
+	asset := &AssetEntry{
+		ID:          req.Project + "::" + tplPart + "::" + req.AssetKey,
+		Project:     req.Project,
+		ProjectCode: req.Project,
+		PointID:     strings.TrimSpace(req.PointID),
+		TemplateID:  strings.TrimSpace(req.TemplateID),
+		AssetType:   req.AssetType,
+		AssetKey:    req.AssetKey,
+		AssetName:   req.AssetName,
+		LastStatus:  "未巡检",
+		StatusLevel: statusLevel("未巡检"),
+		StatusOrder: statusOrder("未巡检"),
+		LastSummary: strings.TrimSpace(req.Summary),
+	}
+	if err := s.store.CreateAsset(asset); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			writeError(w, http.StatusConflict, "asset_exists", "同项目下已存在相同编号的资产")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "create_failed", err.Error())
+		return
+	}
+	_ = s.store.CreateOperationLog(&OperationLog{
+		ActorName:  s.currentUserName(r),
+		Action:     "create_asset",
+		TargetType: "asset",
+		TargetID:   asset.ID,
+		Detail:     map[string]any{"assetName": asset.AssetName, "project": asset.Project},
+	})
+	s.enrichAssetForDisplay(asset)
+	writeJSON(w, http.StatusCreated, map[string]any{"asset": asset})
 }
 
 // handleDeleteAsset 删除资产:主管权限;有在途复查任务的先拦下(避免任务悬空);

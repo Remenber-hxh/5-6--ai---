@@ -252,6 +252,21 @@ export function deleteAsset(id: string) {
   return api<{ deleted: boolean }>(`/api/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+// 手工新增资产建档(主管;设备先入台账、未巡检,巡检数从 0 起)
+export function createAsset(payload: {
+  project: string;
+  assetKey: string;
+  assetName: string;
+  assetType?: string;
+  templateId?: string;
+  summary?: string;
+}) {
+  return api<{ asset: AssetEntry }>("/api/assets", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then((d) => d.asset);
+}
+
 // ===== 用户 / 日志 / 系统 =====
 export interface UserEntry {
   id: string;
