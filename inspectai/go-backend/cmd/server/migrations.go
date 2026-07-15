@@ -28,6 +28,26 @@ var migrationList = []migration{
 	{3, "record_ownership", (*SQLiteStore).ensureRecordOwnershipSchema},
 	{4, "prompt_templates", (*SQLiteStore).ensurePromptTemplateSchema},
 	{5, "role_permissions", (*SQLiteStore).migRolePermissions},
+	{6, "roles_code_widen", (*SQLiteStore).migRolesCodeWiden},
+	{7, "role_permissions_code_widen", (*SQLiteStore).migRolePermCodeWiden},
+}
+
+// 007 — 权限矩阵表的 role_code 同步放宽(006 只放了 roles.code,漏了这张)
+func (s *SQLiteStore) migRolePermCodeWiden() error {
+	if s.dialect != "mysql" {
+		return nil
+	}
+	_, err := s.db.Exec(`ALTER TABLE role_permissions MODIFY role_code VARCHAR(64) NOT NULL`)
+	return err
+}
+
+// 006 — 自定义角色的 code 用生成 id,32 位不够,放宽到 64(SQLite 无列宽概念,空跑)
+func (s *SQLiteStore) migRolesCodeWiden() error {
+	if s.dialect != "mysql" {
+		return nil
+	}
+	_, err := s.db.Exec(`ALTER TABLE roles MODIFY code VARCHAR(64) NOT NULL`)
+	return err
 }
 
 // 005 — 角色×能力权限矩阵表 + 默认值(=引入前的固化行为)

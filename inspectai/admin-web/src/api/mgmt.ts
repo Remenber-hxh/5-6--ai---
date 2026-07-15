@@ -313,8 +313,31 @@ export function listUsers() {
   return api<{ users: UserEntry[] }>("/api/users").then((d) => d.users || []);
 }
 
+export interface RoleEntry {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  builtin?: boolean; // 内置角色:可改名不可删;admin 全锁
+}
+
 export function listRoles() {
-  return api<{ roles: { code: string; name: string }[] }>("/api/roles").then((d) => d.roles || []);
+  return api<{ roles: RoleEntry[] }>("/api/roles").then((d) => d.roles || []);
+}
+
+export function createRole(payload: { name: string; description?: string }) {
+  return api<{ role: RoleEntry }>("/api/roles", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateRole(id: string, payload: { name: string; description?: string }) {
+  return api<{ role: RoleEntry }>(`/api/roles/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteRole(id: string) {
+  return api<{ deleted: boolean }>(`/api/roles/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string; departmentId?: string }) {

@@ -39,6 +39,7 @@ var apiRoutes = []apiRoute{
 	{http.MethodGet, "/api/users", guardSupervisor, "", (*Server).handleListUsers},
 	{http.MethodPost, "/api/users", guardAdmin, "", (*Server).handleCreateUser},
 	{http.MethodGet, "/api/roles", guardSupervisor, "", (*Server).handleListRoles},
+	{http.MethodPost, "/api/roles", guardAdmin, "", (*Server).handleCreateRole},
 	{http.MethodGet, "/api/departments", guardSupervisor, "", (*Server).handleListDepartments},
 	{http.MethodGet, "/api/operation-logs", guardNone, "audit_view", (*Server).handleListOperationLogs},
 	{http.MethodGet, "/api/permissions", guardAdmin, "", (*Server).handleGetPermissions},

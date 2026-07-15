@@ -5,8 +5,11 @@ import { useEffect, useState } from "react";
 import {
   Department,
   PermDef,
+  RoleEntry,
   UserEntry,
+  createRole,
   createUser,
+  deleteRole,
   getPermissions,
   listDepartments,
   listRoles,
@@ -14,6 +17,7 @@ import {
   resetUserPassword,
   savePermissions,
   setUserStatus,
+  updateRole,
   updateUser,
 } from "../api/mgmt";
 import { useAuth } from "../store/auth";
@@ -25,24 +29,19 @@ const roleTag = (code?: string, name?: string) => {
   return <Tag color={color}>{name || code || "—"}</Tag>;
 };
 
-const FALLBACK_ROLES = [
-  { code: "admin", name: "管理员" },
-  { code: "manager", name: "经理" },
-  { code: "supervisor", name: "主管" },
-  { code: "inspector", name: "巡检员" },
-];
-
-// 权限矩阵可配置的角色列(admin 恒全通过,只展示不可改)
-const MATRIX_ROLES = [
-  { code: "manager", name: "经理" },
-  { code: "supervisor", name: "主管" },
-  { code: "inspector", name: "巡检员" },
+const FALLBACK_ROLES: RoleEntry[] = [
+  { id: "role_admin", code: "admin", name: "管理员", builtin: true },
+  { id: "role_manager", code: "manager", name: "经理", builtin: true },
+  { id: "role_supervisor", code: "supervisor", name: "主管", builtin: true },
+  { id: "role_inspector", code: "inspector", name: "巡检员", builtin: true },
 ];
 
 export default function Users() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
-  const [roles, setRoles] = useState(FALLBACK_ROLES);
+  const [roles, setRoles] = useState<RoleEntry[]>(FALLBACK_ROLES);
+  const [roleEditing, setRoleEditing] = useState<RoleEntry | null | "new">(null);
+  const [roleForm] = Form.useForm();
   const [depts, setDepts] = useState<Department[]>([]);
   const [permCatalog, setPermCatalog] = useState<PermDef[]>([]);
   const [matrix, setMatrix] = useState<Record<string, string[]>>({});
@@ -78,6 +77,43 @@ export default function Users() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function reloadRoles() {
+    try {
+      const rs = await listRoles();
+      if (rs.length) setRoles(rs);
+    } catch { /* 保持现值 */ }
+  }
+
+  async function submitRole() {
+    const v = await roleForm.validateFields();
+    try {
+      if (roleEditing === "new") {
+        await createRole(v);
+        message.success("角色已创建,可在下方矩阵为其勾选能力");
+      } else if (roleEditing) {
+        await updateRole(roleEditing.id, v);
+        message.success("角色已更新");
+      }
+      setRoleEditing(null);
+      await reloadRoles();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+    }
+  }
+
+  async function removeRole(role: RoleEntry) {
+    try {
+      await deleteRole(role.id);
+      message.success(`已删除角色「${role.name}」`);
+      await reloadRoles();
+      const d = await getPermissions();
+      setPermCatalog(d.catalog || []);
+      setMatrix(d.matrix || {});
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "删除失败(仍有用户使用该角色?)");
+    }
+  }
 
   function togglePerm(permKey: string, roleCode: string, checked: boolean) {
     setMatrix((m) => {
@@ -259,6 +295,74 @@ export default function Users() {
         </Form>
       </Modal>
     </Card>
+    {me?.roleCode === "admin" && (
+      <Card
+        title="角色管理"
+        style={{ marginTop: 16 }}
+        extra={
+          <Button icon={<PlusOutlined />} onClick={() => { roleForm.resetFields(); setRoleEditing("new"); }}>
+            新增角色
+          </Button>
+        }
+      >
+        <Table<RoleEntry>
+          rowKey="id"
+          size="middle"
+          pagination={false}
+          dataSource={roles}
+          columns={[
+            { title: "角色", width: 180, render: (_, ro) => roleTag(ro.code, ro.name) },
+            {
+              title: "类型",
+              width: 100,
+              render: (_, ro) => (ro.builtin ? <Tag>内置</Tag> : <Tag color="blue">自定义</Tag>),
+            },
+            { title: "说明", render: (_, ro) => <span style={{ color: "#8aa0b0" }}>{ro.description || "—"}</span> },
+            {
+              title: "操作",
+              width: 160,
+              render: (_, ro) => (
+                <Space>
+                  {ro.code !== "admin" && (
+                    <a onClick={() => { roleForm.setFieldsValue({ name: ro.name, description: ro.description }); setRoleEditing(ro); }}>
+                      重命名
+                    </a>
+                  )}
+                  {!ro.builtin && (
+                    <Popconfirm
+                      title={`删除角色「${ro.name}」?`}
+                      description="仍有用户使用时无法删除;其矩阵勾选将一并清除。"
+                      okText="删除"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => removeRole(ro)}
+                    >
+                      <a style={{ color: "#d4380d" }}>删除</a>
+                    </Popconfirm>
+                  )}
+                  {ro.code === "admin" && <span style={{ color: "#b9c6cf" }}>固定</span>}
+                </Space>
+              ),
+            },
+          ]}
+        />
+        <Modal
+          title={roleEditing === "new" ? "新增角色" : "重命名角色"}
+          open={!!roleEditing}
+          onOk={submitRole}
+          onCancel={() => setRoleEditing(null)}
+          destroyOnHidden
+        >
+          <Form form={roleForm} layout="vertical" requiredMark={false}>
+            <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
+              <Input maxLength={20} placeholder="如 工程主管 / 保洁组长" />
+            </Form.Item>
+            <Form.Item name="description" label="说明">
+              <Input maxLength={60} placeholder="选填" />
+            </Form.Item>
+          </Form>
+        </Modal>
+      </Card>
+    )}
     {me?.roleCode === "admin" && permCatalog.length > 0 && (
       <Card
         title="角色权限矩阵"
@@ -293,7 +397,7 @@ export default function Users() {
               align: "center" as const,
               render: () => <Checkbox checked disabled />,
             },
-            ...MATRIX_ROLES.map((role) => ({
+            ...roles.filter((r) => r.code !== "admin").map((role) => ({
               title: role.name,
               width: 90,
               align: "center" as const,

@@ -102,6 +102,12 @@ type IdentityStore interface {
 	DeleteSession(token string) error
 	DeleteUserSessions(userID string) error
 	ListRoles() ([]*Role, error)
+	GetRoleByCode(code string) (*Role, bool, error)
+	// CreateRole / UpdateRole / DeleteRole — 自定义角色管理;
+	// DeleteRole 有用户引用时报错,且事务内连带清理该角色的权限矩阵行。
+	CreateRole(role *Role) error
+	UpdateRole(id, name, description string) (*Role, error)
+	DeleteRole(id string) error
 	ListDepartments() ([]*Department, error)
 	CreateOperationLog(log *OperationLog) error
 	ListOperationLogs(limit int) ([]*OperationLog, error)
@@ -199,6 +205,7 @@ type MemStore struct {
 	engTasks       map[string]*EngineeringTask
 	promptTpls     map[string]PromptTemplate
 	rolePerms      map[string][]string
+	roles          map[string]*Role
 }
 
 type memUser struct {
@@ -990,6 +997,10 @@ func (s *SQLiteStore) backfillAssetDisplayColumns() error {
 		}
 	}
 	return nil
+}
+
+func sortRoles(rs []*Role) {
+	sort.Slice(rs, func(i, j int) bool { return rs[i].ID < rs[j].ID })
 }
 
 // splitSQLStatements 按 ; 切分，忽略行内注释 -- ...

@@ -316,7 +316,89 @@ func (s *MemStore) SetUserStatus(id, status string) error {
 }
 
 func (s *MemStore) ListRoles() ([]*Role, error) {
-	return defaultRoles(), nil
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.roles) == 0 {
+		return defaultRoles(), nil
+	}
+	out := make([]*Role, 0, len(s.roles))
+	for _, r := range s.roles {
+		cp := *r
+		out = append(out, &cp)
+	}
+	sortRoles(out)
+	return out, nil
+}
+
+func (s *MemStore) ensureRolesLocked() {
+	if len(s.roles) == 0 {
+		s.roles = map[string]*Role{}
+		for _, r := range defaultRoles() {
+			s.roles[r.ID] = r
+		}
+	}
+}
+
+func (s *MemStore) GetRoleByCode(code string) (*Role, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureRolesLocked()
+	for _, r := range s.roles {
+		if r.Code == code {
+			cp := *r
+			return &cp, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func (s *MemStore) CreateRole(role *Role) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureRolesLocked()
+	for _, r := range s.roles {
+		if r.Code == role.Code || r.Name == role.Name {
+			return errors.New("role already exists")
+		}
+	}
+	role.CreatedAt = time.Now()
+	cp := *role
+	s.roles[role.ID] = &cp
+	return nil
+}
+
+func (s *MemStore) UpdateRole(id, name, description string) (*Role, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureRolesLocked()
+	r, ok := s.roles[id]
+	if !ok {
+		return nil, errors.New("role not found")
+	}
+	if name != "" {
+		r.Name = name
+	}
+	r.Description = description
+	cp := *r
+	return &cp, nil
+}
+
+func (s *MemStore) DeleteRole(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureRolesLocked()
+	r, ok := s.roles[id]
+	if !ok {
+		return errors.New("role not found")
+	}
+	for _, item := range s.users {
+		if item.user.RoleID == id || item.user.RoleCode == r.Code {
+			return errors.New("role in use")
+		}
+	}
+	delete(s.roles, id)
+	delete(s.rolePerms, r.Code)
+	return nil
 }
 
 func (s *MemStore) ListDepartments() ([]*Department, error) {
@@ -564,7 +646,7 @@ func (s *SQLiteStore) CreateUser(user *User, password string) error {
 		user.Status = "active"
 	}
 	if user.RoleID == "" {
-		user.RoleID = roleIDFromCode(user.RoleCode)
+		user.RoleID = s.roleIDFor(user.RoleCode)
 	}
 	if user.DepartmentID == "" {
 		user.DepartmentID = "dept_default"
@@ -595,7 +677,7 @@ func (s *SQLiteStore) UpdateUserProfile(id string, mutate func(*User)) error {
 	}
 	mutate(u)
 	if u.RoleID == "" {
-		u.RoleID = roleIDFromCode(u.RoleCode)
+		u.RoleID = s.roleIDFor(u.RoleCode)
 	}
 	now := time.Now().Format(time.RFC3339Nano)
 	res, err := s.db.Exec(`
@@ -652,6 +734,89 @@ func (s *SQLiteStore) SetUserStatus(id, status string) error {
 		_, _ = s.db.Exec(`DELETE FROM login_sessions WHERE user_id=?`, id)
 	}
 	return nil
+}
+
+func (s *SQLiteStore) GetRoleByCode(code string) (*Role, bool, error) {
+	row := s.db.QueryRow(`SELECT id, code, name, description, created_at FROM roles WHERE code=?`, code)
+	var r Role
+	var created string
+	if err := row.Scan(&r.ID, &r.Code, &r.Name, &r.Description, &created); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	return &r, true, nil
+}
+
+func (s *SQLiteStore) CreateRole(role *Role) error {
+	var dup int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM roles WHERE code=? OR name=?`, role.Code, role.Name).Scan(&dup); err != nil {
+		return err
+	}
+	if dup > 0 {
+		return errors.New("role already exists")
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	_, err := s.db.Exec(`INSERT INTO roles (id, code, name, description, created_at) VALUES (?, ?, ?, ?, ?)`,
+		role.ID, role.Code, role.Name, role.Description, now)
+	return err
+}
+
+func (s *SQLiteStore) UpdateRole(id, name, description string) (*Role, error) {
+	res, err := s.db.Exec(`UPDATE roles SET name=?, description=? WHERE id=?`, name, description, id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, errors.New("role not found")
+	}
+	row := s.db.QueryRow(`SELECT id, code, name, description, created_at FROM roles WHERE id=?`, id)
+	var r Role
+	var created string
+	if err := row.Scan(&r.ID, &r.Code, &r.Name, &r.Description, &created); err != nil {
+		return nil, err
+	}
+	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	return &r, nil
+}
+
+func (s *SQLiteStore) DeleteRole(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var code string
+	if err := tx.QueryRow(`SELECT code FROM roles WHERE id=?`, id).Scan(&code); err != nil {
+		if err == sql.ErrNoRows {
+			return errors.New("role not found")
+		}
+		return err
+	}
+	var inUse int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM users WHERE role_id=?`, id).Scan(&inUse); err != nil {
+		return err
+	}
+	if inUse > 0 {
+		return errors.New("role in use")
+	}
+	if _, err := tx.Exec(`DELETE FROM roles WHERE id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM role_permissions WHERE role_code=?`, code); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// roleIDFor — 角色 code → id,查库(支持自定义角色);查不到落 inspector。
+func (s *SQLiteStore) roleIDFor(code string) string {
+	if r, ok, err := s.GetRoleByCode(code); err == nil && ok {
+		return r.ID
+	}
+	return "role_inspector"
 }
 
 func (s *SQLiteStore) ListRoles() ([]*Role, error) {

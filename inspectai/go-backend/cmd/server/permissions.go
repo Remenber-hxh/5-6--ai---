@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -77,6 +78,18 @@ func (c *permCache) allowed(permKey, role string) bool {
 	return c.allow[permKey][role]
 }
 
+// anyAllowed — 该角色是否被授予过至少一项能力(自定义角色的"管理角色"判定)。
+func (c *permCache) anyAllowed(role string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, roles := range c.allow {
+		if roles[role] {
+			return true
+		}
+	}
+	return false
+}
+
 // loadPermissions 启动/保存后刷新缓存;库里缺的能力项落默认值(升级兼容)。
 func (s *Server) loadPermissions() error {
 	matrix, err := s.store.ListRolePermissions()
@@ -147,7 +160,14 @@ func (s *Server) handleSavePermissions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	validRoles := map[string]bool{"manager": true, "supervisor": true, "inspector": true}
+	validRoles := map[string]bool{}
+	if roles, err := s.store.ListRoles(); err == nil {
+		for _, role := range roles {
+			if role.Code != roleAdmin {
+				validRoles[role.Code] = true
+			}
+		}
+	}
 	clean := defaultPermMatrix() // 锁定项永远保持默认(admin)
 	for key, roles := range req.Matrix {
 		def, ok := validPermKey(key)
@@ -174,4 +194,120 @@ func (s *Server) handleSavePermissions(w http.ResponseWriter, r *http.Request) {
 		Detail:     map[string]any{"matrix": clean},
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"matrix": clean})
+}
+
+// ===== 自定义角色管理(仅 admin,见 routes.go) =====
+
+// builtinRoleCode — 内置四角色:可改名不可删;admin 全锁。
+func builtinRoleCode(code string) bool {
+	switch code {
+	case roleAdmin, roleManager, roleSupervisor, roleInspector:
+		return true
+	}
+	return false
+}
+
+func (s *Server) handleCreateRole(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "角色名称不能为空")
+		return
+	}
+	id := newID("role")
+	role := &Role{ID: id, Code: id, Name: req.Name, Description: strings.TrimSpace(req.Description)}
+	if err := s.store.CreateRole(role); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			writeError(w, http.StatusConflict, "role_exists", "已存在同名角色")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "create_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "role.create", "role", role.ID, map[string]any{"name": role.Name})
+	writeJSON(w, http.StatusCreated, map[string]any{"role": role})
+}
+
+// handleRoleRoutes — PUT/DELETE /api/roles/{id}
+func (s *Server) handleRoleRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.hasAdminAccess(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "仅系统管理员可管理角色")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/roles/")
+	if id == "" || strings.Contains(id, "/") {
+		writeError(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	roles, err := s.store.ListRoles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	var target *Role
+	for _, item := range roles {
+		if item.ID == id {
+			target = item
+			break
+		}
+	}
+	if target == nil {
+		writeError(w, http.StatusNotFound, "role_not_found", "角色不存在")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		if target.Code == roleAdmin {
+			writeError(w, http.StatusForbidden, "role_locked", "系统管理员角色不可修改")
+			return
+		}
+		var req struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		req.Name = strings.TrimSpace(req.Name)
+		if req.Name == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "角色名称不能为空")
+			return
+		}
+		role, err := s.store.UpdateRole(id, req.Name, strings.TrimSpace(req.Description))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "update_failed", err.Error())
+			return
+		}
+		s.recordOperation(r, "role.update", "role", id, map[string]any{"name": req.Name})
+		writeJSON(w, http.StatusOK, map[string]any{"role": role})
+	case http.MethodDelete:
+		if builtinRoleCode(target.Code) {
+			writeError(w, http.StatusForbidden, "role_locked", "内置角色不可删除")
+			return
+		}
+		if err := s.store.DeleteRole(id); err != nil {
+			if strings.Contains(err.Error(), "in use") {
+				writeError(w, http.StatusConflict, "role_in_use", "仍有用户使用该角色,请先调整用户角色")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		// 矩阵行已随事务清理,刷新缓存
+		if err := s.loadPermissions(); err == nil {
+			// no-op
+		}
+		s.recordOperation(r, "role.delete", "role", id, map[string]any{"name": target.Name})
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+	}
 }

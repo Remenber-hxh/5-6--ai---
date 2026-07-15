@@ -54,6 +54,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasPrefix(r.URL.Path, "/api/users/"):
 		s.handleUserRoutes(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/roles/"):
+		s.handleRoleRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/engineering/tasks/"):
 		s.handleEngineeringTaskRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/assets/"):
@@ -238,12 +240,13 @@ func (s *Server) currentUserName(r *http.Request) string {
 }
 
 func (s *Server) hasSupervisorAccess(r *http.Request) bool {
-	switch s.userRole(r) {
+	role := s.userRole(r)
+	switch role {
 	case roleAdmin, roleManager, roleSupervisor:
 		return true
-	default:
-		return false
 	}
+	// 自定义角色:权限矩阵授予过任一能力即视为管理角色
+	return s.permCache.anyAllowed(role)
 }
 
 func (s *Server) requireSupervisorAccess(w http.ResponseWriter, r *http.Request) bool {
@@ -629,8 +632,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "账号 / 姓名 / 初始密码 都不能为空")
 		return
 	}
-	if !isValidRoleCode(req.RoleCode) {
-		writeError(w, http.StatusBadRequest, "bad_request", "角色无效（admin/manager/supervisor/inspector）")
+	if _, ok, _ := s.store.GetRoleByCode(req.RoleCode); !ok {
+		writeError(w, http.StatusBadRequest, "bad_request", "角色无效")
 		return
 	}
 	user := &User{
@@ -695,7 +698,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if req.RoleCode != "" && !isValidRoleCode(req.RoleCode) {
+	reqRole, reqRoleOK, _ := s.store.GetRoleByCode(req.RoleCode)
+	if req.RoleCode != "" && !reqRoleOK {
 		writeError(w, http.StatusBadRequest, "bad_request", "角色无效")
 		return
 	}
@@ -711,7 +715,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID
 		}
 		if req.RoleCode != "" {
 			u.RoleCode = req.RoleCode
-			u.RoleID = roleIDFromCode(req.RoleCode)
+			if reqRole != nil {
+				u.RoleID = reqRole.ID
+			}
 		}
 		if req.DepartmentID != "" {
 			u.DepartmentID = strings.TrimSpace(req.DepartmentID)
@@ -815,7 +821,14 @@ func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_roles_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"roles": roles})
+	out := make([]map[string]any, 0, len(roles))
+	for _, role := range roles {
+		out = append(out, map[string]any{
+			"id": role.ID, "code": role.Code, "name": role.Name,
+			"description": role.Description, "builtin": builtinRoleCode(role.Code),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"roles": out})
 }
 
 func (s *Server) handleListDepartments(w http.ResponseWriter, r *http.Request) {
@@ -829,14 +842,6 @@ func (s *Server) handleListDepartments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"departments": depts})
-}
-
-func isValidRoleCode(code string) bool {
-	switch code {
-	case roleAdmin, roleManager, roleSupervisor, roleInspector:
-		return true
-	}
-	return false
 }
 
 func (s *Server) handleListOperationLogs(w http.ResponseWriter, r *http.Request) {
