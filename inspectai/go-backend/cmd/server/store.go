@@ -21,21 +21,35 @@ var schemaSQL string
 //go:embed schema_mysql.sql
 var schemaMySQL string
 
-// Store — 数据访问接口（MemStore 和 SQLiteStore 都实现）
-type Store interface {
+// ===== 数据访问接口:按业务域拆分 =====
+// 各业务模块应依赖所需的最小域接口(如资产模块只收 AssetStore),
+// Store 为全量组合,供装配层(main)与既有代码平滑过渡。
+// MemStore(测试/fallback)与 SQLiteStore(SQLite+MySQL)实现全部域。
+
+// RecordStore — 巡检记录
+type RecordStore interface {
 	CreateRecord(rec *Record) error
 	GetRecord(id string) (*Record, error)
 	UpdateRecord(rec *Record) error
 	ListRecords(limit int) ([]*Record, error)
 	ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+}
 
+// AITaskStore — 视觉识别任务
+type AITaskStore interface {
 	CreateTask(task *AITask) error
 	GetTask(id string) (*AITask, error)
 	UpdateTask(id string, mutate func(*AITask)) error
 	LatestTaskByRecord(recordID string) (*AITask, error)
+}
 
+// AssetStore — 资产台账 + 快照/字段观测(§3 趋势底座)
+type AssetStore interface {
+	// UpsertAsset 巡检驱动的自动建档/滚动更新(巡检数 +1)。
 	UpsertAsset(asset *AssetEntry) error
-	// SubmitRecordWithAssets —— 原子提交:日报、资产台账、资产快照、字段观测全部在同事务内写入。
+	// CreateAsset 手工建档(巡检数从 0 起,重复 ID 报错)。
+	CreateAsset(asset *AssetEntry) error
+	// SubmitRecordWithAssets —— 原子提交:日报、资产台账、资产快照、字段观测同事务写入,
 	// 失败整体回滚,避免出现"日报已提交但快照没记录"的数据缺口。
 	SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error
 	ListAssets() ([]*AssetEntry, error)
@@ -45,30 +59,37 @@ type Store interface {
 	UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error)
 	// DeleteAsset 删除资产及其快照/字段观测(巡检记录保留作历史证据)。
 	DeleteAsset(id string) error
-	// CreateAsset 手工建档(区别于巡检提交的 UpsertAsset:巡检数从 0 起,重复 ID 报错)。
-	CreateAsset(asset *AssetEntry) error
-
-	// §3 资产长期台账 + 字段级趋势底座（幂等写入，按 asset_id 完整翻历史）
+	// 幂等写入,按 asset_id 完整翻历史
 	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
 	ListAssetSnapshots(assetID string, limit, offset int) ([]*AssetSnapshot, error)
 	CountAssetSnapshots(assetID string) (int, error)
 	ListFieldObservations(assetID, fieldKey string, limit int) ([]*FieldObservation, error)
+}
 
-	// §4 字段人工确认留痕（防惰性闭环）
+// ConfirmLogStore — 字段人工确认留痕(§4 防惰性闭环)
+type ConfirmLogStore interface {
 	CreateFieldConfirmLog(entry *FieldConfirmLog) error
 	ListFieldConfirmLogs(recordID string) ([]*FieldConfirmLog, error)
+	ListRecentFieldConfirmLogs(limit int) ([]*FieldConfirmLog, error)
+}
 
-	// 管理 AI 报告持久化缓存（30 min + 异常触发刷新）
+// ReportCacheStore — 管理 AI 报告持久化缓存(30 min + 异常触发刷新)
+type ReportCacheStore interface {
 	SaveManagementAIReport(report *ManagementAIReport) error
 	GetLatestManagementAIReport(reportType, project, rangeKey string) (*ManagementAIReport, error)
 	DeleteExpiredManagementAIReports(now time.Time) (int, error)
-	ListRecentFieldConfirmLogs(limit int) ([]*FieldConfirmLog, error)
+}
 
+// ApprovalStore — 修改申请审批流
+type ApprovalStore interface {
 	CreateChangeRequest(cr *ChangeRequest) error
 	ListChangeRequests(filter ChangeRequestFilter) ([]*ChangeRequest, error)
 	GetChangeRequest(id string) (*ChangeRequest, error)
 	UpdateChangeRequest(cr *ChangeRequest) error
+}
 
+// IdentityStore — 账号/会话/角色/部门 + 操作审计
+type IdentityStore interface {
 	EnsureIdentitySeed(seed IdentitySeed) error
 	AuthenticateUser(username, password string) (*User, *LoginSession, error)
 	GetUserBySession(token string) (*User, error)
@@ -84,7 +105,10 @@ type Store interface {
 	ListDepartments() ([]*Department, error)
 	CreateOperationLog(log *OperationLog) error
 	ListOperationLogs(limit int) ([]*OperationLog, error)
+}
 
+// EngineeringStore — 工程巡检计划与任务(闭环状态机的数据层)
+type EngineeringStore interface {
 	ListEngineeringPlans(filter EngineeringPlanFilter) ([]*EngineeringPlanItem, error)
 	GetEngineeringPlan(id string) (*EngineeringPlanItem, error)
 	UpsertEngineeringPlan(item *EngineeringPlanItem) error
@@ -93,18 +117,43 @@ type Store interface {
 	GetEngineeringTask(id string) (*EngineeringTask, error)
 	CreateEngineeringTask(task *EngineeringTask) error
 	UpdateEngineeringTask(id string, mutate func(*EngineeringTask)) error
+}
 
+// SubmissionStore — 提交幂等锁
+type SubmissionStore interface {
 	ClaimSubmission(recordID, idemKey string) (string, error)
 	CompleteSubmission(recordID, idemKey string) error
 	ReleaseSubmission(recordID, idemKey string) error
+}
 
-	// 模块化提示词:结构化模板持久化(后台可视化编辑、即时生效)
+// PromptTemplateStore — 模块化提示词(后台可视化编辑、即时生效)
+type PromptTemplateStore interface {
 	ListPromptTemplates() ([]PromptTemplate, error)
 	GetPromptTemplate(id string) (PromptTemplate, bool, error)
 	UpsertPromptTemplate(t PromptTemplate) error
+}
+
+// Store — 全量组合(装配层用;业务模块请依赖上面的最小域接口)
+type Store interface {
+	RecordStore
+	AITaskStore
+	AssetStore
+	ConfirmLogStore
+	ReportCacheStore
+	ApprovalStore
+	IdentityStore
+	EngineeringStore
+	SubmissionStore
+	PromptTemplateStore
 
 	Close() error
 }
+
+// 编译期断言:两个实现必须覆盖全部域,漏实现在编译时即暴露
+var (
+	_ Store = (*MemStore)(nil)
+	_ Store = (*SQLiteStore)(nil)
+)
 
 const (
 	submissionClaimed    = "claimed"
@@ -608,25 +657,14 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
-	if _, err := db.Exec(schemaSQL); err != nil {
-		return nil, fmt.Errorf("migrate sqlite: %w", err)
-	}
 	store := &SQLiteStore{db: db, dialect: "sqlite"}
-	if err := store.ensureAssetDisplaySchema(); err != nil {
-		return nil, err
-	}
-	if err := store.ensureRecordOwnershipSchema(); err != nil {
-		return nil, err
-	}
-	if err := store.ensurePromptTemplateSchema(); err != nil {
-		return nil, err
+	if err := store.runMigrations(); err != nil {
+		return nil, fmt.Errorf("migrate sqlite: %w", err)
 	}
 	return store, nil
 }
 
 // NewMySQLStore 用同一个 SQLiteStore 结构，driver 走 mysql。
-// schemaMySQL 里包含多条 CREATE TABLE，go-sql-driver/mysql 默认不允许一次 Exec 多语句，
-// DSN 里要加 multiStatements=true 或者逐条执行。这里用逐条执行更稳。
 func NewMySQLStore(dsn string) (*SQLiteStore, error) {
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -635,24 +673,9 @@ func NewMySQLStore(dsn string) (*SQLiteStore, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping mysql: %w (检查 DSN / 服务是否启动 / database 是否存在)", err)
 	}
-	// 逐条执行 schema_mysql.sql 里的 CREATE TABLE
-	for _, stmt := range splitSQLStatements(schemaMySQL) {
-		if strings.TrimSpace(stmt) == "" {
-			continue
-		}
-		if _, err := db.Exec(stmt); err != nil {
-			return nil, fmt.Errorf("migrate mysql: %w (statement: %s)", err, truncateStmt(stmt))
-		}
-	}
 	store := &SQLiteStore{db: db, dialect: "mysql"}
-	if err := store.ensureAssetDisplaySchema(); err != nil {
-		return nil, err
-	}
-	if err := store.ensureRecordOwnershipSchema(); err != nil {
-		return nil, err
-	}
-	if err := store.ensurePromptTemplateSchema(); err != nil {
-		return nil, err
+	if err := store.runMigrations(); err != nil {
+		return nil, fmt.Errorf("migrate mysql: %w", err)
 	}
 	return store, nil
 }
