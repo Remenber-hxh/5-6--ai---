@@ -39,85 +39,31 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setAuthCookieIfNeeded(w, r)
 
+	// 精确匹配走路由权限表(routes.go):先表层准入,再进 handler
+	for _, rt := range apiRoutes {
+		if r.URL.Path == rt.path && r.Method == rt.method {
+			if !s.allow(w, r, rt.guard) {
+				return
+			}
+			rt.handle(s, w, r)
+			return
+		}
+	}
+
+	// 前缀/动态路由:按方法在各自 handleXxxRoutes 内部分权
 	switch {
-	case r.URL.Path == "/health":
-		s.handleHealth(w, r)
-	case r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost:
-		s.handleLogin(w, r)
-	case r.URL.Path == "/api/auth/me" && r.Method == http.MethodGet:
-		s.handleMe(w, r)
-	case r.URL.Path == "/api/auth/logout" && r.Method == http.MethodPost:
-		s.handleLogout(w, r)
-	case r.URL.Path == "/api/users" && r.Method == http.MethodGet:
-		s.handleListUsers(w, r)
-	case r.URL.Path == "/api/users" && r.Method == http.MethodPost:
-		s.handleCreateUser(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/users/"):
 		s.handleUserRoutes(w, r)
-	case r.URL.Path == "/api/roles" && r.Method == http.MethodGet:
-		s.handleListRoles(w, r)
-	case r.URL.Path == "/api/departments" && r.Method == http.MethodGet:
-		s.handleListDepartments(w, r)
-	case r.URL.Path == "/api/operation-logs" && r.Method == http.MethodGet:
-		s.handleListOperationLogs(w, r)
-	case r.URL.Path == "/api/wework/message" && r.Method == http.MethodPost:
-		s.handleSendWeWorkMessage(w, r)
-	case r.URL.Path == "/api/wework/group-message" && r.Method == http.MethodPost:
-		s.handleSendWeWorkGroupMessage(w, r)
-	case r.URL.Path == "/api/engineering/plans" && r.Method == http.MethodGet:
-		s.handleListEngineeringPlans(w, r)
-	case r.URL.Path == "/api/engineering/plans" && r.Method == http.MethodPost:
-		s.handleCreateEngineeringPlan(w, r)
-	case r.URL.Path == "/api/engineering/tasks" && r.Method == http.MethodGet:
-		s.handleListEngineeringTasks(w, r)
-	case r.URL.Path == "/api/engineering/tasks" && r.Method == http.MethodPost:
-		s.handleCreateEngineeringTask(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/engineering/tasks/"):
 		s.handleEngineeringTaskRoutes(w, r)
-	case r.URL.Path == "/api/inspection/points" && r.Method == http.MethodGet:
-		s.handleListPoints(w, r)
-	case r.URL.Path == "/api/report/templates" && r.Method == http.MethodGet:
-		s.handleListTemplates(w, r)
-	case r.URL.Path == "/api/inspection/records" && r.Method == http.MethodGet:
-		s.handleListRecords(w, r)
-	case r.URL.Path == "/api/inspection/records" && r.Method == http.MethodPost:
-		s.handleCreateRecord(w, r)
-	case r.URL.Path == "/api/scene/classify" && r.Method == http.MethodPost:
-		s.handleClassifyScene(w, r)
-	case r.URL.Path == "/api/ai/chat" && r.Method == http.MethodPost:
-		s.handleAIChat(w, r)
-	case r.URL.Path == "/api/assets/summary" && r.Method == http.MethodGet:
-		s.handleAssetSummary(w, r)
-	case r.URL.Path == "/api/assets" && r.Method == http.MethodPost:
-		s.handleCreateAsset(w, r)
-	case r.URL.Path == "/api/assets" && r.Method == http.MethodGet:
-		s.handleListAssets(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/assets/"):
 		s.handleAssetRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/inspection/records/"):
 		s.handleRecordRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/ai/tasks/") && r.Method == http.MethodGet:
 		s.handleGetTask(w, r)
-	case r.URL.Path == "/api/change-requests" && r.Method == http.MethodPost:
-		s.handleCreateChangeRequest(w, r)
-	case r.URL.Path == "/api/change-requests" && r.Method == http.MethodGet:
-		s.handleListChangeRequests(w, r)
-	case r.URL.Path == "/api/change-requests/draft-photos" && r.Method == http.MethodPost:
-		s.handleUploadDraftPhotos(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/change-requests/"):
 		s.handleChangeRequestRoutes(w, r)
-	case r.URL.Path == "/api/management-ai/snapshot" && r.Method == http.MethodGet:
-		s.handleManagementSnapshot(w, r)
-	case r.URL.Path == "/api/management-ai/attention" && r.Method == http.MethodGet:
-		s.handleManagementAttention(w, r)
-	case r.URL.Path == "/api/management-ai/chat" && r.Method == http.MethodPost:
-		s.handleManagementChat(w, r)
-	case r.URL.Path == "/api/management-ai/report" && r.Method == http.MethodGet:
-		s.handleManagementReport(w, r)
-	case r.URL.Path == "/api/management-ai/act" && r.Method == http.MethodPost:
-		s.handleManagementAct(w, r)
-	case r.URL.Path == "/api/prompt/templates" && r.Method == http.MethodGet:
-		s.handleListPromptTemplates(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/prompt/templates/"):
 		s.handlePromptTemplateRoutes(w, r)
 	default:
