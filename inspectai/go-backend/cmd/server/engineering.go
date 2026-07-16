@@ -344,8 +344,8 @@ func (s *SQLiteStore) GetEngineeringPlan(id string) (*EngineeringPlanItem, error
 
 func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 	normalizeEngineeringPlan(item)
-	created := item.CreatedAt.Format(time.RFC3339Nano)
-	updated := item.UpdatedAt.Format(time.RFC3339Nano)
+	created := fmtStamp(item.CreatedAt)
+	updated := fmtStamp(item.UpdatedAt)
 	var query string
 	if s.dialect == "mysql" {
 		query = `
@@ -390,7 +390,7 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 }
 
 func (s *SQLiteStore) UpdateEngineeringPlanLatestTask(planID, taskID string) error {
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	res, err := s.db.Exec(`UPDATE engineering_plan_items SET latest_task_id=?, updated_at=? WHERE id=?`, taskID, now, planID)
 	if err != nil {
 		return err
@@ -441,8 +441,8 @@ func (s *SQLiteStore) GetEngineeringTask(id string) (*EngineeringTask, error) {
 
 func (s *SQLiteStore) CreateEngineeringTask(task *EngineeringTask) error {
 	normalizeEngineeringTask(task)
-	created := task.CreatedAt.Format(time.RFC3339Nano)
-	updated := task.UpdatedAt.Format(time.RFC3339Nano)
+	created := fmtStamp(task.CreatedAt)
+	updated := fmtStamp(task.UpdatedAt)
 	_, err := s.db.Exec(`
 		INSERT INTO engineering_tasks (
 			id, plan_item_id, source, task_type, title, project, category,
@@ -467,7 +467,7 @@ func (s *SQLiteStore) UpdateEngineeringTask(id string, mutate func(*EngineeringT
 	}
 	mutate(task)
 	normalizeEngineeringTask(task)
-	updated := task.UpdatedAt.Format(time.RFC3339Nano)
+	updated := fmtStamp(task.UpdatedAt)
 	res, err := s.db.Exec(`
 		UPDATE engineering_tasks SET
 			plan_item_id=?, source=?, task_type=?, title=?, project=?, category=?,
@@ -817,7 +817,7 @@ func (s *Server) handleUpdateEngineeringTaskStatus(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "missing_status", "必须提供任务状态")
 		return
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	err := s.store.UpdateEngineeringTask(id, func(task *EngineeringTask) {
 		task.Status = status
 		if status == engTaskStatusProcessing && task.StartedAt == "" {
@@ -901,7 +901,7 @@ func (s *Server) closeEngineeringTaskFromRecord(rec *Record, assets []*AssetEntr
 		task.Status = finalStatus
 		task.RecordID = rec.ID
 		task.AssetID = assetID
-		task.CompletedAt = closedAt.Format(time.RFC3339Nano)
+		task.CompletedAt = fmtStamp(closedAt)
 		task.EvidenceStatus = "已提交"
 		task.AIStatus = firstNonEmpty(rec.RecognitionStatus, "已完成")
 		task.CloseResult = closeResult

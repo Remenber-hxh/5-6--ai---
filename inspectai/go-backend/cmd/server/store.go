@@ -775,7 +775,7 @@ func (s *SQLiteStore) UpsertPromptTemplate(t PromptTemplate) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().Format(time.RFC3339)
+	now := nowStamp()
 	stmt := "INSERT INTO prompt_templates(id,name,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, data=excluded.data, updated_at=excluded.updated_at"
 	if s.dialect == "mysql" {
 		stmt = "INSERT INTO prompt_templates(id,name,data,updated_at) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)"
@@ -1028,7 +1028,7 @@ func truncateStmt(s string) string {
 func (s *SQLiteStore) Close() error { return s.db.Close() }
 
 func (s *SQLiteStore) ClaimSubmission(recordID, idemKey string) (string, error) {
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	_, err := s.db.Exec(`
 		INSERT INTO submission_idempotency (record_id, idem_key, status, created_at, updated_at)
 		VALUES (?, ?, 'processing', ?, ?)`, recordID, idemKey, now, now)
@@ -1078,7 +1078,7 @@ func (s *SQLiteStore) CompleteSubmission(recordID, idemKey string) error {
 		UPDATE submission_idempotency
 		SET status='submitted', updated_at=?
 		WHERE record_id=? AND idem_key=?`,
-		time.Now().Format(time.RFC3339Nano), recordID, idemKey,
+		nowStamp(), recordID, idemKey,
 	)
 	if err != nil {
 		return err
@@ -1111,7 +1111,7 @@ func (s *SQLiteStore) CreateRecord(rec *Record) error {
 	imagesJSON, _ := json.Marshal(rec.Images)
 	tagsJSON, _ := json.Marshal(rec.AISummaryTags)
 	recosJSON, _ := json.Marshal(rec.AIRecommendations)
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	if rec.UpdatedAt.IsZero() {
 		rec.UpdatedAt = time.Now()
 	}
@@ -1130,7 +1130,7 @@ func (s *SQLiteStore) CreateRecord(rec *Record) error {
 		string(fieldsJSON), string(imagesJSON), rec.Report,
 		rec.AISummary, string(tagsJSON), string(recosJSON), rec.AISummaryError,
 		boolToInt(rec.Submitted), nullableTime(rec.SubmittedAt),
-		rec.CreatedAt.Format(time.RFC3339Nano), now,
+		fmtStamp(rec.CreatedAt), now,
 	)
 	return err
 }
@@ -1160,7 +1160,7 @@ func updateRecordExec(exec sqlExecutor, rec *Record) error {
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID, rec.EngineeringTaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
 		rec.AISummary, string(tagsJSON), string(recosJSON), rec.AISummaryError,
-		boolToInt(rec.Submitted), nullableTime(rec.SubmittedAt), updatedAt.Format(time.RFC3339Nano),
+		boolToInt(rec.Submitted), nullableTime(rec.SubmittedAt), fmtStamp(updatedAt),
 		rec.ID,
 	)
 	return err
@@ -1293,7 +1293,7 @@ func scanRecord(row scanner) (*Record, error) {
 
 func (s *SQLiteStore) CreateTask(task *AITask) error {
 	analysisJSON, _ := json.Marshal(task.Analysis)
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	_, err := s.db.Exec(`
 		INSERT INTO ai_tasks (id, record_id, status, progress_done, progress_total,
 		                     error_code, error_message, analysis_json,
@@ -1301,7 +1301,7 @@ func (s *SQLiteStore) CreateTask(task *AITask) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID, task.RecordID, task.Status, task.Progress.Processed, task.Progress.Total,
 		task.ErrorCode, task.ErrorMessage, string(analysisJSON),
-		task.CreatedAt.Format(time.RFC3339Nano), now,
+		fmtStamp(task.CreatedAt), now,
 	)
 	return err
 }
@@ -1327,7 +1327,7 @@ func (s *SQLiteStore) UpdateTask(id string, mutate func(*AITask)) error {
 		WHERE id=?`,
 		task.Status, task.Progress.Processed, task.Progress.Total,
 		task.ErrorCode, task.ErrorMessage, string(analysisJSON),
-		time.Now().Format(time.RFC3339Nano), id,
+		nowStamp(), id,
 	)
 	return err
 }
@@ -1374,8 +1374,8 @@ func upsertAssetExec(exec sqlExecutor, dialect string, asset *AssetEntry) error 
 	if asset.StatusOrder == 0 {
 		asset.StatusOrder = statusOrder(asset.LastStatus)
 	}
-	now := time.Now().Format(time.RFC3339Nano)
-	lastInspected := asset.LastInspectedAt.Format(time.RFC3339Nano)
+	now := nowStamp()
+	lastInspected := fmtStamp(asset.LastInspectedAt)
 	var query string
 	if dialect == "mysql" {
 		query = `
@@ -1550,7 +1550,7 @@ func (s *SQLiteStore) ReplaceRolePermissions(matrix map[string][]string) error {
 
 // CreateAsset 手工建档:纯 INSERT,重复主键即报错(与巡检驱动的 UpsertAsset 区分,巡检数从 0 起)。
 func (s *SQLiteStore) CreateAsset(asset *AssetEntry) error {
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	_, err := s.db.Exec(`
 		INSERT INTO assets (id, project_code, project, point_id, template_id,
 		                    asset_type, asset_key, asset_name, last_record_id,
@@ -1601,7 +1601,7 @@ func (s *SQLiteStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, 
 }
 
 func updateAssetCoverExec(exec sqlExecutor, id, coverImagePath string) error {
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	res, err := exec.Exec(`
 		UPDATE assets SET cover_image_path = ?, updated_at = ? WHERE id = ?`, coverImagePath, now, id)
 	if err != nil {
@@ -1614,7 +1614,7 @@ func updateAssetCoverExec(exec sqlExecutor, id, coverImagePath string) error {
 }
 
 func updateAssetMetaExec(exec sqlExecutor, id, name, status, summary string) error {
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	res, err := exec.Exec(`
 		UPDATE assets SET
 			asset_name   = CASE WHEN ?='' THEN asset_name   ELSE ? END,
@@ -1686,7 +1686,7 @@ func nullableTime(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
-	return t.Format(time.RFC3339Nano)
+	return fmtStamp(*t)
 }
 
 // ===== ChangeRequest (SQLite + MySQL，同一份 SQL，方言差异极小) =====
@@ -1700,7 +1700,7 @@ func (s *SQLiteStore) CreateChangeRequest(cr *ChangeRequest) error {
 			reviewed_by, reviewed_at, review_note, applied_at
 		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		cr.ID, cr.TargetType, cr.TargetID, string(patchJSON), cr.Reason,
-		cr.Status, cr.RequestedBy, cr.RequestedAt.Format(time.RFC3339Nano),
+		cr.Status, cr.RequestedBy, fmtStamp(cr.RequestedAt),
 		nullableString(cr.ReviewedBy), nullableTime(cr.ReviewedAt), cr.ReviewNote, nullableTime(cr.AppliedAt),
 	)
 	return err
@@ -1732,7 +1732,7 @@ func updateChangeRequestExec(exec sqlExecutor, cr *ChangeRequest) error {
 			reviewed_by=?, reviewed_at=?, review_note=?, applied_at=?
 		WHERE id=?`,
 		cr.TargetType, cr.TargetID, string(patchJSON), cr.Reason,
-		cr.Status, cr.RequestedBy, cr.RequestedAt.Format(time.RFC3339Nano),
+		cr.Status, cr.RequestedBy, fmtStamp(cr.RequestedAt),
 		nullableString(cr.ReviewedBy), nullableTime(cr.ReviewedAt), cr.ReviewNote, nullableTime(cr.AppliedAt),
 		cr.ID,
 	)

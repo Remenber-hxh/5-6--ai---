@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-	"time"
 )
 
 // ===== 版本化数据库迁移 =====
@@ -108,7 +107,7 @@ func (s *SQLiteStore) runMigrations() error {
 		}
 		if _, err := s.db.Exec(
 			`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`,
-			m.Version, m.Name, time.Now().Format(time.RFC3339),
+			m.Version, m.Name, nowStamp(),
 		); err != nil {
 			return fmt.Errorf("record migration %03d: %w", m.Version, err)
 		}

@@ -148,7 +148,7 @@ func writeAssetSnapshotsExec(exec sqlExecutor, dialect string, snaps []*AssetSna
 		}
 		if _, err := exec.Exec(snapSQL,
 			sn.ID, sn.AssetID, sn.RecordID, sn.Status, sn.StatusLevel, sn.Summary, sn.Inspector,
-			sn.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+			fmtStamp(sn.CreatedAt)); err != nil {
 			return err
 		}
 	}
@@ -165,7 +165,7 @@ func writeAssetSnapshotsExec(exec sqlExecutor, dialect string, snaps []*AssetSna
 		}
 		if _, err := exec.Exec(obsSQL,
 			o.ID, o.AssetID, o.RecordID, o.FieldKey, o.FieldLabel, o.ValueText, num, o.Source, o.Confidence,
-			o.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+			fmtStamp(o.CreatedAt)); err != nil {
 			return err
 		}
 	}
@@ -285,7 +285,7 @@ func (s *SQLiteStore) CreateFieldConfirmLog(e *FieldConfirmLog) error {
 		(id, record_id, field_key, field_label, ai_value, original_value, final_value, ai_confidence, action, operator, duration_ms, viewed_photo, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.RecordID, e.FieldKey, e.FieldLabel, e.AIValue, e.OriginalValue, e.FinalValue,
-		e.AIConfidence, e.Action, e.Operator, e.DurationMs, viewed, e.CreatedAt.Format(time.RFC3339Nano))
+		e.AIConfidence, e.Action, e.Operator, e.DurationMs, viewed, fmtStamp(e.CreatedAt))
 	return err
 }
 
@@ -422,8 +422,8 @@ func (s *SQLiteStore) SaveManagementAIReport(r *ManagementAIReport) error {
 		mustJSON(r.Facts), r.Summary, mustJSON(r.Attention),
 		mustJSON(r.Recommendations), mustJSON(r.Evidence),
 		r.Model, r.PromptVersion, r.DurationMs,
-		r.GeneratedAt.Format(time.RFC3339Nano),
-		r.ExpiresAt.Format(time.RFC3339Nano),
+		fmtStamp(r.GeneratedAt),
+		fmtStamp(r.ExpiresAt),
 	)
 	return err
 }
@@ -459,7 +459,7 @@ func (s *SQLiteStore) GetLatestManagementAIReport(reportType, project, rangeKey 
 }
 
 func (s *SQLiteStore) DeleteExpiredManagementAIReports(now time.Time) (int, error) {
-	res, err := s.db.Exec(`DELETE FROM management_ai_reports WHERE expires_at < ?`, now.Format(time.RFC3339Nano))
+	res, err := s.db.Exec(`DELETE FROM management_ai_reports WHERE expires_at < ?`, fmtStamp(now))
 	if err != nil {
 		return 0, err
 	}

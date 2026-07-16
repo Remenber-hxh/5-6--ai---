@@ -475,7 +475,7 @@ func (s *SQLiteStore) EnsureIdentitySeed(seed IdentitySeed) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
@@ -503,7 +503,7 @@ func (s *SQLiteStore) ensureDefaultRoles() error {
 		}
 		if _, err := s.db.Exec(
 			`INSERT INTO roles (id, code, name, description, created_at) VALUES (?, ?, ?, ?, ?)`,
-			role.ID, role.Code, role.Name, role.Description, time.Now().Format(time.RFC3339Nano),
+			role.ID, role.Code, role.Name, role.Description, nowStamp(),
 		); err != nil {
 			return err
 		}
@@ -521,7 +521,7 @@ func (s *SQLiteStore) ensureDefaultDepartment() error {
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO departments (id, name, parent_id, created_at) VALUES ('dept_default', '默认部门', NULL, ?)`,
-		time.Now().Format(time.RFC3339Nano),
+		nowStamp(),
 	)
 	return err
 }
@@ -544,13 +544,13 @@ func (s *SQLiteStore) AuthenticateUser(username, password string) (*User, *Login
 	_, err = s.db.Exec(`
 		INSERT INTO login_sessions (id, user_id, token_hash, expire_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
-		newID("sess"), u.ID, hashToken(token), expires.Format(time.RFC3339Nano),
-		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+		newID("sess"), u.ID, hashToken(token), fmtStamp(expires),
+		fmtStamp(now), fmtStamp(now),
 	)
 	if err != nil {
 		return nil, nil, err
 	}
-	_, _ = s.db.Exec(`UPDATE users SET last_login_at=?, updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), u.ID)
+	_, _ = s.db.Exec(`UPDATE users SET last_login_at=?, updated_at=? WHERE id=?`, fmtStamp(now), fmtStamp(now), u.ID)
 	u.LastLoginAt = &now
 	u.UpdatedAt = now
 	return u, &LoginSession{
@@ -577,7 +577,7 @@ func (s *SQLiteStore) GetUserBySession(token string) (*User, error) {
 		JOIN login_sessions s ON s.user_id=u.id
 		WHERE s.token_hash=? AND s.expire_at>? AND u.status='active'
 		LIMIT 1`
-	u, _, err := scanUserWithHash(s.db.QueryRow(q, hashToken(token), time.Now().Format(time.RFC3339Nano)))
+	u, _, err := scanUserWithHash(s.db.QueryRow(q, hashToken(token), nowStamp()))
 	return u, err
 }
 
@@ -651,7 +651,7 @@ func (s *SQLiteStore) CreateUser(user *User, password string) error {
 	if user.DepartmentID == "" {
 		user.DepartmentID = "dept_default"
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
@@ -679,7 +679,7 @@ func (s *SQLiteStore) UpdateUserProfile(id string, mutate func(*User)) error {
 	if u.RoleID == "" {
 		u.RoleID = s.roleIDFor(u.RoleCode)
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	res, err := s.db.Exec(`
 		UPDATE users SET
 			display_name=?, phone=?, avatar=?, role_id=?, department_id=?,
@@ -705,7 +705,7 @@ func (s *SQLiteStore) SetUserPassword(id, password string) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	res, err := s.db.Exec(`UPDATE users SET password_hash=?, updated_at=? WHERE id=?`, hash, now, id)
 	if err != nil {
 		return err
@@ -722,7 +722,7 @@ func (s *SQLiteStore) SetUserStatus(id, status string) error {
 	if status != "active" && status != "disabled" {
 		return errors.New("invalid status")
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	res, err := s.db.Exec(`UPDATE users SET status=?, updated_at=? WHERE id=?`, status, now, id)
 	if err != nil {
 		return err
@@ -758,7 +758,7 @@ func (s *SQLiteStore) CreateRole(role *Role) error {
 	if dup > 0 {
 		return errors.New("role already exists")
 	}
-	now := time.Now().Format(time.RFC3339Nano)
+	now := nowStamp()
 	_, err := s.db.Exec(`INSERT INTO roles (id, code, name, description, created_at) VALUES (?, ?, ?, ?, ?)`,
 		role.ID, role.Code, role.Name, role.Description, now)
 	return err
@@ -882,7 +882,7 @@ func (s *SQLiteStore) CreateOperationLog(logItem *OperationLog) error {
 			id, user_id, actor_name, action, target_type, target_id, detail_json, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		logItem.ID, nullableString(logItem.UserID), logItem.ActorName, logItem.Action,
-		logItem.TargetType, logItem.TargetID, string(detailJSON), logItem.CreatedAt.Format(time.RFC3339Nano),
+		logItem.TargetType, logItem.TargetID, string(detailJSON), fmtStamp(logItem.CreatedAt),
 	)
 	return err
 }

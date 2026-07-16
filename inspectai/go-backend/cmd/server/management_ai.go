@@ -154,8 +154,8 @@ func (s *Server) toolGetOverview(project, rangeKey string) (*OverviewSummary, er
 		AssetTotal:       len(ctx.assets),
 		RecordTotal:      len(ctx.records),
 		RangeKey:         ctx.rangeKey,
-		RangeStart:       ctx.rangeStart.Format(time.RFC3339),
-		RangeEnd:         ctx.rangeEnd.Format(time.RFC3339),
+		RangeStart:       fmtStamp(ctx.rangeStart),
+		RangeEnd:         fmtStamp(ctx.rangeEnd),
 		PendingApprovals: ctx.pendingApprovals,
 	}
 	for _, a := range ctx.assets {
@@ -1035,7 +1035,7 @@ func (s *Server) handleManagementSnapshot(w http.ResponseWriter, r *http.Request
 		"inspectorQuality": quality,
 		"pendingReviews":   pending,
 		"numericDrifts":    numericDrifts,
-		"generatedAt":      time.Now().Format(time.RFC3339),
+		"generatedAt":      nowStamp(),
 	})
 }
 
@@ -1410,7 +1410,7 @@ func (s *Server) handleWeeklyReport(w http.ResponseWriter, project string) {
 		"rangeKey":         rangeKey,
 		"rangeStart":       overview.RangeStart,
 		"rangeEnd":         overview.RangeEnd,
-		"generatedAt":      time.Now().Format(time.RFC3339),
+		"generatedAt":      nowStamp(),
 		"summary":          summary,
 		"model":            model,
 		"isMock":           isMock,
@@ -1719,9 +1719,9 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
 		"type":        "daily",
 		"date":        todayStr,
 		"project":     project,
-		"generatedAt": time.Now().Format(time.RFC3339),
-		"rangeStart":  ctx.rangeStart.Format(time.RFC3339),
-		"rangeEnd":    ctx.rangeEnd.Format(time.RFC3339),
+		"generatedAt": nowStamp(),
+		"rangeStart":  fmtStamp(ctx.rangeStart),
+		"rangeEnd":    fmtStamp(ctx.rangeEnd),
 		"conclusion": map[string]any{
 			"hasAbnormal":   abnormalToday > 0 || overview.AbnormalRecent > 0,
 			"abnormalCount": abnormalToday,

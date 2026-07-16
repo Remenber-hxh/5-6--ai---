@@ -229,3 +229,22 @@ func deriveAssetDisplayKeys(a *AssetEntry) (projectCode, templateID, assetKey st
 	}
 	return projectCode, templateID, assetKey
 }
+
+// ===== 库内时间戳统一东八区 =====
+// 时间列是 VARCHAR 存 RFC3339Nano、靠字典序排序/比较,偏移必须全库一致。
+// 禁止直接 time.Now().Format(...) 入库 —— 一律走 nowStamp()/fmtStamp()。
+var cnLoc = func() *time.Location {
+	if l, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+		return l
+	}
+	return time.FixedZone("CST", 8*3600) // Windows 无 tzdata 时兜底;上海无夏令时,固定偏移等价
+}()
+
+func nowStamp() string { return time.Now().In(cnLoc).Format(time.RFC3339Nano) }
+
+func fmtStamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.In(cnLoc).Format(time.RFC3339Nano)
+}
