@@ -342,8 +342,30 @@ function setScene(name) {
   requestAnimationFrame(updateFooterVisibility);
 }
 
+// ===== Footer 真实高度回写 =====
+// 按钮条有单按钮 / 主+次两种形态，高度不同（还叠着 safe-area）。
+// CSS 里写死的 --footer-h 兜不住，滚到底时最后一条内容会被压住，
+// 这里把实测高度写回 --footer-reserve，让 .main 的预留量永远够。
+function syncFooterReserve() {
+  const footer = document.getElementById("footer");
+  if (!footer) return;
+  // hidden 时高度为 0，保留上一次的量，避免预留忽大忽小导致页面抖动
+  const h = footer.offsetHeight;
+  if (h > 0) {
+    document.documentElement.style.setProperty("--footer-reserve", h + 16 + "px");
+  }
+}
+if (typeof ResizeObserver !== "undefined") {
+  const _footerRO = new ResizeObserver(syncFooterReserve);
+  const _footerEl = document.getElementById("footer");
+  if (_footerEl) _footerRO.observe(_footerEl);
+}
+window.addEventListener("resize", syncFooterReserve);
+window.addEventListener("orientationchange", () => setTimeout(syncFooterReserve, 120));
+
 // ===== Footer 滚动显隐：滚到底部才滑出，主区域 padding 永久占位防遮挡 =====
 function updateFooterVisibility() {
+  syncFooterReserve();
   const footer = document.getElementById("footer");
   if (!footer || footer.hidden) return;
   const el = document.scrollingElement || document.documentElement;

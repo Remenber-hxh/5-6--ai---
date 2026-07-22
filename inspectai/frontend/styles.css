@@ -107,6 +107,19 @@
   --safe-bottom: env(safe-area-inset-bottom, 0);
   --header-h: 56px;
   --footer-h: 64px;
+
+  /* 视口高度单一入口。手机浏览器的 vh 是「地址栏收起后的最大高度」，
+     比实际可视区大，底部内容会被顶出屏幕；svh 才是当前真实可视高度。
+     老浏览器不认 svh，@supports 不命中即回落 vh。 */
+  --vh100: 100vh;
+
+  /* 底部主操作按钮条给内容区预留的高度。footer 有单/双按钮两种形态，
+     真实高度由 JS 实测写回（见 app.js 的 footer 高度观测），
+     这里的值是脚本没跑起来时的兜底。 */
+  --footer-reserve: calc(var(--footer-h) + var(--safe-bottom) + 16px);
+}
+@supports (height: 100svh) {
+  :root { --vh100: 100svh; }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -147,7 +160,7 @@ button {
   width: min(100%, 480px);
   max-width: 480px;
   margin: 0 auto;
-  min-height: 100vh;
+  min-height: var(--vh100);
   background: transparent;       /* 让背景光晕透出来 */
   position: relative;
   z-index: 1;                    /* 在 body::before 光晕之上 */
@@ -216,7 +229,8 @@ button {
 /* ========= Main ========= */
 .main {
   flex: 1;
-  padding-bottom: calc(var(--footer-h) + var(--safe-bottom));
+  /* 预留量跟着按钮条真实高度走，否则滚到底时最后一条内容会被按钮条压住 */
+  padding-bottom: var(--footer-reserve);
 }
 /* 列表/详情类屏给些顶部空气（卡片化的呼吸感） */
 .scene-ledger.active,
@@ -231,11 +245,11 @@ button {
 /* ========= 屏 1：iOS 相机风（奶油白光晕 + 大字标题 + 玻璃取景框） ========= */
 .scene-camera {
   background: transparent;
-  min-height: calc(100vh - var(--header-h));
+  min-height: calc(var(--vh100) - var(--header-h));
 }
 .camera-hero {
   background: transparent;
-  min-height: calc(100vh - var(--header-h));
+  min-height: calc(var(--vh100) - var(--header-h));
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -473,6 +487,20 @@ button {
   font-weight: 500;
 }
 .hero-secondary { text-align: center; position: relative; z-index: 1; margin-top: 14px; }
+/* ICP 备案号：首页文档流内常驻，颜色跟随当前主题（浅色/深色科技风都能读） */
+.beian-line {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.62;
+}
+.beian-line a {
+  color: var(--wx-text-2);
+  text-decoration: none;
+}
 .link-btn {
   background: transparent; border: none;
   color: var(--wx-text-2);
@@ -516,7 +544,7 @@ button {
 /* ========= 屏 2：识别中（AI 过程可视化） ========= */
 .scene-loading {
   background: transparent;
-  min-height: calc(100vh - var(--header-h));
+  min-height: calc(var(--vh100) - var(--header-h));
 }
 /* 提高优先级覆盖 .scene.active { display: block }，让 loading 内容真居中 */
 .scene-loading.active {
@@ -1629,7 +1657,7 @@ button {
 /* ========= Toast（Material snackbar） ========= */
 .toast {
   position: fixed;
-  bottom: calc(24px + var(--footer-h) + var(--safe-bottom));
+  bottom: calc(16px + var(--footer-reserve));
   left: 50%; transform: translateX(-50%);
   background: #323639; color: #fff;
   padding: 14px 16px;
@@ -2370,7 +2398,7 @@ button.photo-thumb:hover { box-shadow: var(--shadow-2); }
 @media (min-width: 600px) {
   body {
     background: var(--wx-bg);   /* 与 #app 同底色，无视觉割裂 */
-    min-height: 100vh;
+    min-height: var(--vh100);
   }
   /* #app 沿用移动端的 max-width:480px 居中显示，不加圆角/手机壳/阴影 */
   .scene-approvals .cr-card { max-width: 640px; margin-left: auto; margin-right: auto; }
@@ -2470,7 +2498,7 @@ button.photo-thumb:hover { box-shadow: var(--shadow-2); }
   }
   #app[data-scene="camera"] .scene-camera.active {
     display: block;
-    min-height: 100vh;
+    min-height: var(--vh100);
   }
 }
 
@@ -2856,7 +2884,7 @@ body:has(#app[data-scene="loading"])::before {
   }
   #app[data-scene="camera"],
   #app[data-scene="loading"] {
-    min-height: 100vh;
+    min-height: var(--vh100);
     box-shadow: 0 0 0 1px rgba(111, 255, 219, 0.08), 0 30px 120px rgba(0, 0, 0, 0.36);
   }
 }
@@ -2885,8 +2913,9 @@ body:has(#app[data-scene="loading"])::before {
   display: none;
   align-items: center;
   justify-content: center;
+  position: relative;          /* 备案号绝对定位在本屏底部，不参与登录框居中 */
   padding: 32px 24px;
-  min-height: 100vh;
+  min-height: var(--vh100);
   background:
     radial-gradient(circle at 18% 22%, rgba(34, 225, 255, 0.18), transparent 38%),
     radial-gradient(circle at 84% 78%, rgba(27, 224, 135, 0.16), transparent 40%),
@@ -3004,6 +3033,16 @@ body:has(#app[data-scene="loading"])::before {
   color: rgba(234, 247, 255, 0.48);
   text-align: center;
 }
+/* 登录屏是深色底，备案号换成同族浅色，别用全局的灰 */
+.scene-login .beian-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + var(--safe-bottom));
+  margin: 0;
+  opacity: 1;
+}
+.scene-login .beian-line a { color: rgba(234, 247, 255, 0.42); }
 
 /* 登录场景下隐藏顶栏 / 进度条 */
 #app[data-scene="login"] .topbar,
@@ -3101,6 +3140,12 @@ body:has(#app[data-scene="camera"]) {
   margin-top: 18px;
 }
 
+/* 相机屏整屏不滚动，备案号必须算进高度分配，否则被 overflow:hidden 切掉 */
+#app[data-scene="camera"] .beian-line {
+  flex: 0 0 auto;
+  margin-top: 10px;
+}
+
 @media (max-height: 700px) {
   #app[data-scene="camera"] .camera-hero {
     overflow: hidden;
@@ -3109,9 +3154,15 @@ body:has(#app[data-scene="camera"]) {
     gap: 0;
   }
 
+  /* 矮屏再挤一点取景框，给备案号腾出一行 */
+  #app[data-scene="camera"] .beian-line {
+    margin-top: 6px;
+    font-size: 10.5px;
+  }
+
   #app[data-scene="camera"] .viewfinder {
     width: min(276px, calc(100vw - 100px));
-    height: clamp(268px, 38svh, 296px) !important;
+    height: clamp(238px, 36svh, 296px) !important;
     min-height: 0 !important;
     margin-top: 10px;
     margin-bottom: 8px;
@@ -3139,6 +3190,17 @@ body:has(#app[data-scene="camera"]) {
   #app[data-scene="camera"] .shutter-wrap {
     min-height: 104px;
   }
+}
+
+/* 极矮视口（浏览器地址栏 + 底部工具栏都在的老安卓）：再压一档取景框，
+   保证快门和备案号都还在屏内，相机屏永远不出现纵向滚动 */
+@media (max-height: 620px) {
+  #app[data-scene="camera"] .viewfinder {
+    height: clamp(196px, 32svh, 240px) !important;
+    margin-top: 6px;
+    margin-bottom: 4px;
+  }
+  #app[data-scene="camera"] .hero-secondary { margin-top: 12px; }
 }
 
 /* ===== 我的任务（工程任务闭环入口） ===== */
