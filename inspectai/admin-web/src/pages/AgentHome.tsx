@@ -383,8 +383,17 @@ export default function AgentHome() {
         />
       </div>
       <div style={st.foot}>
-        {/* 免责声明绝对定位水平居中;操作链接靠右,两者互不挤占 */}
+        {/* 免责声明绝对定位水平居中;备案号靠左、操作链接靠右,三者互不挤占 */}
         <span style={st.footDisclaimer}>AI 生成的内容仅供参考,请以实际数据为准</span>
+        {/* 首页是整屏布局,盖住了 MainLayout 内容区底部的备案号,这里补一处 */}
+        <a
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener"
+          style={{ ...st.footLink, textDecoration: "none" }}
+        >
+          苏ICP备2026048624号
+        </a>
         <span style={{ display: "flex", gap: 14, marginLeft: "auto" }}>
           <a style={st.footLink} onClick={togglePet}>
             {petOn ? "隐藏看板娘" : "显示看板娘"}

@@ -184,16 +184,37 @@ export default function MainLayout() {
             </Button>
           </Badge>
         </Header>
-        <Content style={{ padding: 20, background: "#f5f7fa", flex: 1, overflowY: "auto" }}>
+        <Content
+          style={{
+            padding: 20,
+            background: "#f5f7fa",
+            flex: 1,
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           {/* 页面切换轻过渡:淡入+8px 上浮,0.25s,不打扰操作 */}
           <motion.div
             key={loc.pathname}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
+            style={{ flex: 1 }}
           >
             <Outlet />
           </motion.div>
+          {/* 网站 ICP 备案号(工信部要求),常驻内容区底部 */}
+          <div style={{ textAlign: "center", padding: "12px 0 2px", color: "#9aa7b2", fontSize: 12 }}>
+            <a
+              href="https://beian.miit.gov.cn/"
+              target="_blank"
+              rel="noopener"
+              style={{ color: "inherit", textDecoration: "none" }}
+            >
+              苏ICP备2026048624号
+            </a>
+          </div>
         </Content>
       </Layout>
     </Layout>
