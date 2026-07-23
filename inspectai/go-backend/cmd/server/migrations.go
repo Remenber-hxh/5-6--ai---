@@ -30,6 +30,43 @@ var migrationList = []migration{
 	{6, "roles_code_widen", (*SQLiteStore).migRolesCodeWiden},
 	{7, "role_permissions_code_widen", (*SQLiteStore).migRolePermCodeWiden},
 	{8, "tenants", (*SQLiteStore).migTenants},
+	{9, "tenant_columns", (*SQLiteStore).migTenantColumns},
+}
+
+// 009 — 给各业务表加 tenant_id 并把存量回填到默认租户。
+//
+// 关键手法:ADD COLUMN ... NOT NULL DEFAULT 'tenant_default' —— 加列时
+// DB 自动把存量行填成默认租户(一步完成回填);且在「代码尚未把租户串进
+// 各处 insert」的过渡期,任何漏设 tenant_id 的新行也会落到默认租户 =
+// 维持单租户的安全行为。多客户全面铺开后,再由后续迁移收紧这个默认。
+//
+// roles / role_permissions 不在此列:内置角色要全局共享、自定义角色才
+// 归租户,语义和"全部回填默认租户"不同,单独一步处理。
+func (s *SQLiteStore) migTenantColumns() error {
+	tables := []string{
+		"users", "departments", "assets", "asset_snapshots", "records",
+		"change_requests", "engineering_tasks", "engineering_plan_items",
+		"operation_logs", "prompt_templates", "ai_tasks",
+		"management_ai_reports", "field_observations", "field_confirm_logs",
+	}
+	def := "'" + defaultTenantID + "'" // 单一真源:默认值直接取自 tenant.go 的常量
+	for _, table := range tables {
+		exists, err := s.hasColumn(table, "tenant_id")
+		if err != nil {
+			return fmt.Errorf("inspect %s.tenant_id: %w", table, err)
+		}
+		if exists {
+			continue // 幂等:已加过就跳过
+		}
+		stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN tenant_id TEXT NOT NULL DEFAULT %s", table, def)
+		if s.dialect == "mysql" {
+			stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN tenant_id VARCHAR(64) NOT NULL DEFAULT %s", table, def)
+		}
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("add %s.tenant_id: %w", table, err)
+		}
+	}
+	return nil
 }
 
 // 008 — 多租户地基:tenants 表 + 默认租户(璟邑)。
