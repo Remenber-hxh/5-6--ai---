@@ -1,4 +1,5 @@
 storage/
+backups/
 .env
 .env.secure
 .env.prod

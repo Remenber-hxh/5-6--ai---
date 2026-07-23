@@ -18,6 +18,7 @@ go-backend/cmd/server/*.go.*
 
 # ---- 运行时数据：不能入镜像，应走卷挂载 ----
 storage
+backups
 ai-service/__pycache__
 **/__pycache__
 *.pyc
