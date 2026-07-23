@@ -29,6 +29,42 @@ var migrationList = []migration{
 	{5, "role_permissions", (*SQLiteStore).migRolePermissions},
 	{6, "roles_code_widen", (*SQLiteStore).migRolesCodeWiden},
 	{7, "role_permissions_code_widen", (*SQLiteStore).migRolePermCodeWiden},
+	{8, "tenants", (*SQLiteStore).migTenants},
+}
+
+// 008 — 多租户地基:tenants 表 + 默认租户(璟邑)。
+// 本步只建新表、种一行,不碰任何现有表 —— 各业务表加 tenant_id 在 009 单独做。
+func (s *SQLiteStore) migTenants() error {
+	stmt := `CREATE TABLE IF NOT EXISTS tenants (
+		id         TEXT PRIMARY KEY,
+		name       TEXT NOT NULL,
+		code       TEXT NOT NULL UNIQUE,
+		status     TEXT NOT NULL DEFAULT 'active',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '')`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS tenants (
+			id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+			name       VARCHAR(128) NOT NULL,
+			code       VARCHAR(64)  NOT NULL UNIQUE,
+			status     VARCHAR(16)  NOT NULL DEFAULT 'active',
+			created_at VARCHAR(40)  NOT NULL DEFAULT '',
+			updated_at VARCHAR(40)  NOT NULL DEFAULT ''
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return err
+	}
+	// 种默认租户(幂等:主键/唯一键冲突即已种,重跑无害)。存量数据 009 回填到它。
+	now := nowStamp()
+	insert := `INSERT OR IGNORE INTO tenants (id, name, code, status, created_at, updated_at)
+		VALUES (?, ?, ?, 'active', ?, ?)`
+	if s.dialect == "mysql" {
+		insert = `INSERT IGNORE INTO tenants (id, name, code, status, created_at, updated_at)
+			VALUES (?, ?, ?, 'active', ?, ?)`
+	}
+	_, err := s.db.Exec(insert, defaultTenantID, defaultTenantName, defaultTenantCode, now, now)
+	return err
 }
 
 // 007 — 权限矩阵表的 role_code 同步放宽(006 只放了 roles.code,漏了这张)
