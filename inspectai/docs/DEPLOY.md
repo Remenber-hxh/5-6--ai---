@@ -215,15 +215,46 @@ docker compose -f docker-compose.prod.yml exec go-backend env | grep -i password
 
 ## 7. 备份 / 恢复
 
-```bash
-# MySQL
-docker compose -f docker-compose.prod.yml exec mysql \
-  mysqldump -u root -p"$(cat secrets/mysql_root_password)" inspectai > backup.sql
+数据库、巡检照片、密钥三样一条命令全备，脚本见 `scripts/backup.sh`。
+mysqldump 走 `--single-transaction`（InnoDB 热备不锁表，业务无感），
+备份前自动查磁盘余量、备份后自动清过期、失败推企业微信群机器人。
 
-# 资产 / 上传图（app_storage 卷）
-docker run --rm -v inspectai_app_storage:/data -v "$PWD":/backup alpine \
-  tar czf /backup/app_storage.tgz -C /data .
+```bash
+# 手工备份一次（先干跑，确认环境和磁盘都 OK）
+bash scripts/backup.sh --dry-run
+bash scripts/backup.sh
+
+# 备份落在 ./backups/<日期>/，含 db.sql.gz / storage.tgz / secrets.tgz / SHA256SUMS
 ```
+
+### 装每天凌晨 3 点自动备份
+
+```bash
+# 写入 root 的 crontab（路径按服务器实际改）
+( crontab -l 2>/dev/null; \
+  echo "0 3 * * * cd /opt/inspectai-src/inspectai && bash scripts/backup.sh >> backups/cron.log 2>&1" \
+) | crontab -
+
+crontab -l          # 确认写进去了
+```
+
+保留策略：每日备份留 7 天，周日那份额外留到 28 天（脚本自动清理）。
+可用环境变量 `BACKUP_KEEP_DAILY` / `BACKUP_KEEP_WEEKLY` / `BACKUP_MIN_FREE_MB` 调整。
+
+### 恢复（含演练）
+
+**没恢复成功过的备份不算备份。** `scripts/restore.sh` 默认恢复到临时库，
+不碰生产，专门用来定期演练；覆盖生产必须显式 `--force-production` 并手工确认。
+
+```bash
+bash scripts/restore.sh --list                 # 看有哪些备份
+bash scripts/restore.sh 2026-07-22             # 演练：恢复到临时库并打印各表条数
+bash scripts/restore.sh 2026-07-22 --storage-to /tmp/photos   # 顺带解出照片核对
+bash scripts/restore.sh 2026-07-22 --force-production          # 真覆盖生产（危险，会二次确认）
+```
+
+> ⚠️ 本机备份能防误删/改错数据，防不了服务器整机故障。
+> 上线稳定后应尽快加一份异地副本（拉回开发机 / 传对象存储），这是真正的容灾。
 
 ## 8. 轮换 secret
 
