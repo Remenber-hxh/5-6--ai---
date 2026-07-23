@@ -229,6 +229,18 @@ func (s *Server) userFromSessionToken(token string) (*User, bool) {
 	return user, true
 }
 
+// tenantForRequest 解析当前请求所属租户,给 Store 层过滤用(Phase 0 第 4 步接入)。
+// 与 userRole/currentUserName 一致:按需从会话解析,不改中间件。
+// 无会话(本地免鉴权 / header 兜底)或用户未绑定租户时,回落默认租户 = 单租户安全行为。
+func (s *Server) tenantForRequest(r *http.Request) string {
+	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		if t := strings.TrimSpace(user.TenantID); t != "" {
+			return t
+		}
+	}
+	return defaultTenantID
+}
+
 func (s *Server) currentUserName(r *http.Request) string {
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 		if strings.TrimSpace(user.DisplayName) != "" {

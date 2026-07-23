@@ -129,6 +129,7 @@ func (s *MemStore) EnsureIdentitySeed(seed IdentitySeed) error {
 	}
 	u := &User{
 		ID:             "user_admin",
+		TenantID:       defaultTenantID,
 		Username:       seed.Username,
 		DisplayName:    seed.DisplayName,
 		RoleID:         "role_admin",
@@ -256,6 +257,9 @@ func (s *MemStore) CreateUser(user *User, password string) error {
 	if user.DepartmentID == "" {
 		user.DepartmentID = "dept_default"
 		user.DepartmentName = "默认部门"
+	}
+	if user.TenantID == "" {
+		user.TenantID = defaultTenantID
 	}
 	s.users[user.ID] = &memUser{user: cloneUser(user), passwordHash: hash}
 	return nil
@@ -479,9 +483,9 @@ func (s *SQLiteStore) EnsureIdentitySeed(seed IdentitySeed) error {
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
-			wework_user_id, password_hash, status, created_at, updated_at
-		) VALUES (?, ?, ?, '', '', 'role_admin', 'dept_default', '', ?, 'active', ?, ?)`,
-		"user_admin", seed.Username, seed.DisplayName, hash, now, now,
+			wework_user_id, password_hash, status, created_at, updated_at, tenant_id
+		) VALUES (?, ?, ?, '', '', 'role_admin', 'dept_default', '', ?, 'active', ?, ?, ?)`,
+		"user_admin", seed.Username, seed.DisplayName, hash, now, now, defaultTenantID,
 	)
 	return err
 }
@@ -651,14 +655,17 @@ func (s *SQLiteStore) CreateUser(user *User, password string) error {
 	if user.DepartmentID == "" {
 		user.DepartmentID = "dept_default"
 	}
+	if user.TenantID == "" {
+		user.TenantID = defaultTenantID // 未指定则归默认租户(单租户过渡期)
+	}
 	now := nowStamp()
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
-			wework_user_id, password_hash, status, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			wework_user_id, password_hash, status, created_at, updated_at, tenant_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		user.ID, user.Username, user.DisplayName, user.Phone, user.Avatar,
-		user.RoleID, user.DepartmentID, user.WeworkUserID, hash, user.Status, now, now,
+		user.RoleID, user.DepartmentID, user.WeworkUserID, hash, user.Status, now, now, user.TenantID,
 	)
 	if err != nil {
 		return err
@@ -918,7 +925,7 @@ func userSelectSQL() string {
 			COALESCE(r.code, ''), COALESCE(r.name, ''),
 			COALESCE(u.department_id, ''), COALESCE(d.name, ''),
 			u.wework_user_id, u.status, u.last_login_at, u.created_at, u.updated_at,
-			u.password_hash
+			COALESCE(u.tenant_id, ''), u.password_hash
 		FROM users u
 		LEFT JOIN roles r ON r.id=u.role_id
 		LEFT JOIN departments d ON d.id=u.department_id`
@@ -935,7 +942,7 @@ func scanUserWithHash(row userScanner) (*User, string, error) {
 	err := row.Scan(
 		&u.ID, &u.Username, &u.DisplayName, &phone, &avatar, &u.RoleID,
 		&u.RoleCode, &u.RoleName, &deptID, &deptName, &wework, &u.Status,
-		&lastLogin, &created, &updated, &passwordHash,
+		&lastLogin, &created, &updated, &u.TenantID, &passwordHash,
 	)
 	if err != nil {
 		return nil, "", err

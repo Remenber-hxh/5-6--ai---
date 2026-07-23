@@ -354,6 +354,7 @@ type SceneClassifyResult struct {
 // display names while the backend starts tracking real accounts.
 type User struct {
 	ID             string     `json:"id"`
+	TenantID       string     `json:"tenantId"`
 	Username       string     `json:"username"`
 	DisplayName    string     `json:"displayName"`
 	Phone          string     `json:"phone,omitempty"`
