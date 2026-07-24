@@ -76,7 +76,9 @@ type insightsContext struct {
 func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContext, error) {
 	now := time.Now()
 	start, end, days := rangeWindow(rangeKey, now)
-	assets, err := s.store.ListAssets()
+	// TODO 多租户:管理 AI 洞察层是下游消费者,随 management_ai 域租户化时
+	// 从各 handler 串入真实租户;单客户过渡期按默认租户。
+	assets, err := s.store.ListAssets(defaultTenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -853,7 +855,8 @@ type FieldFreqEntry struct {
 }
 
 func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat, error) {
-	asset, err := s.store.GetAsset(assetID)
+	// TODO 多租户:AI 工具层下游消费者,单客户过渡期按默认租户(见 buildInsightsContext)。
+	asset, err := s.store.GetAsset(defaultTenantID, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -1982,7 +1985,7 @@ func (s *Server) actCreateRecheckTask(w http.ResponseWriter, r *http.Request, as
 		writeError(w, http.StatusBadRequest, "missing_target", "缺少目标资产")
 		return
 	}
-	asset, err := s.store.GetAsset(assetID)
+	asset, err := s.store.GetAsset(s.tenantForRequest(r), assetID)
 	if err != nil || asset == nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "目标资产不存在")
 		return

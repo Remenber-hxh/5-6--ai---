@@ -100,7 +100,7 @@ func TestAssetMarkNormalClosesRectifyTasks(t *testing.T) {
 	if task, _ := srv.store.GetEngineeringTask("t_rectify"); task.CloseResult != "整改闭环" {
 		t.Errorf("t_rectify closeResult = %q, want 整改闭环", task.CloseResult)
 	}
-	if asset, _ := srv.store.GetAsset("A1"); asset.LastStatus != "正常" {
+	if asset, _ := srv.store.GetAsset(defaultTenantID, "A1"); asset.LastStatus != "正常" {
 		t.Errorf("asset status = %q, want 正常", asset.LastStatus)
 	}
 }
@@ -201,7 +201,7 @@ func TestApproveChangeRequestSyncsAssetAndClosesLoop(t *testing.T) {
 	if got := requestJSON(srv, http.MethodPost, "/api/change-requests/cr_reject/reject", tokens["supervisor"], `{"reviewNote":"证据不足"}`); got.Code != http.StatusOK {
 		t.Fatalf("reject = %d body=%s", got.Code, got.Body.String())
 	}
-	if asset, _ := srv.store.GetAsset("A2"); asset.LastStatus != "异常" {
+	if asset, _ := srv.store.GetAsset(defaultTenantID, "A2"); asset.LastStatus != "异常" {
 		t.Fatalf("after reject asset status = %q, want 异常", asset.LastStatus)
 	}
 	if cr, _ := srv.store.GetChangeRequest("cr_reject"); cr.Status != "rejected" {
@@ -220,7 +220,7 @@ func TestApproveChangeRequestSyncsAssetAndClosesLoop(t *testing.T) {
 	if cr.Status != "approved" || cr.AppliedAt == nil {
 		t.Errorf("cr_ok status=%q appliedAt=%v, want approved + non-nil", cr.Status, cr.AppliedAt)
 	}
-	if asset, _ := srv.store.GetAsset("A2"); asset.LastStatus != "正常" {
+	if asset, _ := srv.store.GetAsset(defaultTenantID, "A2"); asset.LastStatus != "正常" {
 		t.Errorf("after approve asset status = %q, want 正常", asset.LastStatus)
 	}
 	if task, _ := srv.store.GetEngineeringTask("t_a2"); task.Status != engTaskStatusDone {

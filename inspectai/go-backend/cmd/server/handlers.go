@@ -892,7 +892,7 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
-	assets, err := s.loadAssetsForDisplay()
+	assets, err := s.loadAssetsForDisplay(s.tenantForRequest(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_assets_failed", err.Error())
 		return
@@ -906,7 +906,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssetSummary(w http.ResponseWriter, r *http.Request) {
-	assets, err := s.loadAssetsForDisplay()
+	assets, err := s.loadAssetsForDisplay(s.tenantForRequest(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "asset_summary_failed", err.Error())
 		return
@@ -917,8 +917,8 @@ func (s *Server) handleAssetSummary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) loadAssetsForDisplay() ([]*AssetEntry, error) {
-	assets, err := s.store.ListAssets()
+func (s *Server) loadAssetsForDisplay(tenantID string) ([]*AssetEntry, error) {
+	assets, err := s.store.ListAssets(tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -951,7 +951,8 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 		}
 	}
 	for id, asset := range latestByAssetID {
-		if existing, err := s.store.GetAsset(id); err == nil && existing != nil {
+		// 启动时台账重建,无请求上下文;单租户过渡期按默认租户查存在性。
+		if existing, err := s.store.GetAsset(defaultTenantID, id); err == nil && existing != nil {
 			continue
 		}
 		if err := s.store.UpsertAsset(asset); err != nil {
@@ -1241,6 +1242,7 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	asset := &AssetEntry{
 		ID:          req.Project + "::" + tplPart + "::" + req.AssetKey,
+		TenantID:    s.tenantForRequest(r), // 新资产打上创建者所属租户
 		Project:     req.Project,
 		ProjectCode: req.Project,
 		PointID:     strings.TrimSpace(req.PointID),
@@ -1278,7 +1280,7 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request, id st
 	if !s.requirePermission(w, r, "asset_manage") {
 		return
 	}
-	asset, err := s.store.GetAsset(id)
+	asset, err := s.store.GetAsset(s.tenantForRequest(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "asset not found")
 		return
@@ -1314,7 +1316,7 @@ func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, 
 	if !s.requirePermission(w, r, "asset_manage") {
 		return
 	}
-	prev, err := s.store.GetAsset(id)
+	prev, err := s.store.GetAsset(s.tenantForRequest(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "asset not found")
 		return
@@ -1362,7 +1364,7 @@ func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, 
 
 // handleAssetRecords —— §3 按资产分页翻完整历史（查 asset_snapshots，不受记录列表窗口限制）
 func (s *Server) handleAssetRecords(w http.ResponseWriter, r *http.Request, id string) {
-	asset, err := s.store.GetAsset(id)
+	asset, err := s.store.GetAsset(s.tenantForRequest(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
@@ -1458,7 +1460,7 @@ func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id st
 		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可查看资产健康报告")
 		return
 	}
-	if _, err := s.store.GetAsset(id); err != nil {
+	if _, err := s.store.GetAsset(s.tenantForRequest(r), id); err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
 	}
@@ -1531,7 +1533,7 @@ func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id st
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request, id string) {
-	asset, err := s.store.GetAsset(id)
+	asset, err := s.store.GetAsset(s.tenantForRequest(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
@@ -2361,7 +2363,7 @@ func (s *Server) handleAIChat(w http.ResponseWriter, r *http.Request) {
 	if ctx == nil {
 		ctx = map[string]any{}
 	}
-	if assets, err := s.store.ListAssets(); err == nil {
+	if assets, err := s.store.ListAssets(s.tenantForRequest(r)); err == nil {
 		total, normal, warning, danger := 0, 0, 0, 0
 		for _, a := range assets {
 			total++
@@ -3490,7 +3492,7 @@ func (s *Server) handleCreateChangeRequest(w http.ResponseWriter, r *http.Reques
 	// 校验目标存在
 	switch req.TargetType {
 	case "asset":
-		if _, err := s.store.GetAsset(req.TargetID); err != nil {
+		if _, err := s.store.GetAsset(s.tenantForRequest(r), req.TargetID); err != nil {
 			writeError(w, http.StatusNotFound, "asset_not_found", "资产不存在")
 			return
 		}
@@ -3659,7 +3661,8 @@ func (s *Server) approveChangeRequestSQL(store *SQLiteStore, id, reviewer, note 
 func (s *Server) resolveNormalAfterChange(cr *ChangeRequest) {
 	switch cr.TargetType {
 	case "asset":
-		if a, err := s.store.GetAsset(cr.TargetID); err == nil && a != nil && a.LastStatus == "正常" {
+		// 变更审批流暂按默认租户;change_requests 域租户化时随 cr 串入真实租户。
+		if a, err := s.store.GetAsset(defaultTenantID, cr.TargetID); err == nil && a != nil && a.LastStatus == "正常" {
 			s.onAssetResolvedNormal(a.ID)
 		}
 	case "record":
@@ -3668,7 +3671,7 @@ func (s *Server) resolveNormalAfterChange(cr *ChangeRequest) {
 			return
 		}
 		for _, asset := range buildAssets(rec, time.Now()) {
-			if a, err := s.store.GetAsset(asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID && a.LastStatus == "正常" {
+			if a, err := s.store.GetAsset(defaultTenantID, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID && a.LastStatus == "正常" {
 				s.onAssetResolvedNormal(a.ID)
 			}
 		}
@@ -3755,7 +3758,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 			return cleanupFiles, err
 		}
 		for _, asset := range buildAssets(rec, time.Now()) {
-			if a, err := getAssetExec(exec, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
+			if a, err := getAssetByID(exec, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
 				if err := updateAssetMetaExec(exec, asset.ID, "", asset.LastStatus, asset.LastSummary); err != nil {
 					return cleanupFiles, err
 				}
@@ -4005,7 +4008,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		}
 		// 同步资产 last_status / last_summary。
 		for _, asset := range buildAssets(rec, time.Now()) {
-			if a, err := s.store.GetAsset(asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
+			if a, err := s.store.GetAsset(defaultTenantID, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
 				_, _ = s.store.UpdateAssetMeta(asset.ID, "", asset.LastStatus, asset.LastSummary)
 				// 字段级审批通过后资产重算为正常 → 异常闭环回写（与「标记正常」「资产级审批」「复检」一致）
 				if asset.LastStatus == "正常" {

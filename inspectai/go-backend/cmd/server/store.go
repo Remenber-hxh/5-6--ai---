@@ -52,8 +52,8 @@ type AssetStore interface {
 	// SubmitRecordWithAssets —— 原子提交:日报、资产台账、资产快照、字段观测同事务写入,
 	// 失败整体回滚,避免出现"日报已提交但快照没记录"的数据缺口。
 	SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error
-	ListAssets() ([]*AssetEntry, error)
-	GetAsset(id string) (*AssetEntry, error)
+	ListAssets(tenantID string) ([]*AssetEntry, error)
+	GetAsset(tenantID, id string) (*AssetEntry, error)
 	UpdateAssetMeta(id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
 	// UpdateAssetCover 仅更新主管指定的封面图路径 cover_image_path。
 	UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error)
@@ -376,6 +376,10 @@ func (s *MemStore) UpsertAsset(asset *AssetEntry) error {
 
 func (s *MemStore) upsertAssetLocked(asset *AssetEntry) error {
 	now := time.Now()
+	if asset.TenantID == "" {
+		// 与 SQLiteStore.UpsertAsset 一致:未指定归默认租户(SQLite 侧靠列默认值)
+		asset.TenantID = defaultTenantID
+	}
 	if asset.LastInspectedAt.IsZero() {
 		asset.LastInspectedAt = now
 	}
@@ -458,11 +462,14 @@ func (s *MemStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, sna
 	return nil
 }
 
-func (s *MemStore) ListAssets() ([]*AssetEntry, error) {
+func (s *MemStore) ListAssets(tenantID string) ([]*AssetEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*AssetEntry, 0, len(s.assets))
 	for _, a := range s.assets {
+		if a.TenantID != tenantID {
+			continue // 租户隔离:只返回本租户资产
+		}
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -471,12 +478,12 @@ func (s *MemStore) ListAssets() ([]*AssetEntry, error) {
 	return out, nil
 }
 
-func (s *MemStore) GetAsset(id string) (*AssetEntry, error) {
+func (s *MemStore) GetAsset(tenantID, id string) (*AssetEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	a, ok := s.assets[id]
-	if !ok {
-		return nil, sql.ErrNoRows
+	if !ok || a.TenantID != tenantID {
+		return nil, sql.ErrNoRows // 跨租户等同不存在
 	}
 	return a, nil
 }
@@ -508,6 +515,9 @@ func (s *MemStore) CreateAsset(asset *AssetEntry) error {
 	defer s.mu.Unlock()
 	if _, ok := s.assets[asset.ID]; ok {
 		return errors.New("asset already exists")
+	}
+	if asset.TenantID == "" {
+		asset.TenantID = defaultTenantID // 与 SQLiteStore 一致:未指定归默认租户
 	}
 	now := time.Now()
 	asset.CreatedAt = now
@@ -975,8 +985,23 @@ func (s *SQLiteStore) hasIndex(table, indexName string) (bool, error) {
 }
 
 func (s *SQLiteStore) backfillAssetDisplayColumns() error {
-	assets, err := s.ListAssets()
+	// 历史列回填发生在 migration 002 期,此刻 tenant_id 列尚不存在,
+	// 故只取本函数派生所需的列、不经 scanAsset(避免引用后续迁移才加的 tenant_id)。
+	rows, err := s.db.Query(`SELECT id, project, template_id, asset_key, asset_name, last_status FROM assets`)
 	if err != nil {
+		return err
+	}
+	var assets []*AssetEntry
+	for rows.Next() {
+		a := &AssetEntry{}
+		if scanErr := rows.Scan(&a.ID, &a.Project, &a.TemplateID, &a.AssetKey, &a.AssetName, &a.LastStatus); scanErr != nil {
+			rows.Close()
+			return scanErr
+		}
+		assets = append(assets, a)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
 		return err
 	}
 	for _, a := range assets {
@@ -1358,6 +1383,9 @@ func scanTask(row scanner) (*AITask, error) {
 }
 
 func (s *SQLiteStore) UpsertAsset(asset *AssetEntry) error {
+	// TODO 多租户:tenant_id 暂由列默认值('tenant_default')落定,故 upsert 出的资产
+	// 恒归默认租户。提交流(SubmitRecordWithAssets)携带真实租户时,需把 asset.TenantID
+	// 显式写进本 INSERT 并在 ON CONFLICT 中保持不变。单客户过渡期行为正确。
 	return upsertAssetExec(s.db, s.dialect, asset)
 }
 
@@ -1463,14 +1491,17 @@ func (s *SQLiteStore) SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, 
 	return tx.Commit()
 }
 
-func (s *SQLiteStore) ListAssets() ([]*AssetEntry, error) {
-	rows, err := s.db.Query(`
-		SELECT id, project_code, project, point_id, template_id,
-		       asset_type, asset_key, asset_name, last_record_id,
-		       last_status, status_level, status_order, last_summary,
-		       last_inspected_at, last_inspector, last_photo_path,
-		       cover_image_path, inspection_count, created_at, updated_at
-		FROM assets ORDER BY updated_at DESC`)
+// assetSelectCols —— 资产查询列清单单一真源,三处 SELECT 共用,防列序漂移。
+// 顺序必须与 scanAsset 的 Scan 目标严格一致。
+const assetSelectCols = `id, project_code, project, point_id, template_id,
+	asset_type, asset_key, asset_name, last_record_id,
+	last_status, status_level, status_order, last_summary,
+	last_inspected_at, last_inspector, last_photo_path,
+	cover_image_path, inspection_count, created_at, updated_at, tenant_id`
+
+func (s *SQLiteStore) ListAssets(tenantID string) ([]*AssetEntry, error) {
+	rows, err := s.db.Query(
+		`SELECT `+assetSelectCols+` FROM assets WHERE tenant_id=? ORDER BY updated_at DESC`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1486,18 +1517,20 @@ func (s *SQLiteStore) ListAssets() ([]*AssetEntry, error) {
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) GetAsset(id string) (*AssetEntry, error) {
-	return getAssetExec(s.db, id)
+func (s *SQLiteStore) GetAsset(tenantID, id string) (*AssetEntry, error) {
+	return getAssetExec(s.db, tenantID, id)
 }
 
-func getAssetExec(queryer sqlQueryer, id string) (*AssetEntry, error) {
-	row := queryer.QueryRow(`
-		SELECT id, project_code, project, point_id, template_id,
-		       asset_type, asset_key, asset_name, last_record_id,
-		       last_status, status_level, status_order, last_summary,
-		       last_inspected_at, last_inspector, last_photo_path,
-		       cover_image_path, inspection_count, created_at, updated_at
-		FROM assets WHERE id=?`, id)
+func getAssetExec(queryer sqlQueryer, tenantID, id string) (*AssetEntry, error) {
+	row := queryer.QueryRow(
+		`SELECT `+assetSelectCols+` FROM assets WHERE id=? AND tenant_id=?`, id, tenantID)
+	return scanAsset(row)
+}
+
+// getAssetByID —— 不带租户过滤的按 id 读取,仅供内部「写后读回」(update 后返回最新行)
+// 和跨租户维护任务用。对外读取一律走 GetAsset(tenantID, id)。
+func getAssetByID(queryer sqlQueryer, id string) (*AssetEntry, error) {
+	row := queryer.QueryRow(`SELECT `+assetSelectCols+` FROM assets WHERE id=?`, id)
 	return scanAsset(row)
 }
 
@@ -1507,7 +1540,7 @@ func (s *SQLiteStore) UpdateAssetMeta(id, name, status, summary string) (*AssetE
 	if err := updateAssetMetaExec(s.db, id, name, status, summary); err != nil {
 		return nil, err
 	}
-	return s.GetAsset(id)
+	return getAssetByID(s.db, id) // 写后读回:按 id(租户闸门在 handler 层前置校验)
 }
 
 // ===== 权限矩阵:SQLiteStore(SQLite + MySQL)实现 =====
@@ -1550,18 +1583,21 @@ func (s *SQLiteStore) ReplaceRolePermissions(matrix map[string][]string) error {
 
 // CreateAsset 手工建档:纯 INSERT,重复主键即报错(与巡检驱动的 UpsertAsset 区分,巡检数从 0 起)。
 func (s *SQLiteStore) CreateAsset(asset *AssetEntry) error {
+	if asset.TenantID == "" {
+		asset.TenantID = defaultTenantID // 未指定则归默认租户(单租户过渡期)
+	}
 	now := nowStamp()
 	_, err := s.db.Exec(`
 		INSERT INTO assets (id, project_code, project, point_id, template_id,
 		                    asset_type, asset_key, asset_name, last_record_id,
 		                    last_status, status_level, status_order, last_summary,
 		                    last_inspected_at, last_inspector, last_photo_path,
-		                    cover_image_path, inspection_count, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, NULL, '', '', '', 0, ?, ?)`,
+		                    cover_image_path, inspection_count, created_at, updated_at, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, NULL, '', '', '', 0, ?, ?, ?)`,
 		asset.ID, asset.ProjectCode, asset.Project, asset.PointID, asset.TemplateID,
 		asset.AssetType, asset.AssetKey, asset.AssetName,
 		asset.LastStatus, asset.StatusLevel, asset.StatusOrder, asset.LastSummary,
-		now, now,
+		now, now, asset.TenantID,
 	)
 	if err != nil && (strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "UNIQUE")) {
 		return errors.New("asset already exists")
@@ -1597,7 +1633,7 @@ func (s *SQLiteStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, 
 	if err := updateAssetCoverExec(s.db, id, coverImagePath); err != nil {
 		return nil, err
 	}
-	return s.GetAsset(id)
+	return getAssetByID(s.db, id) // 写后读回:按 id(租户闸门在 handler 层前置校验)
 }
 
 func updateAssetCoverExec(exec sqlExecutor, id, coverImagePath string) error {
@@ -1650,7 +1686,7 @@ func scanAsset(row scanner) (*AssetEntry, error) {
 		&a.AssetType, &a.AssetKey, &a.AssetName, &lastRecordID,
 		&a.LastStatus, &a.StatusLevel, &a.StatusOrder, &a.LastSummary,
 		&lastInspectedStr, &a.LastInspector, &a.LastPhotoPath, &a.CoverImagePath,
-		&a.InspectionCount, &createdStr, &updatedStr,
+		&a.InspectionCount, &createdStr, &updatedStr, &a.TenantID,
 	)
 	if err != nil {
 		return nil, err

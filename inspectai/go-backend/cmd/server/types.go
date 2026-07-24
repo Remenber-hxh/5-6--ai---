@@ -266,6 +266,7 @@ type Progress struct {
 // AssetEntry — 资产台账条目
 type AssetEntry struct {
 	ID              string    `json:"id"` // {project}::{templateId}::{assetIdent}
+	TenantID        string    `json:"tenantId,omitempty"`
 	ProjectCode     string    `json:"projectCode,omitempty"`
 	Project         string    `json:"project"`
 	PointID         string    `json:"pointId,omitempty"`
