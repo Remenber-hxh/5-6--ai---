@@ -54,11 +54,11 @@ type AssetStore interface {
 	SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error
 	ListAssets(tenantID string) ([]*AssetEntry, error)
 	GetAsset(tenantID, id string) (*AssetEntry, error)
-	UpdateAssetMeta(id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
+	UpdateAssetMeta(tenantID, id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
 	// UpdateAssetCover 仅更新主管指定的封面图路径 cover_image_path。
-	UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error)
+	UpdateAssetCover(tenantID, id, coverImagePath string) (*AssetEntry, error)
 	// DeleteAsset 删除资产及其快照/字段观测(巡检记录保留作历史证据)。
-	DeleteAsset(id string) error
+	DeleteAsset(tenantID, id string) error
 	// 幂等写入,按 asset_id 完整翻历史
 	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
 	ListAssetSnapshots(assetID string, limit, offset int) ([]*AssetSnapshot, error)
@@ -527,11 +527,11 @@ func (s *MemStore) CreateAsset(asset *AssetEntry) error {
 	return nil
 }
 
-func (s *MemStore) DeleteAsset(id string) error {
+func (s *MemStore) DeleteAsset(tenantID, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.assets[id]; !ok {
-		return sql.ErrNoRows
+	if a, ok := s.assets[id]; !ok || a.TenantID != tenantID {
+		return sql.ErrNoRows // 跨租户等同不存在
 	}
 	delete(s.assets, id)
 	snaps := s.assetSnapshots[:0]
@@ -551,24 +551,24 @@ func (s *MemStore) DeleteAsset(id string) error {
 	return nil
 }
 
-func (s *MemStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error) {
+func (s *MemStore) UpdateAssetCover(tenantID, id, coverImagePath string) (*AssetEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	a, ok := s.assets[id]
-	if !ok {
-		return nil, sql.ErrNoRows
+	if !ok || a.TenantID != tenantID {
+		return nil, sql.ErrNoRows // 跨租户等同不存在
 	}
 	a.CoverImagePath = coverImagePath
 	a.UpdatedAt = time.Now()
 	return a, nil
 }
 
-func (s *MemStore) UpdateAssetMeta(id, name, status, summary string) (*AssetEntry, error) {
+func (s *MemStore) UpdateAssetMeta(tenantID, id, name, status, summary string) (*AssetEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	a, ok := s.assets[id]
-	if !ok {
-		return nil, sql.ErrNoRows
+	if !ok || a.TenantID != tenantID {
+		return nil, sql.ErrNoRows // 跨租户等同不存在
 	}
 	if name != "" {
 		a.AssetName = name
@@ -1536,11 +1536,11 @@ func getAssetByID(queryer sqlQueryer, id string) (*AssetEntry, error) {
 
 // UpdateAssetMeta 仅允许编辑 assetName / lastStatus / lastSummary。
 // 空字符串视为不改动该字段（partial update 语义）。
-func (s *SQLiteStore) UpdateAssetMeta(id, name, status, summary string) (*AssetEntry, error) {
-	if err := updateAssetMetaExec(s.db, id, name, status, summary); err != nil {
+func (s *SQLiteStore) UpdateAssetMeta(tenantID, id, name, status, summary string) (*AssetEntry, error) {
+	if err := updateAssetMetaExec(s.db, tenantID, id, name, status, summary); err != nil {
 		return nil, err
 	}
-	return getAssetByID(s.db, id) // 写后读回:按 id(租户闸门在 handler 层前置校验)
+	return getAssetByID(s.db, id) // 写后读回:租户已在上面的 UPDATE 中校验过
 }
 
 // ===== 权限矩阵:SQLiteStore(SQLite + MySQL)实现 =====
@@ -1606,13 +1606,14 @@ func (s *SQLiteStore) CreateAsset(asset *AssetEntry) error {
 }
 
 // DeleteAsset 事务删除资产 + 快照 + 字段观测;巡检记录保留(历史证据不随资产消失)。
-func (s *SQLiteStore) DeleteAsset(id string) error {
+func (s *SQLiteStore) DeleteAsset(tenantID, id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`DELETE FROM assets WHERE id=?`, id)
+	// 跨租户删除影响 0 行 → ErrNoRows → 上层 404,等同不存在
+	res, err := tx.Exec(`DELETE FROM assets WHERE id=? AND tenant_id=?`, id, tenantID)
 	if err != nil {
 		return err
 	}
@@ -1629,17 +1630,18 @@ func (s *SQLiteStore) DeleteAsset(id string) error {
 }
 
 // UpdateAssetCover 仅更新封面图路径 cover_image_path，其余字段不动。
-func (s *SQLiteStore) UpdateAssetCover(id, coverImagePath string) (*AssetEntry, error) {
-	if err := updateAssetCoverExec(s.db, id, coverImagePath); err != nil {
+func (s *SQLiteStore) UpdateAssetCover(tenantID, id, coverImagePath string) (*AssetEntry, error) {
+	if err := updateAssetCoverExec(s.db, tenantID, id, coverImagePath); err != nil {
 		return nil, err
 	}
-	return getAssetByID(s.db, id) // 写后读回:按 id(租户闸门在 handler 层前置校验)
+	return getAssetByID(s.db, id) // 写后读回:租户已在上面的 UPDATE 中校验过
 }
 
-func updateAssetCoverExec(exec sqlExecutor, id, coverImagePath string) error {
+func updateAssetCoverExec(exec sqlExecutor, tenantID, id, coverImagePath string) error {
 	now := nowStamp()
 	res, err := exec.Exec(`
-		UPDATE assets SET cover_image_path = ?, updated_at = ? WHERE id = ?`, coverImagePath, now, id)
+		UPDATE assets SET cover_image_path = ?, updated_at = ?
+		WHERE id = ? AND tenant_id = ?`, coverImagePath, now, id, tenantID)
 	if err != nil {
 		return err
 	}
@@ -1649,7 +1651,7 @@ func updateAssetCoverExec(exec sqlExecutor, id, coverImagePath string) error {
 	return nil
 }
 
-func updateAssetMetaExec(exec sqlExecutor, id, name, status, summary string) error {
+func updateAssetMetaExec(exec sqlExecutor, tenantID, id, name, status, summary string) error {
 	now := nowStamp()
 	res, err := exec.Exec(`
 		UPDATE assets SET
@@ -1659,13 +1661,13 @@ func updateAssetMetaExec(exec sqlExecutor, id, name, status, summary string) err
 			status_order = CASE WHEN ?='' THEN status_order ELSE ? END,
 			last_summary = CASE WHEN ?='' THEN last_summary ELSE ? END,
 			updated_at   = ?
-		WHERE id = ?`,
+		WHERE id = ? AND tenant_id = ?`,
 		name, name,
 		status, status,
 		status, statusLevel(status),
 		status, statusOrder(status),
 		summary, summary,
-		now, id,
+		now, id, tenantID,
 	)
 	if err != nil {
 		return err

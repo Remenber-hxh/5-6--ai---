@@ -1295,7 +1295,7 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request, id st
 			}
 		}
 	}
-	if err := s.store.DeleteAsset(id); err != nil {
+	if err := s.store.DeleteAsset(s.tenantForRequest(r), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 		return
 	}
@@ -1339,7 +1339,7 @@ func (s *Server) handleAssetCoverUpload(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, "save_failed", err.Error())
 		return
 	}
-	asset, err := s.store.UpdateAssetCover(id, img.Path)
+	asset, err := s.store.UpdateAssetCover(s.tenantForRequest(r), id, img.Path)
 	if err != nil {
 		// DB 更新失败:回滚刚落盘的文件,避免留下孤儿
 		_ = os.Remove(img.Path)
@@ -1573,7 +1573,7 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 	}
-	asset, err := s.store.UpdateAssetMeta(id, req.AssetName, req.LastStatus, req.LastSummary)
+	asset, err := s.store.UpdateAssetMeta(s.tenantForRequest(r), id, req.AssetName, req.LastStatus, req.LastSummary)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在或更新失败")
 		return
@@ -3688,7 +3688,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 		if name == "" && status == "" && summary == "" {
 			return nil, fmt.Errorf("asset patch 为空")
 		}
-		return nil, updateAssetMetaExec(exec, cr.TargetID, name, status, summary)
+		return nil, updateAssetMetaExec(exec, defaultTenantID, cr.TargetID, name, status, summary)
 	case "record":
 		rec, err := getRecordExec(exec, cr.TargetID)
 		if err != nil {
@@ -3759,7 +3759,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 		}
 		for _, asset := range buildAssets(rec, time.Now()) {
 			if a, err := getAssetByID(exec, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
-				if err := updateAssetMetaExec(exec, asset.ID, "", asset.LastStatus, asset.LastSummary); err != nil {
+				if err := updateAssetMetaExec(exec, defaultTenantID, asset.ID, "", asset.LastStatus, asset.LastSummary); err != nil {
 					return cleanupFiles, err
 				}
 			}
@@ -3931,7 +3931,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		if name == "" && status == "" && summary == "" {
 			return fmt.Errorf("asset patch 为空")
 		}
-		_, err := s.store.UpdateAssetMeta(cr.TargetID, name, status, summary)
+		_, err := s.store.UpdateAssetMeta(defaultTenantID, cr.TargetID, name, status, summary)
 		if err == nil && status == "正常" {
 			// 修改审批通过、资产改回正常 → 异常闭环回写
 			s.onAssetResolvedNormal(cr.TargetID)
@@ -4009,7 +4009,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		// 同步资产 last_status / last_summary。
 		for _, asset := range buildAssets(rec, time.Now()) {
 			if a, err := s.store.GetAsset(defaultTenantID, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
-				_, _ = s.store.UpdateAssetMeta(asset.ID, "", asset.LastStatus, asset.LastSummary)
+				_, _ = s.store.UpdateAssetMeta(defaultTenantID, asset.ID, "", asset.LastStatus, asset.LastSummary)
 				// 字段级审批通过后资产重算为正常 → 异常闭环回写（与「标记正常」「资产级审批」「复检」一致）
 				if asset.LastStatus == "正常" {
 					s.onAssetResolvedNormal(asset.ID)

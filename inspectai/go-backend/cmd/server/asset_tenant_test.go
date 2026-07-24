@@ -45,3 +45,48 @@ func TestAssetTenantIsolation(t *testing.T) {
 		t.Errorf("GetAsset(t_b, b1) = %v (err=%v), 期望本租户可见且 TenantID=t_b", got, err)
 	}
 }
+
+// 跨租户「写」隔离。此前 handlePatchAsset 未做前置校验、直接调 UpdateAssetMeta,
+// 租户 A 可改租户 B 的资产 —— 该洞由本用例锁死:三个 mutation 一律在 Store 层按租户过滤。
+func TestAssetTenantIsolationOnMutations(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "iso_w.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.CreateAsset(&AssetEntry{
+		ID: "b1", TenantID: "t_b", Project: "P", AssetKey: "b1", AssetName: "原名", LastStatus: "异常",
+	}); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+
+	// 租户 A 改租户 B 的资产 → 必须失败
+	if _, err := store.UpdateAssetMeta("t_a", "b1", "被篡改", "正常", "x"); err == nil {
+		t.Error("UpdateAssetMeta(t_a, b1) 跨租户写入竟成功了")
+	}
+	if _, err := store.UpdateAssetCover("t_a", "b1", "/evil.jpg"); err == nil {
+		t.Error("UpdateAssetCover(t_a, b1) 跨租户写入竟成功了")
+	}
+	if err := store.DeleteAsset("t_a", "b1"); err == nil {
+		t.Error("DeleteAsset(t_a, b1) 跨租户删除竟成功了")
+	}
+
+	// 数据未被动过
+	got, err := store.GetAsset("t_b", "b1")
+	if err != nil || got == nil {
+		t.Fatalf("GetAsset(t_b, b1): %v", err)
+	}
+	if got.AssetName != "原名" || got.LastStatus != "异常" || got.CoverImagePath != "" {
+		t.Errorf("资产被跨租户改动了: name=%q status=%q cover=%q",
+			got.AssetName, got.LastStatus, got.CoverImagePath)
+	}
+
+	// 本租户操作正常
+	if _, err := store.UpdateAssetMeta("t_b", "b1", "新名", "", ""); err != nil {
+		t.Errorf("本租户 UpdateAssetMeta 失败: %v", err)
+	}
+	if err := store.DeleteAsset("t_b", "b1"); err != nil {
+		t.Errorf("本租户 DeleteAsset 失败: %v", err)
+	}
+}
