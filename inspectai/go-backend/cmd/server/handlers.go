@@ -295,7 +295,7 @@ func (s *Server) canAccessRecord(r *http.Request, rec *Record, write bool) bool 
 }
 
 func (s *Server) requireRecordAccess(w http.ResponseWriter, r *http.Request, recordID string, write bool) (*Record, bool) {
-	rec, err := s.store.GetRecord(recordID)
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return nil, false
@@ -934,7 +934,8 @@ func (s *Server) loadAssetsForDisplay(tenantID string) ([]*AssetEntry, error) {
 }
 
 func (s *Server) ensureAssetLedgerFromRecords() error {
-	records, err := s.store.ListRecords(500)
+	// 启动时台账重建,无请求上下文;单租户过渡期按默认租户。
+	records, err := s.store.ListRecords(defaultTenantID, 500)
 	if err != nil {
 		return err
 	}
@@ -986,7 +987,7 @@ func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 	if a.LastRecordID == "" {
 		return
 	}
-	rec, err := s.store.GetRecord(a.LastRecordID)
+	rec, err := s.store.GetRecord(a.TenantID, a.LastRecordID)
 	if err != nil || rec == nil {
 		return
 	}
@@ -1012,7 +1013,7 @@ func (s *Server) sanitizeAssetsForRequest(r *http.Request, assets []*AssetEntry)
 		}
 		clean := *asset
 		if clean.LastRecordID != "" {
-			if rec, err := s.store.GetRecord(clean.LastRecordID); err == nil && !s.canAccessRecord(r, rec, false) {
+			if rec, err := s.store.GetRecord(s.tenantForRequest(r), clean.LastRecordID); err == nil && !s.canAccessRecord(r, rec, false) {
 				if clean.CoverImagePath == "" {
 					clean.CoverImage = nil
 				}
@@ -1391,7 +1392,7 @@ func (s *Server) handleAssetRecords(w http.ResponseWriter, r *http.Request, id s
 		}
 		visible := make([]*AssetSnapshot, 0, len(all))
 		for _, snap := range all {
-			rec, recordErr := s.store.GetRecord(snap.RecordID)
+			rec, recordErr := s.store.GetRecord(s.tenantForRequest(r), snap.RecordID)
 			if recordErr == nil && s.canAccessRecord(r, rec, false) {
 				visible = append(visible, snap)
 			}
@@ -1593,7 +1594,7 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 // collectAssetHistory 从所有 records 里筛出归到该资产的。
 // 简单实现：遍历最近 200 条 record，过滤 + 排序。
 func (s *Server) collectAssetHistory(r *http.Request, asset *AssetEntry, limit int) []*Record {
-	all, err := s.store.ListRecords(200)
+	all, err := s.store.ListRecords(s.tenantForRequest(r), 200)
 	if err != nil {
 		return nil
 	}
@@ -1675,11 +1676,11 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	var records []*Record
 	var err error
 	if s.hasSupervisorAccess(r) {
-		records, err = s.store.ListRecords(100)
+		records, err = s.store.ListRecords(s.tenantForRequest(r), 100)
 	} else if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-		records, err = s.store.ListRecordsByOwner(user.ID, user.DisplayName, user.Username, 100)
+		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, 100)
 	} else if s.localNoAuthAllowed(r) {
-		records, err = s.store.ListRecordsByOwner("", userName(r), "", 100)
+		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), "", userName(r), "", 100)
 	} else {
 		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
 		return
@@ -1834,8 +1835,8 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleGetRecord(w http.ResponseWriter, _ *http.Request, id string) {
-	rec, err := s.store.GetRecord(id)
+func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request, id string) {
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
@@ -1844,7 +1845,7 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, _ *http.Request, id stri
 }
 
 func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, recordID string) {
-	rec, err := s.store.GetRecord(recordID)
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
@@ -1891,8 +1892,8 @@ func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, reco
 	writeJSON(w, http.StatusCreated, map[string]any{"images": saved, "record": sanitizeRecordForCurrentTemplate(rec)})
 }
 
-func (s *Server) handleStartAnalysis(w http.ResponseWriter, _ *http.Request, recordID string) {
-	rec, err := s.store.GetRecord(recordID)
+func (s *Server) handleStartAnalysis(w http.ResponseWriter, r *http.Request, recordID string) {
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
@@ -1937,7 +1938,7 @@ func (s *Server) handleStartAnalysis(w http.ResponseWriter, _ *http.Request, rec
 	rec.TaskID = task.ID
 	_ = s.store.UpdateRecord(rec)
 
-	go s.runAnalysis(task.ID, recordID)
+	go s.runAnalysis(s.tenantForRequest(r), task.ID, recordID)
 	writeJSON(w, http.StatusAccepted, task)
 }
 
@@ -1956,7 +1957,7 @@ func recentImagesForAnalysis(images []ImageInfo, maxImages int) []ImageInfo {
 	return images[len(images)-maxImages:]
 }
 
-func (s *Server) runAnalysis(taskID, recordID string) {
+func (s *Server) runAnalysis(tenantID, taskID, recordID string) {
 	// 并发闸:同时进行的视觉识别有上限(INSPECTAI_AI_CONCURRENCY,默认 3),
 	// 超出的排队等待;免费档限流下无脑并发只会整体更慢。
 	s.aiSem <- struct{}{}
@@ -1966,7 +1967,7 @@ func (s *Server) runAnalysis(taskID, recordID string) {
 		t.Status = "processing"
 	})
 
-	rec, err := s.store.GetRecord(recordID)
+	rec, err := s.store.GetRecord(tenantID, recordID)
 	if err != nil {
 		_ = s.store.UpdateTask(taskID, func(t *AITask) {
 			t.Status = "failed"
@@ -2016,7 +2017,7 @@ func (s *Server) runAnalysis(taskID, recordID string) {
 		failed, failReason = recognitionFailed(resp, tpl)
 	}
 
-	rec, _ = s.store.GetRecord(recordID)
+	rec, _ = s.store.GetRecord(tenantID, recordID)
 	if rec == nil {
 		return
 	}
@@ -2089,7 +2090,7 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	rec, err := s.store.GetRecord(recordID)
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
@@ -2168,8 +2169,8 @@ func (s *Server) handleListConfirmLogs(w http.ResponseWriter, r *http.Request, r
 	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
 }
 
-func (s *Server) handleEnableManual(w http.ResponseWriter, _ *http.Request, recordID string) {
-	rec, err := s.store.GetRecord(recordID)
+func (s *Server) handleEnableManual(w http.ResponseWriter, r *http.Request, recordID string) {
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
@@ -2190,7 +2191,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		writeError(w, http.StatusBadRequest, "missing_idempotency_key", "提交需要 Idempotency-Key")
 		return
 	}
-	rec, err := s.store.GetRecord(recordID)
+	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
@@ -2254,7 +2255,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 	switch claim {
 	case submissionClaimed:
 	case submissionDuplicate:
-		latest, latestErr := s.store.GetRecord(recordID)
+		latest, latestErr := s.store.GetRecord(s.tenantForRequest(r), recordID)
 		if latestErr == nil && latest.Submitted {
 			writeJSON(w, http.StatusOK, sanitizeRecordForCurrentTemplate(latest))
 			return
@@ -2381,7 +2382,7 @@ func (s *Server) handleAIChat(w http.ResponseWriter, r *http.Request) {
 		ctx["assetWarning"] = warning
 		ctx["assetDanger"] = danger
 	}
-	if recs, err := s.store.ListRecords(1000); err == nil {
+	if recs, err := s.store.ListRecords(s.tenantForRequest(r), 1000); err == nil {
 		ctx["recordTotal"] = len(recs)
 	}
 	if reqs, err := s.store.ListChangeRequests(ChangeRequestFilter{}); err == nil {
@@ -2646,7 +2647,7 @@ func (s *Server) adoptTmpImages(recordID, tmpDir string, imageIDs []string) ([]I
 }
 
 func (s *Server) lookupAssetHistory(rec *Record) any {
-	all, err := s.store.ListRecords(100)
+	all, err := s.store.ListRecords(rec.TenantID, 100)
 	if err != nil {
 		return nil
 	}
@@ -3149,7 +3150,8 @@ func buildRecordObservations(rec *Record, assets []*AssetEntry, t time.Time) ([]
 
 // backfillAssetSnapshots 启动时把已有的已提交记录补成快照/观测（幂等，靠唯一索引去重）。
 func (s *Server) backfillAssetSnapshots() error {
-	records, err := s.store.ListRecords(2000)
+	// 快照回填是跨租户维护任务,单租户过渡期按默认租户。
+	records, err := s.store.ListRecords(defaultTenantID, 2000)
 	if err != nil {
 		return err
 	}
@@ -3666,7 +3668,7 @@ func (s *Server) resolveNormalAfterChange(cr *ChangeRequest) {
 			s.onAssetResolvedNormal(a.ID)
 		}
 	case "record":
-		rec, err := s.store.GetRecord(cr.TargetID)
+		rec, err := s.store.GetRecord(defaultTenantID, cr.TargetID)
 		if err != nil || rec == nil {
 			return
 		}
@@ -3690,7 +3692,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 		}
 		return nil, updateAssetMetaExec(exec, defaultTenantID, cr.TargetID, name, status, summary)
 	case "record":
-		rec, err := getRecordExec(exec, cr.TargetID)
+		rec, err := getRecordByID(exec, cr.TargetID)
 		if err != nil {
 			return nil, err
 		}
@@ -3938,7 +3940,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		}
 		return err
 	case "record":
-		rec, err := s.store.GetRecord(cr.TargetID)
+		rec, err := s.store.GetRecord(defaultTenantID, cr.TargetID)
 		if err != nil {
 			return err
 		}

@@ -29,10 +29,10 @@ var schemaMySQL string
 // RecordStore — 巡检记录
 type RecordStore interface {
 	CreateRecord(rec *Record) error
-	GetRecord(id string) (*Record, error)
+	GetRecord(tenantID, id string) (*Record, error)
 	UpdateRecord(rec *Record) error
-	ListRecords(limit int) ([]*Record, error)
-	ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+	ListRecords(tenantID string, limit int) ([]*Record, error)
+	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
 }
 
 // AITaskStore — 视觉识别任务
@@ -259,6 +259,9 @@ func (s *MemStore) UpsertPromptTemplate(t PromptTemplate) error {
 func (s *MemStore) CreateRecord(rec *Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if rec.TenantID == "" {
+		rec.TenantID = defaultTenantID
+	}
 	if strings.TrimSpace(rec.RecordNo) == "" {
 		rec.RecordNo = businessRecordNo(rec.ID, rec.Project, rec.PointID, rec.PointName, rec.CreatedAt)
 	}
@@ -266,12 +269,12 @@ func (s *MemStore) CreateRecord(rec *Record) error {
 	return nil
 }
 
-func (s *MemStore) GetRecord(id string) (*Record, error) {
+func (s *MemStore) GetRecord(tenantID, id string) (*Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	rec, ok := s.records[id]
-	if !ok {
-		return nil, sql.ErrNoRows
+	if !ok || rec.TenantID != tenantID {
+		return nil, sql.ErrNoRows // 跨租户等同不存在
 	}
 	return rec, nil
 }
@@ -279,7 +282,13 @@ func (s *MemStore) GetRecord(id string) (*Record, error) {
 func (s *MemStore) UpdateRecord(rec *Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.records[rec.ID]; !ok {
+	tenant := rec.TenantID
+	if tenant == "" {
+		tenant = defaultTenantID
+		rec.TenantID = tenant
+	}
+	// 与 SQLite 侧一致:只允许命中同租户的行
+	if cur, ok := s.records[rec.ID]; !ok || cur.TenantID != tenant {
 		return sql.ErrNoRows
 	}
 	rec.UpdatedAt = time.Now()
@@ -287,11 +296,14 @@ func (s *MemStore) UpdateRecord(rec *Record) error {
 	return nil
 }
 
-func (s *MemStore) ListRecords(limit int) ([]*Record, error) {
+func (s *MemStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*Record, 0, len(s.records))
 	for _, r := range s.records {
+		if r.TenantID != tenantID {
+			continue // 租户隔离
+		}
 		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -303,11 +315,14 @@ func (s *MemStore) ListRecords(limit int) ([]*Record, error) {
 	return out, nil
 }
 
-func (s *MemStore) ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
+func (s *MemStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*Record, 0, len(s.records))
 	for _, rec := range s.records {
+		if rec.TenantID != tenantID {
+			continue // 租户隔离先于归属判断
+		}
 		if recordOwnedBy(rec, inspectorUserID, displayName, username) {
 			out = append(out, rec)
 		}
@@ -1132,6 +1147,9 @@ type sqlQueryer interface {
 }
 
 func (s *SQLiteStore) CreateRecord(rec *Record) error {
+	if rec.TenantID == "" {
+		rec.TenantID = defaultTenantID // 未指定则归默认租户(单租户过渡期)
+	}
 	fieldsJSON, _ := json.Marshal(rec.Fields)
 	imagesJSON, _ := json.Marshal(rec.Images)
 	tagsJSON, _ := json.Marshal(rec.AISummaryTags)
@@ -1147,15 +1165,15 @@ func (s *SQLiteStore) CreateRecord(rec *Record) error {
 			recognition_status, retake_reason, task_id, engineering_task_id,
 			fields_json, images_json, report,
 			ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
-			submitted, submitted_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			submitted, submitted_at, created_at, updated_at, tenant_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.ID, rec.RecordNo, rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
 		rec.Type, rec.Inspector, rec.InspectorUserID, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID, rec.EngineeringTaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
 		rec.AISummary, string(tagsJSON), string(recosJSON), rec.AISummaryError,
 		boolToInt(rec.Submitted), nullableTime(rec.SubmittedAt),
-		fmtStamp(rec.CreatedAt), now,
+		fmtStamp(rec.CreatedAt), now, rec.TenantID,
 	)
 	return err
 }
@@ -1165,6 +1183,12 @@ func (s *SQLiteStore) UpdateRecord(rec *Record) error {
 }
 
 func updateRecordExec(exec sqlExecutor, rec *Record) error {
+	// 租户随记录自身携带:更新只允许命中同租户的行(跨租户影响 0 行)。
+	// 记录来自 GetRecord 时天然带对租户;历史/内部构造未带则回落默认租户。
+	tenant := rec.TenantID
+	if tenant == "" {
+		tenant = defaultTenantID
+	}
 	fieldsJSON, _ := json.Marshal(rec.Fields)
 	imagesJSON, _ := json.Marshal(rec.Images)
 	tagsJSON, _ := json.Marshal(rec.AISummaryTags)
@@ -1179,46 +1203,51 @@ func updateRecordExec(exec sqlExecutor, rec *Record) error {
 			fields_json=?, images_json=?, report=?,
 			ai_summary=?, ai_summary_tags=?, ai_recommendations=?, ai_summary_error=?,
 			submitted=?, submitted_at=?, updated_at=?
-		WHERE id=?`,
+		WHERE id=? AND tenant_id=?`,
 		rec.RecordNo, rec.Project, rec.PointID, rec.PointName, rec.TemplateID, rec.TemplateName,
 		rec.Type, rec.Inspector, rec.InspectorUserID, rec.CaptureAttempts, boolToInt(rec.ManualRequired),
 		rec.RecognitionStatus, rec.RetakeReason, rec.TaskID, rec.EngineeringTaskID,
 		string(fieldsJSON), string(imagesJSON), rec.Report,
 		rec.AISummary, string(tagsJSON), string(recosJSON), rec.AISummaryError,
 		boolToInt(rec.Submitted), nullableTime(rec.SubmittedAt), fmtStamp(updatedAt),
-		rec.ID,
+		rec.ID, tenant,
 	)
 	return err
 }
 
-func (s *SQLiteStore) GetRecord(id string) (*Record, error) {
-	return getRecordExec(s.db, id)
+// recordSelectCols —— 记录查询列清单单一真源(原本 3 处 SELECT 各抄一遍,易漂移)。
+// 顺序必须与 scanRecord 的 Scan 目标严格一致。
+const recordSelectCols = `id, record_no, project, point_id, point_name, template_id, template_name,
+	type, inspector, inspector_user_id, capture_attempts, manual_required,
+	recognition_status, retake_reason, task_id, engineering_task_id,
+	fields_json, images_json, report,
+	ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
+	submitted, submitted_at, created_at, updated_at, tenant_id`
+
+func (s *SQLiteStore) GetRecord(tenantID, id string) (*Record, error) {
+	return getRecordExec(s.db, tenantID, id)
 }
 
-func getRecordExec(queryer sqlQueryer, id string) (*Record, error) {
-	row := queryer.QueryRow(`
-		SELECT id, record_no, project, point_id, point_name, template_id, template_name,
-		       type, inspector, inspector_user_id, capture_attempts, manual_required,
-		       recognition_status, retake_reason, task_id, engineering_task_id,
-		       fields_json, images_json, report,
-		       ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
-		       submitted, submitted_at, created_at, updated_at
-		FROM records WHERE id=?`, id)
+func getRecordExec(queryer sqlQueryer, tenantID, id string) (*Record, error) {
+	row := queryer.QueryRow(
+		`SELECT `+recordSelectCols+` FROM records WHERE id=? AND tenant_id=?`, id, tenantID)
 	return scanRecord(row)
 }
 
-func (s *SQLiteStore) ListRecords(limit int) ([]*Record, error) {
+// getRecordByID —— 不带租户过滤的按 id 读取,仅供内部「写后读回」/跨租户维护。
+// 对外读取一律走 GetRecord(tenantID, id)。
+func getRecordByID(queryer sqlQueryer, id string) (*Record, error) {
+	row := queryer.QueryRow(`SELECT `+recordSelectCols+` FROM records WHERE id=?`, id)
+	return scanRecord(row)
+}
+
+func (s *SQLiteStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.Query(`
-		SELECT id, record_no, project, point_id, point_name, template_id, template_name,
-		       type, inspector, inspector_user_id, capture_attempts, manual_required,
-		       recognition_status, retake_reason, task_id, engineering_task_id,
-		       fields_json, images_json, report,
-		       ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
-		       submitted, submitted_at, created_at, updated_at
-		FROM records ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := s.db.Query(
+		`SELECT `+recordSelectCols+` FROM records WHERE tenant_id=? ORDER BY created_at DESC LIMIT ?`,
+		tenantID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1234,22 +1263,19 @@ func (s *SQLiteStore) ListRecords(limit int) ([]*Record, error) {
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) ListRecordsByOwner(inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
+func (s *SQLiteStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.Query(`
-		SELECT id, record_no, project, point_id, point_name, template_id, template_name,
-		       type, inspector, inspector_user_id, capture_attempts, manual_required,
-		       recognition_status, retake_reason, task_id, engineering_task_id,
-		       fields_json, images_json, report,
-		       ai_summary, ai_summary_tags, ai_recommendations, ai_summary_error,
-		       submitted, submitted_at, created_at, updated_at
-		FROM records
-		WHERE (? <> '' AND inspector_user_id = ?)
-		   OR (inspector_user_id = '' AND inspector IN (?, ?))
+	// 租户过滤置于最外层 AND,与归属条件是「且」关系,不被 OR 短路
+	rows, err := s.db.Query(
+		`SELECT `+recordSelectCols+` FROM records
+		WHERE tenant_id = ?
+		  AND ( (? <> '' AND inspector_user_id = ?)
+		     OR (inspector_user_id = '' AND inspector IN (?, ?)) )
 		ORDER BY created_at DESC LIMIT ?`,
-		inspectorUserID, inspectorUserID, strings.TrimSpace(displayName), strings.TrimSpace(username), limit)
+		tenantID, inspectorUserID, inspectorUserID,
+		strings.TrimSpace(displayName), strings.TrimSpace(username), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1281,7 +1307,7 @@ func scanRecord(row scanner) (*Record, error) {
 		&rec.RecognitionStatus, &rec.RetakeReason, &rec.TaskID, &rec.EngineeringTaskID,
 		&fieldsJSON, &imagesJSON, &rec.Report,
 		&rec.AISummary, &tagsJSON, &recosJSON, &rec.AISummaryError,
-		&submittedInt, &submittedAt, &createdStr, &updatedStr,
+		&submittedInt, &submittedAt, &createdStr, &updatedStr, &rec.TenantID,
 	)
 	if err != nil {
 		return nil, err

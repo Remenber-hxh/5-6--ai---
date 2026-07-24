@@ -66,6 +66,7 @@ type ImageInfo struct {
 // Record — 巡检记录
 type Record struct {
 	ID                string           `json:"id"`
+	TenantID          string           `json:"tenantId,omitempty"`
 	RecordNo          string           `json:"recordNo,omitempty"`
 	Project           string           `json:"project"`
 	PointID           string           `json:"pointId"`

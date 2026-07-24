@@ -82,7 +82,7 @@ func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContex
 	if err != nil {
 		return nil, err
 	}
-	records, err := s.store.ListRecords(2000)
+	records, err := s.store.ListRecords(defaultTenantID, 2000)
 	if err != nil {
 		return nil, err
 	}
@@ -883,7 +883,7 @@ func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat
 			out.LastInspection = sn.CreatedAt.Format("2006-01-02 15:04")
 		}
 		// 翻 record 找异常字段做"重复异常"计数
-		rec, err := s.store.GetRecord(sn.RecordID)
+		rec, err := s.store.GetRecord(defaultTenantID, sn.RecordID)
 		if err != nil || rec == nil {
 			continue
 		}
@@ -901,7 +901,7 @@ func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat
 	}
 
 	// 跨记录数补拍/无法判定/未看图次数
-	all, _ := s.store.ListRecords(2000)
+	all, _ := s.store.ListRecords(defaultTenantID, 2000)
 	for _, r := range all {
 		if r == nil || !recordTouchesAsset(r, asset) {
 			continue
@@ -955,8 +955,9 @@ func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat
 
 // ===== Tool 8: get_record_detail =====
 
+// TODO 多租户:AI 工具层下游消费者,单客户过渡期按默认租户(见 buildInsightsContext)。
 func (s *Server) toolGetRecordDetail(recordID string) (map[string]any, error) {
-	rec, err := s.store.GetRecord(recordID)
+	rec, err := s.store.GetRecord(defaultTenantID, recordID)
 	if err != nil {
 		return nil, err
 	}

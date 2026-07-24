@@ -147,7 +147,7 @@ func TestSubmitIdempotency(t *testing.T) {
 	if got := submit("rs1", "k1"); got.Code != http.StatusOK {
 		t.Fatalf("first submit = %d body=%s", got.Code, got.Body.String())
 	}
-	r1, _ := srv.store.GetRecord("rs1")
+	r1, _ := srv.store.GetRecord(defaultTenantID, "rs1")
 	if !r1.Submitted {
 		t.Fatalf("record not marked submitted")
 	}

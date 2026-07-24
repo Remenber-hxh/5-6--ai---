@@ -261,7 +261,7 @@ func TestManagementRolesReadGloballyButManagerCannotWriteRecordDirectly(t *testi
 func TestAssetRoutesDoNotBypassInspectorRecordIsolation(t *testing.T) {
 	server, tokens := newRecordAccessTestServer(t)
 	store := server.store.(*MemStore)
-	recB, err := store.GetRecord("rec_b")
+	recB, err := store.GetRecord(defaultTenantID, "rec_b")
 	if err != nil {
 		t.Fatalf("GetRecord(rec_b): %v", err)
 	}
@@ -341,14 +341,14 @@ func TestSQLiteRecordOwnershipPersistence(t *testing.T) {
 	if err := store.CreateRecord(rec); err != nil {
 		t.Fatalf("CreateRecord: %v", err)
 	}
-	got, err := store.GetRecord(rec.ID)
+	got, err := store.GetRecord(defaultTenantID, rec.ID)
 	if err != nil {
 		t.Fatalf("GetRecord: %v", err)
 	}
 	if got.InspectorUserID != "user_a" {
 		t.Fatalf("InspectorUserID = %q, want user_a", got.InspectorUserID)
 	}
-	list, err := store.ListRecordsByOwner("user_a", "巡检员A", "inspector_a", 10)
+	list, err := store.ListRecordsByOwner(defaultTenantID, "user_a", "巡检员A", "inspector_a", 10)
 	if err != nil {
 		t.Fatalf("ListRecordsByOwner: %v", err)
 	}
