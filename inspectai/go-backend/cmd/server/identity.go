@@ -128,18 +128,19 @@ func (s *MemStore) EnsureIdentitySeed(seed IdentitySeed) error {
 		return err
 	}
 	u := &User{
-		ID:             "user_admin",
-		TenantID:       defaultTenantID,
-		Username:       seed.Username,
-		DisplayName:    seed.DisplayName,
-		RoleID:         "role_admin",
-		RoleCode:       "admin",
-		RoleName:       "系统管理员",
-		DepartmentID:   "dept_default",
-		DepartmentName: "默认部门",
-		Status:         "active",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:              "user_admin",
+		TenantID:        defaultTenantID,
+		IsPlatformAdmin: true,
+		Username:        seed.Username,
+		DisplayName:     seed.DisplayName,
+		RoleID:          "role_admin",
+		RoleCode:        "admin",
+		RoleName:        "系统管理员",
+		DepartmentID:    "dept_default",
+		DepartmentName:  "默认部门",
+		Status:          "active",
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	s.users[u.ID] = &memUser{user: u, passwordHash: hash}
 	return nil
@@ -483,8 +484,8 @@ func (s *SQLiteStore) EnsureIdentitySeed(seed IdentitySeed) error {
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
-			wework_user_id, password_hash, status, created_at, updated_at, tenant_id
-		) VALUES (?, ?, ?, '', '', 'role_admin', 'dept_default', '', ?, 'active', ?, ?, ?)`,
+			wework_user_id, password_hash, status, created_at, updated_at, tenant_id, is_platform_admin
+		) VALUES (?, ?, ?, '', '', 'role_admin', 'dept_default', '', ?, 'active', ?, ?, ?, 1)`,
 		"user_admin", seed.Username, seed.DisplayName, hash, now, now, defaultTenantID,
 	)
 	return err
@@ -662,10 +663,11 @@ func (s *SQLiteStore) CreateUser(user *User, password string) error {
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
-			wework_user_id, password_hash, status, created_at, updated_at, tenant_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			wework_user_id, password_hash, status, created_at, updated_at, tenant_id, is_platform_admin
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		user.ID, user.Username, user.DisplayName, user.Phone, user.Avatar,
 		user.RoleID, user.DepartmentID, user.WeworkUserID, hash, user.Status, now, now, user.TenantID,
+		boolToInt(user.IsPlatformAdmin),
 	)
 	if err != nil {
 		return err
@@ -925,7 +927,7 @@ func userSelectSQL() string {
 			COALESCE(r.code, ''), COALESCE(r.name, ''),
 			COALESCE(u.department_id, ''), COALESCE(d.name, ''),
 			u.wework_user_id, u.status, u.last_login_at, u.created_at, u.updated_at,
-			COALESCE(u.tenant_id, ''), u.password_hash
+			COALESCE(u.tenant_id, ''), COALESCE(u.is_platform_admin, 0), u.password_hash
 		FROM users u
 		LEFT JOIN roles r ON r.id=u.role_id
 		LEFT JOIN departments d ON d.id=u.department_id`
@@ -939,10 +941,11 @@ func scanUserWithHash(row userScanner) (*User, string, error) {
 	u := &User{}
 	var phone, avatar, deptID, deptName, wework, lastLogin sql.NullString
 	var created, updated, passwordHash string
+	var platformAdminInt int
 	err := row.Scan(
 		&u.ID, &u.Username, &u.DisplayName, &phone, &avatar, &u.RoleID,
 		&u.RoleCode, &u.RoleName, &deptID, &deptName, &wework, &u.Status,
-		&lastLogin, &created, &updated, &u.TenantID, &passwordHash,
+		&lastLogin, &created, &updated, &u.TenantID, &platformAdminInt, &passwordHash,
 	)
 	if err != nil {
 		return nil, "", err
@@ -966,6 +969,7 @@ func scanUserWithHash(row userScanner) (*User, string, error) {
 		t, _ := time.Parse(time.RFC3339Nano, lastLogin.String)
 		u.LastLoginAt = &t
 	}
+	u.IsPlatformAdmin = platformAdminInt != 0
 	u.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	u.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return u, passwordHash, nil

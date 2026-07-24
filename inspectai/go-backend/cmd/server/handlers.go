@@ -649,6 +649,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := &User{
+		// 新账号归属创建者所在租户 —— 租户管理员只能在自己租户内建人。
+		// IsPlatformAdmin 刻意不从请求体读取:超管资格不可由接口自助获取。
+		TenantID:     s.tenantForRequest(r),
 		Username:     req.Username,
 		DisplayName:  req.DisplayName,
 		Phone:        strings.TrimSpace(req.Phone),

@@ -31,6 +31,33 @@ var migrationList = []migration{
 	{7, "role_permissions_code_widen", (*SQLiteStore).migRolePermCodeWiden},
 	{8, "tenants", (*SQLiteStore).migTenants},
 	{9, "tenant_columns", (*SQLiteStore).migTenantColumns},
+	{10, "platform_admin_flag", (*SQLiteStore).migPlatformAdminFlag},
+}
+
+// 010 — 两级管理员:users 加 is_platform_admin。
+//
+// 「能否跨租户」是与租户归属正交的能力,故用独立标志位,而不是拿特殊 tenant_id
+// 表达 —— 后者会让超管自己的业务数据无家可归(璟邑既是平台方也是第一个客户)。
+//
+// 初始管理员(user_admin)提升为平台超管:现网部署由璟邑运营,它就是平台方。
+// 新建的租户管理员默认 0,作用域锁死在自己租户内。
+func (s *SQLiteStore) migPlatformAdminFlag() error {
+	exists, err := s.hasColumn("users", "is_platform_admin")
+	if err != nil {
+		return fmt.Errorf("inspect users.is_platform_admin: %w", err)
+	}
+	if !exists {
+		stmt := `ALTER TABLE users ADD COLUMN is_platform_admin INTEGER NOT NULL DEFAULT 0`
+		if s.dialect == "mysql" {
+			stmt = `ALTER TABLE users ADD COLUMN is_platform_admin TINYINT(1) NOT NULL DEFAULT 0`
+		}
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("add users.is_platform_admin: %w", err)
+		}
+	}
+	// 幂等:只提升初始管理员,重跑无副作用
+	_, err = s.db.Exec(`UPDATE users SET is_platform_admin = 1 WHERE id = 'user_admin'`)
+	return err
 }
 
 // 009 — 给各业务表加 tenant_id 并把存量回填到默认租户。

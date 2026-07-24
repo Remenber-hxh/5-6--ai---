@@ -355,22 +355,25 @@ type SceneClassifyResult struct {
 // It stays small so the existing inspection workflow can keep using inspector
 // display names while the backend starts tracking real accounts.
 type User struct {
-	ID             string     `json:"id"`
-	TenantID       string     `json:"tenantId"`
-	Username       string     `json:"username"`
-	DisplayName    string     `json:"displayName"`
-	Phone          string     `json:"phone,omitempty"`
-	Avatar         string     `json:"avatar,omitempty"`
-	RoleID         string     `json:"roleId"`
-	RoleCode       string     `json:"roleCode"`
-	RoleName       string     `json:"roleName"`
-	DepartmentID   string     `json:"departmentId,omitempty"`
-	DepartmentName string     `json:"departmentName,omitempty"`
-	WeworkUserID   string     `json:"weworkUserId,omitempty"`
-	Status         string     `json:"status"`
-	LastLoginAt    *time.Time `json:"lastLoginAt,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID       string `json:"id"`
+	TenantID string `json:"tenantId"`
+	// IsPlatformAdmin 平台超管:唯一能跨租户(建/停客户、跨租户运维)。
+	// 与租户归属正交 —— 超管自身的业务数据仍归其所属租户。
+	IsPlatformAdmin bool       `json:"isPlatformAdmin,omitempty"`
+	Username        string     `json:"username"`
+	DisplayName     string     `json:"displayName"`
+	Phone           string     `json:"phone,omitempty"`
+	Avatar          string     `json:"avatar,omitempty"`
+	RoleID          string     `json:"roleId"`
+	RoleCode        string     `json:"roleCode"`
+	RoleName        string     `json:"roleName"`
+	DepartmentID    string     `json:"departmentId,omitempty"`
+	DepartmentName  string     `json:"departmentName,omitempty"`
+	WeworkUserID    string     `json:"weworkUserId,omitempty"`
+	Status          string     `json:"status"`
+	LastLoginAt     *time.Time `json:"lastLoginAt,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 type Role struct {

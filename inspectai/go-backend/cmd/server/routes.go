@@ -14,9 +14,10 @@ import "net/http"
 type guard int
 
 const (
-	guardNone       guard = iota // 已登录即可(authorized 层已挡未登录)
-	guardSupervisor              // 管理角色:admin / manager / supervisor
-	guardAdmin                   // 仅系统管理员
+	guardNone          guard = iota // 已登录即可(authorized 层已挡未登录)
+	guardSupervisor                 // 管理角色:admin / manager / supervisor
+	guardAdmin                      // 仅系统管理员(= 租户管理员,作用域锁本租户)
+	guardPlatformAdmin              // 仅平台超管:唯一能跨租户(建/停客户)
 )
 
 type apiRoute struct {
@@ -44,6 +45,10 @@ var apiRoutes = []apiRoute{
 	{http.MethodGet, "/api/operation-logs", guardNone, "audit_view", (*Server).handleListOperationLogs},
 	{http.MethodGet, "/api/permissions", guardAdmin, "", (*Server).handleGetPermissions},
 	{http.MethodPut, "/api/permissions", guardAdmin, "", (*Server).handleSavePermissions},
+
+	// —— 客户租户管理(仅平台超管;租户管理员 admin 也进不来) ——
+	{http.MethodGet, "/api/tenants", guardPlatformAdmin, "", (*Server).handleListTenants},
+	{http.MethodPost, "/api/tenants", guardPlatformAdmin, "", (*Server).handleCreateTenant},
 
 	// —— 企业微信 ——
 	{http.MethodPost, "/api/wework/message", guardNone, "wework_send", (*Server).handleSendWeWorkMessage},
@@ -95,6 +100,10 @@ func (s *Server) allow(w http.ResponseWriter, r *http.Request, rt apiRoute) bool
 	case guardAdmin:
 		if !s.hasAdminAccess(r) {
 			writeError(w, http.StatusForbidden, "forbidden", "仅系统管理员可操作")
+			return false
+		}
+	case guardPlatformAdmin:
+		if !s.requirePlatformAdmin(w, r) {
 			return false
 		}
 	}

@@ -35,6 +35,12 @@ type RecordStore interface {
 	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
 }
 
+// TenantStore — 客户租户(仅平台超管可写)
+type TenantStore interface {
+	CreateTenant(t *Tenant) error
+	ListTenants() ([]*Tenant, error)
+}
+
 // AITaskStore — 视觉识别任务
 type AITaskStore interface {
 	CreateTask(task *AITask) error
@@ -150,6 +156,7 @@ type PermissionStore interface {
 // Store — 全量组合(装配层用;业务模块请依赖上面的最小域接口)
 type Store interface {
 	RecordStore
+	TenantStore
 	AITaskStore
 	AssetStore
 	ConfirmLogStore
@@ -189,6 +196,7 @@ type submissionState struct {
 
 type MemStore struct {
 	mu             sync.RWMutex
+	tenants        map[string]*Tenant
 	records        map[string]*Record
 	tasks          map[string]*AITask
 	assets         map[string]*AssetEntry
@@ -215,6 +223,7 @@ type memUser struct {
 
 func NewMemStore() *MemStore {
 	return &MemStore{
+		tenants:        map[string]*Tenant{},
 		records:        map[string]*Record{},
 		tasks:          map[string]*AITask{},
 		assets:         map[string]*AssetEntry{},
