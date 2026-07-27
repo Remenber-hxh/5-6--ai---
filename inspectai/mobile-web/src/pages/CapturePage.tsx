@@ -1,5 +1,6 @@
 import { Toast } from "antd-mobile";
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 import PendingPanel from "@/components/PendingPanel";
 import { useAuth } from "@/store/auth";
@@ -8,6 +9,7 @@ import { usePending } from "@/store/pending";
 // 拍照台:拍多张 → 存进离线仓库 → 联网后自动上传补 AI 识别。
 // 弱网现场只管拍,照片与拍摄时间先落地,不被信号拖住巡检节奏。
 export default function CapturePage() {
+  const nav = useNavigate();
   const user = useAuth((s) => s.user);
   const { online, saving, init, addFiles } = usePending();
 
@@ -71,6 +73,11 @@ export default function CapturePage() {
         <div className="capture-who">
           {user?.displayName || user?.username} · {user?.departmentName || "默认部门"}
         </div>
+
+        {/* 已上传的照片在服务器上等着成单,给个明确入口 */}
+        <button className="link-btn" onClick={() => nav("/review")}>
+          处理已上传的照片 →
+        </button>
       </div>
 
       <PendingPanel />

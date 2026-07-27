@@ -4,18 +4,22 @@ import { useAuth } from "@/store/auth";
 import CapturePage from "@/pages/CapturePage";
 import LoginPage from "@/pages/LoginPage";
 import MePage from "@/pages/MePage";
+import RecordPage from "@/pages/RecordPage";
+import ReviewPage from "@/pages/ReviewPage";
 
-// Phase 1 应用外壳:登录 + 按角色落地 + 几个占位页。
-// 拍照托盘 / 离线队列 / 水印在后续步骤填入 CapturePage。
+// 巡检主流程:拍照 → (联网自动上传) → 选照片识别 → 填日报 → 提交
 export default function App() {
   const loggedIn = useAuth((s) => s.loggedIn);
+  const guard = (el: JSX.Element) => (loggedIn ? el : <Navigate to="/login" replace />);
 
   return (
     <div className="app-shell">
       <Routes>
         <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <LoginPage />} />
-        <Route path="/" element={loggedIn ? <CapturePage /> : <Navigate to="/login" replace />} />
-        <Route path="/me" element={loggedIn ? <MePage /> : <Navigate to="/login" replace />} />
+        <Route path="/" element={guard(<CapturePage />)} />
+        <Route path="/review" element={guard(<ReviewPage />)} />
+        <Route path="/record/:id" element={guard(<RecordPage />)} />
+        <Route path="/me" element={guard(<MePage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

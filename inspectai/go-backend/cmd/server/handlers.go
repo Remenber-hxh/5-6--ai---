@@ -60,6 +60,9 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleEngineeringTaskRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/assets/"):
 		s.handleAssetRoutes(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/inspection/offline-shots/") &&
+		strings.HasSuffix(r.URL.Path, "/image") && r.Method == http.MethodGet:
+		s.handleOfflineShotImage(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/inspection/records/"):
 		s.handleRecordRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/ai/tasks/") && r.Method == http.MethodGet:

@@ -277,6 +277,30 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots})
 }
 
+// handleOfflineShotImage 提供离线照片原图。
+// 路径:/api/inspection/offline-shots/{id}/image
+// 只允许读本租户的照片 —— 跨租户直接 404,不泄露存在性。
+func (s *Server) handleOfflineShotImage(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/inspection/offline-shots/")
+	id := strings.TrimSuffix(rest, "/image")
+	if id == "" || id == rest {
+		writeError(w, http.StatusNotFound, "not_found", "路径不正确")
+		return
+	}
+	shots, err := s.shotsByIDs(s.tenantForRequest(r), []string{id})
+	if err != nil || len(shots) == 0 {
+		writeError(w, http.StatusNotFound, "shot_not_found", "照片不存在")
+		return
+	}
+	// 防路径穿越:只允许 storage 子树内的文件
+	clean := filepath.Clean(shots[0].ImagePath)
+	if !strings.HasPrefix(clean, filepath.Clean(s.storageDir)) {
+		writeError(w, http.StatusForbidden, "forbidden", "非法路径")
+		return
+	}
+	http.ServeFile(w, r, clean)
+}
+
 // handleClassifyOfflineShots 用已上传的离线照片做场景识别。
 // 照片已在服务器上,不重传 —— 弱网现场刚传完就再传一遍是浪费。
 func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Request) {
