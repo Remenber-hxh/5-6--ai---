@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "@/store/auth";
 import CapturePage from "@/pages/CapturePage";
+import ClassifyPage from "@/pages/ClassifyPage";
 import LoginPage from "@/pages/LoginPage";
 import MePage from "@/pages/MePage";
 import RecordPage from "@/pages/RecordPage";
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <LoginPage />} />
         <Route path="/" element={guard(<CapturePage />)} />
         <Route path="/review" element={guard(<ReviewPage />)} />
+        <Route path="/classify" element={guard(<ClassifyPage />)} />
         <Route path="/record/:id" element={guard(<RecordPage />)} />
         <Route path="/me" element={guard(<MePage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />

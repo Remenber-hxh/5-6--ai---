@@ -4,15 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import { useAuth } from "@/store/auth";
-import {
-  ClassifyResult,
-  OfflineShotDTO,
-  TemplateDTO,
-  classifyOfflineShots,
-  createRecordFromShots,
-  listOfflineShots,
-  listTemplates,
-} from "@/api/inspection";
+import { OfflineShotDTO, listOfflineShots } from "@/api/inspection";
 
 /** 拍摄与上传的时间差:离线越久差越大。公开展示,不隐藏 */
 function offlineGap(shot: OfflineShotDTO): string {
@@ -37,20 +29,15 @@ export default function ReviewPage() {
   const nav = useNavigate();
   const [shots, setShots] = useState<OfflineShotDTO[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [templates, setTemplates] = useState<TemplateDTO[]>([]);
-  const [classify, setClassify] = useState<ClassifyResult | null>(null);
-  const [chosenTpl, setChosenTpl] = useState("");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [viewing, setViewing] = useState<PhotoMeta | null>(null);
   const user = useAuth((s) => s.user);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [list, tpls] = await Promise.all([listOfflineShots(), listTemplates()]);
+      const list = await listOfflineShots();
       setShots(list);
-      setTemplates(tpls);
       // 默认全选:绝大多数情况就是把刚传的这批一起成单
       setPicked(new Set(list.map((s) => s.id)));
     } catch {
@@ -73,42 +60,17 @@ export default function ReviewPage() {
       else next.add(id);
       return next;
     });
-    setClassify(null); // 选择变了,之前的识别结果作废
   }
 
-  async function onClassify() {
+  function toClassify() {
     if (!pickedIds.length) {
       Toast.show({ content: "请先选择照片" });
       return;
     }
-    setBusy(true);
-    try {
-      const res = await classifyOfflineShots(pickedIds);
-      setClassify(res.classify);
-      setChosenTpl(res.classify.needsManualPick ? "" : res.classify.templateId);
-    } catch {
-      Toast.show({ content: "识别失败,可手动选择模板" });
-      setClassify({ templateId: "unknown", templateName: "无法识别", needsManualPick: true });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onCreate() {
-    const tplID = chosenTpl || classify?.templateId;
-    if (!tplID || tplID === "unknown") {
-      Toast.show({ content: "请先选择日报模板" });
-      return;
-    }
-    setBusy(true);
-    try {
-      const rec = await createRecordFromShots(tplID, pickedIds);
-      nav(`/record/${rec.id}`, { replace: true });
-    } catch (err) {
-      Toast.show({ content: err instanceof Error ? err.message : "创建失败" });
-    } finally {
-      setBusy(false);
-    }
+    // 识别与模板确认是独立一屏(旧版 sceneClassify),不塞在选图页里。
+    // 选中项走 URL 参数而非 router state —— state 在刷新后会丢,用户一刷新
+    // 就得重选一遍。
+    nav(`/classify?shots=${encodeURIComponent(pickedIds.join(","))}`);
   }
 
   if (loading) {
@@ -184,48 +146,14 @@ export default function ReviewPage() {
           })}
         </div>
 
-        {classify && (
-          <div className="classify-box">
-            <div className="classify-head">
-              {classify.needsManualPick ? "AI 未能确定场景,请手动选择" : "AI 识别为"}
-            </div>
-            {!classify.needsManualPick && (
-              <div className="classify-hit">
-                {classify.templateName}
-                {typeof classify.confidence === "number" && (
-                  <span className="classify-conf">
-                    置信度 {Math.round(classify.confidence * 100)}%
-                  </span>
-                )}
-              </div>
-            )}
-            <div className="tpl-list">
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  className={chosenTpl === t.id ? "tpl-item on" : "tpl-item"}
-                  onClick={() => setChosenTpl(t.id)}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
 
       <div className="flow-foot">
-        {!classify ? (
-          <Button block className="btn-primary" loading={busy} onClick={() => void onClassify()}>
-            AI 识别场景
-          </Button>
-        ) : (
-          <Button block className="btn-primary" loading={busy} onClick={() => void onCreate()}>
-            下一步 · 填写日报
-          </Button>
-        )}
+        <Button block className="btn-primary" onClick={toClassify}>
+          AI 识别场景
+        </Button>
       </div>
     </div>
   );
