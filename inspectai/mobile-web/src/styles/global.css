@@ -199,6 +199,214 @@
   color: var(--ink);
 }
 
+/* ===== 拍照台 ===== */
+
+.capture-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: calc(12px + var(--safe-top));
+}
+.capture-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 8px;
+}
+.net-pill {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.net-on {
+  color: var(--tech-jade);
+  border-color: rgba(67, 229, 172, 0.3);
+  background: rgba(67, 229, 172, 0.1);
+}
+.net-off {
+  color: #ffc46b;
+  border-color: rgba(255, 196, 107, 0.34);
+  background: rgba(255, 196, 107, 0.12);
+}
+
+/* 中部整屏不滚动,自适应挤压 */
+.capture-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  overflow: hidden;
+}
+.capture-title {
+  margin: 0 0 6px;
+  font-size: clamp(20px, 5.4vw, 26px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-align: center;
+}
+.capture-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+/* 取景框:四角 + 翡翠描边(旧版观感) */
+.viewfinder {
+  position: relative;
+  width: min(70%, 240px);
+  aspect-ratio: 1;
+  max-height: 34svh;
+  margin: clamp(14px, 3svh, 26px) 0;
+  border: 1px solid rgba(126, 255, 210, 0.16);
+  border-radius: 22px;
+  background: rgba(0, 0, 0, 0.16);
+}
+.vf-corner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--tech-jade);
+}
+.vf-tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0; }
+.vf-tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; }
+.vf-bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-radius: 0 0 0 8px; }
+.vf-br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
+
+/* 快门 */
+.shutter-wrap {
+  position: relative;
+  display: block;
+  width: 76px;
+  height: 76px;
+  flex: none;
+}
+.shutter-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+}
+.shutter {
+  display: block;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.5), 0 10px 30px rgba(27, 224, 135, 0.28);
+  transition: transform 120ms ease;
+}
+.shutter-wrap:active .shutter { transform: scale(0.94); }
+.shutter-busy { opacity: 0.55; }
+.shutter-label {
+  margin-top: 10px;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: var(--ink-2);
+}
+.capture-who {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* ===== 托盘 ===== */
+
+.tray {
+  flex: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.22);
+  padding: 10px 12px calc(10px + var(--safe-bottom));
+}
+.tray-empty {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.tray-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.tray-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.tray-hint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+/* 横向滚动条:照片多了往右滑,页面本身不横滚 */
+.tray-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.thumb {
+  position: relative;
+  flex: none;
+  width: 68px;
+  height: 68px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.thumb-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: 10px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.52);
+  padding: 1px 0;
+}
+.thumb-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.thumb-failed { background: rgba(255, 92, 76, 0.86); }
+.thumb-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 14px;
+}
+
 /* ===== ICP 备案号:钉在本屏底部,不参与卡片居中(与旧版一致) ===== */
 
 .beian-line {
