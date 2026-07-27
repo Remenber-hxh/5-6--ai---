@@ -1,20 +1,26 @@
 // ===== 离线仓库(IndexedDB) =====
 //
-// 弱网现场的地基:拍下的照片先落本地,联网后再上传补 AI 识别。
+// 弱网现场的地基:拍下的照片先落本地,联网后自动上传补 AI 识别。
 //
 // 为什么是 IndexedDB 而不是 localStorage:
 //   - localStorage 上限约 5MB,且只能存字符串(照片转 base64 还要涨 33%)
 //   - 一次巡检几张原图就是几 MB,只有 IndexedDB 能直接存 Blob 且容量足够
 //   - IndexedDB 持久化到磁盘,关屏/切后台/重启浏览器数据都在
 //
-// 证据链设计:capturedAt 由手机盖(声称的拍摄时间,仅供参考),
-// 服务器收到时间才是权威。两者都保留并在记录上分开展示,不隐藏离线时间差。
+// 证据链:capturedAt 由手机盖(声称的拍摄时间,仅供参考),服务器收到时间才是
+// 权威。两者都保留、在记录上分开展示,不隐藏离线时间差。
 
 const DB_NAME = "inspectai-offline";
 const DB_VERSION = 1;
 const STORE_SHOTS = "shots";
 
-/** 一张待上传的照片(托盘里的一项) */
+/** 一条待上传照片的生命周期状态 */
+export type ShotStatus =
+  | "pending" // 待上传
+  | "uploading" // 上传中
+  | "failed" // 可重试的失败(网络问题),会自动退避重试
+  | "blocked"; // 不可自动重试(服务端拒绝 / 文件有问题),需人工处理
+
 export interface PendingShot {
   /** 本地 ID,同时用作 IndexedDB 主键 */
   id: string;
@@ -23,16 +29,18 @@ export interface PendingShot {
   /** 原图。不做任何叠加,保留为证据 */
   blob: Blob;
   fileName: string;
+  size: number;
   /** 拍摄时间(手机盖,ISO 字符串) */
   capturedAt: string;
   /** 拍照时的定位,拿不到就是 null */
   geo: { lat: number; lng: number; accuracy: number } | null;
   /** 归属巡检员,便于多账号共用一台设备时区分 */
   userId: string;
-  /** pending 待上传 / uploading 上传中 / failed 失败待重试 */
-  status: "pending" | "uploading" | "failed";
-  /** 失败次数,用于退避与提示 */
+  status: ShotStatus;
+  /** 失败次数,用于指数退避 */
   retries: number;
+  /** 下次可重试的时间戳(ms)。退避期内跳过,避免弱网下疯狂重试耗电 */
+  nextRetryAt: number;
   /** 最近一次失败原因,展示给用户 */
   lastError?: string;
 }
@@ -47,7 +55,6 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_SHOTS)) {
         const store = db.createObjectStore(STORE_SHOTS, { keyPath: "id" });
-        // 按拍摄时间排序展示;按状态挑出待上传项
         store.createIndex("capturedAt", "capturedAt");
         store.createIndex("status", "status");
       }
@@ -74,7 +81,63 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** 存一张照片进托盘 */
+// ===== 存储可靠性 =====
+
+/**
+ * 申请「持久化存储」。不申请的话,浏览器在设备空间紧张时可以直接清掉我们的
+ * IndexedDB —— 对一个"照片绝不能丢"的功能来说这是致命的。
+ * 返回是否已获得持久化保证(部分浏览器会静默拒绝,那就只能尽力而为)。
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (!navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
+
+export interface StorageInfo {
+  usedBytes: number;
+  quotaBytes: number;
+  /** 剩余可用字节。拿不到配额信息时为 null */
+  freeBytes: number | null;
+  persisted: boolean;
+}
+
+/** 查存储用量,给"空间快满了"的提前告警用 */
+export async function getStorageInfo(): Promise<StorageInfo> {
+  let usedBytes = 0;
+  let quotaBytes = 0;
+  let persisted = false;
+  try {
+    const est = await navigator.storage?.estimate?.();
+    usedBytes = est?.usage ?? 0;
+    quotaBytes = est?.quota ?? 0;
+    persisted = (await navigator.storage?.persisted?.()) ?? false;
+  } catch {
+    /* 拿不到就按未知处理 */
+  }
+  return {
+    usedBytes,
+    quotaBytes,
+    freeBytes: quotaBytes > 0 ? Math.max(0, quotaBytes - usedBytes) : null,
+    persisted,
+  };
+}
+
+/** 空间不足以再存这么大一张时抛出,调用方据此提示用户先联网上传 */
+export class StorageFullError extends Error {
+  constructor() {
+    super("手机存储空间不足,请先联网上传已拍照片");
+    this.name = "StorageFullError";
+  }
+}
+
+// ===== 增删改查 =====
+
+/** 存一张照片。空间不足会抛 StorageFullError,不会静默失败 */
 export async function addShot(input: {
   blob: Blob;
   fileName: string;
@@ -82,47 +145,71 @@ export async function addShot(input: {
   geo?: PendingShot["geo"];
   userId: string;
 }): Promise<PendingShot> {
+  // 预留 20% 余量:配额用满会直接写失败,提前拦住给用户可行动的提示
+  const info = await getStorageInfo();
+  if (info.freeBytes !== null && input.blob.size * 1.2 > info.freeBytes) {
+    throw new StorageFullError();
+  }
+
   const shot: PendingShot = {
     id: newId("shot"),
     idempotencyKey: newId("idem"),
     blob: input.blob,
     fileName: input.fileName,
+    size: input.blob.size,
     capturedAt: input.capturedAt || new Date().toISOString(),
     geo: input.geo ?? null,
     userId: input.userId,
     status: "pending",
     retries: 0,
+    nextRetryAt: 0,
   };
-  await tx("readwrite", (s) => s.add(shot));
+  try {
+    await tx("readwrite", (s) => s.add(shot));
+  } catch (err) {
+    // QuotaExceededError 兜底:预检算漏了也不能让用户以为存上了
+    if (err instanceof DOMException && err.name === "QuotaExceededError") {
+      throw new StorageFullError();
+    }
+    throw err;
+  }
   return shot;
 }
 
-/** 取全部待上传项,按拍摄时间正序(先拍的先传) */
+/** 全部待上传项,按拍摄时间正序(先拍的先传) */
 export async function listShots(): Promise<PendingShot[]> {
   const all = await tx<PendingShot[]>("readonly", (s) => s.getAll() as IDBRequest<PendingShot[]>);
   return all.sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
 }
 
-export async function countShots(): Promise<number> {
-  return tx<number>("readonly", (s) => s.count());
+export async function getShot(id: string): Promise<PendingShot | undefined> {
+  return tx<PendingShot | undefined>("readonly", (s) => s.get(id) as IDBRequest<PendingShot | undefined>);
 }
 
-/** 局部更新一项(改状态 / 记失败原因) */
 export async function updateShot(id: string, patch: Partial<PendingShot>): Promise<void> {
-  const cur = await tx<PendingShot | undefined>(
-    "readonly",
-    (s) => s.get(id) as IDBRequest<PendingShot | undefined>,
-  );
+  const cur = await getShot(id);
   if (!cur) return;
   await tx("readwrite", (s) => s.put({ ...cur, ...patch }));
 }
 
-/** 上传成功后清除;用户手动删除也走这里 */
 export async function removeShot(id: string): Promise<void> {
   await tx("readwrite", (s) => s.delete(id));
 }
 
-/** 清空托盘(仅调试/退出登录时用) */
+/**
+ * 启动时调用:把上次残留的 uploading 状态复位成 pending。
+ * 否则页面在上传中途被关掉,那几张会永远卡在"上传中",再也不会被重试。
+ */
+export async function recoverStaleUploads(): Promise<number> {
+  const all = await listShots();
+  const stale = all.filter((s) => s.status === "uploading");
+  for (const s of stale) {
+    await updateShot(s.id, { status: "pending", nextRetryAt: 0 });
+  }
+  return stale.length;
+}
+
+/** 清空(退出登录时用,避免换人后看到上一个人的照片) */
 export async function clearShots(): Promise<void> {
   await tx("readwrite", (s) => s.clear());
 }

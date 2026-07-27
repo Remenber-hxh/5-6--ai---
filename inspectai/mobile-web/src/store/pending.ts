@@ -1,0 +1,120 @@
+import { create } from "zustand";
+
+import { compressImage, getGeo } from "@/lib/capture";
+import {
+  PendingShot,
+  StorageFullError,
+  addShot,
+  getStorageInfo,
+  listShots,
+  recoverStaleUploads,
+  removeShot,
+  requestPersistentStorage,
+} from "@/lib/offlineStore";
+import { retryNow, runQueue } from "@/lib/uploadQueue";
+
+/** 队列自动跑一轮的间隔:覆盖"信号悄悄恢复但没触发 online 事件"的情况 */
+const TICK_MS = 30_000;
+
+interface PendingState {
+  shots: PendingShot[];
+  online: boolean;
+  /** 正在处理拍照入库(压缩/定位),期间快门置灰 */
+  saving: boolean;
+  /** 存储是否已获持久化保证。false 时提示用户数据可能被系统清理 */
+  persisted: boolean;
+  /** 已用空间字节,用于"空间快满了"提示 */
+  usedBytes: number;
+  freeBytes: number | null;
+
+  init: () => Promise<void>;
+  refresh: () => Promise<void>;
+  addFiles: (files: File[], userId: string) => Promise<{ added: number; error?: string }>;
+  remove: (id: string) => Promise<void>;
+  retry: (id: string) => Promise<void>;
+  /** 手动触发上传(用户点"立即上传") */
+  flush: () => Promise<number>;
+}
+
+export const usePending = create<PendingState>((set, get) => ({
+  shots: [],
+  online: navigator.onLine,
+  saving: false,
+  persisted: false,
+  usedBytes: 0,
+  freeBytes: null,
+
+  async init() {
+    // 1) 申请持久化:不申请的话浏览器在空间紧张时可直接清掉我们的照片
+    const persisted = await requestPersistentStorage();
+    // 2) 复位上次残留的 uploading —— 否则页面被中途关掉的那几张会永远卡住
+    await recoverStaleUploads();
+    set({ persisted });
+    await get().refresh();
+    void get().flush();
+  },
+
+  async refresh() {
+    const [shots, info] = await Promise.all([listShots(), getStorageInfo()]);
+    set({ shots, usedBytes: info.usedBytes, freeBytes: info.freeBytes, persisted: info.persisted });
+  },
+
+  async addFiles(files, userId) {
+    if (!files.length) return { added: 0 };
+    set({ saving: true });
+    try {
+      // 定位取一次给这批共用:同次拍摄位置相同,也避免连续定位拖慢
+      const geo = await getGeo();
+      let added = 0;
+      for (const file of files) {
+        const compressed = await compressImage(file);
+        try {
+          await addShot({
+            blob: compressed,
+            fileName: compressed.name,
+            geo,
+            userId,
+            capturedAt: new Date().toISOString(),
+          });
+          added += 1;
+        } catch (err) {
+          await get().refresh();
+          if (err instanceof StorageFullError) return { added, error: err.message };
+          return { added, error: "保存失败,请重试" };
+        }
+      }
+      await get().refresh();
+      void get().flush(); // 在线就立刻开始传,不用等定时器
+      return { added };
+    } finally {
+      set({ saving: false });
+    }
+  },
+
+  async remove(id) {
+    await removeShot(id);
+    await get().refresh();
+  },
+
+  async retry(id) {
+    await retryNow(id);
+    await get().refresh();
+    void get().flush();
+  },
+
+  async flush() {
+    const n = await runQueue(() => void get().refresh());
+    await get().refresh();
+    return n;
+  },
+}));
+
+// 联网即冲一轮;定时兜底覆盖"信号悄悄恢复"的情况
+window.addEventListener("online", () => {
+  usePending.setState({ online: true });
+  void usePending.getState().flush();
+});
+window.addEventListener("offline", () => usePending.setState({ online: false }));
+setInterval(() => {
+  if (navigator.onLine) void usePending.getState().flush();
+}, TICK_MS);

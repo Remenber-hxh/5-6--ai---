@@ -68,6 +68,12 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleChangeRequestRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/prompt/templates/"):
 		s.handlePromptTemplateRoutes(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/"):
+		// 未命中任何 API 路由 → 明确 404 JSON。
+		// 不能掉进 serveStatic 兜底:那会给未知 /api 路径回 200 + 前端 HTML,
+		// 客户端据 res.ok 误判为成功。移动端离线上传曾因此把没传成功的照片
+		// 从本地删掉(静默丢数据)。API 与静态资源必须分流。
+		writeError(w, http.StatusNotFound, "not_found", "接口不存在")
 	default:
 		s.serveStatic(w, r)
 	}
