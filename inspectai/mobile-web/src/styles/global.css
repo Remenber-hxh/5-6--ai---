@@ -1,0 +1,221 @@
+/* ===== 设计令牌:与旧版 frontend/ 视觉保持一致 =====
+   数值直接取自旧版 styles.css,不是近似值。后续页面一律吃这层令牌,
+   要调风格改这里一处即可,不在组件里散写颜色。
+   视口地基(svh / 安全区 / 禁回弹)在 index.html 的 <style> 里。 */
+
+:root {
+  /* 科技深色底(旧版 --tech-* 系列) */
+  --tech-bg: #06111d;
+  --tech-bg-2: #0a1a2a;
+  --tech-jade: #43e5ac;
+  --tech-cyan: #55d7ff;
+
+  /* 文字层级 */
+  --ink: #eaf7ff;
+  --ink-2: rgba(234, 247, 255, 0.66);
+  --ink-3: rgba(234, 247, 255, 0.48);
+  --label: rgba(234, 247, 255, 0.72);
+
+  /* 玻璃卡片(旧版 .login-box) */
+  --card-bg: linear-gradient(180deg, rgba(12, 38, 70, 0.82), rgba(5, 20, 44, 0.86));
+  --card-border: rgba(126, 255, 210, 0.18);
+  --card-shadow: 0 30px 90px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+
+  /* 输入框 */
+  --input-bg: rgba(0, 0, 0, 0.24);
+  --input-border: rgba(255, 255, 255, 0.16);
+  --input-border-focus: rgba(126, 255, 210, 0.62);
+  --input-ring: rgba(126, 255, 210, 0.14);
+
+  /* 主按钮:翡翠→青 渐变(旧版 .login-submit) */
+  --btn-primary: linear-gradient(135deg, #1be087 0%, #22e1ff 100%);
+  --btn-primary-ink: #052015;
+  --btn-primary-shadow: 0 12px 32px rgba(27, 224, 135, 0.36);
+
+  /* 屏幕背景:两点光晕 + 斜向渐变(旧版 .scene-login) */
+  --screen-bg:
+    radial-gradient(circle at 18% 22%, rgba(34, 225, 255, 0.18), transparent 38%),
+    radial-gradient(circle at 84% 78%, rgba(27, 224, 135, 0.16), transparent 40%),
+    linear-gradient(160deg, #061325 0%, #0a1f3a 55%, #06231e 100%);
+}
+
+/* ===== 应用外壳 ===== */
+
+.app-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  background: var(--screen-bg);
+}
+
+/* 唯一滚动区:只有它滚,body 不滚(避免旧版那种双层滚动/回弹白边) */
+.scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.center-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  position: relative; /* 给 .beian-line 的绝对定位做参照 */
+  padding: 32px 24px calc(24px + var(--safe-bottom));
+  padding-top: calc(24px + var(--safe-top));
+}
+
+/* ===== 品牌标牌(旧版 .login-brand) ===== */
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid rgba(126, 255, 210, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.brand-word {
+  color: #eafff8;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+.brand-divider {
+  width: 1px;
+  height: 15px;
+  background: linear-gradient(180deg, transparent, rgba(111, 255, 219, 0.74), transparent);
+}
+.brand-cn {
+  color: var(--tech-jade);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+/* ===== 玻璃卡片 ===== */
+
+.glass-card {
+  width: 100%;
+  max-width: 360px;
+  padding: 32px 26px 28px;
+  border-radius: 18px;
+  background: var(--card-bg);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+}
+
+.screen-title {
+  margin: 22px 0 6px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.screen-sub {
+  margin: 0 0 22px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.screen-hint {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* ===== 表单(把 antd-mobile 默认浅色皮改成旧版深色皮) ===== */
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--label);
+}
+/* antd-mobile Input 的实际输入元素 */
+.field .adm-input {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--input-border);
+  border-radius: 10px;
+  background: var(--input-bg);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.field .adm-input-element {
+  color: #fff;
+  font-size: 15px;
+}
+.field .adm-input-element::placeholder {
+  color: rgba(234, 247, 255, 0.32);
+}
+.field .adm-input:focus-within {
+  border-color: var(--input-border-focus);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+/* ===== 主按钮:覆盖 antd-mobile primary ===== */
+
+.btn-primary.adm-button {
+  height: 46px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--btn-primary);
+  color: var(--btn-primary-ink);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  box-shadow: var(--btn-primary-shadow);
+}
+.btn-primary.adm-button:active {
+  transform: scale(0.99);
+  opacity: 0.92;
+}
+
+/* 次要按钮(描边) */
+.btn-ghost.adm-button {
+  height: 44px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--ink);
+}
+
+/* ===== ICP 备案号:钉在本屏底部,不参与卡片居中(与旧版一致) ===== */
+
+.beian-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + var(--safe-bottom));
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.beian-line a {
+  color: rgba(234, 247, 255, 0.42);
+  text-decoration: none;
+}
+
+a {
+  color: var(--tech-jade);
+}

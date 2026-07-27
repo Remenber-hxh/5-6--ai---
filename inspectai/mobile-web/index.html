@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover:允许内容延伸到刘海/圆角区,再用 safe-area 让开 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+    />
+    <meta name="theme-color" content="#07131f" />
+    <title>智巡</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      /* ===== 视口地基:一次做对,根治旧版反复出现的 100vh / 安全区 / 回弹白边 ===== */
+      :root {
+        /* svh = 手机真实可视高度(地址栏收起后的最大高度是 lvh,会顶出内容)。
+           不支持 svh 的老浏览器回落 vh。 */
+        --app-vh: 100vh;
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --ground: #0b1620;
+      }
+      @supports (height: 100svh) {
+        :root { --app-vh: 100svh; }
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body, #root {
+        margin: 0;
+        height: var(--app-vh);
+        /* 禁橡皮筋回弹:既去掉露白边,也防误触下拉刷新导致 SPA 重载丢状态 */
+        overscroll-behavior: none;
+      }
+      html { background: var(--ground); }
+      body {
+        overflow: hidden; /* 滚动交给内部容器,body 本身不滚 */
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      #root { display: flex; flex-direction: column; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
