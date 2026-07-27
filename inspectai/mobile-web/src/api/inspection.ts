@@ -155,3 +155,29 @@ export async function submitRecord(id: string): Promise<RecordDTO> {
   if (!res.ok) throw new Error(body.message || "提交失败");
   return body as RecordDTO;
 }
+
+// ===== 工程任务(我的任务) =====
+
+export interface EngineeringTaskDTO {
+  id: string;
+  title?: string;
+  workContent?: string;
+  assetName?: string;
+  project?: string;
+  status: string; // 待执行 / 进行中 / 逾期 / 已完成
+  dueAt?: string;
+  templateId?: string;
+}
+
+export async function listEngineeringTasks(): Promise<EngineeringTaskDTO[]> {
+  const body = await api<{ tasks: EngineeringTaskDTO[] | null }>("/api/engineering/tasks");
+  return body.tasks || [];
+}
+
+/** 开始执行:乐观置为进行中,失败不阻断巡检(提交时后端仍会自动闭环) */
+export async function startEngineeringTask(id: string): Promise<void> {
+  await api(`/api/engineering/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "进行中" }),
+  }).catch(() => void 0);
+}

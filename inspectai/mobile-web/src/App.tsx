@@ -6,6 +6,7 @@ import ClassifyPage from "@/pages/ClassifyPage";
 import LoginPage from "@/pages/LoginPage";
 import MePage from "@/pages/MePage";
 import RecordPage from "@/pages/RecordPage";
+import TasksPage from "@/pages/TasksPage";
 import ReviewPage from "@/pages/ReviewPage";
 
 // 巡检主流程:拍照 → (联网自动上传) → 选照片识别 → 填日报 → 提交
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/review" element={guard(<ReviewPage />)} />
         <Route path="/classify" element={guard(<ClassifyPage />)} />
         <Route path="/record/:id" element={guard(<RecordPage />)} />
+        <Route path="/tasks" element={guard(<TasksPage />)} />
         <Route path="/me" element={guard(<MePage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
