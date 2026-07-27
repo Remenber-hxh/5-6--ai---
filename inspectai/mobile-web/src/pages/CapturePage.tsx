@@ -1,11 +1,12 @@
 import { Toast } from "antd-mobile";
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import PendingPanel from "@/components/PendingPanel";
 import { useAuth } from "@/store/auth";
 import { usePending } from "@/store/pending";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
+import { listEngineeringTasks, listOfflineShots } from "@/api/inspection";
 
 // 拍照台:拍多张 → 存进离线仓库 → 联网后自动上传补 AI 识别。
 // 弱网现场只管拍,照片与拍摄时间先落地,不被信号拖住巡检节奏。
@@ -14,6 +15,33 @@ export default function CapturePage() {
   const user = useAuth((s) => s.user);
   const { online, saving, init, addFiles } = usePending();
   const activeTask = getActiveTask();
+  // 待办角标:让巡检员一眼看到"还有事没做完",不用点进去才知道
+  const [pendingShots, setPendingShots] = useState(0);
+  const [openTasks, setOpenTasks] = useState(0);
+
+  const loadBadges = useCallback(async () => {
+    // 角标是辅助信息,拉取失败静默降级为不显示,不打扰主流程
+    const [shots, tasks] = await Promise.all([
+      listOfflineShots().catch(() => []),
+      listEngineeringTasks().catch(() => []),
+    ]);
+    setPendingShots(shots.length);
+    setOpenTasks(tasks.filter((t) => t.status !== "已完成").length);
+  }, []);
+
+  useEffect(() => {
+    void loadBadges();
+    // 从其他页返回或切回前台时刷新,否则处理完照片红点还挂着
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadBadges();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [loadBadges]);
 
   useEffect(() => {
     void init();
@@ -105,6 +133,7 @@ export default function CapturePage() {
         <div className="hero-secondary">
           <button className="link-btn" onClick={() => nav("/tasks")}>
             我的任务
+            {openTasks > 0 && <span className="badge-dot">{openTasks > 99 ? "99+" : openTasks}</span>}
           </button>
           <span className="link-sep">·</span>
           <label className="link-btn upload-wrap">
@@ -121,6 +150,9 @@ export default function CapturePage() {
           <span className="link-sep">·</span>
           <button className="link-btn" onClick={() => nav("/review")}>
             待处理照片
+            {pendingShots > 0 && (
+              <span className="badge-dot">{pendingShots > 99 ? "99+" : pendingShots}</span>
+            )}
           </button>
         </div>
       </div>
