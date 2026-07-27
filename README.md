@@ -1,162 +1,111 @@
 # 智巡 InspectAI
 
-> 面向楼宇、园区、物业和设施运维团队的 AI 巡检与资产台账平台。  
-> 核心闭环：**拍照取证 → AI 识别 → 人工确认 → 异常复核 → 台账沉淀 → 管理复盘**。
+面向物业 / 设施管理的 **AI 巡检系统**:现场拍照即生成日报,异常自动进入整改闭环,全程留痕可追溯。
 
-![智巡移动端科技视觉](inspectai/frontend/assets/zhixun-hero-tech.png)
-
-![Go](https://img.shields.io/badge/Backend-Go-00ADD8?style=flat-square)
-![Python](https://img.shields.io/badge/AI-Python-3776AB?style=flat-square)
-![MySQL](https://img.shields.io/badge/Database-MySQL-4479A1?style=flat-square)
-![Docker](https://img.shields.io/badge/Deploy-Docker%20Compose-2496ED?style=flat-square)
-![DashScope](https://img.shields.io/badge/Model-Qwen%20VL%20%2B%20Qwen-00A884?style=flat-square)
+对外产品名 **智巡**,内部代号 `inspectai`。线上:<https://jadeast.cloud>
 
 ---
 
-## 项目定位
+## 它解决什么
 
-传统巡检最大的问题不是“能不能填表”，而是现场证据、表单字段、异常判断和后续台账之间长期割裂。巡检员要拍照片、对检查项、抄读数、写日报；主管还要再从日报里翻异常、追问题、做周报。智巡把这一条链路压缩到一个系统里：一线只负责拍照和确认，AI 负责识别、预填、提示风险，后台负责审批、台账和复盘。
+传统巡检的三个痛点:
 
-当前演示主线聚焦 **资产台账中的电梯设备巡检**：新手巡检员按设备拍照，AI 自动匹配电梯巡检模板，识别现场状态，提示漏拍或风险项，确认后沉淀为巡检记录，并关联到资产台账，主管可以按设备查看历史、导出记录、复核异常。
-
----
-
-## 界面预览
-
-| 移动端入口 | 管理端登录 |
+| 痛点 | 智巡的做法 |
 |---|---|
-| ![移动端科技首页](inspectai/frontend/assets/zhixun-hero-tech.png) | ![管理后台登录背景](inspectai/admin-frontend/login-bg-ai.png) |
+| 回办公室补填表格,耗时且失真 | 现场拍照 → AI 识别读数与状态 → 逐项确认即提交 |
+| 发现异常后跟不下去 | 异常自动生成待整改任务 → 复检 → 销账,闭环可查 |
+| 台账靠人工汇总,对不上 | 每次巡检自动沉淀资产快照与字段观测,趋势可回溯 |
+
+**定位是"辅助填报 + 全程留痕",不是替代人。** AI 只出建议,每个字段都要巡检员确认才入库;
+谁在什么时间改了什么,操作日志全留。签字确认权始终在人。
+
+---
+
+## 系统构成
+
+```
+                    ┌──────────────┐
+   移动端(巡检员)  │              │   管理后台(主管/管理员)
+   frontend/  ─────▶│  go-backend  │◀───── admin-web/
+   mobile-web/(新) │   :18080     │       (React + antd)
+                    │              │
+                    └──────┬───────┘
+                           │
+                    ┌──────▼───────┐        ┌─────────┐
+                    │  ai-service  │───────▶│ 阿里云百炼 │ 视觉识别
+                    │    :19100    │        │ DeepSeek  │ 文本分析
+                    └──────────────┘        └─────────┘
+                           │
+                    ┌──────▼───────┐
+                    │    MySQL     │  巡检记录 / 资产台账 / 审批 / 日志
+                    └──────────────┘
+```
+
+### 各服务职责
+
+| 服务 | 技术 | 职责 |
+|---|---|---|
+| `go-backend` | Go,单二进制 | 业务主干:记录、资产、审批、工程任务、权限、租户。同时托管旧移动端静态页 |
+| `ai-service` | Python,仅标准库 | AI 调用层:视觉识别、文本总结、管理问答。屏蔽厂商差异 |
+| `admin-web` | React 18 + Vite + TS + antd | 管理后台(生产在用) |
+| `mobile-web` | React 18 + Vite + TS + antd-mobile | **新移动端,建设中**,与旧版并存 |
+| `frontend` | 原生 JS SPA | 旧移动端(生产在用),待新版达标后退役 |
+| `admin-frontend` | 原生 JS | 旧后台,已被 `admin-web` 取代 |
+
+---
+
+## 架构要点
+
+### 数据访问:Store 接口 + 双实现
+
+`Store` 按业务域拆成 10 余个接口(`RecordStore` / `AssetStore` / `TenantStore` …),
+组合成全量 `Store`。两个实现:
+
+- `SQLiteStore` —— 同时支持 SQLite 与 MySQL(方言分支),生产用 MySQL
+- `MemStore` —— 内存实现,供测试与降级
+
+编译期断言保证两者都覆盖全部域,漏实现直接编译失败。
+
+### 版本化数据库迁移
+
+`migrations.go` 一张表管全部 schema 变更,`schema_migrations` 记账,只往后加、不改历史条目。
+当前已到 **010**。新增迁移须幂等,双方言差异走 `s.dialect` 分支。
+
+### 路由权限表
+
+`routes.go` 用一张表声明"哪个接口谁能调"(方法 / 路径 / 守卫 / 能力键)。
+守卫分四档:登录即可 / 管理角色 / 系统管理员 / **平台超管**。
+**前端隐藏菜单只是体验,后端逐条校验才是边界** —— 绕过前端直接调接口同样被拦。
+
+### 权限矩阵
+
+角色 × 能力可在后台可视化配置,支持自定义角色。内置四角色:
+`admin` / `manager` / `supervisor` / `inspector`。
+
+### 多租户(Phase 0 已完成)
+
+一套部署、多客户数据隔离。策略:**共享 schema + `tenant_id` 行级隔离**。
+
+- 租户从**登录账号自动带出**,用户不手选公司
+- 隔离**收口在 Store 层**:读写方法签名带租户,漏改的调用点编译不过
+- 跨租户访问一律等同"不存在"(404),不泄露存在性
+- **两级管理员**:平台超管(唯一可跨租户、建客户) vs 租户管理员(锁死本租户)
+
+> 当前已隔离:记录域、资产域。其余业务域按"临上第二客户前补齐"的节奏推进,
+> 未隔离处均有 TODO 标注并说明为何单客户下当前行为正确。
 
 ---
 
 ## 业务闭环
 
-```mermaid
-flowchart LR
-    A["巡检员进入企业微信/移动端"] --> B["选择设备或巡检模板"]
-    B --> C["拍照或相册上传现场图片"]
-    C --> D["Qwen-VL 场景识别与字段提取"]
-    D --> E{"识别质量是否足够"}
-    E -- "不足" --> F["提示补拍，最多三次"]
-    F --> C
-    E -- "足够" --> G["自动生成日报字段"]
-    G --> H["人工确认或修正字段"]
-    H --> I["AI 生成总结与行动建议"]
-    I --> J["提交巡检记录"]
-    J --> K["沉淀资产台账"]
-    K --> L["主管复核、导出、问答分析"]
+```
+拍照 → AI 识别 → 逐项确认 → 提交日报
+                                  │
+                          发现异常 ▼
+                    自动生成待整改任务 → 复检 → 销账关闭
 ```
 
-这条流程的关键不是让 AI 直接替人下结论，而是让 AI 先做“识别、提示、预填、对比”，再把最终确认权交给人。这样既能减少一线重复录入，又能保证台账里的数据可追溯、可复核。
-
----
-
-## 技术架构
-
-```mermaid
-flowchart TB
-    subgraph Client["用户入口"]
-        M["移动端：巡检员拍照、确认、提交"]
-        A["管理后台：主管审批、复核、台账、看板"]
-    end
-
-    subgraph Gateway["接入层"]
-        N["Nginx / HTTPS / 反向代理"]
-    end
-
-    subgraph Backend["业务服务层"]
-        G["Go Backend\n业务 API / 模板 / 任务 / 台账 / 审批"]
-        P["Python AI Service\n图片识别 / 字段提取 / 总结问答"]
-    end
-
-    subgraph Model["AI 模型层"]
-        QV["Qwen-VL Plus\n视觉识别"]
-        QT["Qwen Plus\n总结与问答"]
-    end
-
-    subgraph Storage["存储层"]
-        DB["MySQL\n生产数据"]
-        FS["Storage\n上传图片 / 日志 / 临时分类图"]
-    end
-
-    M --> N
-    A --> N
-    N --> G
-    G --> P
-    P --> QV
-    P --> QT
-    G --> DB
-    G --> FS
-```
-
-### 服务职责
-
-| 模块 | 职责 | 默认端口 |
-|---|---|---|
-| 移动端 | 巡检员拍照、上传、字段确认、提交日报 | `18080` |
-| Go 后端 | API、模板、任务、资产台账、审批、导出 | `18080` |
-| 管理后台 | 主管看板、资产台账、异常复核、数据中心 | `18081` |
-| AI 微服务 | 调用千问视觉模型、文本模型、返回结构化结果 | `19100` |
-| MySQL | 生产数据库，沉淀巡检记录、资产、任务、审批 | `3306` |
-
----
-
-## AI 工作方式
-
-```mermaid
-sequenceDiagram
-    participant U as 巡检员
-    participant FE as 移动端
-    participant GO as Go 后端
-    participant AI as Python AI 服务
-    participant VL as Qwen-VL
-    participant DB as MySQL
-
-    U->>FE: 上传现场图片
-    FE->>GO: 提交图片和模板信息
-    GO->>AI: 请求场景识别/字段提取
-    AI->>VL: 多图视觉识别
-    VL-->>AI: 场景、字段、置信度、缺失项
-    AI-->>GO: 结构化 JSON
-    GO-->>FE: 日报字段预填结果
-    U->>FE: 人工确认/修正
-    FE->>GO: 提交最终字段
-    GO->>AI: 请求总结和行动建议
-    AI-->>GO: AI 总结
-    GO->>DB: 写入巡检记录并更新资产台账
-```
-
-AI 部分当前采用“保守识别”策略：能看清的字段才填，无法确认的字段标记为需人工复核；关键图片缺失时提示补拍，不用编造数据污染台账。对于数字读数类场景，提示词会要求模型保留原始读数、单位、小数点位置和置信度，最终仍由人工确认后入库。
-
----
-
-## 当前能力
-
-| 能力域 | 已实现内容 |
-|---|---|
-| 移动端巡检 | 拍照识别、相册上传、手动选模板、字段确认、失败重拍、人工兜底 |
-| AI 识别 | 场景分类、表单字段提取、缺失照片提示、AI 总结、行动建议 |
-| 巡检管理 | 巡检计划、巡检任务、巡检记录、状态追踪、导出 |
-| 资产台账 | 设备档案、历史巡检、最近状态、异常摘要、记录关联 |
-| 异常处理 | 异常复核、修改申请、主管审批、操作留痕 |
-| 数据看板 | 巡检趋势、资产状态、异常统计、AI 问答辅助 |
-| 部署能力 | 本地一键启动、Docker Compose 生产部署、MySQL、Docker Secret、Nginx |
-
----
-
-## 演示主线
-
-完整演示手稿见 [docs/DEMO.md](docs/DEMO.md)。
-
-建议演示按一条线讲完，避免来回跳页面：
-
-1. 移动端进入巡检，选择“无机房电梯”模板。
-2. 上传电梯现场照片，模拟新手漏拍按钮面板。
-3. AI 自动识别为电梯巡检，预填检查字段。
-4. 系统提示缺失关键照片或风险项，巡检员提交修改申请。
-5. 管理后台收到审批，主管处理后进入台账。
-6. 在资产台账筛选“无机房电梯”，查看该设备历史巡检。
-7. 导出巡检记录，说明主管不再逐条翻日报，而是看 AI 摘要和趋势变化。
+数据修改走审批流:巡检员提申请 → 主管审批 → 通过后应用并同步资产状态、自动销账。
 
 ---
 
@@ -164,183 +113,106 @@ AI 部分当前采用“保守识别”策略：能看清的字段才填，无�
 
 ### 本地开发
 
-```powershell
-cd inspectai
-.\scripts\setup-key.ps1
-.\scripts\start-local.ps1
-.\scripts\start-admin.ps1
+```bash
+# 一键起后端 + AI 服务 + 管理后台
+powershell -ExecutionPolicy Bypass -File inspectai/scripts/start-all.ps1
 ```
 
-访问入口：
-
-| 入口 | 地址 |
+| 服务 | 地址 |
 |---|---|
-| 移动端 / Go 后端 | <http://127.0.0.1:18080> |
-| 管理后台 | <http://127.0.0.1:18081> |
-| AI 健康检查 | <http://127.0.0.1:19100/health> |
+| 旧移动端 / 后端 | <http://localhost:18080> |
+| 管理后台 admin-web | <http://localhost:18090> |
+| 新移动端 mobile-web | <http://localhost:18091>(`cd inspectai/mobile-web && npm run dev`) |
+| AI 服务健康检查 | <http://localhost:19100/health> |
 
-健康检查：
+前置:本机 MySQL 服务需启动。
 
-```powershell
-curl --noproxy "*" http://127.0.0.1:18080/health
-curl --noproxy "*" http://127.0.0.1:19100/health
-```
-
-停止服务：
-
-```powershell
-.\scripts\stop-admin.ps1
-.\scripts\stop-local.ps1
-```
-
-### 服务器部署
-
-服务器部署文档见 [inspectai/docs/DEPLOY.md](inspectai/docs/DEPLOY.md)。
+### 生产部署
 
 ```bash
-git clone https://github.com/Remenber-hxh/5-6--ai---.git
-cd 5-6--ai---/inspectai
-
-cp .env.prod.example .env.prod
-# 编辑 .env.prod，只写非敏感配置
-
-export DASHSCOPE_API_KEY="sk-xxx"
-export MYSQL_PASSWORD="change-me"
-export MYSQL_ROOT_PASSWORD="change-me"
-export INSPECTAI_ADMIN_PASSWORD="change-me"
-
-bash scripts/prepare-secrets.sh
-bash scripts/deploy-linux.sh
+cd /opt/inspectai-src/inspectai
+git pull
+bash scripts/backup.sh          # 部署前先备份
+bash scripts/deploy-linux.sh    # 构建 + 滚动重启
 ```
 
-生产部署约束：
+详见 [`inspectai/docs/DEPLOY.md`](inspectai/docs/DEPLOY.md)。
 
-| 项目 | 要求 |
-|---|---|
-| 域名 | 企业微信可信域名需要指向服务器 |
-| HTTPS | Nginx 侧配置证书，企业微信内访问必须 HTTPS |
-| 密钥 | 千问 Key、MySQL 密码、管理员密码走 Docker Secret |
-| 数据库 | 生产使用 MySQL，不建议用 SQLite |
-| 备份 | MySQL 和上传图片目录需要定期备份 |
-| 日志 | `storage/logs` 保留启动、AI、后端、管理端日志 |
+---
+
+## 运维
+
+### 备份与恢复
+
+```bash
+bash scripts/backup.sh              # 数据库 + 巡检照片 + 密钥,一条命令
+bash scripts/restore.sh --list      # 看有哪些备份
+bash scripts/restore.sh <日期>      # 恢复演练(→ 临时库,不碰生产)
+```
+
+- `mysqldump --single-transaction` 热备**不锁表**,业务无感
+- 备份前查磁盘余量,不足即中止;备份后按保留策略清理(日备 7 天,周日备份 28 天)
+- 失败推企业微信群机器人
+- **恢复默认到临时库**,覆盖生产须显式 `--force-production` 并手工确认
+
+> 没恢复成功过的备份不算备份 —— 定期跑一次演练。
+
+### 安全
+
+- 密码 PBKDF2-SHA256 12 万次迭代 + 每人独立盐;令牌不明文存库,8 小时过期
+- 登录防爆破:同账号+IP 连错 5 次锁 10 分钟
+- 密钥经 Docker Secret 文件注入,不落明文配置
+- 全站 HTTPS(TLS 1.2/1.3 + HSTS),HTTP 强制跳转
+- 全参数化 SQL
 
 ---
 
 ## 目录结构
 
-```text
-.
-├─ README.md                         项目总览，适合 GitHub 首页展示
-├─ docs/
-│  └─ DEMO.md                        演示手稿与讲解脚本
-└─ inspectai/
-   ├─ go-backend/                    Go 业务后端
-   ├─ ai-service/                    Python AI 微服务与 prompts
-   ├─ frontend/                      移动端页面
-   ├─ admin-frontend/                管理后台页面
-   ├─ nginx/                         生产反向代理配置
-   ├─ scripts/                       启停、密钥、部署、打包脚本
-   ├─ storage/                       本地运行数据，已 gitignore
-   ├─ docs/
-   │  └─ DEPLOY.md                   服务器部署指南
-   ├─ docker-compose.yml             本地/开发编排
-   └─ docker-compose.prod.yml        生产部署编排
+```
+inspectai/
+├── go-backend/cmd/server/   业务主干(~15k 行,31 个测试)
+├── ai-service/              AI 调用层
+├── admin-web/               管理后台(React,生产在用)
+├── mobile-web/              新移动端(React,建设中)
+├── frontend/                旧移动端(生产在用)
+├── scripts/                 部署 / 备份 / 恢复 / 本地启动
+├── nginx/                   反向代理与 TLS 配置
+└── docs/                    设计方案与部署文档
 ```
 
----
+关键文档:
 
-## 数据沉淀方式
-
-```mermaid
-erDiagram
-    ASSET ||--o{ INSPECTION_RECORD : has
-    INSPECTION_RECORD ||--o{ RECORD_FIELD : contains
-    INSPECTION_RECORD ||--o{ RECORD_PHOTO : attaches
-    INSPECTION_RECORD ||--o{ REVIEW_REQUEST : may_create
-    USER ||--o{ INSPECTION_RECORD : submits
-    USER ||--o{ REVIEW_REQUEST : approves
-
-    ASSET {
-        string asset_no
-        string asset_name
-        string asset_type
-        string location
-        string status
-    }
-
-    INSPECTION_RECORD {
-        string record_id
-        string template_code
-        string project_name
-        string result_status
-        datetime submitted_at
-        string ai_summary
-    }
-
-    RECORD_FIELD {
-        string field_key
-        string field_label
-        string field_value
-        string source
-        float confidence
-    }
-
-    RECORD_PHOTO {
-        string photo_url
-        string photo_type
-        string ai_note
-    }
-
-    REVIEW_REQUEST {
-        string reason
-        string status
-        string reviewer
-        datetime reviewed_at
-    }
-```
-
-资产台账保存的是“设备长期档案”，巡检记录保存的是“某一次巡检事实”。两者分开后，主管既能看单次问题，也能看同一设备长期趋势。
+- [`docs/tenant-and-auth-design.md`](inspectai/docs/tenant-and-auth-design.md) —— 多租户与登录设计
+- [`docs/DEPLOY.md`](inspectai/docs/DEPLOY.md) —— 部署、备份、排错
+- [`docs/product-notes.md`](inspectai/docs/product-notes.md) —— 产品待解决问题
 
 ---
 
 ## 路线图
 
-### 近期
+**进行中 —— 移动端重构 Phase 1**
+新移动端与旧版并存,逐屏迁移。当前:脚手架与应用外壳已完成;
+下一步为拍照托盘 + 离线队列(弱网现场先存照片,联网自动上传补 AI 识别)。
 
-- 企业微信 OAuth / SSO 接入，替代轻量令牌登录。
-- 审批通过后的状态联动继续增强，让异常闭环更直观。
-- AI 行动建议在移动端和管理端进一步突出。
-- 数据导出模板标准化，贴近日常汇报口径。
+**下一阶段**
+- 移动端逐屏迁移至新架构,达标后退役旧版
+- 按客户配置:各租户的模板 / 字段 / 品牌
+- 其余业务域租户隔离补齐(触发条件:接入第二个客户前)
 
-### 中期
-
-- 多租户与项目级权限，支持多个园区或物业项目共用。
-- 设备健康评分、趋势预警、周度/月度自动摘要。
-- 对象存储接入，图片从本地磁盘迁移到 OSS/S3。
-- CI/CD 与镜像仓库，形成可回滚的版本发布流程。
-
-### 长期
-
-- 接入智能穿戴设备，支持语音、视频、定位和现场传感数据。
-- 接入 MQTT / Modbus / IoT 网关，实现 AI 巡检与设备实时数据互证。
-- 和 BIM / 数字孪生结合，把巡检记录挂到具体楼层、房间、设备。
+**技术债(已知,有条件触发)**
+- 接口限流、安全响应头、密码复杂度策略
+- 自动备份定时任务上线、异地备份副本
 
 ---
 
 ## 项目边界
 
-当前版本适合演示、试点和小范围内部验证；如果要正式生产上线，建议优先补齐：
-
-- 企业微信身份体系和细粒度权限。
-- 数据库备份、日志留存、异常告警。
-- 更完整的测试覆盖和 CI/CD。
-- AI 识别结果的人工复核规范。
-- 图片长期存储、脱敏和访问权限控制。
+- AI 输出仅供参考,**最终数据以人工确认为准**
+- 图片识别调用境内厂商服务(阿里云 / DeepSeek),**数据不出境**;
+  涉密场景支持私有化模型部署
+- 当前为单租户运行(所有数据归默认租户),多客户能力已具备地基但尚未启用
 
 ---
 
-## 维护者
-
-- 项目仓库：[Remenber-hxh/5-6--ai---](https://github.com/Remenber-hxh/5-6--ai---)
-- 项目名称：智巡 InspectAI
-- 当前 License：未声明，默认不开放商用复用授权。
+*苏ICP备2026048624号*
