@@ -197,16 +197,40 @@ export async function removeShot(id: string): Promise<void> {
 }
 
 /**
- * 启动时调用:把上次残留的 uploading 状态复位成 pending。
- * 否则页面在上传中途被关掉,那几张会永远卡在"上传中",再也不会被重试。
+ * 启动时调用,做两件事:
+ *
+ * 1) 把上次残留的 uploading 复位成 pending —— 否则页面在上传中途被关掉,
+ *    那几张会永远卡在"上传中",再也不会被重试。
+ *
+ * 2) 补齐早期版本写入的记录缺失的字段。这是真实踩过的坑:
+ *    结构后来加了 nextRetryAt / size / retries,而旧记录里是 undefined,
+ *    于是 `undefined <= now` 恒为 false,那些照片永远选不中、传不上去,
+ *    体积统计也变成 NaN。给结构加字段就必须迁移已存在的数据。
+ *
+ * @returns 修复的条数
  */
 export async function recoverStaleUploads(): Promise<number> {
   const all = await listShots();
-  const stale = all.filter((s) => s.status === "uploading");
-  for (const s of stale) {
-    await updateShot(s.id, { status: "pending", nextRetryAt: 0 });
+  let fixed = 0;
+  for (const s of all) {
+    const patch: Partial<PendingShot> = {};
+    if (s.status === "uploading") {
+      patch.status = "pending";
+      patch.nextRetryAt = 0;
+    }
+    if (typeof s.nextRetryAt !== "number" || Number.isNaN(s.nextRetryAt)) patch.nextRetryAt = 0;
+    if (typeof s.retries !== "number" || Number.isNaN(s.retries)) patch.retries = 0;
+    if (typeof s.size !== "number" || Number.isNaN(s.size)) patch.size = s.blob?.size ?? 0;
+    if (!s.status) patch.status = "pending";
+    if (!s.idempotencyKey) patch.idempotencyKey = newId("idem");
+    if (!s.capturedAt) patch.capturedAt = new Date().toISOString();
+
+    if (Object.keys(patch).length > 0) {
+      await updateShot(s.id, patch);
+      fixed += 1;
+    }
   }
-  return stale.length;
+  return fixed;
 }
 
 /** 清空(退出登录时用,避免换人后看到上一个人的照片) */

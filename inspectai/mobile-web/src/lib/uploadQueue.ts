@@ -102,8 +102,11 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
   try {
     const now = Date.now();
     const all = await listShots();
+    // 用 (x || 0) 兜底:早期版本写入的记录 nextRetryAt 是 undefined,
+    // 而 `undefined <= now` 恒为 false —— 那些照片会永远选不中、传不上去。
+    // 迁移已在 recoverStaleUploads 里做,这里再防一道,绝不因字段缺失卡住上传。
     const due = all.filter(
-      (s) => (s.status === "pending" || s.status === "failed") && s.nextRetryAt <= now,
+      (s) => (s.status === "pending" || s.status === "failed" || !s.status) && (s.nextRetryAt || 0) <= now,
     );
 
     for (const shot of due) {
@@ -120,7 +123,7 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
       } else if (outcome.kind === "blocked") {
         await updateShot(shot.id, { status: "blocked", lastError: outcome.reason });
       } else {
-        const retries = shot.retries + 1;
+        const retries = (shot.retries || 0) + 1;
         if (retries >= MAX_AUTO_RETRIES) {
           await updateShot(shot.id, {
             status: "blocked",

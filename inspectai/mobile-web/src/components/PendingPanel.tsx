@@ -5,6 +5,8 @@ import { PendingShot } from "@/lib/offlineStore";
 import { usePending } from "@/store/pending";
 
 function fmtSize(bytes: number): string {
+  // 早期记录可能没有 size,算出 NaN 会直接显示给用户 —— 兜底成 0
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -64,7 +66,7 @@ export default function PendingPanel() {
   const stats = useMemo(() => {
     const blocked = shots.filter((s) => s.status === "blocked").length;
     const uploading = shots.filter((s) => s.status === "uploading").length;
-    const bytes = shots.reduce((sum, s) => sum + s.size, 0);
+    const bytes = shots.reduce((sum, s) => sum + (Number(s.size) || s.blob?.size || 0), 0);
     return { blocked, uploading, bytes };
   }, [shots]);
 
