@@ -1,5 +1,5 @@
 import { Button, Dialog, Input, Toast } from "antd-mobile";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
@@ -116,45 +116,57 @@ export default function RecordPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [viewing, setViewing] = useState<PhotoMeta | null>(null);
+  // 已发起识别的记录 ID,防 StrictMode 双跑重复建任务
+  const kickedRef = useRef("");
 
-  const load = useCallback(async () => {
-    try {
-      setRec(await getRecord(id));
-    } catch {
-      Toast.show({ content: "记录加载失败" });
-    }
-  }, [id]);
-
+  // 载入记录;若尚未识别则触发 AI 字段识别并轮询结果。
+  //
+  // 依赖只能是 id。曾经把 rec 也放进依赖,而循环里又 setRec ——
+  // 每轮拿到新数据就触发 effect 重跑、清理函数置 cancelled,
+  // 循环提前 return 导致 setAnalyzing(false) 永不执行:
+  // 转圈永远停不下来、轮询也断了,用户以为"识别特别慢"。
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  // 新建记录尚未识别 → 自动触发一次 AI 字段识别
-  useEffect(() => {
-    if (!rec || analyzing) return;
-    if (rec.recognitionStatus !== "not_started") return;
-    let cancelled = false;
+    let stop = false;
     void (async () => {
+      let cur: RecordDTO;
+      try {
+        cur = await getRecord(id);
+      } catch {
+        Toast.show({ content: "记录加载失败" });
+        return;
+      }
+      if (stop) return;
+      setRec(cur);
+      if (cur.recognitionStatus !== "not_started") return;
+
       setAnalyzing(true);
       try {
-        await startAnalysis(rec.id);
-        for (let i = 0; i < POLL_MAX && !cancelled; i++) {
+        // StrictMode 下 effect 会跑两次,用 ref 防重复发起识别任务
+        if (kickedRef.current !== id) {
+          kickedRef.current = id;
+          await startAnalysis(id);
+        }
+        for (let i = 0; i < POLL_MAX && !stop; i++) {
           await new Promise((r) => setTimeout(r, POLL_MS));
-          const fresh = await getRecord(rec.id);
-          if (cancelled) return;
+          if (stop) return;
+          const fresh = await getRecord(id);
+          if (stop) return;
           setRec(fresh);
-          if (fresh.recognitionStatus !== "processing" && fresh.recognitionStatus !== "not_started") break;
+          if (fresh.recognitionStatus !== "processing" && fresh.recognitionStatus !== "not_started") {
+            break;
+          }
         }
       } catch {
         Toast.show({ content: "AI 识别未成功,可手动填写" });
       } finally {
-        if (!cancelled) setAnalyzing(false);
+        // 无条件复位:组件还在就一定要把转圈停掉
+        setAnalyzing(false);
       }
     })();
     return () => {
-      cancelled = true;
+      stop = true;
     };
-  }, [rec, analyzing]);
+  }, [id]);
 
   async function onSubmit() {
     if (!rec) return;
