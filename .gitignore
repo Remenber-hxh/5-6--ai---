@@ -43,8 +43,10 @@ test/
 *.zip
 
 # ---- Go / Python 构建产物 ----
-inspectai/go-backend/server.exe
-inspectai/go-backend/server.exe~*
+# Go 编译产物:按目录写死会漏(go build 到 cmd/、cmd/server/ 都会落 exe),
+# 一律按扩展名忽略 —— 曾因此误提交过 17MB 二进制
+*.exe
+*.exe~*
 inspectai/go-backend/server_clean.exe
 inspectai/.gocache/
 inspectai/.gotelemetry/

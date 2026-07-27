@@ -6,9 +6,10 @@ backups/
 secrets/
 .gocache*/
 .gotelemetry*/
-go-backend/server.exe
+# 按扩展名忽略:go build 到 cmd/ 或 cmd/server/ 都会落 exe,按路径写死会漏
+*.exe
+*.exe~*
 go-backend/server
-go-backend/server.exe~*
 __pycache__/
 *.pyc
 *.pid
