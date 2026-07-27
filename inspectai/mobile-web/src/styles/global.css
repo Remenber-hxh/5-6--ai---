@@ -1049,3 +1049,175 @@ a {
 
 /* 输入框占满剩余宽度,右对齐(旧版 .field .value 语义) */
 .fld-value .adm-input { flex: 1; min-width: 0; }
+
+/* ===== 识别中:整屏场景(复刻旧版 sceneLoading)===== */
+.loading-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--screen-bg);
+  padding-top: var(--safe-top);
+}
+.progress { height: 3px; background: rgba(67, 229, 172, 0.14); flex: none; }
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #12a968, var(--tech-cyan));
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.loading-body { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; }
+.loading-box {
+  text-align: center;
+  width: 100%;
+  max-width: 360px;
+  padding: 30px 24px;
+  border-radius: 20px;
+  background: rgba(9, 24, 38, 0.62);
+  border: 1px solid rgba(111, 255, 219, 0.14);
+}
+.loading-orbit { position: relative; width: 96px; height: 96px; margin: 0 auto 22px; }
+.orbit-core {
+  position: absolute;
+  inset: 36px;
+  border-radius: 50%;
+  background: #12a968;
+  box-shadow: 0 0 0 6px rgba(18, 169, 104, 0.16), 0 0 18px rgba(62, 230, 180, 0.5);
+  animation: orbitPulse 1.6s ease-in-out infinite;
+}
+.orbit-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #12a968;
+  border-right-color: #12a968;
+  animation: spin 1.4s linear infinite;
+}
+.orbit-ring-2 {
+  inset: 14px;
+  border-top-color: #3ee6b4;
+  border-left-color: #3ee6b4;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  animation: spin 2.2s linear infinite reverse;
+  opacity: 0.7;
+}
+@keyframes orbitPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.88); opacity: 0.82; }
+}
+.loading-msg { font-size: 16px; font-weight: 600; color: #fff; margin: 0; }
+.loading-steps {
+  list-style: none;
+  margin: 22px 0 16px;
+  padding: 16px 0 0;
+  text-align: left;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-3); }
+.step-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  flex: none;
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+.step.active { color: var(--ink); }
+.step.active .step-dot {
+  background: var(--tech-jade);
+  box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.18);
+}
+.step.done { color: var(--ink-2); }
+.step.done .step-dot { background: #12a968; }
+.loading-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.loading-tags span {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(18, 169, 104, 0.14);
+  color: #6affd0;
+  letter-spacing: 0.25px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-core, .orbit-ring { animation: none; }
+}
+
+/* ===== 一键确认横幅(旧版 confirm-all-banner)===== */
+.confirm-all {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border: 1px solid #fdba74;
+  font-size: 13px;
+  color: #7c2d12;
+}
+.confirm-all .ca-msg { flex: 1; }
+.confirm-all b { font-size: 16px; color: #c2410c; }
+.confirm-all button {
+  flex: none;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #f97316;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.confirm-all button:disabled { opacity: 0.6; }
+
+/* ===== 原生输入控件(替代 antd-mobile,贴合旧版观感)===== */
+.fld-input, .fld-select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  text-align: right;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--lt-fg);
+}
+.fld-input::placeholder { color: var(--ios-gray); }
+.fld-select { appearance: none; -webkit-appearance: none; }
+.fld-block { display: block; }
+.fld-block .fld-label { flex: none; margin-bottom: 8px; }
+.fld-textarea {
+  width: 100%;
+  min-height: 76px;
+  border: 0.5px solid var(--lt-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--lt-fg);
+  background: var(--lt-fill);
+  resize: vertical;
+  outline: none;
+}
+
+/* ===== 巡检照片条 ===== */
+.photo-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 16px 14px;
+  scrollbar-width: none;
+}
+.photo-strip::-webkit-scrollbar { display: none; }
+.photo-thumb {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 0.5px solid var(--lt-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--lt-fill);
+}
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
