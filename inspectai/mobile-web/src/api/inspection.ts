@@ -55,6 +55,8 @@ export interface RecordDTO {
   inspector: string;
   recognitionStatus: string;
   manualRequired?: boolean;
+  /** 已尝试拍摄次数,达 3 次转人工(与旧版口径一致) */
+  captureAttempts?: number;
   retakeReason?: string;
   fields: FieldValue[];
   images: ImageInfo[];
@@ -114,14 +116,21 @@ export interface PatchFieldOpts {
   viewedPhoto?: boolean;
 }
 
+/**
+ * 更新单个字段。
+ *
+ * 注意:后端返回的是【这一个字段】,不是整条记录 —— 曾把它当整条记录塞进
+ * state,导致 rec.fields 变成 undefined、页面白屏。与旧版 frontend/ 的
+ * `Object.assign(field, updated)` 语义保持一致:只合并这一个字段。
+ */
 export async function patchField(
   recordId: string,
   code: string,
   value: string,
   version: number,
   opts: PatchFieldOpts = {},
-) {
-  return api<RecordDTO>(`/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`, {
+): Promise<FieldValue> {
+  return api<FieldValue>(`/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`, {
     method: "PATCH",
     body: JSON.stringify({ value, version, ...opts }),
   });

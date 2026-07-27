@@ -908,3 +908,29 @@
 a {
   color: var(--tech-jade);
 }
+
+/* ===== 识别不稳时的出路(照旧版:补拍 / 转人工) ===== */
+.retake-box {
+  padding: 14px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 196, 107, 0.34);
+  background: rgba(255, 196, 107, 0.08);
+}
+.retake-why {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ffc46b;
+}
+.retake-tries {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.retake-acts {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}

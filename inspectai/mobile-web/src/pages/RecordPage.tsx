@@ -6,6 +6,7 @@ import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import {
   FieldValue,
   RecordDTO,
+  enableManual,
   getRecord,
   patchField,
   startAnalysis,
@@ -23,7 +24,8 @@ function FieldRow({
 }: {
   field: FieldValue;
   recordId: string;
-  onSaved: (rec: RecordDTO) => void;
+  /** 只回传被更新的那一个字段(后端就返回这个),由上层合并进记录 */
+  onSaved: (updated: FieldValue) => void;
 }) {
   const [value, setValue] = useState(field.value);
   const [saving, setSaving] = useState(false);
@@ -38,11 +40,11 @@ function FieldRow({
     if (saving) return;
     setSaving(true);
     try {
-      const rec = await patchField(recordId, field.code, value, field.version, {
+      const updated = await patchField(recordId, field.code, value, field.version, {
         action,
         durationMs: Date.now() - enteredAt.current,
       });
-      onSaved(rec);
+      onSaved(updated);
       enteredAt.current = Date.now();
     } catch (err) {
       Toast.show({ content: err instanceof Error ? err.message : "保存失败" });
@@ -168,6 +170,15 @@ export default function RecordPage() {
     };
   }, [id]);
 
+  // 后端 PATCH 字段只返回该字段,按 code 合并进记录(与旧版 Object.assign 同语义)
+  function mergeField(updated: FieldValue) {
+    setRec((cur) =>
+      cur
+        ? { ...cur, fields: cur.fields.map((f) => (f.code === updated.code ? { ...f, ...updated } : f)) }
+        : cur,
+    );
+  }
+
   async function onSubmit() {
     if (!rec) return;
     const missing = rec.fields.filter((f) => f.required && !f.value.trim());
@@ -220,10 +231,40 @@ export default function RecordPage() {
             <span>AI 正在识别字段…</span>
           </div>
         )}
-        {rec.retakeReason && <div className="pending-alert">{rec.retakeReason}</div>}
+        {/* 识别不稳:照旧版给两条出路(补拍 / 转人工),不能只报错不给路走 */}
+        {rec.retakeReason && (
+          <div className="retake-box">
+            <div className="retake-why">{rec.retakeReason}</div>
+            <div className="retake-tries">已尝试 {rec.captureAttempts ?? 0} / 3 次</div>
+            <div className="retake-acts">
+              <button className="fld-btn" onClick={() => nav("/")}>
+                去补拍
+              </button>
+              <button
+                className="fld-btn primary"
+                onClick={async () => {
+                  try {
+                    const fresh = await enableManual(rec.id);
+                    setRec(fresh);
+                    Toast.show({ content: "已转人工填写,请逐项填写后提交" });
+                  } catch {
+                    Toast.show({ content: "切换失败,请重试" });
+                  }
+                }}
+              >
+                转人工填写
+              </button>
+            </div>
+          </div>
+        )}
+        {rec.manualRequired && !rec.retakeReason && (
+          <div className="analyzing" style={{ color: "#ffc46b", background: "rgba(255,196,107,0.08)", borderColor: "rgba(255,196,107,0.24)" }}>
+            <span>AI 未能稳定识别,请逐项手动填写</span>
+          </div>
+        )}
 
         {rec.fields.map((f) => (
-          <FieldRow key={f.code} field={f} recordId={rec.id} onSaved={setRec} />
+          <FieldRow key={f.code} field={f} recordId={rec.id} onSaved={mergeField} />
         ))}
 
         {rec.images.length > 0 && (
