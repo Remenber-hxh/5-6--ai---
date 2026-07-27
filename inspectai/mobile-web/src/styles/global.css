@@ -32,6 +32,23 @@
   --btn-primary-ink: #052015;
   --btn-primary-shadow: 0 12px 32px rgba(27, 224, 135, 0.36);
 
+  /* ===== iOS 浅色主题(旧版 form / preview / classify / ledger 用) =====
+     旧版是双主题:登录与拍照是深色科技风,其余流程页是浅色 iOS 风。
+     数值取自旧版 :root 的 --ios-* / --background 系列。 */
+  --ios-blue: #007aff;
+  --ios-green: #34c759;
+  --ios-orange: #ff9500;
+  --ios-gray: #8e8e93;
+  --lt-bg: #fafafb;
+  --lt-card: #ffffff;
+  --lt-fg: #1c1c1e;
+  --lt-fg-2: #6e6e73;
+  --lt-border: rgba(60, 60, 67, 0.12);
+  --lt-fill: #f2f2f7;
+  --c-blue-soft: rgba(0, 122, 255, 0.1);
+  --c-green-soft: rgba(52, 199, 89, 0.12);
+  --c-orange-soft: rgba(255, 149, 0, 0.12);
+
   /* 屏幕背景:两点光晕 + 斜向渐变(旧版 .scene-login) */
   --screen-bg:
     radial-gradient(circle at 18% 22%, rgba(34, 225, 255, 0.18), transparent 38%),
@@ -531,41 +548,324 @@
   color: #ffc46b;
 }
 
-/* ===== 流程页(选照片 / 填日报):头 + 滚动体 + 固定底部按钮 ===== */
+/* ===== 流程页:浅色 iOS 风(与旧版 form / classify 一致) =====
+   旧版是双主题 —— 登录/拍照深色科技风,填报流程浅色 iOS 风。
+   下列数值取自旧版 styles.css,不是近似值。 */
 
 .flow-screen {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--lt-bg);
+  color: var(--lt-fg);
 }
+/* iOS 毛玻璃导航栏 */
 .flow-head {
   flex: none;
-  padding: calc(14px + var(--safe-top)) 18px 10px;
+  padding: calc(12px + var(--safe-top)) 18px 10px;
+  background: rgba(250, 250, 251, 0.82);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--lt-border);
 }
 .flow-title {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   font-size: 20px;
-  font-weight: 800;
-  color: #fff;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--lt-fg);
 }
 .flow-sub {
   margin: 0;
   font-size: 12px;
-  color: var(--ink-2);
+  color: var(--lt-fg-2);
 }
-/* 只有这层滚动,底部按钮不被滚走 */
 .flow-body {
-  padding: 4px 14px 16px;
+  padding: 12px 0 18px;
 }
 .flow-foot {
   flex: none;
   padding: 10px 16px calc(10px + var(--safe-bottom));
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(4, 14, 26, 0.86);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border-top: 0.5px solid var(--lt-border);
+  background: rgba(250, 250, 251, 0.88);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
+
+/* ===== 照片选择网格 ===== */
+
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 0 16px;
+}
+.grid-cell {
+  position: relative;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  overflow: hidden;
+  aspect-ratio: 1;
+  background: var(--lt-fill);
+}
+.grid-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0.72;
+  transition: opacity 140ms ease;
+}
+.grid-cell.picked { border-color: var(--ios-blue); }
+.grid-cell.picked img { opacity: 1; }
+.cell-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 17px;
+}
+.grid-cell.picked .cell-check {
+  background: var(--ios-blue);
+  border-color: var(--ios-blue);
+}
+.cell-meta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 4px 3px;
+  font-size: 10px;
+  color: #fff;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.7));
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* 离线时长:公开展示拍摄与上传的时间差,不隐藏 */
+.cell-gap { font-style: normal; font-size: 9px; color: #ffd479; }
+.cell-zoom {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  font-size: 11px;
+  line-height: 22px;
+  text-align: center;
+}
+
+/* ===== 识别结果 / 模板选择(旧版 iOS 卡片) ===== */
+
+.classify-box {
+  margin: 16px 16px 0;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: var(--lt-card);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset,
+              0 1px 2px rgba(60,60,67,0.05),
+              0 4px 12px rgba(60,60,67,0.06);
+}
+.classify-head { font-size: 12px; color: var(--lt-fg-2); margin-bottom: 6px; }
+.classify-hit {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--lt-fg);
+  margin-bottom: 12px;
+}
+.classify-conf {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+}
+.tpl-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tpl-item {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 0.5px solid var(--lt-border);
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 13px;
+}
+.tpl-item.on {
+  border-color: rgba(0, 122, 255, 0.2);
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+  font-weight: 600;
+}
+
+/* ===== 字段:旧版 iOS 设置列表(标签左、值右、成组白卡) ===== */
+
+.fld-group {
+  background: var(--lt-card);
+  margin: 0 16px 14px;
+  border-radius: 20px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset,
+              0 1px 2px rgba(60,60,67,0.05),
+              0 4px 12px rgba(60,60,67,0.06);
+  overflow: hidden;
+}
+.fld-group-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lt-fg-2);
+  padding: 4px 22px 8px;
+  letter-spacing: -0.01em;
+}
+.fld {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px 18px;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.fld:last-child { border-bottom: 0; }
+/* 需复核的行淡橙底,一眼看出哪些要人工核对 */
+.fld-warn { background: rgba(255, 149, 0, 0.06); }
+
+.fld-label {
+  flex: 0 0 104px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--lt-fg);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fld-req { font-style: normal; color: #ff3b30; font-size: 13px; }
+
+.fld-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.fld-value .adm-input {
+  text-align: right;
+  --font-size: 15px;
+  --color: var(--lt-fg);
+  --placeholder-color: var(--ios-gray);
+}
+
+/* AI 状态药丸(旧版 .ai-pill 四种态) */
+.ai-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+  border: 0.5px solid rgba(0, 122, 255, 0.18);
+}
+.ai-pill.confirmed {
+  background: var(--c-green-soft); color: var(--ios-green);
+  border-color: rgba(52, 199, 89, 0.2);
+}
+.ai-pill.review {
+  background: var(--c-orange-soft); color: var(--ios-orange);
+  border-color: rgba(255, 149, 0, 0.2);
+}
+.ai-pill.empty {
+  background: var(--lt-fill); color: var(--lt-fg-2);
+  border-color: var(--lt-border);
+}
+.ai-pill.edited {
+  background: var(--c-blue-soft); color: var(--ios-blue);
+  border-color: rgba(0, 122, 255, 0.2);
+}
+
+/* 选项行 */
+.opt-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.opt {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 0.5px solid var(--lt-border);
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 13px;
+}
+.opt.on {
+  border-color: rgba(0, 122, 255, 0.2);
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+  font-weight: 600;
+}
+
+.fld-ai, .fld-reason {
+  padding: 0 18px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lt-fg-2);
+}
+.fld-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 0.5px solid rgba(0, 122, 255, 0.2);
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+.fld-btn:disabled { opacity: 0.5; }
+
+.analyzing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--c-blue-soft);
+  font-size: 13px;
+  color: var(--ios-blue);
+}
+.analyzing .spinner { border-top-color: var(--ios-blue); border-color: rgba(0,122,255,0.24); }
+
+/* 识别不稳时的出路(旧版:重拍 / 转人工) */
+.retake-box {
+  margin: 0 16px 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--c-orange-soft);
+  border: 0.5px solid rgba(255, 149, 0, 0.24);
+}
+.retake-why { font-size: 13px; line-height: 1.55; color: #b06000; }
+.retake-tries {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--lt-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.retake-acts { margin-top: 10px; display: flex; gap: 10px; justify-content: flex-end; }
+
+.rec-images { margin: 4px 16px 0; }
+.rec-images-head { font-size: 12px; color: var(--lt-fg-2); margin-bottom: 8px; }
+.rec-images .shot-card { border-color: var(--lt-border); background: var(--lt-fill); }
 
 .link-btn {
   margin-top: 18px;
@@ -575,225 +875,6 @@
   background: rgba(67, 229, 172, 0.12);
   color: var(--tech-jade);
   font-size: 12px;
-}
-
-/* ===== 照片选择网格 ===== */
-
-.shot-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-.grid-cell {
-  position: relative;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 12px;
-  overflow: hidden;
-  aspect-ratio: 1;
-  background: rgba(0, 0, 0, 0.3);
-}
-.grid-cell img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  opacity: 0.62;
-  transition: opacity 140ms ease;
-}
-.grid-cell.picked { border-color: var(--tech-jade); }
-.grid-cell.picked img { opacity: 1; }
-.cell-check {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.7);
-  background: rgba(0, 0, 0, 0.4);
-  color: #052015;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 17px;
-}
-.grid-cell.picked .cell-check {
-  background: var(--tech-jade);
-  border-color: var(--tech-jade);
-}
-.cell-meta {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 8px 4px 3px;
-  font-size: 10px;
-  color: #fff;
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.78));
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-/* 离线时长:公开展示拍摄与上传的时间差,不隐藏 */
-.cell-gap {
-  font-style: normal;
-  font-size: 9px;
-  color: #ffc46b;
-}
-
-/* ===== 识别结果 / 模板选择 ===== */
-
-.classify-box {
-  margin-top: 16px;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-}
-.classify-head {
-  font-size: 12px;
-  color: var(--ink-2);
-  margin-bottom: 6px;
-}
-.classify-hit {
-  font-size: 17px;
-  font-weight: 800;
-  color: var(--tech-jade);
-  margin-bottom: 10px;
-}
-.classify-conf {
-  margin-left: 8px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--ink-3);
-}
-.tpl-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.tpl-item {
-  padding: 7px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--ink-2);
-  font-size: 12px;
-}
-.tpl-item.on {
-  border-color: var(--tech-jade);
-  background: rgba(67, 229, 172, 0.14);
-  color: var(--tech-jade);
-  font-weight: 700;
-}
-
-/* ===== 字段卡片 ===== */
-
-.analyzing {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  border-radius: 12px;
-  background: rgba(67, 229, 172, 0.08);
-  border: 1px solid rgba(67, 229, 172, 0.2);
-  font-size: 13px;
-  color: var(--tech-jade);
-}
-
-.fld {
-  padding: 14px;
-  margin-bottom: 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-}
-/* 低置信度字段描边提醒 —— 这些最需要人工核对 */
-.fld-warn {
-  border-color: rgba(255, 196, 107, 0.4);
-  background: rgba(255, 196, 107, 0.06);
-}
-.fld-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.fld-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.fld-req {
-  margin-left: 6px;
-  font-style: normal;
-  font-size: 10px;
-  color: #ff9d90;
-}
-.fld-conf {
-  font-size: 11px;
-  color: var(--tech-jade);
-  font-variant-numeric: tabular-nums;
-}
-.fld-conf.low { color: #ffc46b; }
-
-.fld .adm-input {
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--input-border);
-  border-radius: 10px;
-  background: var(--input-bg);
-}
-.fld .adm-input-element { color: #fff; font-size: 15px; }
-
-.opt-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.opt {
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.opt.on {
-  border-color: var(--tech-jade);
-  background: rgba(67, 229, 172, 0.16);
-  color: var(--tech-jade);
-  font-weight: 700;
-}
-
-.fld-ai, .fld-reason {
-  margin-top: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}
-.fld-act {
-  margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
-}
-.fld-btn {
-  padding: 6px 16px;
-  border-radius: 8px;
-  border: 1px solid rgba(67, 229, 172, 0.4);
-  background: rgba(67, 229, 172, 0.12);
-  color: var(--tech-jade);
-  font-size: 12px;
-  font-weight: 700;
-}
-.fld-btn:disabled { opacity: 0.5; }
-
-.rec-images { margin-top: 16px; }
-.rec-images-head {
-  font-size: 12px;
-  color: var(--ink-2);
-  margin-bottom: 8px;
 }
 
 /* ===== 带水印的照片查看器 ===== */
@@ -934,3 +1015,37 @@ a {
   gap: 10px;
   justify-content: flex-end;
 }
+
+/* ===== 浅色流程页的按钮:iOS 蓝(旧版 .btn-primary)=====
+   翡翠渐变只用于登录页,浅色页沿用旧版 iOS 蓝,避免两种主题混用。 */
+.flow-foot .btn-primary.adm-button {
+  min-height: 50px;
+  border-radius: 16px;
+  background: var(--ios-blue);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.2), 0 8px 20px rgba(0, 122, 255, 0.25);
+}
+.flow-foot .btn-ghost.adm-button {
+  min-height: 50px;
+  border-radius: 16px;
+  border: 0;
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* 确认/保存按钮:不换行、留足宽度 */
+.fld-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 56px;
+  text-align: center;
+}
+.ai-pill { white-space: nowrap; cursor: pointer; }
+
+/* 输入框占满剩余宽度,右对齐(旧版 .field .value 语义) */
+.fld-value .adm-input { flex: 1; min-width: 0; }

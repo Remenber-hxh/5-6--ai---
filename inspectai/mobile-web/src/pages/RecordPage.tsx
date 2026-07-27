@@ -17,6 +17,24 @@ import {
 const POLL_MS = 2000;
 const POLL_MAX = 30; // 最长约 60 秒
 
+/** AI 状态药丸:四种态,口径与旧版 pillFor/pillTextFor 完全一致 */
+function pillOf(f: FieldValue): { cls: string; text: string } | null {
+  if (f.source === "human-confirmed") return { cls: "edited", text: "已确认" };
+  if (f.source === "human-edited") return { cls: "edited", text: "已修改" };
+  if (f.source === "ai" && f.confidence) {
+    return {
+      cls: f.needsReview ? "review" : "confirmed",
+      text: `AI ${Math.round(f.confidence * 100)}%`,
+    };
+  }
+  if (f.source === "ai" && String(f.value || "").trim()) {
+    return { cls: f.needsReview ? "review" : "confirmed", text: "AI 识别" };
+  }
+  if (f.source === "manual" && !f.value) return { cls: "empty", text: "待填" };
+  return null;
+}
+
+// 字段行:旧版 iOS 设置列表样式 —— 标签左、值右、状态药丸
 function FieldRow({
   field,
   recordId,
@@ -54,59 +72,62 @@ function FieldRow({
   }
 
   const changed = value !== field.value;
-  const isAI = field.source === "ai" && field.aiValue !== "";
-  const lowConf = isAI && field.confidence > 0 && field.confidence < 0.8;
+  const pill = pillOf(field);
+  const needsReview = field.source === "ai" && field.needsReview;
 
   return (
-    <div className={lowConf ? "fld fld-warn" : "fld"}>
-      <div className="fld-top">
+    <>
+      <div className={needsReview ? "fld fld-warn" : "fld"}>
         <span className="fld-label">
           {field.label}
-          {field.required && <em className="fld-req">必填</em>}
+          {field.required && <em className="fld-req">*</em>}
         </span>
-        {isAI && (
-          <span className={lowConf ? "fld-conf low" : "fld-conf"}>
-            AI {Math.round(field.confidence * 100)}%
-          </span>
-        )}
-      </div>
 
-      {field.options?.length ? (
-        <div className="opt-row">
-          {field.options.map((o) => (
-            <button
-              key={o}
-              className={value === o ? "opt on" : "opt"}
-              onClick={() => setValue(o)}
-            >
-              {o}
+        <span className="fld-value">
+          {field.options?.length ? (
+            <span className="opt-row">
+              {field.options.map((o) => (
+                <button key={o} className={value === o ? "opt on" : "opt"} onClick={() => setValue(o)}>
+                  {o}
+                </button>
+              ))}
+            </span>
+          ) : (
+            <Input
+              value={value}
+              onChange={setValue}
+              placeholder={field.required ? "必填" : "选填"}
+              type={field.kind === "number" ? "number" : "text"}
+              onBlur={() => {
+                if (changed) void save("correct");
+              }}
+            />
+          )}
+          {changed ? (
+            <button className="fld-btn" disabled={saving} onClick={() => void save("correct")}>
+              保存
             </button>
-          ))}
-        </div>
-      ) : (
-        <Input
-          value={value}
-          onChange={setValue}
-          placeholder={field.required ? "必填" : "选填"}
-          type={field.kind === "number" ? "number" : "text"}
-        />
-      )}
-
-      {isAI && field.aiValue !== value && (
-        <div className="fld-ai">AI 原值:{field.aiValue || "(空)"}</div>
+          ) : pill ? (
+            <span
+              className={`ai-pill ${pill.cls}`}
+              role="button"
+              onClick={() => void save("confirm")}
+              title="点击确认无误"
+            >
+              {pill.text}
+            </span>
+          ) : (
+            <button className="fld-btn" disabled={saving} onClick={() => void save("confirm")}>
+              确认
+            </button>
+          )}
+        </span>
+      </div>
+      {field.source === "ai" && field.aiValue && field.aiValue !== value && (
+        <div className="fld-ai">AI 原值:{field.aiValue}</div>
       )}
       {field.reason && <div className="fld-reason">{field.reason}</div>}
-
-      <div className="fld-act">
-        <button
-          className="fld-btn primary"
-          disabled={saving}
-          onClick={() => void save(changed ? "correct" : "confirm")}
-        >
-          {changed ? "保存修改" : "确认无误"}
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -263,9 +284,12 @@ export default function RecordPage() {
           </div>
         )}
 
-        {rec.fields.map((f) => (
-          <FieldRow key={f.code} field={f} recordId={rec.id} onSaved={mergeField} />
-        ))}
+        <div className="fld-group-title">日报字段</div>
+        <div className="fld-group">
+          {rec.fields.map((f) => (
+            <FieldRow key={f.code} field={f} recordId={rec.id} onSaved={mergeField} />
+          ))}
+        </div>
 
         {rec.images.length > 0 && (
           <div className="rec-images">
