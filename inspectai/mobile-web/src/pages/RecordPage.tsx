@@ -2,6 +2,7 @@ import { Button, Dialog, Input, Toast } from "antd-mobile";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import {
   FieldValue,
   RecordDTO,
@@ -114,6 +115,7 @@ export default function RecordPage() {
   const [rec, setRec] = useState<RecordDTO | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [viewing, setViewing] = useState<PhotoMeta | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -216,15 +218,32 @@ export default function RecordPage() {
           <div className="rec-images">
             <div className="rec-images-head">本次照片 {rec.images.length} 张</div>
             <div className="pending-strip">
-              {rec.images.map((img) => (
-                <div className="shot-card" key={img.id}>
-                  <img className="shot-img" src={`/storage/uploads/${rec.id}/${img.id}_${img.fileName}`} alt="" />
-                </div>
-              ))}
+              {rec.images.map((img) => {
+                const url = `/storage/uploads/${rec.id}/${img.id}_${img.fileName}`;
+                return (
+                  <button
+                    className="shot-card"
+                    key={img.id}
+                    onClick={() =>
+                      setViewing({
+                        url,
+                        fileName: img.fileName,
+                        inspector: rec.inspector,
+                        project: rec.project,
+                        location: rec.pointName,
+                      })
+                    }
+                  >
+                    <img className="shot-img" src={url} alt="" />
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
       </div>
+
+      {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
 
       <div className="flow-foot">
         <Button block className="btn-primary" loading={submitting} onClick={() => void onSubmit()}>

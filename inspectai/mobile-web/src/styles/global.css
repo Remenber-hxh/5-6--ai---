@@ -796,6 +796,98 @@
   margin-bottom: 8px;
 }
 
+/* ===== 带水印的照片查看器 ===== */
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.94);
+  padding-top: var(--safe-top);
+}
+.viewer-close {
+  position: absolute;
+  top: calc(10px + var(--safe-top));
+  right: 12px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 22px;
+  line-height: 30px;
+}
+.viewer-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+.viewer-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+/* 水印是叠层,原图不动 —— 可重画、可纠错,证据不被破坏 */
+.viewer-mark {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  padding: 26px 12px 10px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.72));
+  font-size: 12px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.96);
+  pointer-events: none;
+}
+.viewer-brand {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(67, 229, 172, 0.9);
+}
+.viewer-foot {
+  flex: none;
+  padding: 10px 16px calc(12px + var(--safe-bottom));
+}
+.viewer-btn {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--btn-primary);
+  color: var(--btn-primary-ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+.viewer-btn:disabled { opacity: 0.6; }
+
+/* 网格里的"看大图"角标 */
+.cell-zoom {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  line-height: 22px;
+  text-align: center;
+}
+
 /* ===== ICP 备案号:钉在本屏底部,不参与卡片居中(与旧版一致) ===== */
 
 .beian-line {

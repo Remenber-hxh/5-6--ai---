@@ -2,6 +2,8 @@ import { Button, Toast } from "antd-mobile";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
+import { useAuth } from "@/store/auth";
 import {
   ClassifyResult,
   OfflineShotDTO,
@@ -40,6 +42,8 @@ export default function ReviewPage() {
   const [chosenTpl, setChosenTpl] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [viewing, setViewing] = useState<PhotoMeta | null>(null);
+  const user = useAuth((s) => s.user);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,6 +160,25 @@ export default function ReviewPage() {
                   {fmtTime(s.capturedAt)}
                   {gap && <em className="cell-gap">{gap}</em>}
                 </span>
+                <span
+                  className="cell-zoom"
+                  role="button"
+                  aria-label="查看大图"
+                  onClick={(e) => {
+                    e.stopPropagation(); // 看图不改变选中状态
+                    setViewing({
+                      url: `/api/inspection/offline-shots/${s.id}/image`,
+                      fileName: s.fileName,
+                      capturedAt: s.capturedAt,
+                      receivedAt: s.receivedAt,
+                      inspector: user?.displayName || user?.username,
+                      lat: s.lat,
+                      lng: s.lng,
+                    });
+                  }}
+                >
+                  ⛶
+                </span>
               </button>
             );
           })}
@@ -190,6 +213,8 @@ export default function ReviewPage() {
           </div>
         )}
       </div>
+
+      {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
 
       <div className="flow-foot">
         {!classify ? (
