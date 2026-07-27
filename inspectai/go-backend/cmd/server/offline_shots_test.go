@@ -143,6 +143,53 @@ func TestOfflineShotIdempotencyOnSQLite(t *testing.T) {
 	}
 }
 
+// 认领语义:照片并入记录后标记已消费,同一张不会被第二条记录重复认领。
+func TestOfflineShotAdoptMarksConsumed(t *testing.T) {
+	srv, tokens := newClosedLoopServer(t)
+	jpg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, bytes.Repeat([]byte{0x11}, 1024)...)
+
+	up := uploadShot(t, srv, tokens["inspector"], "k-adopt", "p.jpg", jpg)
+	if up.Code != http.StatusOK {
+		t.Fatalf("上传 = %d; body=%s", up.Code, up.Body.String())
+	}
+	var r struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(up.Body.Bytes(), &r)
+
+	// 第一条记录认领
+	first, err := srv.adoptOfflineShots("rec_1", defaultTenantID, []string{r.ID})
+	if err != nil {
+		t.Fatalf("adoptOfflineShots: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("第一条应认领到 1 张,实际 %d", len(first))
+	}
+
+	shots, _ := srv.store.ListOfflineShots(defaultTenantID, "", 100)
+	if len(shots) != 1 || shots[0].RecordID != "rec_1" || shots[0].Status != "consumed" {
+		t.Errorf("认领后应回填 record_id 并标记 consumed: %+v", shots[0])
+	}
+
+	// 第二条记录再认领同一张 → 应拿不到(已消费)
+	second, err := srv.adoptOfflineShots("rec_2", defaultTenantID, []string{r.ID})
+	if err != nil {
+		t.Fatalf("二次 adopt: %v", err)
+	}
+	if len(second) != 0 {
+		t.Errorf("已成单的照片不应被重复认领,实际认领到 %d 张", len(second))
+	}
+
+	// 跨租户认领拿不到
+	cross, err := srv.adoptOfflineShots("rec_3", "tenant_other", []string{r.ID})
+	if err != nil {
+		t.Fatalf("跨租户 adopt: %v", err)
+	}
+	if len(cross) != 0 {
+		t.Errorf("跨租户不应认领到照片,实际 %d 张", len(cross))
+	}
+}
+
 // 跨租户不可见:A 租户列不出 B 租户的离线照片。
 func TestOfflineShotTenantIsolation(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "oshot_iso.db"))

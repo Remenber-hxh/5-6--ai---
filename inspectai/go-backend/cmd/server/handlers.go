@@ -1708,7 +1708,9 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		Inspector  string   `json:"inspector"`
 		TmpDir     string   `json:"tmpDir"`   // 来自场景分类后的临时目录，可选
 		ImageIDs   []string `json:"imageIds"` // tmpDir 里要采纳的图片 ID
-		EngTaskID  string   `json:"engineeringTaskId"`
+		// OfflineShotIDs 离线上传的照片 ID:照片已在服务器上,按 ID 认领而非重传
+		OfflineShotIDs []string `json:"offlineShotIds"`
+		EngTaskID      string   `json:"engineeringTaskId"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -1801,6 +1803,17 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		}
 		rec.Images = moved
 	}
+	// 离线上传的照片:已在服务器上,按 ID 认领并标记已消费(防同一张重复成单)
+	if len(req.OfflineShotIDs) > 0 {
+		adopted, err := s.adoptOfflineShots(rec.ID, s.tenantForRequest(r), req.OfflineShotIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "adopt_offline_failed", err.Error())
+			return
+		}
+		rec.Images = append(rec.Images, adopted...)
+	}
+	// 记录归属租户,与创建者一致
+	rec.TenantID = s.tenantForRequest(r)
 
 	if err := s.store.CreateRecord(rec); err != nil {
 		writeError(w, http.StatusInternalServerError, "create_record_failed", err.Error())

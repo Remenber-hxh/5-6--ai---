@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -44,6 +45,8 @@ type OfflineShotStore interface {
 	// 第二个返回值表示本次是否命中了已存在的记录(重放)。
 	CreateOfflineShot(shot *OfflineShot) (*OfflineShot, bool, error)
 	ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error)
+	// MarkOfflineShotConsumed 标记照片已并入某条巡检记录,避免重复成单
+	MarkOfflineShotConsumed(tenantID, id, recordID string) error
 }
 
 const offlineShotCols = `id, tenant_id, user_id, inspector, idempotency_key,
@@ -111,6 +114,13 @@ func (s *SQLiteStore) getOfflineShotByKey(key string) (*OfflineShot, error) {
 	return scanOfflineShot(row)
 }
 
+func (s *SQLiteStore) MarkOfflineShotConsumed(tenantID, id, recordID string) error {
+	_, err := s.db.Exec(
+		`UPDATE offline_shots SET record_id=?, status='consumed'
+		 WHERE id=? AND tenant_id=?`, recordID, id, tenantID)
+	return err
+}
+
 func (s *SQLiteStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
 	if limit <= 0 {
 		limit = 100
@@ -157,6 +167,18 @@ func (m *MemStore) CreateOfflineShot(shot *OfflineShot) (*OfflineShot, bool, err
 	shot.ReceivedAt = nowStamp()
 	m.offlineShots[shot.ID] = shot
 	return shot, false, nil
+}
+
+func (m *MemStore) MarkOfflineShotConsumed(tenantID, id, recordID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	shot, ok := m.offlineShots[id]
+	if !ok || shot.TenantID != tenantID {
+		return nil // 跨租户等同不存在
+	}
+	shot.RecordID = recordID
+	shot.Status = "consumed"
+	return nil
 }
 
 func (m *MemStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
@@ -253,6 +275,117 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots})
+}
+
+// handleClassifyOfflineShots 用已上传的离线照片做场景识别。
+// 照片已在服务器上,不重传 —— 弱网现场刚传完就再传一遍是浪费。
+func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ShotIDs []string `json:"shotIds"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if len(req.ShotIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "no_shots", "请先选择照片")
+		return
+	}
+
+	tenantID := s.tenantForRequest(r)
+	shots, err := s.shotsByIDs(tenantID, req.ShotIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "load_failed", err.Error())
+		return
+	}
+	if len(shots) == 0 {
+		writeError(w, http.StatusNotFound, "shots_not_found", "照片不存在或无权访问")
+		return
+	}
+
+	// 前 6 张送分类:机房照可能排在第 4-6 张,只看前 3 张会漏判
+	paths := make([]string, 0, 6)
+	for _, shot := range shots {
+		if len(paths) >= 6 {
+			break
+		}
+		paths = append(paths, shot.ImagePath)
+	}
+
+	result, err := s.aiClient.Classify(paths)
+	if err != nil {
+		// 识别失败不阻断流程:转人工选模板,照片仍在服务器上不会丢
+		writeJSON(w, http.StatusOK, map[string]any{
+			"classify": &SceneClassifyResult{
+				TemplateID: "unknown", TemplateName: "无法识别",
+				NeedsManualPick: true, Error: truncate(err.Error(), 120),
+			},
+			"shots": shots,
+		})
+		return
+	}
+	if tpl, ok := templateByID(result.TemplateID); ok {
+		result.TemplateName = tpl.Name
+	} else {
+		result.TemplateName = "无法识别"
+		result.NeedsManualPick = true
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"classify": result, "shots": shots})
+}
+
+// shotsByIDs 按 ID 取本租户的离线照片,顺序与传入 ID 一致。
+// 跨租户 ID 直接被过滤掉(等同不存在),不泄露存在性。
+func (s *Server) shotsByIDs(tenantID string, ids []string) ([]*OfflineShot, error) {
+	all, err := s.store.ListOfflineShots(tenantID, "", 500)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]*OfflineShot, len(all))
+	for _, shot := range all {
+		byID[shot.ID] = shot
+	}
+	out := make([]*OfflineShot, 0, len(ids))
+	for _, id := range ids {
+		if shot, ok := byID[id]; ok {
+			out = append(out, shot)
+		}
+	}
+	return out, nil
+}
+
+// adoptOfflineShots 把离线照片并入某条巡检记录:复制进记录目录,并回填 record_id
+// 标记已消费(避免同一张照片被重复成单)。
+func (s *Server) adoptOfflineShots(recordID, tenantID string, ids []string) ([]ImageInfo, error) {
+	shots, err := s.shotsByIDs(tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	dstDir := filepath.Join(s.storageDir, "uploads", recordID)
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return nil, err
+	}
+
+	out := make([]ImageInfo, 0, len(shots))
+	for _, shot := range shots {
+		if shot.RecordID != "" {
+			continue // 已成单,跳过防重复
+		}
+		data, err := os.ReadFile(shot.ImagePath)
+		if err != nil {
+			continue // 单张读失败不该毁掉整条记录
+		}
+		imageID := newID("img")
+		dst := filepath.Join(dstDir, imageID+"_"+sanitizeFileName(shot.FileName))
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			continue
+		}
+		out = append(out, ImageInfo{
+			ID: imageID, FileName: shot.FileName, Path: dst,
+			Size: shot.SizeBytes, CreatedAt: time.Now(),
+		})
+		_ = s.store.MarkOfflineShotConsumed(tenantID, shot.ID, recordID)
+	}
+	return out, nil
 }
 
 // normalizeCapturedAt 客户端时间只做格式校验,不信任其准确性。
