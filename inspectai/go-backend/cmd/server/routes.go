@@ -63,6 +63,9 @@ var apiRoutes = []apiRoute{
 	// —— 巡检与识别 ——
 	{http.MethodGet, "/api/inspection/points", guardNone, "", (*Server).handleListPoints},
 	{http.MethodGet, "/api/report/templates", guardNone, "", (*Server).handleListTemplates},
+	// 离线照片:弱网现场先存手机、联网后上传(带幂等键,重传不产生重复)
+	{http.MethodPost, "/api/inspection/offline-shots", guardNone, "", (*Server).handleUploadOfflineShot},
+	{http.MethodGet, "/api/inspection/offline-shots", guardNone, "", (*Server).handleListOfflineShots},
 	{http.MethodGet, "/api/inspection/records", guardNone, "", (*Server).handleListRecords},
 	{http.MethodPost, "/api/inspection/records", guardNone, "", (*Server).handleCreateRecord},
 	{http.MethodPost, "/api/scene/classify", guardNone, "", (*Server).handleClassifyScene},

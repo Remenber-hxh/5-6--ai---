@@ -157,6 +157,7 @@ type PermissionStore interface {
 type Store interface {
 	RecordStore
 	TenantStore
+	OfflineShotStore
 	AITaskStore
 	AssetStore
 	ConfirmLogStore
@@ -197,6 +198,7 @@ type submissionState struct {
 type MemStore struct {
 	mu             sync.RWMutex
 	tenants        map[string]*Tenant
+	offlineShots   map[string]*OfflineShot
 	records        map[string]*Record
 	tasks          map[string]*AITask
 	assets         map[string]*AssetEntry
@@ -224,6 +226,7 @@ type memUser struct {
 func NewMemStore() *MemStore {
 	return &MemStore{
 		tenants:        map[string]*Tenant{},
+		offlineShots:   map[string]*OfflineShot{},
 		records:        map[string]*Record{},
 		tasks:          map[string]*AITask{},
 		assets:         map[string]*AssetEntry{},

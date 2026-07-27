@@ -32,6 +32,64 @@ var migrationList = []migration{
 	{8, "tenants", (*SQLiteStore).migTenants},
 	{9, "tenant_columns", (*SQLiteStore).migTenantColumns},
 	{10, "platform_admin_flag", (*SQLiteStore).migPlatformAdminFlag},
+	{11, "offline_shots", (*SQLiteStore).migOfflineShots},
+}
+
+// 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
+//
+// 时间戳刻意分两个:
+//   captured_at  手机声称的拍摄时间(可伪造,仅供参考)
+//   received_at  服务器收到时间(权威,客户端伪造不了)
+// 两者都存、在记录上分开展示,不隐藏离线造成的时间差 —— 对监管方而言,
+// 公开时间差比藏起来更可信。
+//
+// idempotency_key 唯一:弱网下"其实传成功了但响应没回来"的重放不会产生重复行。
+func (s *SQLiteStore) migOfflineShots() error {
+	stmt := `CREATE TABLE IF NOT EXISTS offline_shots (
+		id              TEXT PRIMARY KEY,
+		tenant_id       TEXT NOT NULL DEFAULT '` + defaultTenantID + `',
+		user_id         TEXT NOT NULL DEFAULT '',
+		inspector       TEXT NOT NULL DEFAULT '',
+		idempotency_key TEXT NOT NULL UNIQUE,
+		image_path      TEXT NOT NULL DEFAULT '',
+		file_name       TEXT NOT NULL DEFAULT '',
+		size_bytes      INTEGER NOT NULL DEFAULT 0,
+		captured_at     TEXT NOT NULL DEFAULT '',
+		received_at     TEXT NOT NULL DEFAULT '',
+		lat             REAL,
+		lng             REAL,
+		accuracy        REAL,
+		record_id       TEXT NOT NULL DEFAULT '',
+		status          TEXT NOT NULL DEFAULT 'uploaded')`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS offline_shots (
+			id              VARCHAR(64)  NOT NULL PRIMARY KEY,
+			tenant_id       VARCHAR(64)  NOT NULL DEFAULT '` + defaultTenantID + `',
+			user_id         VARCHAR(64)  NOT NULL DEFAULT '',
+			inspector       VARCHAR(64)  NOT NULL DEFAULT '',
+			idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+			image_path      VARCHAR(512) NOT NULL DEFAULT '',
+			file_name       VARCHAR(255) NOT NULL DEFAULT '',
+			size_bytes      BIGINT       NOT NULL DEFAULT 0,
+			captured_at     VARCHAR(40)  NOT NULL DEFAULT '',
+			received_at     VARCHAR(40)  NOT NULL DEFAULT '',
+			lat             DOUBLE       NULL,
+			lng             DOUBLE       NULL,
+			accuracy        DOUBLE       NULL,
+			record_id       VARCHAR(64)  NOT NULL DEFAULT '',
+			status          VARCHAR(24)  NOT NULL DEFAULT 'uploaded',
+			INDEX idx_offline_shots_tenant_user (tenant_id, user_id, status)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return err
+	}
+	if s.dialect == "sqlite" {
+		_, _ = s.db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_offline_shots_tenant_user
+			 ON offline_shots(tenant_id, user_id, status)`)
+	}
+	return nil
 }
 
 // 010 — 两级管理员:users 加 is_platform_admin。
