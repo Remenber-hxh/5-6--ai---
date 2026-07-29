@@ -7,6 +7,7 @@ import ClassifyPage from "@/pages/ClassifyPage";
 import LedgerPage from "@/pages/LedgerPage";
 import LoginPage from "@/pages/LoginPage";
 import MePage from "@/pages/MePage";
+import PreviewPage from "@/pages/PreviewPage";
 import RecordPage from "@/pages/RecordPage";
 import TasksPage from "@/pages/TasksPage";
 import ReviewPage from "@/pages/ReviewPage";
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/review" element={guard(<ReviewPage />)} />
         <Route path="/classify" element={guard(<ClassifyPage />)} />
         <Route path="/record/:id" element={guard(<RecordPage />)} />
+        <Route path="/preview/:id" element={guard(<PreviewPage />)} />
         <Route path="/tasks" element={guard(<TasksPage />)} />
         <Route path="/ledger" element={guard(<LedgerPage />)} />
         <Route path="/asset/:id" element={guard(<AssetDetailPage />)} />

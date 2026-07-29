@@ -45,6 +45,13 @@ export interface ImageInfo {
   path: string;
 }
 
+export interface Recommendation {
+  priority: string; // high / medium / low
+  category?: string;
+  text: string;
+  basis?: string;
+}
+
 export interface RecordDTO {
   id: string;
   recordNo?: string;
@@ -63,6 +70,8 @@ export interface RecordDTO {
   report?: string;
   aiSummary?: string;
   aiSummaryTags?: string[];
+  aiRecommendations?: Recommendation[];
+  aiSummaryError?: string;
   submitted: boolean;
 }
 

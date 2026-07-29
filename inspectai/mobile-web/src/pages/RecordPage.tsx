@@ -1,4 +1,4 @@
-import { Button, Dialog, Toast } from "antd-mobile";
+import { Button, Toast } from "antd-mobile";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -11,7 +11,6 @@ import {
   getRecord,
   patchField,
   startAnalysis,
-  submitRecord,
 } from "@/api/inspection";
 
 const POLL_MS = 2000;
@@ -135,7 +134,6 @@ export default function RecordPage() {
   const nav = useNavigate();
   const [rec, setRec] = useState<RecordDTO | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [viewing, setViewing] = useState<PhotoMeta | null>(null);
   const kickedRef = useRef("");
@@ -211,29 +209,16 @@ export default function RecordPage() {
     }
   }
 
-  async function onSubmit() {
+  // 旧版流程:字段确认 →「保存并预览日报」→ 预览页看 AI 总结/建议 → 提交。
+  // 提交前先让人看一眼总结,是巡检闭环的一环,不该跳过。
+  function toPreview() {
     if (!rec) return;
     const missing = rec.fields.filter((f) => f.required && !f.value.trim());
     if (missing.length) {
-      Toast.show({ content: `还有 ${missing.length} 个必填项没填` });
+      Toast.show({ content: `必填字段未完成:${missing[0].label}` });
       return;
     }
-    const ok = await Dialog.confirm({
-      content: "提交后记录将进入台账,确认提交?",
-      confirmText: "提交",
-      cancelText: "再看看",
-    });
-    if (!ok) return;
-    setSubmitting(true);
-    try {
-      await submitRecord(rec.id);
-      Toast.show({ content: "已提交", position: "bottom" });
-      nav("/", { replace: true });
-    } catch (err) {
-      Toast.show({ content: err instanceof Error ? err.message : "提交失败" });
-    } finally {
-      setSubmitting(false);
-    }
+    nav(`/preview/${rec.id}`);
   }
 
   // 识别中 = 整屏专属场景(旧版做法),不在表单里挂常驻提示条
@@ -336,8 +321,8 @@ export default function RecordPage() {
       {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
 
       <div className="flow-foot">
-        <Button block className="btn-primary" loading={submitting} onClick={() => void onSubmit()}>
-          提交日报
+        <Button block className="btn-primary" onClick={toPreview}>
+          保存并预览日报
         </Button>
       </div>
     </div>

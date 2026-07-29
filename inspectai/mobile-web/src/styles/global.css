@@ -1669,3 +1669,69 @@ a {
 .hist-when { font-size: 13px; font-weight: 600; color: var(--lt-fg); font-variant-numeric: tabular-nums; }
 .hist-who { margin-top: 3px; font-size: 11px; color: var(--lt-fg-2); }
 .hist-body { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--lt-fg-2); }
+
+/* ===== 日报预览(旧版 scenePreview)===== */
+.pv-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 0 8px 2px; }
+.pv-card {
+  margin-bottom: 12px;
+  padding: 4px 14px;
+  border-radius: 14px;
+  background: var(--lt-card);
+  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+}
+.pv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.pv-row:last-child { border-bottom: 0; }
+.pv-k { font-size: 13px; color: var(--lt-fg-2); flex: none; }
+.pv-v { font-size: 14px; color: var(--lt-fg); font-weight: 500; text-align: right; word-break: break-all; }
+
+.ai-card { padding: 14px; }
+.ai-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.ai-mark { color: var(--ios-blue); font-size: 13px; }
+.ai-mark.amber { color: var(--ios-orange); }
+.ai-title { font-size: 13px; font-weight: 600; color: var(--lt-fg); }
+.ai-body { font-size: 14px; line-height: 1.65; color: var(--lt-fg); white-space: pre-wrap; }
+.ai-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ai-tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--c-blue-soft);
+  color: var(--ios-blue);
+}
+
+/* 行动建议:优先级色块 + 正文 + 依据 */
+.reco { display: flex; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--lt-border); }
+.reco:last-child { border-bottom: 0; }
+.reco-pri {
+  flex: none;
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700;
+  background: var(--lt-fill); color: var(--lt-fg-2);
+}
+.reco-pri.high { background: rgba(255,59,48,0.12); color: #ff3b30; }
+.reco-pri.medium { background: var(--c-orange-soft); color: var(--ios-orange); }
+.reco-pri.low { background: var(--c-blue-soft); color: var(--ios-blue); }
+.reco-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.reco-text { font-size: 14px; line-height: 1.55; color: var(--lt-fg); }
+.reco-meta { font-size: 11px; color: var(--lt-fg-2); }
+
+.foot-back {
+  flex: none;
+  height: 46px;
+  padding: 0 18px;
+  border: 1px solid var(--lt-border);
+  border-radius: 12px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 15px;
+  font-weight: 500;
+}
