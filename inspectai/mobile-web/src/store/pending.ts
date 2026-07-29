@@ -9,6 +9,7 @@ import {
   listShots,
   recoverStaleUploads,
   removeShot,
+  removeShots,
   requestPersistentStorage,
 } from "@/lib/offlineStore";
 import { retryNow, runQueue, unblockAll } from "@/lib/uploadQueue";
@@ -31,6 +32,8 @@ interface PendingState {
   refresh: () => Promise<void>;
   addFiles: (files: File[], userId: string) => Promise<{ added: number; error?: string }>;
   remove: (id: string) => Promise<void>;
+  /** 批量删除选中的照片 */
+  removeMany: (ids: string[]) => Promise<number>;
   retry: (id: string) => Promise<void>;
   /** 手动触发上传(用户点"立即上传") */
   flush: () => Promise<number>;
@@ -99,6 +102,12 @@ export const usePending = create<PendingState>((set, get) => ({
   async remove(id) {
     await removeShot(id);
     await get().refresh();
+  },
+
+  async removeMany(ids) {
+    const n = await removeShots(ids);
+    await get().refresh();
+    return n;
   },
 
   async retry(id) {

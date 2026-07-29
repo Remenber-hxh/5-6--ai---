@@ -239,6 +239,16 @@ export async function recoverStaleUploads(): Promise<number> {
   return fixed;
 }
 
+/** 批量删除。逐条删而非 clear:只删选中的,不误伤还在排队上传的 */
+export async function removeShots(ids: string[]): Promise<number> {
+  let n = 0;
+  for (const id of ids) {
+    await removeShot(id);
+    n += 1;
+  }
+  return n;
+}
+
 /** 清空(退出登录时用,避免换人后看到上一个人的照片) */
 export async function clearShots(): Promise<void> {
   await tx("readwrite", (s) => s.clear());

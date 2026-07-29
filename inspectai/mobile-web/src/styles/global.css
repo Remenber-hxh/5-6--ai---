@@ -1463,3 +1463,40 @@ a {
   font-size: 11px;
   font-weight: 700;
 }
+
+/* ===== 待上传:多选删除 ===== */
+.sel-acts { display: flex; align-items: center; gap: 6px; }
+.sel-btn {
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.sel-btn:active { background: rgba(255, 255, 255, 0.08); }
+.sel-btn:disabled { opacity: 0.4; }
+.sel-btn.danger {
+  border-color: rgba(255, 92, 76, 0.5);
+  background: rgba(255, 92, 76, 0.14);
+  color: #ff9d90;
+}
+/* 多选中的卡片:翡翠描边 + 勾选角标,与选图页一致 */
+.shot-picked { border-color: var(--tech-jade); }
+.shot-pick {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.4);
+  color: #052015;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
+}
+.shot-picked .shot-pick { background: var(--tech-jade); border-color: var(--tech-jade); }
