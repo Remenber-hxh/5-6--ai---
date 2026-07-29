@@ -6,7 +6,7 @@
 //   3. 指数退避 —— 失败后等待时间递增,避免没信号时疯狂重试耗电
 //   4. 幂等键 —— 弱网下"其实传成功了但响应没回来"的情况,重放不会产生重复记录
 
-import { getToken } from "@/api/client";
+import { getStoredUser, getToken } from "@/api/client";
 import { PendingShot, listShots, removeShot, updateShot } from "@/lib/offlineStore";
 
 /** 退避梯度(秒):5s → 15s → 1m → 5m → 15m,之后维持 15m */
@@ -104,7 +104,8 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
   let uploaded = 0;
   try {
     const now = Date.now();
-    const all = await listShots();
+    // 只传当前登录用户的照片:多人共用手机时,不能把别人的照片算到我头上
+    const all = await listShots(getStoredUser()?.id);
     // 用 (x || 0) 兜底:早期版本写入的记录 nextRetryAt 是 undefined,
     // 而 `undefined <= now` 恒为 false —— 那些照片会永远选不中、传不上去。
     // 迁移已在 recoverStaleUploads 里做,这里再防一道,绝不因字段缺失卡住上传。

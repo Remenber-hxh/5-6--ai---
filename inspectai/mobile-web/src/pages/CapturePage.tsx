@@ -13,7 +13,7 @@ import { listEngineeringTasks, listOfflineShots } from "@/api/inspection";
 export default function CapturePage() {
   const nav = useNavigate();
   const user = useAuth((s) => s.user);
-  const { online, saving, init, addFiles } = usePending();
+  const { online, saving, init, addFiles, uploadedTick } = usePending();
   const activeTask = getActiveTask();
   // 待办角标:让巡检员一眼看到"还有事没做完",不用点进去才知道
   const [pendingShots, setPendingShots] = useState(0);
@@ -29,6 +29,8 @@ export default function CapturePage() {
     setOpenTasks(tasks.filter((t) => t.status !== "已完成").length);
   }, []);
 
+  // uploadedTick 变化 = 刚有照片传上服务器,红点要立刻跟上,
+  // 否则用户拍完照看红点没动,会以为没生效。
   useEffect(() => {
     void loadBadges();
     // 从其他页返回或切回前台时刷新,否则处理完照片红点还挂着
@@ -41,7 +43,7 @@ export default function CapturePage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [loadBadges]);
+  }, [loadBadges, uploadedTick]);
 
   useEffect(() => {
     void init();

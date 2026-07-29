@@ -13,6 +13,12 @@ import {
   requestPersistentStorage,
 } from "@/lib/offlineStore";
 import { retryNow, runQueue, unblockAll } from "@/lib/uploadQueue";
+import { getStoredUser } from "@/api/client";
+
+/** 当前登录用户 id。直接读存储而非引 auth store,避免循环依赖 */
+function currentUserId(): string | undefined {
+  return getStoredUser()?.id;
+}
 
 /** 队列自动跑一轮的间隔:覆盖"信号悄悄恢复但没触发 online 事件"的情况 */
 const TICK_MS = 30_000;
@@ -27,6 +33,12 @@ interface PendingState {
   /** 已用空间字节,用于"空间快满了"提示 */
   usedBytes: number;
   freeBytes: number | null;
+  /**
+   * 上传成功计数。每传成功一批就自增 —— 服务器上的"待处理"数量随之变化,
+   * 首页红点据此重新拉取。不这么做的话红点要等切走再切回来才更新,
+   * 用户拍完照会以为没生效。
+   */
+  uploadedTick: number;
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -48,6 +60,7 @@ export const usePending = create<PendingState>((set, get) => ({
   persisted: false,
   usedBytes: 0,
   freeBytes: null,
+  uploadedTick: 0,
 
   async init() {
     // 登录态可能刚刷新过:把因"登录失效"被拦下的照片放回队列 ——
@@ -63,7 +76,8 @@ export const usePending = create<PendingState>((set, get) => ({
   },
 
   async refresh() {
-    const [shots, info] = await Promise.all([listShots(), getStorageInfo()]);
+    // 按当前用户过滤:共用手机时不显示别人的照片
+    const [shots, info] = await Promise.all([listShots(currentUserId()), getStorageInfo()]);
     set({ shots, usedBytes: info.usedBytes, freeBytes: info.freeBytes, persisted: info.persisted });
   },
 
@@ -128,6 +142,8 @@ export const usePending = create<PendingState>((set, get) => ({
   async flush() {
     const n = await runQueue(() => void get().refresh());
     await get().refresh();
+    // 传成功了 → 服务器待处理数变了 → 通知首页红点刷新
+    if (n > 0) set({ uploadedTick: get().uploadedTick + 1 });
     return n;
   },
 }));

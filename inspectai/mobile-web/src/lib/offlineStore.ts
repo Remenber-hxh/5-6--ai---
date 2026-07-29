@@ -182,10 +182,18 @@ export async function addShot(input: {
   return shot;
 }
 
-/** 全部待上传项,按拍摄时间正序(先拍的先传) */
-export async function listShots(): Promise<PendingShot[]> {
+/**
+ * 待上传项,按拍摄时间正序(先拍的先传)。
+ *
+ * @param userId 传入则只返回该用户的照片。**必须过滤** —— 巡检现场常多人共用
+ *   一台手机:A 拍完没信号就退出、B 登录后若看得到 A 的照片并传上去,
+ *   记录会算到 B 头上,归属就错了。照片留在本地不删,A 回来登录仍能看到。
+ *   不传 = 全部(仅供迁移/清理这类维护逻辑使用)。
+ */
+export async function listShots(userId?: string): Promise<PendingShot[]> {
   const all = await tx<PendingShot[]>("readonly", (s) => s.getAll() as IDBRequest<PendingShot[]>);
-  return all.sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+  const scoped = userId ? all.filter((s) => !s.userId || s.userId === userId) : all;
+  return scoped.sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
 }
 
 export async function getShot(id: string): Promise<PendingShot | undefined> {
