@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "@/store/auth";
+import ApprovalsPage from "@/pages/ApprovalsPage";
 import AssetDetailPage from "@/pages/AssetDetailPage";
 import CapturePage from "@/pages/CapturePage";
 import ClassifyPage from "@/pages/ClassifyPage";
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/preview/:id" element={guard(<PreviewPage />)} />
         <Route path="/tasks" element={guard(<TasksPage />)} />
         <Route path="/ledger" element={guard(<LedgerPage />)} />
+        <Route path="/approvals" element={guard(<ApprovalsPage />)} />
         <Route path="/asset/:id" element={guard(<AssetDetailPage />)} />
         <Route path="/me" element={guard(<MePage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />

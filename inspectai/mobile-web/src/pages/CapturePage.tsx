@@ -6,7 +6,7 @@ import PendingPanel from "@/components/PendingPanel";
 import { useAuth } from "@/store/auth";
 import { usePending } from "@/store/pending";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
-import { listEngineeringTasks, listOfflineShots } from "@/api/inspection";
+import { listEngineeringTasks, listOfflineShots, listPendingChangeRequests } from "@/api/inspection";
 
 // 拍照台:拍多张 → 存进离线仓库 → 联网后自动上传补 AI 识别。
 // 弱网现场只管拍,照片与拍摄时间先落地,不被信号拖住巡检节奏。
@@ -18,16 +18,21 @@ export default function CapturePage() {
   // 待办角标:让巡检员一眼看到"还有事没做完",不用点进去才知道
   const [pendingShots, setPendingShots] = useState(0);
   const [openTasks, setOpenTasks] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  // 审批是管理角色的活,巡检员不显示这个入口
+  const canReview = ["admin", "manager", "supervisor"].includes(user?.roleCode || "");
 
   const loadBadges = useCallback(async () => {
     // 角标是辅助信息,拉取失败静默降级为不显示,不打扰主流程
-    const [shots, tasks] = await Promise.all([
+    const [shots, tasks, crs] = await Promise.all([
       listOfflineShots().catch(() => []),
       listEngineeringTasks().catch(() => []),
+      canReview ? listPendingChangeRequests().catch(() => []) : Promise.resolve([]),
     ]);
     setPendingShots(shots.length);
     setOpenTasks(tasks.filter((t) => t.status !== "已完成").length);
-  }, []);
+    setPendingApprovals(crs.length);
+  }, [canReview]);
 
   // uploadedTick 变化 = 刚有照片传上服务器,红点要立刻跟上,
   // 否则用户拍完照看红点没动,会以为没生效。
@@ -153,6 +158,17 @@ export default function CapturePage() {
           <button className="link-btn" onClick={() => nav("/ledger")}>
             设备健康
           </button>
+          {canReview && (
+            <>
+              <span className="link-sep">·</span>
+              <button className="link-btn" onClick={() => nav("/approvals")}>
+                待审批
+                {pendingApprovals > 0 && (
+                  <span className="badge-dot">{pendingApprovals > 99 ? "99+" : pendingApprovals}</span>
+                )}
+              </button>
+            </>
+          )}
           <span className="link-sep">·</span>
           <button className="link-btn" onClick={() => nav("/review")}>
             待处理照片

@@ -268,3 +268,38 @@ export async function listAssetRecords(
   }>(`/api/assets/${encodeURIComponent(id)}/records?page=${page}&pageSize=20`);
   return { snapshots: body.snapshots || [], totalPages: body.totalPages || 1 };
 }
+
+// ===== 数据修改审批 =====
+
+export interface ChangeRequestDTO {
+  id: string;
+  targetType: string; // asset / record
+  targetId: string;
+  targetLabel?: string;
+  patch?: Record<string, unknown>;
+  reason?: string;
+  status: string;
+  requestedBy?: string;
+  requestedAt?: string;
+}
+
+export async function listPendingChangeRequests(): Promise<ChangeRequestDTO[]> {
+  const body = await api<{ requests: ChangeRequestDTO[] | null }>(
+    "/api/change-requests?status=pending",
+  );
+  return body.requests || [];
+}
+
+export async function approveChangeRequest(id: string, reviewNote: string) {
+  return api(`/api/change-requests/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ reviewNote }),
+  });
+}
+
+export async function rejectChangeRequest(id: string, reviewNote: string) {
+  return api(`/api/change-requests/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reviewNote }),
+  });
+}
