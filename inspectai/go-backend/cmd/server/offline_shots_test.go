@@ -214,3 +214,49 @@ func TestOfflineShotTenantIsolation(t *testing.T) {
 		t.Errorf("t_b 应只见自己的 1 张,实际 %d", len(b))
 	}
 }
+
+// 删除只针对未成单的照片:已并入巡检记录的是记录的证据,不能从这里抹掉;
+// 跨租户同样删不动。
+func TestDeleteOfflineShotsProtectsConsumedAndTenants(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "odel.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	mk := func(tenant, key string) string {
+		t.Helper()
+		got, _, err := store.CreateOfflineShot(&OfflineShot{
+			TenantID: tenant, IdempotencyKey: key, FileName: "x.jpg",
+		})
+		if err != nil {
+			t.Fatalf("CreateOfflineShot(%s): %v", key, err)
+		}
+		return got.ID
+	}
+	free := mk(defaultTenantID, "k-free")
+	consumed := mk(defaultTenantID, "k-consumed")
+	other := mk("t_other", "k-other")
+
+	if err := store.MarkOfflineShotConsumed(defaultTenantID, consumed, "rec_x"); err != nil {
+		t.Fatalf("MarkOfflineShotConsumed: %v", err)
+	}
+
+	// 一次性传三个 ID:只有未成单且本租户的那张该被删
+	deleted, err := store.DeleteOfflineShots(defaultTenantID, []string{free, consumed, other})
+	if err != nil {
+		t.Fatalf("DeleteOfflineShots: %v", err)
+	}
+	if len(deleted) != 1 || deleted[0].ID != free {
+		t.Fatalf("应只删掉未成单的那张,实际删了 %d 张 %+v", len(deleted), deleted)
+	}
+
+	left, _ := store.ListOfflineShots(defaultTenantID, "", 100)
+	if len(left) != 1 || left[0].ID != consumed {
+		t.Errorf("已成单的照片应保留,实际剩 %+v", left)
+	}
+	otherLeft, _ := store.ListOfflineShots("t_other", "", 100)
+	if len(otherLeft) != 1 {
+		t.Errorf("跨租户照片不应被删,实际剩 %d 张", len(otherLeft))
+	}
+}

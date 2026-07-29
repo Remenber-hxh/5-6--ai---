@@ -181,3 +181,12 @@ export async function startEngineeringTask(id: string): Promise<void> {
     body: JSON.stringify({ status: "进行中" }),
   }).catch(() => void 0);
 }
+
+/** 批量删除未成单的离线照片。已并入巡检记录的不会被删(那是记录的证据) */
+export async function deleteOfflineShots(shotIds: string[]): Promise<number> {
+  const body = await api<{ deleted: number }>("/api/inspection/offline-shots/delete", {
+    method: "POST",
+    body: JSON.stringify({ shotIds }),
+  });
+  return body.deleted;
+}

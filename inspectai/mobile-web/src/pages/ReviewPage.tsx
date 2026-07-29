@@ -1,10 +1,10 @@
-import { Button, Toast } from "antd-mobile";
+import { Button, Dialog, Toast } from "antd-mobile";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import { useAuth } from "@/store/auth";
-import { OfflineShotDTO, listOfflineShots } from "@/api/inspection";
+import { OfflineShotDTO, deleteOfflineShots, listOfflineShots } from "@/api/inspection";
 
 /** 拍摄与上传的时间差:离线越久差越大。公开展示,不隐藏 */
 function offlineGap(shot: OfflineShotDTO): string {
@@ -31,6 +31,7 @@ export default function ReviewPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState<PhotoMeta | null>(null);
+  const [busy, setBusy] = useState(false);
   const user = useAuth((s) => s.user);
 
   const load = useCallback(async () => {
@@ -60,6 +61,28 @@ export default function ReviewPage() {
       else next.add(id);
       return next;
     });
+  }
+
+  async function onDelete() {
+    if (!pickedIds.length || busy) return;
+    // 服务器上的原图删了就没了,必须把代价说清楚
+    const ok = await Dialog.confirm({
+      content: `删除选中的 ${pickedIds.length} 张照片?服务器上的原图会一并清掉,不可恢复。`,
+      confirmText: "删除",
+      cancelText: "取消",
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const n = await deleteOfflineShots(pickedIds);
+      Toast.show({ content: `已删除 ${n} 张`, position: "bottom" });
+      setPicked(new Set());
+      await load();
+    } catch (err) {
+      Toast.show({ content: err instanceof Error ? err.message : "删除失败" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   function toClassify() {
@@ -101,9 +124,19 @@ export default function ReviewPage() {
     <div className="flow-screen">
       <div className="flow-head">
         <h1 className="flow-title">选择本次巡检的照片</h1>
-        <p className="flow-sub">
-          已上传 {shots.length} 张 · 选中 {picked.size} 张
-        </p>
+        <div className="flow-sub-row">
+          <span className="flow-sub">
+            已上传 {shots.length} 张 · 选中 {picked.size} 张
+          </span>
+          <button
+            className="sel-btn"
+            onClick={() =>
+              setPicked(picked.size === shots.length ? new Set() : new Set(shots.map((s) => s.id)))
+            }
+          >
+            {picked.size === shots.length ? "全不选" : "全选"}
+          </button>
+        </div>
       </div>
 
       <div className="scroll-area flow-body">
@@ -150,8 +183,11 @@ export default function ReviewPage() {
 
       {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
 
-      <div className="flow-foot">
-        <Button block className="btn-primary" onClick={toClassify}>
+      <div className="flow-foot foot-row">
+        <button className="foot-del" disabled={!picked.size || busy} onClick={() => void onDelete()}>
+          删除{picked.size ? ` (${picked.size})` : ""}
+        </button>
+        <Button className="btn-primary foot-main" onClick={toClassify}>
           AI 识别场景
         </Button>
       </div>

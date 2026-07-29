@@ -68,6 +68,8 @@ var apiRoutes = []apiRoute{
 	{http.MethodGet, "/api/inspection/offline-shots", guardNone, "", (*Server).handleListOfflineShots},
 	// 用已上传的离线照片做识别(照片已在服务器上,不重传)
 	{http.MethodPost, "/api/inspection/offline-shots/classify", guardNone, "", (*Server).handleClassifyOfflineShots},
+	// 批量删除未成单的离线照片(已并入记录的不在此删)
+	{http.MethodPost, "/api/inspection/offline-shots/delete", guardNone, "", (*Server).handleDeleteOfflineShots},
 	{http.MethodGet, "/api/inspection/records", guardNone, "", (*Server).handleListRecords},
 	{http.MethodPost, "/api/inspection/records", guardNone, "", (*Server).handleCreateRecord},
 	{http.MethodPost, "/api/scene/classify", guardNone, "", (*Server).handleClassifyScene},

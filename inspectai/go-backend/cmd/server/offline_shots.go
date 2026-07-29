@@ -47,6 +47,9 @@ type OfflineShotStore interface {
 	ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error)
 	// MarkOfflineShotConsumed 标记照片已并入某条巡检记录,避免重复成单
 	MarkOfflineShotConsumed(tenantID, id, recordID string) error
+	// DeleteOfflineShots 批量删除未成单的照片,返回被删掉的行(供调用方清理磁盘文件)。
+	// 已并入记录的(record_id 非空)不删 —— 那是巡检记录的证据,不能从这里抹掉。
+	DeleteOfflineShots(tenantID string, ids []string) ([]*OfflineShot, error)
 }
 
 const offlineShotCols = `id, tenant_id, user_id, inspector, idempotency_key,
@@ -121,6 +124,26 @@ func (s *SQLiteStore) MarkOfflineShotConsumed(tenantID, id, recordID string) err
 	return err
 }
 
+func (s *SQLiteStore) DeleteOfflineShots(tenantID string, ids []string) ([]*OfflineShot, error) {
+	deleted := make([]*OfflineShot, 0, len(ids))
+	for _, id := range ids {
+		row := s.db.QueryRow(
+			`SELECT `+offlineShotCols+` FROM offline_shots
+			 WHERE id=? AND tenant_id=? AND record_id=''`, id, tenantID)
+		shot, err := scanOfflineShot(row)
+		if err != nil {
+			continue // 不存在/跨租户/已成单 → 跳过,不报错也不删
+		}
+		if _, err := s.db.Exec(
+			`DELETE FROM offline_shots WHERE id=? AND tenant_id=? AND record_id=''`,
+			id, tenantID); err != nil {
+			return deleted, err
+		}
+		deleted = append(deleted, shot)
+	}
+	return deleted, nil
+}
+
 func (s *SQLiteStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
 	if limit <= 0 {
 		limit = 100
@@ -179,6 +202,21 @@ func (m *MemStore) MarkOfflineShotConsumed(tenantID, id, recordID string) error 
 	shot.RecordID = recordID
 	shot.Status = "consumed"
 	return nil
+}
+
+func (m *MemStore) DeleteOfflineShots(tenantID string, ids []string) ([]*OfflineShot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	deleted := make([]*OfflineShot, 0, len(ids))
+	for _, id := range ids {
+		shot, ok := m.offlineShots[id]
+		if !ok || shot.TenantID != tenantID || shot.RecordID != "" {
+			continue
+		}
+		delete(m.offlineShots, id)
+		deleted = append(deleted, shot)
+	}
+	return deleted, nil
 }
 
 func (m *MemStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
@@ -410,6 +448,43 @@ func (s *Server) adoptOfflineShots(recordID, tenantID string, ids []string) ([]I
 		_ = s.store.MarkOfflineShotConsumed(tenantID, shot.ID, recordID)
 	}
 	return out, nil
+}
+
+// handleDeleteOfflineShots 批量删除未成单的离线照片。
+// 已并入巡检记录的照片不在此删除 —— 那是记录的证据,要删得走记录本身。
+func (s *Server) handleDeleteOfflineShots(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ShotIDs []string `json:"shotIds"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if len(req.ShotIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "no_shots", "请先选择要删除的照片")
+		return
+	}
+	tenantID := s.tenantForRequest(r)
+	deleted, err := s.store.DeleteOfflineShots(tenantID, req.ShotIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+	// 磁盘文件跟着删,避免留下没人引用的孤儿文件占空间。
+	// 删文件失败不影响结果:库里已经没有了,文件顶多是垃圾。
+	for _, shot := range deleted {
+		clean := filepath.Clean(shot.ImagePath)
+		if strings.HasPrefix(clean, filepath.Clean(s.storageDir)) {
+			_ = os.Remove(clean)
+		}
+	}
+	_ = s.store.CreateOperationLog(&OperationLog{
+		ActorName:  s.currentUserName(r),
+		Action:     "offline_shot.delete",
+		TargetType: "offline_shot",
+		Detail:     map[string]any{"count": len(deleted)},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": len(deleted)})
 }
 
 // normalizeCapturedAt 客户端时间只做格式校验,不信任其准确性。
