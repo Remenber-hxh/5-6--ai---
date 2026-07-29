@@ -190,3 +190,72 @@ export async function deleteOfflineShots(shotIds: string[]): Promise<number> {
   });
   return body.deleted;
 }
+
+// ===== 资产台账(设备健康) =====
+
+export interface AssetDTO {
+  id: string;
+  assetName: string;
+  assetType?: string;
+  project?: string;
+  projectCode?: string;
+  lastStatus: string; // 正常 / 异常 / 待复核 / 待维修 / 未巡检
+  statusLevel?: string; // normal / warning / danger / repair / unknown
+  lastSummary?: string;
+  lastInspectedAt?: string;
+  lastInspector?: string;
+  inspectionCount: number;
+  coverImage?: { path?: string } | null;
+}
+
+export interface AssetGroup {
+  value: string;
+  count: number;
+}
+
+export interface AssetSummary {
+  total?: number;
+  normal?: number;
+  warning?: number;
+  danger?: number;
+  repair?: number;
+  unknown?: number;
+  projects?: AssetGroup[];
+  assetTypes?: AssetGroup[];
+}
+
+export async function listAssets(): Promise<{ assets: AssetDTO[]; summary: AssetSummary | null }> {
+  const body = await api<{
+    assets: AssetDTO[] | null;
+    summary?: AssetSummary;
+    totalSummary?: AssetSummary;
+  }>("/api/assets");
+  return { assets: body.assets || [], summary: body.summary || body.totalSummary || null };
+}
+
+/** 单台资产详情 */
+export async function getAsset(id: string): Promise<AssetDTO> {
+  const body = await api<{ asset: AssetDTO }>(`/api/assets/${encodeURIComponent(id)}`);
+  return body.asset;
+}
+
+export interface AssetSnapshotDTO {
+  id: string;
+  recordId: string;
+  status: string;
+  summary?: string;
+  inspector?: string;
+  createdAt: string;
+}
+
+/** 按资产翻完整巡检历史(查快照表,不受记录列表窗口限制) */
+export async function listAssetRecords(
+  id: string,
+  page = 1,
+): Promise<{ snapshots: AssetSnapshotDTO[]; totalPages: number }> {
+  const body = await api<{
+    snapshots: AssetSnapshotDTO[] | null;
+    totalPages?: number;
+  }>(`/api/assets/${encodeURIComponent(id)}/records?page=${page}&pageSize=20`);
+  return { snapshots: body.snapshots || [], totalPages: body.totalPages || 1 };
+}

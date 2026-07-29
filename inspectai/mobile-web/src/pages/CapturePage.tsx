@@ -150,6 +150,10 @@ export default function CapturePage() {
             />
           </label>
           <span className="link-sep">·</span>
+          <button className="link-btn" onClick={() => nav("/ledger")}>
+            设备健康
+          </button>
+          <span className="link-sep">·</span>
           <button className="link-btn" onClick={() => nav("/review")}>
             待处理照片
             {pendingShots > 0 && (
