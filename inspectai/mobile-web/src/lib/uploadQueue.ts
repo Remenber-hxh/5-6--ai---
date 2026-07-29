@@ -20,7 +20,10 @@ function backoffMs(retries: number): number {
 }
 
 /** 上传单张。返回值只表达"这一张后续怎么处理" */
-type UploadOutcome = { kind: "done" } | { kind: "retry"; reason: string } | { kind: "blocked"; reason: string };
+type UploadOutcome =
+  | { kind: "done" }
+  | { kind: "retry"; reason: string }
+  | { kind: "blocked"; reason: string; blockedKind: "auth" | "rejected" };
 
 async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
   const fd = new FormData();
@@ -69,7 +72,7 @@ async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
 
   // 401/403:登录态问题 —— 重试无意义,等用户重新登录
   if (res.status === 401 || res.status === 403) {
-    return { kind: "blocked", reason: "登录已失效,请重新登录后重试" };
+    return { kind: "blocked", reason: "登录已失效,请重新登录", blockedKind: "auth" };
   }
   // 其余 4xx:服务端明确拒绝(文件格式/大小/参数),重试同样会被拒
   if (res.status >= 400 && res.status < 500) {
@@ -80,7 +83,7 @@ async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
     } catch {
       /* 响应体不是 JSON 就用默认文案 */
     }
-    return { kind: "blocked", reason: msg };
+    return { kind: "blocked", reason: msg, blockedKind: "rejected" };
   }
   // 5xx / 其他:服务端临时故障,可重试
   return { kind: "retry", reason: `服务器暂时不可用(${res.status})` };
@@ -121,7 +124,11 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
         await removeShot(shot.id); // 传成功即从本地清除,不占空间
         uploaded += 1;
       } else if (outcome.kind === "blocked") {
-        await updateShot(shot.id, { status: "blocked", lastError: outcome.reason });
+        await updateShot(shot.id, {
+          status: "blocked",
+          lastError: outcome.reason,
+          blockedKind: outcome.blockedKind,
+        });
       } else {
         const retries = (shot.retries || 0) + 1;
         if (retries >= MAX_AUTO_RETRIES) {
@@ -129,6 +136,7 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
             status: "blocked",
             retries,
             lastError: `多次上传失败:${outcome.reason}`,
+            blockedKind: "rejected",
           });
         } else {
           await updateShot(shot.id, {
@@ -145,6 +153,30 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
     running = false;
   }
   return uploaded;
+}
+
+/**
+ * 解除 blocked 并重新排队。
+ * @param onlyAuth true = 只解除"登录失效"那批(重新登录后调用):
+ *                 阻塞原因已经消失,不该要求用户逐张点重试。
+ * @returns 解除的条数
+ */
+export async function unblockAll(onlyAuth = false): Promise<number> {
+  const all = await listShots();
+  let n = 0;
+  for (const s of all) {
+    if (s.status !== "blocked") continue;
+    if (onlyAuth && s.blockedKind !== "auth") continue;
+    await updateShot(s.id, {
+      status: "pending",
+      nextRetryAt: 0,
+      retries: 0,
+      lastError: undefined,
+      blockedKind: undefined,
+    });
+    n += 1;
+  }
+  return n;
 }
 
 /** 用户手动点"立即重试":清掉退避等待,让下一轮马上处理 */

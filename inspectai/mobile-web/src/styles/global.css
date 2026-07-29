@@ -1445,3 +1445,21 @@ a {
   font-variant-numeric: tabular-nums;
   box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.9);
 }
+
+/* 被拦下的照片:提示行内直接给"全部重试",不用逐张点 */
+.pending-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pa-msg { flex: 1; min-width: 0; }
+.pa-btn {
+  flex: none;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 92, 76, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}

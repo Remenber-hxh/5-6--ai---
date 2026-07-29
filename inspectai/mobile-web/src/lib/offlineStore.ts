@@ -43,6 +43,12 @@ export interface PendingShot {
   nextRetryAt: number;
   /** 最近一次失败原因,展示给用户 */
   lastError?: string;
+  /**
+   * blocked 的原因分类:
+   *   auth     登录失效 —— 重新登录后即可自动恢复,不该让用户逐张点重试
+   *   rejected 服务端明确拒绝(格式/大小/参数)—— 重登也没用,需人工处理
+   */
+  blockedKind?: "auth" | "rejected";
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

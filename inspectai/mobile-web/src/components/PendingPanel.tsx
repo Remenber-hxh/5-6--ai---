@@ -60,7 +60,7 @@ function ShotCard({ shot }: { shot: PendingShot }) {
 }
 
 export default function PendingPanel() {
-  const { shots, online, persisted, usedBytes, flush } = usePending();
+  const { shots, online, persisted, usedBytes, flush, unblock } = usePending();
   const [flushing, setFlushing] = useState(false);
 
   const stats = useMemo(() => {
@@ -118,7 +118,22 @@ export default function PendingPanel() {
 
       {stats.blocked > 0 && (
         <div className="pending-alert">
-          {stats.blocked} 张需要处理{firstError ? `:${firstError}` : ""}
+          <span className="pa-msg">
+            {stats.blocked} 张需要处理{firstError ? `:${firstError}` : ""}
+          </span>
+          {/* 一次解除全部,而不是让用户逐张点重试 */}
+          <button
+            className="pa-btn"
+            onClick={async () => {
+              const n = await unblock(false);
+              Toast.show({
+                content: n > 0 ? `已重新排队 ${n} 张` : "没有可重试的照片",
+                position: "bottom",
+              });
+            }}
+          >
+            全部重试
+          </button>
         </div>
       )}
       {!persisted && usedBytes > 0 && (

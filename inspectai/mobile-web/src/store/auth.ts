@@ -7,6 +7,7 @@ import {
   login as apiLogin,
   logout as apiLogout,
 } from "@/api/client";
+import { unblockAll } from "@/lib/uploadQueue";
 
 interface AuthState {
   user: CurrentUser | null;
@@ -21,6 +22,9 @@ export const useAuth = create<AuthState>((set) => ({
   async login(username, password) {
     const res = await apiLogin(username, password);
     set({ user: res.user, loggedIn: true });
+    // 之前因登录失效被拦下的照片,现在可以重新上传了 ——
+    // 用户重新登录后还要逐张点重试是荒谬的。
+    void unblockAll(true).catch(() => void 0);
     return { mustChangePassword: res.mustChangePassword };
   },
   logout() {

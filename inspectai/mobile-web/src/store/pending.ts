@@ -11,7 +11,7 @@ import {
   removeShot,
   requestPersistentStorage,
 } from "@/lib/offlineStore";
-import { retryNow, runQueue } from "@/lib/uploadQueue";
+import { retryNow, runQueue, unblockAll } from "@/lib/uploadQueue";
 
 /** 队列自动跑一轮的间隔:覆盖"信号悄悄恢复但没触发 online 事件"的情况 */
 const TICK_MS = 30_000;
@@ -34,6 +34,8 @@ interface PendingState {
   retry: (id: string) => Promise<void>;
   /** 手动触发上传(用户点"立即上传") */
   flush: () => Promise<number>;
+  /** 解除被拦下的照片并重排队;onlyAuth=只解除"登录失效"那批 */
+  unblock: (onlyAuth?: boolean) => Promise<number>;
 }
 
 export const usePending = create<PendingState>((set, get) => ({
@@ -45,6 +47,9 @@ export const usePending = create<PendingState>((set, get) => ({
   freeBytes: null,
 
   async init() {
+    // 登录态可能刚刷新过:把因"登录失效"被拦下的照片放回队列 ——
+    // 阻塞原因已经消失,不该还要用户逐张点重试。
+    await unblockAll(true);
     // 1) 申请持久化:不申请的话浏览器在空间紧张时可直接清掉我们的照片
     const persisted = await requestPersistentStorage();
     // 2) 复位上次残留的 uploading —— 否则页面被中途关掉的那几张会永远卡住
@@ -100,6 +105,15 @@ export const usePending = create<PendingState>((set, get) => ({
     await retryNow(id);
     await get().refresh();
     void get().flush();
+  },
+
+  async unblock(onlyAuth = false) {
+    const n = await unblockAll(onlyAuth);
+    if (n > 0) {
+      await get().refresh();
+      void get().flush();
+    }
+    return n;
   },
 
   async flush() {
