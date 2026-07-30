@@ -67,7 +67,7 @@ function Card({ cr, onDone }: { cr: ChangeRequestDTO; onDone: () => void }) {
       </div>
 
       <div className="cr-target">
-        <span className="cr-tt">{cr.targetType === "asset" ? "资产" : "巡检记录"}</span>
+        <span className="tag tag-brand">{cr.targetType === "asset" ? "资产" : "巡检记录"}</span>
         <span className="cr-tn">{cr.targetLabel || cr.targetId}</span>
         {cr.targetType === "asset" && (
           <button

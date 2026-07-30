@@ -141,7 +141,7 @@ export default function PreviewPage() {
             {rec.aiSummaryTags && rec.aiSummaryTags.length > 0 && (
               <div className="ai-tags">
                 {rec.aiSummaryTags.map((t) => (
-                  <span className="ai-tag" key={t}>
+                  <span className="tag tag-brand" key={t}>
                     {t}
                   </span>
                 ))}

@@ -98,7 +98,7 @@ export default function AssetDetailPage() {
         <div className="ad-card">
           <div className="ad-row">
             <span className="ad-k">当前状态</span>
-            <span className={`ar-tag ar-${t}`}>{asset.lastStatus || "未巡检"}</span>
+            <span className={`tag tag-${t}`}>{asset.lastStatus || "未巡检"}</span>
           </div>
           <div className="ad-row">
             <span className="ad-k">累计巡检</span>
@@ -127,7 +127,7 @@ export default function AssetDetailPage() {
               <div className="hist-item" key={s.id}>
                 <div className="hist-head">
                   <span className="hist-when">{fmtWhen(s.createdAt)}</span>
-                  <span className={`ar-tag ar-${tone(s.status)}`}>{s.status || "—"}</span>
+                  <span className={`tag tag-${tone(s.status)}`}>{s.status || "—"}</span>
                 </div>
                 {s.inspector && <div className="hist-who">{s.inspector}</div>}
                 {s.summary && <div className="hist-body">{s.summary}</div>}

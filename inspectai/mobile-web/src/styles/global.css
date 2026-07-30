@@ -1463,15 +1463,6 @@ a {
   box-shadow: var(--lt-shadow);
 }
 .task-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.task-status {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 999px;
-}
-.task-status.pending { background: var(--brand-soft); color: var(--brand); }
-.task-status.doing { background: var(--c-green-soft); color: var(--ios-green); }
-.task-status.overdue { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
 .task-due { font-size: 11px; color: var(--lt-fg-2); }
 .task-title { font-size: 16px; font-weight: 600; color: var(--lt-fg); margin-bottom: 3px; }
 .task-asset { font-size: 12px; color: var(--lt-fg-2); }
@@ -1730,31 +1721,64 @@ a {
 }
 .asset-row:last-child { border-bottom: 0; }
 .asset-row:active { background: var(--lt-fill); }
-/* 状态圆点:一眼扫出哪台需要跟进 */
-.ar-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.ar-ok { background: var(--ios-green); }
-.ar-warn { background: var(--ios-orange); }
-.ar-danger { background: #ff3b30; }
-.ar-repair { background: #af52de; }
-.ar-unknown { background: #c7c7cc; }
+/* 设备封面缩略图(对齐旧版 .asset-cover)。
+   有照片的行一眼能认出是哪台设备;没照片的给同尺寸占位,保证左列对齐不参差。
+   状态由右侧标签表达,不再另画状态圆点(旧版也没有)。 */
+.ar-cover {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--lt-fill);
+  display: block;
+}
+.ar-cover-empty {
+  position: relative;
+}
+/* 空占位里的相片轮廓,照旧版的做法(细描边小方块) */
+.ar-cover-empty::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 14px;
+  margin: -7px 0 0 -9px;
+  border: 1.5px solid var(--ios-gray);
+  opacity: 0.45;
+  border-radius: 3px;
+}
 .ar-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ar-name {
   font-size: 15px; font-weight: 500; color: var(--lt-fg);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ar-sub { font-size: 11px; color: var(--lt-fg-2); }
-.ar-tag {
+
+/* ===== 状态标签(全站唯一一套)=====
+   历史上台账 .ar-tag、任务 .task-status、审批 .cr-tt 各写了一套,基底几乎相同
+   却对不齐:.cr-tt 少 font-weight、内边距还差 1px。这里收敛成一套语义标签。
+   配色只从令牌取,不在组件里散写(见 docs/MOBILE-WEB-OPTIMIZATION 的色彩规矩)。
+
+   没用 Arco 的 Tag:它要按语义把 color/bgColor 一个个当 props 传进 JSX,
+   等于把颜色从令牌搬回组件里散写,和上面那条规矩冲突。 */
+.tag {
   flex: none;
+  display: inline-flex;
+  align-items: center;
   font-size: 11px;
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 999px;
+  white-space: nowrap;
 }
-.ar-tag.ar-ok { background: var(--c-green-soft); color: var(--ios-green); }
-.ar-tag.ar-warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-.ar-tag.ar-danger { background: rgba(255,59,48,0.1); color: #ff3b30; }
-.ar-tag.ar-repair { background: rgba(175,82,222,0.12); color: #af52de; }
-.ar-tag.ar-unknown { background: var(--lt-fill); color: var(--lt-fg-2); }
+.tag-brand { background: var(--brand-soft); color: var(--brand); }
+.tag-ok { background: var(--c-green-soft); color: var(--ios-green); }
+.tag-warn { background: var(--c-orange-soft); color: var(--ios-orange); }
+.tag-danger { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
+.tag-repair { background: rgba(175, 82, 222, 0.12); color: #af52de; }
+.tag-unknown { background: var(--lt-fill); color: var(--lt-fg-2); }
 
 /* ===== 资产详情(旧版 sceneAsset)===== */
 .ad-card {
@@ -1823,14 +1847,6 @@ a {
 .ai-title { font-size: 13px; font-weight: 600; color: var(--lt-fg); }
 .ai-body { font-size: 14px; line-height: 1.65; color: var(--lt-fg); white-space: pre-wrap; }
 .ai-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.ai-tag {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
 /* 行动建议:优先级色块 + 正文 + 依据 */
 .reco { display: flex; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--lt-border); }
 .reco:last-child { border-bottom: 0; }
@@ -1873,14 +1889,6 @@ a {
 .cr-who { font-size: 15px; color: var(--lt-fg); }
 .cr-when { font-size: 11px; color: var(--lt-fg-2); font-variant-numeric: tabular-nums; }
 .cr-target { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.cr-tt {
-  flex: none;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand);
-}
 .cr-tn {
   flex: 1; min-width: 0;
   font-size: 13px; color: var(--lt-fg);

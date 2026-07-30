@@ -36,6 +36,19 @@ function fmtDate(iso?: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/**
+ * 设备封面缩略图地址。照搬旧版 thumbPath + storageURL 的口径:
+ * 后端给的是磁盘路径(Windows 上是 `..\storage\assets\...` 反斜杠),
+ * 统一斜杠后截掉 `/storage/` 之前的部分,再拼回 /storage/ 前缀。
+ */
+function coverURL(a: AssetDTO): string | null {
+  const raw = (a.coverImage?.path || "").replace(/\\/g, "/");
+  if (!raw) return null;
+  const i = raw.indexOf("/storage/");
+  if (i < 0) return null;
+  return "/storage/" + encodeURI(raw.substring(i + "/storage/".length));
+}
+
 type Filter = { project?: string; assetType?: string; level?: string; today?: boolean };
 
 // 设备健康(旧版 sceneLedger):概览四数 + 分组筛选 + 资产列表
@@ -202,16 +215,22 @@ export default function LedgerPage() {
           ) : (
             shown.map((a) => {
               const t = tone(a.lastStatus);
+              const cover = coverURL(a);
               return (
                 <button className="asset-row" key={a.id} onClick={() => nav(`/asset/${encodeURIComponent(a.id)}`)}>
-                  <span className={`ar-dot ar-${t.cls}`} />
+                  {/* 旧版每行有设备封面图,重构时丢了。状态由右侧标签表达,不再另画圆点 */}
+                  {cover ? (
+                    <img className="ar-cover" src={cover} alt="" loading="lazy" />
+                  ) : (
+                    <span className="ar-cover ar-cover-empty" aria-hidden />
+                  )}
                   <span className="ar-main">
                     <span className="ar-name">{a.assetName}</span>
                     <span className="ar-sub">
                       {a.project || "—"} · 巡检 {a.inspectionCount} 次 · {fmtDate(a.lastInspectedAt)}
                     </span>
                   </span>
-                  <span className={`ar-tag ar-${t.cls}`}>{t.text}</span>
+                  <span className={`tag tag-${t.cls}`}>{t.text}</span>
                 </button>
               );
             })

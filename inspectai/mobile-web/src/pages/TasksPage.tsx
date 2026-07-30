@@ -23,10 +23,11 @@ const VISIBLE_STATUS = ["进行中", "待整改", "逾期"];
 /** 排序:逾期最先,再进行中,再待整改(旧版 TASK_STATUS_ORDER 的语义) */
 const ORDER: Record<string, number> = { 逾期: 0, 进行中: 1, 待整改: 2 };
 
-function statusClass(s: string): string {
-  if (s === "逾期") return "overdue";
-  if (s === "进行中") return "doing";
-  return "pending";
+/** 任务状态 → 全站统一标签的语义档位(.tag-*) */
+function statusTone(s: string): string {
+  if (s === "逾期") return "danger";
+  if (s === "进行中") return "ok";
+  return "brand";
 }
 
 function fmtDue(iso?: string): string {
@@ -124,7 +125,7 @@ export default function TasksPage() {
               return (
                 <article className="task-card" key={t.id}>
                   <div className="task-card-head">
-                    <span className={`task-status ${statusClass(t.status)}`}>{t.status || "待执行"}</span>
+                    <span className={`tag tag-${statusTone(t.status)}`}>{t.status || "待执行"}</span>
                     {t.dueAt && <span className="task-due">{fmtDue(t.dueAt)}</span>}
                   </div>
                   <div className="task-title">{title}</div>
