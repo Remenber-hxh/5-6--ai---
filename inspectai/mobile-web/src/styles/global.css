@@ -154,7 +154,7 @@
   text-align: center;
 }
 
-/* ===== 表单(把 antd-mobile 默认浅色皮改成旧版深色皮) ===== */
+/* ===== 表单(把 Arco 默认皮改成旧版深色皮) ===== */
 
 .field {
   display: grid;
@@ -167,8 +167,8 @@
   letter-spacing: 0.06em;
   color: var(--label);
 }
-/* antd-mobile Input 的实际输入元素 */
-.field .adm-input {
+/* Arco 结构:.arco-input-container > .arco-input-wrap > input.arco-input */
+.field .arco-input-container {
   height: 44px;
   padding: 0 14px;
   border: 1px solid var(--input-border);
@@ -176,21 +176,21 @@
   background: var(--input-bg);
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
-.field .adm-input-element {
+.field input.arco-input {
   color: #fff;
   font-size: 15px;
 }
-.field .adm-input-element::placeholder {
+.field input.arco-input::placeholder {
   color: rgba(234, 247, 255, 0.32);
 }
-.field .adm-input:focus-within {
+.field .arco-input-container:focus-within {
   border-color: var(--input-border-focus);
   box-shadow: 0 0 0 3px var(--input-ring);
 }
 
-/* ===== 主按钮:覆盖 antd-mobile primary ===== */
+/* ===== 主按钮:覆盖 Arco primary ===== */
 
-.btn-primary.adm-button {
+.btn-primary.arco-button {
   height: 46px;
   margin-top: 6px;
   border: 0;
@@ -202,13 +202,16 @@
   letter-spacing: 0.05em;
   box-shadow: var(--btn-primary-shadow);
 }
-.btn-primary.adm-button:active {
+
+
+
+.btn-primary.arco-button:active {
   transform: scale(0.99);
   opacity: 0.92;
 }
 
 /* 次要按钮(描边) */
-.btn-ghost.adm-button {
+.btn-ghost.arco-button {
   height: 44px;
   border-radius: 12px;
   background: transparent;
@@ -761,7 +764,7 @@
   justify-content: flex-end;
   gap: 8px;
 }
-.fld-value .adm-input {
+.fld-value .arco-input-container {
   text-align: right;
   --font-size: 15px;
   --color: var(--lt-fg);
@@ -1018,7 +1021,7 @@ a {
 
 /* ===== 浅色流程页的按钮:iOS 蓝(旧版 .btn-primary)=====
    翡翠渐变只用于登录页,浅色页沿用旧版 iOS 蓝,避免两种主题混用。 */
-.flow-foot .btn-primary.adm-button {
+.flow-foot .btn-primary.arco-button {
   min-height: 50px;
   border-radius: 16px;
   background: var(--ios-blue);
@@ -1028,7 +1031,7 @@ a {
   letter-spacing: -0.02em;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.2), 0 8px 20px rgba(0, 122, 255, 0.25);
 }
-.flow-foot .btn-ghost.adm-button {
+.flow-foot .btn-ghost.arco-button {
   min-height: 50px;
   border-radius: 16px;
   border: 0;
@@ -1048,7 +1051,7 @@ a {
 .ai-pill { white-space: nowrap; cursor: pointer; }
 
 /* 输入框占满剩余宽度,右对齐(旧版 .field .value 语义) */
-.fld-value .adm-input { flex: 1; min-width: 0; }
+.fld-value .arco-input-container { flex: 1; min-width: 0; }
 
 /* ===== 识别中:整屏场景(复刻旧版 sceneLoading)===== */
 .loading-screen {

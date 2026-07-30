@@ -1,4 +1,4 @@
-import { Button, Dialog, Toast } from "antd-mobile";
+import { Button, Dialog, Toast } from "@/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 

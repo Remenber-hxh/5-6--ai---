@@ -1,4 +1,4 @@
-import { Button } from "antd-mobile";
+import { Button } from "@/ui";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/store/auth";

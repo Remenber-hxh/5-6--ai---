@@ -1,4 +1,4 @@
-import { Button, Input, Toast } from "antd-mobile";
+import { Button, Input, Toast } from "@/ui";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 

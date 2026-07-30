@@ -1,4 +1,4 @@
-import { Toast } from "antd-mobile";
+import { Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 
 // ===== 带水印的照片查看器 =====

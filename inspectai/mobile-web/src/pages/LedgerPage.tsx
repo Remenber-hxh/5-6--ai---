@@ -1,4 +1,4 @@
-import { Toast } from "antd-mobile";
+import { Toast } from "@/ui";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 

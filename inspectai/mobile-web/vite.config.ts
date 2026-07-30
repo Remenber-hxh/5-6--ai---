@@ -12,9 +12,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          antd: ["antd-mobile"],
-          react: ["react", "react-dom", "react-router-dom"],
+        // 按需引入走的是子路径(esm/toast 等),整包名匹配不到,
+        // 故用函数式按路径分块
+        manualChunks(id) {
+          if (id.includes("@arco-design")) return "arco";
+          if (id.includes("node_modules/react")) return "react";
         },
       },
     },

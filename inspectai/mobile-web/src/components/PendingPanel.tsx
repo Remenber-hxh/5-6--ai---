@@ -1,4 +1,4 @@
-import { Dialog, Toast } from "antd-mobile";
+import { Dialog, Toast } from "@/ui";
 import { useEffect, useMemo, useState } from "react";
 
 import { PendingShot } from "@/lib/offlineStore";
