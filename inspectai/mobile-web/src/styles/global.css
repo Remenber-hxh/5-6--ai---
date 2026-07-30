@@ -535,6 +535,9 @@
 }
 
 .pending-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 8px;
   font-size: 11px;
   line-height: 1.5;
@@ -656,20 +659,6 @@
 }
 /* 离线时长:公开展示拍摄与上传的时间差,不隐藏 */
 .cell-gap { font-style: normal; font-size: 9px; color: #ffd479; }
-.cell-zoom {
-  position: absolute;
-  left: 5px;
-  top: 5px;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: rgba(0, 0, 0, 0.42);
-  color: #fff;
-  font-size: 11px;
-  line-height: 22px;
-  text-align: center;
-}
-
 /* ===== 识别结果 / 模板选择(旧版 iOS 卡片) ===== */
 
 .classify-box {
@@ -764,18 +753,13 @@
   justify-content: flex-end;
   gap: 8px;
 }
-.fld-value .arco-input-container {
-  text-align: right;
-  --font-size: 15px;
-  --color: var(--lt-fg);
-  --placeholder-color: var(--ios-gray);
-}
-
 /* AI 状态药丸(旧版 .ai-pill 四种态) */
 .ai-pill {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  white-space: nowrap;
+  cursor: pointer;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -833,6 +817,11 @@
   color: var(--ios-blue);
   font-size: 13px;
   font-weight: 600;
+  /* 不换行、留足宽度,避免"确认/保存"被压成两行 */
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 56px;
+  text-align: center;
 }
 .fld-btn:disabled { opacity: 0.5; }
 
@@ -849,7 +838,10 @@
 }
 .analyzing .spinner { border-top-color: var(--ios-blue); border-color: rgba(0,122,255,0.24); }
 
-/* 识别不稳时的出路(旧版:重拍 / 转人工) */
+/* 识别不稳时的出路(旧版:重拍 / 转人工)。
+   注意:这里是【浅色】的一份 —— RecordPage 用 .flow-screen(浅色 iOS 风)。
+   曾经在下方另写过一份深色版覆盖它,导致 .retake-tries 变成近白字打在近白底上
+   (对比度 1.01:1,肉眼不可见)。不要再加第二份。 */
 .retake-box {
   margin: 0 16px 14px;
   padding: 14px 16px;
@@ -857,7 +849,8 @@
   background: var(--c-orange-soft);
   border: 0.5px solid rgba(255, 149, 0, 0.24);
 }
-.retake-why { font-size: 13px; line-height: 1.55; color: #b06000; }
+/* 色值压到对暖底 5.47:1(WCAG AA 要 4.5) —— 巡检员在户外阳光下看,别省这一档 */
+.retake-why { font-size: 13px; line-height: 1.55; color: #934f00; }
 .retake-tries {
   margin-top: 4px;
   font-size: 11px;
@@ -869,16 +862,6 @@
 .rec-images { margin: 4px 16px 0; }
 .rec-images-head { font-size: 12px; color: var(--lt-fg-2); margin-bottom: 8px; }
 .rec-images .shot-card { border-color: var(--lt-border); background: var(--lt-fill); }
-
-.link-btn {
-  margin-top: 18px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(67, 229, 172, 0.12);
-  color: var(--tech-jade);
-  font-size: 12px;
-}
 
 /* ===== 带水印的照片查看器 ===== */
 
@@ -993,32 +976,6 @@ a {
   color: var(--tech-jade);
 }
 
-/* ===== 识别不稳时的出路(照旧版:补拍 / 转人工) ===== */
-.retake-box {
-  padding: 14px;
-  margin-bottom: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 196, 107, 0.34);
-  background: rgba(255, 196, 107, 0.08);
-}
-.retake-why {
-  font-size: 13px;
-  line-height: 1.6;
-  color: #ffc46b;
-}
-.retake-tries {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.retake-acts {
-  margin-top: 10px;
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
 /* ===== 浅色流程页的按钮:iOS 蓝(旧版 .btn-primary)=====
    翡翠渐变只用于登录页,浅色页沿用旧版 iOS 蓝,避免两种主题混用。 */
 .flow-foot .btn-primary.arco-button {
@@ -1041,17 +998,6 @@ a {
   font-weight: 600;
 }
 
-/* 确认/保存按钮:不换行、留足宽度 */
-.fld-btn {
-  white-space: nowrap;
-  flex-shrink: 0;
-  min-width: 56px;
-  text-align: center;
-}
-.ai-pill { white-space: nowrap; cursor: pointer; }
-
-/* 输入框占满剩余宽度,右对齐(旧版 .field .value 语义) */
-.fld-value .arco-input-container { flex: 1; min-width: 0; }
 
 /* ===== 识别中:整屏场景(复刻旧版 sceneLoading)===== */
 .loading-screen {
@@ -1174,7 +1120,9 @@ a {
 }
 .confirm-all button:disabled { opacity: 0.6; }
 
-/* ===== 原生输入控件(替代 antd-mobile,贴合旧版观感)===== */
+/* ===== 字段用原生输入控件 =====
+   流程页的字段行刻意不用组件库的 Input:旧版就是原生控件 + 右对齐,
+   自己写 CSS 更贴旧版观感,也省掉一层组件库皮肤覆盖。 */
 .fld-input, .fld-select {
   flex: 1;
   min-width: 0;
@@ -1449,12 +1397,8 @@ a {
   box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.9);
 }
 
-/* 被拦下的照片:提示行内直接给"全部重试",不用逐张点 */
-.pending-alert {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+/* 被拦下的照片:提示行内直接给"全部重试",不用逐张点。
+   .pending-alert 本体样式在上方"待上传面板"一节,这里只放行内元素。 */
 .pa-msg { flex: 1; min-width: 0; }
 .pa-btn {
   flex: none;

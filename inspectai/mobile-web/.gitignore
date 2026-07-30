@@ -1,3 +1,5 @@
 node_modules
 dist
 *.local
+# tsc -b 的增量缓存,机器相关,不进仓
+*.tsbuildinfo
