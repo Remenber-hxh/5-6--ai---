@@ -173,7 +173,10 @@ export interface EngineeringTaskDTO {
   workContent?: string;
   assetName?: string;
   project?: string;
-  status: string; // 待执行 / 进行中 / 逾期 / 已完成
+  category?: string;
+  /** 负责人。后端返回全量任务、不按人过滤,由客户端筛自己的(沿用旧版做法) */
+  assigneeName?: string;
+  status: string; // 待执行 / 待整改 / 进行中 / 逾期 / 已完成 / 已取消
   dueAt?: string;
   templateId?: string;
 }

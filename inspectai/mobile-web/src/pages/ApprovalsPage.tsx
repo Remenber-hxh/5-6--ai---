@@ -2,6 +2,7 @@ import { Toast } from "@/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import {
   ChangeRequestDTO,
   approveChangeRequest,
@@ -129,7 +130,8 @@ export default function ApprovalsPage() {
         <p className="screen-sub" style={{ textAlign: "center" }}>
           数据修改审批由复核主管及以上处理
         </p>
-        <button className="task-back" onClick={() => nav("/")}>
+        {/* 这是深色屏,不能用浅色页的 .task-back */}
+        <button className="btn-dark-ghost" onClick={() => nav("/")}>
           返回拍照
         </button>
       </div>
@@ -146,23 +148,19 @@ export default function ApprovalsPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">待审批</h1>
-        <p className="flow-sub">数据修改申请 {list.length} 条</p>
-      </div>
+      <FlowHeader title="待审批" onBack={() => nav("/")} />
 
       <div className="scroll-area flow-body">
+        <p className="flow-caption">数据修改申请 {list.length} 条</p>
         {list.length === 0 ? (
-          <div className="task-empty">当前无待审批申请</div>
+          <div className="empty-state">
+            <span className="es-badge">✓</span>
+            <span className="es-title">审批清零</span>
+            <span className="es-hint">当前无待审批申请,巡检员提交的数据修改申请会出现在这里</span>
+          </div>
         ) : (
           list.map((cr) => <Card key={cr.id} cr={cr} onDone={() => void load()} />)
         )}
-      </div>
-
-      <div className="flow-foot">
-        <button className="task-back" onClick={() => nav("/")}>
-          返回拍照
-        </button>
       </div>
     </div>
   );

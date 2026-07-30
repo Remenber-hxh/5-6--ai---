@@ -2,6 +2,7 @@ import { Button, Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import {
@@ -236,14 +237,19 @@ export default function RecordPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">{rec.templateName}</h1>
-        <p className="flow-sub">
-          {rec.project} · {rec.pointName} · {done}/{rec.fields.length} 项已填
-        </p>
-      </div>
+      {/* 标题用旧版的固定文案(TITLES.form),模板名降到副行 —— 顶栏 17px
+          放不下长模板名,旧版也是把它放在正文里 */}
+      <FlowHeader
+        title="确认日报字段"
+        onBack={() => nav("/")}
+        action={{ text: "设备健康", onClick: () => nav("/ledger") }}
+        step="record"
+      />
 
       <div className="scroll-area flow-body">
+        <p className="flow-caption">
+          {rec.templateName} · {rec.project} · {rec.pointName} · {done}/{rec.fields.length} 项已填
+        </p>
         {/* 识别不稳:给出路,不能只报错(旧版:重拍 / 转人工) */}
         {rec.retakeReason && (
           <div className="retake-box">

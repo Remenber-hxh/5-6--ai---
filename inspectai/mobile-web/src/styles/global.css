@@ -32,20 +32,25 @@
   --btn-primary-ink: #052015;
   --btn-primary-shadow: 0 12px 32px rgba(27, 224, 135, 0.36);
 
-  /* ===== iOS 浅色主题(旧版 form / preview / classify / ledger 用) =====
+  /* ===== 浅色流程页(填报 / 台账 / 任务 / 审批 / 档案)=====
      旧版是双主题:登录与拍照是深色科技风,其余流程页是浅色 iOS 风。
-     数值取自旧版 :root 的 --ios-* / --background 系列。 */
-  --ios-blue: #007aff;
+     保留双主题,但浅色页强调色从通用 iOS 蓝(#007aff)换成深翡翠 ——
+     它是 --tech-jade 的浅色 grade,让浅色页也长在品牌上,不像随手套的默认模板。
+     语义色(成功绿 / 警示橙)保留 iOS 原值。 */
+  --brand: #0a8a63; /* 深翡翠:与白底/白字对比均 ≥4.3:1,填充和文字两用 */
+  --brand-soft: rgba(10, 138, 99, 0.1);
+  --brand-border: rgba(10, 138, 99, 0.22);
   --ios-green: #34c759;
   --ios-orange: #ff9500;
   --ios-gray: #8e8e93;
-  --lt-bg: #fafafb;
+  --lt-bg: #f6f7f6;
   --lt-card: #ffffff;
   --lt-fg: #1c1c1e;
   --lt-fg-2: #6e6e73;
   --lt-border: rgba(60, 60, 67, 0.12);
   --lt-fill: #f2f2f7;
-  --c-blue-soft: rgba(0, 122, 255, 0.1);
+  /* 浅色卡统一阴影:带一点绿底灰,与翡翠强调色同温 */
+  --lt-shadow: 0 1px 2px rgba(18, 48, 38, 0.05), 0 8px 24px rgba(18, 48, 38, 0.07);
   --c-green-soft: rgba(52, 199, 89, 0.12);
   --c-orange-soft: rgba(255, 149, 0, 0.12);
 
@@ -252,16 +257,16 @@
   background: rgba(255, 196, 107, 0.12);
 }
 
-/* 中部整屏不滚动,自适应挤压 */
+/* 中部:内容比旧版高(取景框+相册+工作台),矮屏允许内部滚动兜底,不再硬挤压 */
 .capture-main {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 0 24px;
-  overflow: hidden;
+  justify-content: flex-start;
+  padding: clamp(6px, 2svh, 18px) 24px 0;
+  overflow-y: auto;
 }
 .capture-title {
   margin: 0 0 6px;
@@ -279,16 +284,37 @@
   text-align: center;
 }
 
-/* 取景框:四角 + 翡翠描边(旧版观感) */
-.viewfinder {
+/* 取景框即快门(2026-07-30 首页重排):旧版是装饰性空框 + 独立小圆快门,
+   框占着黄金位置却不干事。现在整框都是点按区 —— 弱网/手套/颠簸现场不用瞄准。 */
+.vf-btn {
   position: relative;
-  width: min(70%, 240px);
-  aspect-ratio: 1;
-  max-height: 34svh;
-  margin: clamp(14px, 3svh, 26px) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: min(100%, 320px);
+  height: clamp(168px, 27svh, 224px);
+  margin: clamp(12px, 2.6svh, 22px) auto 0;
   border: 1px solid rgba(126, 255, 210, 0.16);
-  border-radius: 22px;
-  background: rgba(0, 0, 0, 0.16);
+  border-radius: 24px;
+  background:
+    radial-gradient(130% 120% at 50% 0%, rgba(67, 229, 172, 0.08), transparent 55%),
+    rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 160ms ease;
+}
+.vf-btn:active {
+  transform: scale(0.985);
+  border-color: rgba(126, 255, 210, 0.42);
+}
+.vf-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
 }
 .vf-corner {
   position: absolute;
@@ -301,42 +327,88 @@
 .vf-bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-radius: 0 0 0 8px; }
 .vf-br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
 
-/* 快门 */
-.shutter-wrap {
-  position: relative;
-  display: block;
-  width: 76px;
-  height: 76px;
-  flex: none;
-}
-.shutter-input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-}
-.shutter {
-  display: block;
-  width: 76px;
-  height: 76px;
+/* 框内快门环:保留相机快门的心智模型,但只是视觉锚点,点按区是整个框 */
+.vf-ring {
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.5), 0 10px 30px rgba(27, 224, 135, 0.28);
-  transition: transform 120ms ease;
+  box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.45), 0 10px 30px rgba(27, 224, 135, 0.28);
 }
-.shutter-wrap:active .shutter { transform: scale(0.94); }
-.shutter-busy { opacity: 0.55; }
-.shutter-label {
-  margin-top: 10px;
+.vf-ring.busy { opacity: 0.55; }
+.vf-text {
   font-size: 13px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   color: var(--ink-2);
 }
-.capture-who {
-  margin-top: 12px;
-  font-size: 12px;
+
+/* 眉行:部门 · 角色,11px 加宽字距 —— 取代旧版快门下面重复的"姓名·部门"行 */
+.cap-eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
   color: var(--ink-3);
+  text-align: center;
+}
+
+/* 相册上传:与拍照并列的次动作,描边胶囊(旧版把它混在一排文字链接里) */
+.cap-album {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(100%, 320px);
+  height: 42px;
+  margin: 12px auto 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cap-album:active { background: rgba(255, 255, 255, 0.09); }
+.cap-album svg { color: var(--tech-jade); }
+
+/* 工作台磁贴:图标 + 名称 + 待办角标,四个入口等宽一排 */
+.cap-nav-label {
+  width: min(100%, 340px);
+  margin: clamp(14px, 3svh, 24px) auto 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+}
+.cap-nav {
+  display: flex;
+  gap: 10px;
+  width: min(100%, 340px);
+  margin: 0 auto;
+}
+.nav-tile {
+  position: relative; /* .badge-dot 的偏移参照 */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 4px 10px;
+  border: 1px solid rgba(126, 255, 210, 0.12);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(12, 38, 70, 0.55), rgba(5, 20, 44, 0.6));
+  color: var(--tech-jade);
+  transition: transform 120ms ease, border-color 160ms ease;
+}
+.nav-tile:active {
+  transform: scale(0.95);
+  border-color: rgba(126, 255, 210, 0.36);
+}
+.nt-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
 }
 
 /* 取景框扫描线(旧版观感) */
@@ -351,8 +423,8 @@
   animation: vf-sweep 2.6s ease-in-out infinite;
 }
 @keyframes vf-sweep {
-  0%, 100% { transform: translateY(-40px); opacity: 0.25; }
-  50% { transform: translateY(40px); opacity: 0.8; }
+  0%, 100% { transform: translateY(-58px); opacity: 0.25; }
+  50% { transform: translateY(58px); opacity: 0.8; }
 }
 @media (prefers-reduced-motion: reduce) {
   .vf-scan { animation: none; }
@@ -566,29 +638,102 @@
   background: var(--lt-bg);
   color: var(--lt-fg);
 }
-/* iOS 毛玻璃导航栏 */
-.flow-head {
+/* ===== 统一顶栏(补回旧版 #topbar,底层是 Arco NavBar) =====
+   Arco 默认把左右两侧【绝对定位】、靠给标题加 padding 让位;旧版是 flex 三段
+   (返回 40px / 标题 flex:1 左对齐 / 右侧操作)。这里把 inner 改回 flex、
+   左右恢复静态定位 —— 结构与旧版一致,也不用去猜让位的 padding 该给多少。
+   数值取自旧版 styles.css .topbar,含 56px 而非 Arco 默认的 44px。 */
+.app-navbar.arco-nav-bar {
   flex: none;
-  padding: calc(12px + var(--safe-top)) 18px 10px;
-  background: rgba(250, 250, 251, 0.82);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 0.5px solid var(--lt-border);
-}
-.flow-title {
-  margin: 0 0 3px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  padding-top: var(--safe-top); /* 刘海:外层 content-box,padding 会正确累加进高度 */
   color: var(--lt-fg);
+  background: rgba(250, 250, 251, 0.72);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
 }
-.flow-sub {
-  margin: 0;
-  font-size: 12px;
-  color: var(--lt-fg-2);
+.app-navbar .arco-nav-bar-wrapper {
+  height: 56px;
+  background: transparent;
 }
+.app-navbar .arco-nav-bar-inner {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+.app-navbar .arco-nav-bar-left,
+.app-navbar .arco-nav-bar-right {
+  position: static;
+  flex: none;
+  height: 100%;
+}
+.app-navbar .arco-nav-bar-left {
+  width: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 20px;
+  transition: background 0.15s;
+}
+.app-navbar .arco-nav-bar-left:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+.app-navbar .arco-nav-bar-right {
+  padding: 0;
+}
+.navbar-title {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+  font-size: 17px;
+  font-weight: 600; /* iOS 标题字重 */
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.navbar-action {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--brand);
+}
+/* 深色科技风的两屏(拍照台 / 识别中),对齐旧版 data-scene 覆盖 */
+.app-navbar-dark.arco-nav-bar {
+  /* 注意:这里曾经写成 var(--foreground) —— 那是旧版令牌名,本表从未定义,
+     实际靠继承 .app-shell 的颜色才没翻车。修正为已定义的 --ink。 */
+  color: var(--ink);
+  background: rgba(4, 12, 20, 0.76);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.24);
+}
+.app-navbar-dark .arco-nav-bar-wrapper-border::after {
+  border-color: rgba(111, 255, 219, 0.12);
+}
+.app-navbar-dark .arco-nav-bar-left,
+.app-navbar-dark .navbar-action {
+  color: var(--tech-jade);
+}
+.app-navbar-dark .navbar-title {
+  letter-spacing: 0.04em;
+}
+.app-navbar-dark .arco-nav-bar-left:active {
+  background: rgba(111, 255, 219, 0.1);
+}
+
+/* 流程进度细条(旧版 #progressBar,3px) */
+.flow-progress.arco-progress {
+  flex: none;
+}
+
 .flow-body {
   padding: 12px 0 18px;
+}
+/* 顶栏只放标题(对齐旧版),原先塞在头部的计数/说明降到内容区首行 */
+.flow-caption {
+  margin: 0 0 10px;
+  padding: 0 18px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
 }
 .flow-foot {
   flex: none;
@@ -624,7 +769,7 @@
   opacity: 0.72;
   transition: opacity 140ms ease;
 }
-.grid-cell.picked { border-color: var(--ios-blue); }
+.grid-cell.picked { border-color: var(--brand); }
 .grid-cell.picked img { opacity: 1; }
 .cell-check {
   position: absolute;
@@ -641,8 +786,8 @@
   line-height: 17px;
 }
 .grid-cell.picked .cell-check {
-  background: var(--ios-blue);
-  border-color: var(--ios-blue);
+  background: var(--brand);
+  border-color: var(--brand);
 }
 .cell-meta {
   position: absolute;
@@ -666,9 +811,7 @@
   padding: 16px 18px;
   border-radius: 20px;
   background: var(--lt-card);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset,
-              0 1px 2px rgba(60,60,67,0.05),
-              0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .classify-head { font-size: 12px; color: var(--lt-fg-2); margin-bottom: 6px; }
 .classify-hit {
@@ -684,8 +827,8 @@
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 999px;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 .tpl-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .tpl-item {
@@ -697,9 +840,9 @@
   font-size: 13px;
 }
 .tpl-item.on {
-  border-color: rgba(0, 122, 255, 0.2);
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  border-color: rgba(10, 138, 99, 0.2);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-weight: 600;
 }
 
@@ -709,9 +852,7 @@
   background: var(--lt-card);
   margin: 0 16px 14px;
   border-radius: 20px;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset,
-              0 1px 2px rgba(60,60,67,0.05),
-              0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
   overflow: hidden;
 }
 .fld-group-title {
@@ -765,9 +906,9 @@
   letter-spacing: -0.01em;
   padding: 3px 9px;
   border-radius: 999px;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
-  border: 0.5px solid rgba(0, 122, 255, 0.18);
+  background: var(--brand-soft);
+  color: var(--brand);
+  border: 0.5px solid rgba(10, 138, 99, 0.18);
 }
 .ai-pill.confirmed {
   background: var(--c-green-soft); color: var(--ios-green);
@@ -782,8 +923,8 @@
   border-color: var(--lt-border);
 }
 .ai-pill.edited {
-  background: var(--c-blue-soft); color: var(--ios-blue);
-  border-color: rgba(0, 122, 255, 0.2);
+  background: var(--brand-soft); color: var(--brand);
+  border-color: rgba(10, 138, 99, 0.2);
 }
 
 /* 选项行 */
@@ -797,9 +938,9 @@
   font-size: 13px;
 }
 .opt.on {
-  border-color: rgba(0, 122, 255, 0.2);
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  border-color: rgba(10, 138, 99, 0.2);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-weight: 600;
 }
 
@@ -812,9 +953,9 @@
 .fld-btn {
   padding: 6px 14px;
   border-radius: 8px;
-  border: 0.5px solid rgba(0, 122, 255, 0.2);
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  border: 0.5px solid rgba(10, 138, 99, 0.2);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 13px;
   font-weight: 600;
   /* 不换行、留足宽度,避免"确认/保存"被压成两行 */
@@ -832,11 +973,11 @@
   margin: 0 16px 12px;
   padding: 12px 16px;
   border-radius: 14px;
-  background: var(--c-blue-soft);
+  background: var(--brand-soft);
   font-size: 13px;
-  color: var(--ios-blue);
+  color: var(--brand);
 }
-.analyzing .spinner { border-top-color: var(--ios-blue); border-color: rgba(0,122,255,0.24); }
+.analyzing .spinner { border-top-color: var(--brand); border-color: rgba(10, 138, 99, 0.24); }
 
 /* 识别不稳时的出路(旧版:重拍 / 转人工)。
    注意:这里是【浅色】的一份 —— RecordPage 用 .flow-screen(浅色 iOS 风)。
@@ -981,19 +1122,19 @@ a {
 .flow-foot .btn-primary.arco-button {
   min-height: 50px;
   border-radius: 16px;
-  background: var(--ios-blue);
+  background: var(--brand);
   color: #fff;
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.2), 0 8px 20px rgba(0, 122, 255, 0.25);
+  box-shadow: 0 1px 2px rgba(10, 138, 99, 0.2), 0 8px 20px rgba(10, 138, 99, 0.25);
 }
 .flow-foot .btn-ghost.arco-button {
   min-height: 50px;
   border-radius: 16px;
   border: 0;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 17px;
   font-weight: 600;
 }
@@ -1179,7 +1320,7 @@ a {
   padding: 20px 20px 18px;
   border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .classify-result.warn {
   background: var(--c-orange-soft);
@@ -1199,7 +1340,7 @@ a {
   border-radius: 16px;
   overflow: hidden;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .template-row {
   display: flex;
@@ -1215,7 +1356,7 @@ a {
 .template-row:active { background: var(--lt-fill); }
 .tr-icon {
   width: 40px; height: 40px; border-radius: 50%;
-  background: var(--c-blue-soft); color: var(--ios-blue);
+  background: var(--brand-soft); color: var(--brand);
   display: grid; place-items: center;
   margin-right: 14px;
   font-size: 15px; font-weight: 500;
@@ -1229,7 +1370,7 @@ a {
 .tr-sub { font-size: 12px; color: var(--lt-fg-2); }
 .tr-arrow { color: #c7c7cc; font-size: 20px; margin-left: 8px; flex: none; }
 
-/* ===== 首页入口(旧版 hero-secondary / user-window / task-banner)===== */
+/* ===== 首页入口(user-window / task-banner;导航磁贴见"拍照台"一节)===== */
 .top-right { display: flex; align-items: center; gap: 8px; }
 .user-window {
   min-width: 62px;
@@ -1241,27 +1382,6 @@ a {
   font-size: 12px;
   font-weight: 600;
 }
-.hero-secondary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  margin-top: 18px;
-  flex-wrap: wrap;
-}
-.link-btn {
-  position: relative;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.15px;
-}
-.link-btn:active { background: rgba(255, 255, 255, 0.06); color: var(--tech-jade); }
-.link-sep { color: rgba(234, 247, 255, 0.24); font-size: 12px; }
 .upload-wrap { overflow: hidden; }
 .upload-input {
   position: absolute;
@@ -1315,7 +1435,7 @@ a {
   padding: 14px 0;
   border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .ts-item {
   flex: 1;
@@ -1324,7 +1444,14 @@ a {
   flex-direction: column;
   gap: 2px;
 }
-.ts-item b { font-size: 22px; color: var(--lt-fg); font-variant-numeric: tabular-nums; }
+.ts-item + .ts-item { border-left: 0.5px solid var(--lt-border); }
+.ts-item b {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--lt-fg);
+  font-variant-numeric: tabular-nums;
+}
 .ts-item span { font-size: 11px; color: var(--lt-fg-2); }
 .ts-item.warn b { color: #ff3b30; }
 
@@ -1333,7 +1460,7 @@ a {
   padding: 14px 16px;
   border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .task-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .task-status {
@@ -1342,23 +1469,28 @@ a {
   padding: 3px 9px;
   border-radius: 999px;
 }
-.task-status.pending { background: var(--c-blue-soft); color: var(--ios-blue); }
+.task-status.pending { background: var(--brand-soft); color: var(--brand); }
 .task-status.doing { background: var(--c-green-soft); color: var(--ios-green); }
 .task-status.overdue { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
 .task-due { font-size: 11px; color: var(--lt-fg-2); }
 .task-title { font-size: 16px; font-weight: 600; color: var(--lt-fg); margin-bottom: 3px; }
 .task-asset { font-size: 12px; color: var(--lt-fg-2); }
 .task-desc { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--lt-fg-2); }
+/* 旧版是柔和底 + 蓝字(--wx-blue-soft / --wx-blue),不是饱和蓝实心块。
+   一屏叠四五张卡时,实心蓝会重得压住所有信息。 */
 .task-start {
   width: 100%;
   margin-top: 12px;
   height: 40px;
   border: 0;
   border-radius: 12px;
-  background: var(--ios-blue);
-  color: #fff;
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 15px;
   font-weight: 600;
+}
+.task-start:active {
+  background: rgba(10, 138, 99, 0.18);
 }
 .task-empty, .task-loading {
   text-align: center;
@@ -1371,11 +1503,51 @@ a {
   min-height: 50px;
   border: 0;
   border-radius: 16px;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 17px;
   font-weight: 600;
 }
+
+/* ===== 整屏空态(审批清零 / 任务清零 / 台账筛选无结果)=====
+   之前只有 .task-empty 一行灰字飘在屏中间,像没写完的占位。 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 72px 32px;
+}
+.es-badge {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-border);
+}
+.es-title { font-size: 15px; font-weight: 600; color: var(--lt-fg); }
+.es-hint { margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--lt-fg-2); }
+
+/* 深色屏(center-screen)上的描边按钮:无权限 / 设备不存在等屏用。
+   之前错用浅色页的 .task-back —— 淡翡翠色块浮在深色底上,和玻璃卡风格脱节。 */
+.btn-dark-ghost {
+  width: 100%;
+  max-width: 280px;
+  min-height: 46px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+.btn-dark-ghost:active { background: rgba(255, 255, 255, 0.08); }
 
 /* ===== 待办角标(红点)=====
    巡检员不用点进去就知道还有事没做完。数字超过 99 显示 99+。 */
@@ -1470,38 +1642,41 @@ a {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  margin: 0 0 12px;
+  margin: 0 16px 12px;
 }
 .lo-card {
-  padding: 12px 4px;
+  padding: 14px 4px 12px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   align-items: center;
+  transition: border-color 140ms ease, background 140ms ease, transform 120ms ease;
 }
-.lo-card.on { border-color: var(--ios-blue); background: var(--c-blue-soft); }
+.lo-card:active { transform: scale(0.97); }
+.lo-card.on { border-color: var(--brand-border); background: var(--brand-soft); }
 .lo-num {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--lt-fg);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .lo-num.ok { color: var(--ios-green); }
 .lo-num.warn { color: var(--ios-orange); }
-.lo-num.blue { color: var(--ios-blue); }
+.lo-num.blue { color: var(--brand); }
 .lo-label { font-size: 11px; color: var(--lt-fg-2); }
 
 .lg-card {
-  margin-bottom: 10px;
+  margin: 0 16px 10px;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .lg-title { font-size: 12px; color: var(--lt-fg-2); margin-bottom: 8px; }
 .lg-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1512,32 +1687,35 @@ a {
   background: var(--lt-fill);
   color: var(--lt-fg);
   font-size: 12px;
+  transition: border-color 140ms ease, background 140ms ease;
 }
 .lg-chip em { font-style: normal; color: var(--lt-fg-2); margin-left: 3px; }
 .lg-chip.on {
-  border-color: var(--ios-blue);
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-weight: 600;
 }
-.lg-chip.on em { color: var(--ios-blue); }
+.lg-chip.on em { color: var(--brand); }
 .lg-clear {
-  width: 100%;
-  margin-bottom: 10px;
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 12px;
   padding: 9px;
   border: 0;
   border-radius: 12px;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 13px;
   font-weight: 600;
 }
 
 .asset-list {
-  border-radius: 14px;
+  margin: 0 16px;
+  border-radius: 16px;
   overflow: hidden;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .asset-row {
   display: flex;
@@ -1581,10 +1759,10 @@ a {
 /* ===== 资产详情(旧版 sceneAsset)===== */
 .ad-card {
   padding: 14px 16px;
-  margin-bottom: 14px;
-  border-radius: 14px;
+  margin: 0 16px 14px;
+  border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .ad-row {
   display: flex;
@@ -1604,13 +1782,13 @@ a {
   line-height: 1.6;
   color: var(--lt-fg-2);
 }
-.ad-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 0 8px 2px; }
-.ad-history { display: flex; flex-direction: column; gap: 8px; }
+.ad-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
+.ad-history { display: flex; flex-direction: column; gap: 8px; margin: 0 16px; }
 .hist-item {
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05);
+  box-shadow: var(--lt-shadow);
 }
 .hist-head { display: flex; align-items: center; justify-content: space-between; }
 .hist-when { font-size: 13px; font-weight: 600; color: var(--lt-fg); font-variant-numeric: tabular-nums; }
@@ -1618,13 +1796,13 @@ a {
 .hist-body { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--lt-fg-2); }
 
 /* ===== 日报预览(旧版 scenePreview)===== */
-.pv-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 0 8px 2px; }
+.pv-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
 .pv-card {
-  margin-bottom: 12px;
+  margin: 0 16px 12px;
   padding: 4px 14px;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .pv-row {
   display: flex;
@@ -1640,7 +1818,7 @@ a {
 
 .ai-card { padding: 14px; }
 .ai-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.ai-mark { color: var(--ios-blue); font-size: 13px; }
+.ai-mark { color: var(--brand); font-size: 13px; }
 .ai-mark.amber { color: var(--ios-orange); }
 .ai-title { font-size: 13px; font-weight: 600; color: var(--lt-fg); }
 .ai-body { font-size: 14px; line-height: 1.65; color: var(--lt-fg); white-space: pre-wrap; }
@@ -1649,8 +1827,8 @@ a {
   font-size: 11px;
   padding: 3px 9px;
   border-radius: 999px;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 /* 行动建议:优先级色块 + 正文 + 依据 */
@@ -1666,7 +1844,7 @@ a {
 }
 .reco-pri.high { background: rgba(255,59,48,0.12); color: #ff3b30; }
 .reco-pri.medium { background: var(--c-orange-soft); color: var(--ios-orange); }
-.reco-pri.low { background: var(--c-blue-soft); color: var(--ios-blue); }
+.reco-pri.low { background: var(--brand-soft); color: var(--brand); }
 .reco-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .reco-text { font-size: 14px; line-height: 1.55; color: var(--lt-fg); }
 .reco-meta { font-size: 11px; color: var(--lt-fg-2); }
@@ -1685,11 +1863,11 @@ a {
 
 /* ===== 待审批(旧版 sceneApprovals)===== */
 .cr-card {
-  margin-bottom: 10px;
+  margin: 0 16px 10px;
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--lt-card);
-  box-shadow: 0 1px 2px rgba(60,60,67,0.05), 0 4px 12px rgba(60,60,67,0.06);
+  box-shadow: var(--lt-shadow);
 }
 .cr-head { display: flex; align-items: baseline; justify-content: space-between; }
 .cr-who { font-size: 15px; color: var(--lt-fg); }
@@ -1700,8 +1878,8 @@ a {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--c-blue-soft);
-  color: var(--ios-blue);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 .cr-tn {
   flex: 1; min-width: 0;
@@ -1714,7 +1892,7 @@ a {
   border: 1px solid var(--lt-border);
   border-radius: 999px;
   background: transparent;
-  color: var(--ios-blue);
+  color: var(--brand);
   font-size: 11px;
 }
 .cr-patch {
@@ -1732,12 +1910,14 @@ a {
   height: 38px;
   margin-top: 10px;
   padding: 0 12px;
-  border: 1px solid var(--lt-border);
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: var(--lt-card);
+  background: var(--lt-fill);
   color: var(--lt-fg);
   font-size: 14px;
+  outline: none;
 }
+.cr-note:focus { border-color: var(--brand-border); background: var(--lt-card); }
 .cr-acts { display: flex; gap: 10px; margin-top: 10px; }
 .cr-btn {
   flex: 1;
@@ -1749,4 +1929,4 @@ a {
 }
 .cr-btn:disabled { opacity: 0.5; }
 .cr-btn.reject { background: var(--lt-fill); color: var(--lt-fg); }
-.cr-btn.approve { background: var(--ios-blue); color: #fff; }
+.cr-btn.approve { background: var(--brand); color: #fff; }

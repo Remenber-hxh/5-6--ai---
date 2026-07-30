@@ -2,6 +2,7 @@ import { Button, Dialog, Toast } from "@/ui";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import { RecordDTO, getRecord, submitRecord } from "@/api/inspection";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
 
@@ -108,14 +109,17 @@ export default function PreviewPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">{rec.submitted ? "日报已提交" : "确认日报"}</h1>
-        <p className="flow-sub">
-          {rec.templateName} · {rec.project} · {rec.pointName}
-        </p>
-      </div>
+      <FlowHeader
+        title={rec.submitted ? "日报已提交" : "提交日报"}
+        onBack={() => nav(`/record/${rec.id}`)}
+        action={{ text: "设备健康", onClick: () => nav("/ledger") }}
+        step="preview"
+      />
 
       <div className="scroll-area flow-body">
+        <p className="flow-caption">
+          {rec.templateName} · {rec.project} · {rec.pointName}
+        </p>
         {/* 字段汇总:只读,要改回上一步 */}
         <div className="pv-title">日报字段</div>
         <div className="pv-card">
@@ -188,14 +192,10 @@ export default function PreviewPage() {
             查看设备健康
           </Button>
         ) : (
-          <>
-            <button className="foot-back" onClick={() => nav(`/record/${rec.id}`)}>
-              返回修改
-            </button>
-            <Button className="btn-primary foot-main" loading={submitting} onClick={() => void onSubmit()}>
-              提交日报
-            </Button>
-          </>
+          /* 「返回修改」已由顶栏返回键承担,底部只留主操作 */
+          <Button block className="btn-primary" loading={submitting} onClick={() => void onSubmit()}>
+            提交日报
+          </Button>
         )}
       </div>
     </div>

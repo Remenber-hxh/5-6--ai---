@@ -2,6 +2,7 @@ import { Toast } from "@/ui";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import { AssetDTO, AssetSnapshotDTO, getAsset, listAssetRecords } from "@/api/inspection";
 
 function tone(status: string): string {
@@ -74,7 +75,8 @@ export default function AssetDetailPage() {
     return (
       <div className="center-screen">
         <p className="screen-sub">设备不存在</p>
-        <button className="task-back" onClick={() => nav("/ledger")}>
+        {/* 这是深色屏,不能用浅色页的 .task-back */}
+        <button className="btn-dark-ghost" onClick={() => nav("/ledger")}>
           返回台账
         </button>
       </div>
@@ -85,15 +87,13 @@ export default function AssetDetailPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">{asset.assetName}</h1>
-        <p className="flow-sub">
+      <FlowHeader title={asset.assetName} onBack={() => nav("/ledger")} />
+
+      <div className="scroll-area flow-body">
+        <p className="flow-caption">
           {asset.project || "—"}
           {asset.assetType ? ` · ${asset.assetType}` : ""}
         </p>
-      </div>
-
-      <div className="scroll-area flow-body">
         {/* 当前状态 */}
         <div className="ad-card">
           <div className="ad-row">
@@ -141,12 +141,6 @@ export default function AssetDetailPage() {
             加载更多({page}/{totalPages})
           </button>
         )}
-      </div>
-
-      <div className="flow-foot">
-        <button className="task-back" onClick={() => nav("/ledger")}>
-          返回台账
-        </button>
       </div>
     </div>
   );

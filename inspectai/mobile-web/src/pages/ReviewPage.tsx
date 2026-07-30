@@ -2,6 +2,7 @@ import { Button, Dialog, Toast } from "@/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import { useAuth } from "@/store/auth";
 import { OfflineShotDTO, deleteOfflineShots, listOfflineShots } from "@/api/inspection";
@@ -122,10 +123,11 @@ export default function ReviewPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">选择本次巡检的照片</h1>
-        <div className="flow-sub-row">
-          <span className="flow-sub">
+      <FlowHeader title="选择照片" onBack={() => nav("/")} step="review" />
+
+      <div className="scroll-area flow-body">
+        <div className="flow-sub-row flow-caption">
+          <span>
             已上传 {shots.length} 张 · 选中 {picked.size} 张
           </span>
           <button
@@ -137,9 +139,7 @@ export default function ReviewPage() {
             {picked.size === shots.length ? "全不选" : "全选"}
           </button>
         </div>
-      </div>
 
-      <div className="scroll-area flow-body">
         <div className="shot-grid">
           {shots.map((s) => {
             const gap = offlineGap(s);

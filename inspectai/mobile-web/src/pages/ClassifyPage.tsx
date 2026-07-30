@@ -2,6 +2,7 @@ import { Button, Toast } from "@/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
 import {
   ClassifyResult,
@@ -64,12 +65,10 @@ export default function ClassifyPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">确认巡检场景</h1>
-        <p className="flow-sub">已选 {shotIds.length} 张照片</p>
-      </div>
+      <FlowHeader title="确认场景" onBack={() => nav("/review")} step="classify" />
 
       <div className="scroll-area flow-body">
+        <p className="flow-caption">已选 {shotIds.length} 张照片</p>
         <div className={uncertain ? "classify-result warn" : "classify-result"}>
           <div className="cr-label">{uncertain ? "AI 不太确定" : "AI 识别为"}</div>
           <div className="cr-name">{uncertain ? "请手动选择模板" : result.templateName}</div>

@@ -2,6 +2,7 @@ import { Toast } from "@/ui";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import FlowHeader from "@/components/FlowHeader";
 import { AssetDTO, AssetSummary, listAssets } from "@/api/inspection";
 
 /** 状态 → 视觉档位。与旧版 statusLevel 口径一致 */
@@ -29,7 +30,9 @@ function todayStr(): string {
 function fmtDate(iso?: string): string {
   if (!iso) return "未巡检";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "未巡检";
+  // Go 零值时间(0001-01-01)解析出来年份是 1,之前没防 —— 从未巡检的设备
+  // 行尾全挂着一个"12/31"。年份异常一律按未巡检处理。
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 2000) return "未巡检";
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
@@ -115,17 +118,16 @@ export default function LedgerPage() {
 
   return (
     <div className="flow-screen">
-      <div className="flow-head">
-        <h1 className="flow-title">设备健康</h1>
-        <p className="flow-sub">共 {stats.total} 台设备</p>
-      </div>
+      <FlowHeader title="设备健康" onBack={() => nav("/")} />
 
       <div className="scroll-area flow-body">
+        <p className="flow-caption">共 {stats.total} 台设备</p>
         {/* 概览四数,点击即筛选 */}
         <div className="lo-row">
           <button className="lo-card" onClick={() => setFilter({})}>
             <span className="lo-num">{stats.total}</span>
-            <span className="lo-label">已巡设备</span>
+            {/* total 含未巡检设备,写"已巡设备"会和列表里的未巡检行自相矛盾 */}
+            <span className="lo-label">设备总数</span>
           </button>
           <button
             className={filter.level === "normal" ? "lo-card on" : "lo-card"}
@@ -192,7 +194,11 @@ export default function LedgerPage() {
 
         <div className="asset-list">
           {shown.length === 0 ? (
-            <div className="task-empty">没有符合条件的设备</div>
+            <div className="empty-state">
+              <span className="es-badge">∅</span>
+              <span className="es-title">没有符合条件的设备</span>
+              <span className="es-hint">{hasFilter ? "点上方「清除筛选」再看全部" : "还没有设备数据"}</span>
+            </div>
           ) : (
             shown.map((a) => {
               const t = tone(a.lastStatus);
@@ -211,12 +217,6 @@ export default function LedgerPage() {
             })
           )}
         </div>
-      </div>
-
-      <div className="flow-foot">
-        <button className="task-back" onClick={() => nav("/")}>
-          返回拍照
-        </button>
       </div>
     </div>
   );
