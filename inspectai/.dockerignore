@@ -29,6 +29,15 @@ ai-service/__pycache__
 release/
 _archive/
 
+# ---- 运维过程中落在仓库目录里的归档与 SQL ----
+# 服务器上确实躺着 _migrate_uploads_*.tgz、rename_*.sql 这类东西，
+# 它们不进镜像却会被当成 build context 发一遍（backups/ 就这么踩过一次）。
+# 没有任何 Dockerfile COPY .sql/.tgz，全部排除是安全的。
+*.tgz
+*.tar
+*.tar.gz
+*.sql
+
 # ---- 测试 / 调试产物 ----
 .playwright-mcp/
 .playwright-cli/
