@@ -82,20 +82,39 @@ Login / Camera / Loading / Classify / Form / Preview / Tasks / Ledger / Asset / 
 
 ## 二、旧后台退役(低风险,建议先做)
 
-### 第 1 步:`/admin/` 改成跳转,不是删除
+### 第 1 步:`/admin/` 改成跳转,不是删除 ✅ 已改本地(2026-07-30,`nginx.conf`),**未部署**
+
+实现比原先设想的谨慎一些 —— 没用 `if ($arg_page)` 直接拼 `Location`,改成 `map` 白名单:
 
 ```nginx
+# http 上下文
+map $arg_page $admin_v2_target {
+  default    "/v2/";
+  dashboard  "/v2/";          # 旧首页 → 新版根路由 AgentHome
+  plan       "/v2/#/plan";
+  ...                          # 其余 9 个页面同理
+}
+
+# server 上下文
 location /admin/ {
-  # 老链接带 ?page=approval 的,救到新版对应路由;其余进首页
-  if ($arg_page) { return 301 /v2/#/$arg_page; }
-  return 301 /v2/;
+  return 301 $admin_v2_target;
 }
 ```
 
-书签还能用,点进去落到新后台。**旧容器先不动**,出事把这段换回 `proxy_pass` 即可。
+两个理由:
+
+1. `$arg_page` 是用户可控的,不该直接拼进响应头。白名单里没有的值一律回首页。
+2. **`#` 在 nginx 配置里是注释符**。写成 `plan /v2/#/plan;` 会被从 `#` 处截断成 `/v2/`,
+   所有深链静默失效 —— 配置能加载、不报错,只是全都跳到首页。**值必须加引号。**
+   (这个坑我第一版就踩了,靠语法自检抓出来的。)
+
+书签还能用,点进去落到新后台。**旧容器和 `upstream inspectai_admin` 都先留着**,
+出事把这个 location 换回 `proxy_pass http://inspectai_admin/` 即可。
 
 - 生效方式:`nginx -s reload`,不重建、不停机
-- 回滚:改回一行,再 reload
+- 回滚:改回一块,再 reload
+- **部署前必须在服务器上跑 `nginx -t`** —— 本机没有 nginx 也没有 docker,
+  只做了花括号配平/分号/引号/上下文层级的结构自检,**没有跑过真正的语法校验**
 
 ### 第 2 步:观察一周
 
