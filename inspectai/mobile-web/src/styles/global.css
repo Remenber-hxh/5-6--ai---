@@ -2157,3 +2157,116 @@ a {
 .cr-btn:disabled { opacity: 0.5; }
 .cr-btn.reject { background: var(--lt-fill); color: var(--lt-fg); }
 .cr-btn.approve { background: var(--brand); color: #fff; }
+
+/* ===== 个人空间(/me)=====
+   之前只有一张居中玻璃卡 + 退出按钮,不像 app,像个登录后的落地页。
+   改成手机端"我的"页的通行形态:头部身份区 + 分组设置列表。
+   管理角色登录后正落在这一屏,所以它必须能通往别处,不能是死胡同。 */
+.me-screen .flow-body {
+  padding-bottom: 24px;
+}
+.me-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 16px 24px;
+}
+/* 点头像即换。右下角挂一个"换"字角标,不然没人知道能点 */
+.me-avatar {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.me-avatar .arco-avatar {
+  width: 76px;
+  height: 76px;
+  font-size: 30px;
+  font-weight: 700;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(10, 138, 99, 0.28);
+}
+.me-avatar .arco-avatar.has-photo { background: var(--lt-fill); }
+.me-avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border: 2px solid var(--lt-bg);
+}
+.me-avatar:disabled { opacity: 0.7; }
+.me-name {
+  margin: 10px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--lt-fg);
+}
+.me-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
+
+/* Cell 分组:Arco 默认是通栏白底,这里收成 16px 外边距的圆角卡,
+   和台账/任务页的卡片语言统一 */
+.me-screen .arco-cell-group {
+  margin: 0 16px 14px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.me-screen .arco-cell-group-header {
+  padding: 0 0 8px 4px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  background: transparent;
+}
+.me-screen .arco-cell {
+  margin-left: 0;
+  padding: 14px 16px;
+  color: var(--lt-fg);
+  font-size: 15px;
+  background: var(--lt-card);
+}
+.me-screen .arco-cell-text { color: var(--lt-fg-2); font-size: 14px; }
+.me-ic { margin-right: 10px; font-size: 16px; }
+
+.me-logout {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 18px 16px 0;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+  color: #ff3b30;
+  font-size: 16px;
+  font-weight: 600;
+}
+.me-logout:active { background: var(--lt-fill); }
+
+/* 登录页密码小眼睛。旧版验收清单点名要有 ——
+   现场戴手套、强光下打错密码很常见,没有它只能反复清空重来。 */
+.pwd-eye {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--tech-jade);
+  font-size: 12px;
+  cursor: pointer;
+}

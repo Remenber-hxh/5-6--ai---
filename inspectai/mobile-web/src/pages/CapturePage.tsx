@@ -115,7 +115,7 @@ export default function CapturePage() {
           onClick={() => nav("/me")}
         >
           {/* 文字头像:顶栏右端原本只有一段文字会显得飘,给它一个"这是个人"的锚点 */}
-          <Avatar name={user?.displayName || user?.username || "巡"} />
+          <Avatar name={user?.displayName || user?.username || "巡"} src={user?.avatar} />
           <span className="uw-name">{user?.displayName || user?.username || "巡检员"}</span>
           <span className="uw-dot" />
         </button>

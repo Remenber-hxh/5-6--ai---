@@ -34,6 +34,9 @@ var apiRoutes = []apiRoute{
 	{http.MethodPost, "/api/auth/login", guardNone, "", (*Server).handleLogin},
 	{http.MethodGet, "/api/auth/me", guardNone, "", (*Server).handleMe},
 	{http.MethodPost, "/api/auth/logout", guardNone, "", (*Server).handleLogout},
+	// 自助改头像:不带 userID,只认会话里的当前用户 —— 没有越权改他人的面。
+	// (PUT /api/users/<id> 整体是管理员门控,巡检员改不了自己的)
+	{http.MethodPost, "/api/auth/me/avatar", guardNone, "", (*Server).handleUpdateMyAvatar},
 
 	// —— 用户与权限(user_manage 锁定 admin;users/roles/departments 读口保持
 	//     supervisor 固定:派发任务的责任人下拉依赖它,不入矩阵) ——

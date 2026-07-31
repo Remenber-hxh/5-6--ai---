@@ -306,3 +306,28 @@ export async function rejectChangeRequest(id: string, reviewNote: string) {
     body: JSON.stringify({ reviewNote }),
   });
 }
+
+/**
+ * 上传自己的头像。
+ *
+ * 不走 api():那个 helper 强制设 Content-Type: application/json,
+ * 而 multipart 的 boundary 必须由浏览器自己生成 —— 手动设 Content-Type
+ * 会让后端 ParseMultipartForm 直接失败。
+ *
+ * 返回 storage 根下的相对路径,用 avatarURL() 转成可访问地址。
+ */
+export async function uploadMyAvatar(blob: Blob): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", new File([blob], "avatar.jpg", { type: "image/jpeg" }));
+
+  const res = await fetch("/api/auth/me/avatar", {
+    method: "POST",
+    headers: { "X-InspectAI-Token": getToken() },
+    body: fd,
+  });
+  const text = await res.text();
+  // 后端对未知 /api 路径回 404 JSON(不是 200 + HTML),这里能安全解析
+  const body = text ? JSON.parse(text) : {};
+  if (!res.ok) throw new Error(body.message || "头像上传失败");
+  return String(body.avatar || "");
+}

@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
 
   async function submit() {
     if (!username.trim() || !password) {
@@ -57,13 +58,23 @@ export default function LoginPage() {
         <div className="field">
           <span className="field-label">密码</span>
           <Input
-            type="password"
+            type={showPwd ? "text" : "password"}
             placeholder="请输入密码"
             value={password}
             onChange={setPassword}
-            clearable
             autoComplete="current-password"
             onEnterPress={submit}
+            /* 现场戴手套、强光下打错密码很常见,没有小眼睛只能反复清空重来 */
+            suffix={
+              <button
+                type="button"
+                className="pwd-eye"
+                aria-label={showPwd ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPwd((v) => !v)}
+              >
+                {showPwd ? "隐藏" : "显示"}
+              </button>
+            }
           />
         </div>
 

@@ -1,6 +1,6 @@
 import ArcoInput from "@arco-design/mobile-react/esm/input";
 import "@arco-design/mobile-react/esm/input/style/css";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 // ===== Input 适配层 =====
 //
@@ -23,6 +23,8 @@ export interface InputProps {
   disabled?: boolean;
   className?: string;
   onEnterPress?: () => void;
+  /** 框内右侧内容(密码小眼睛等) */
+  suffix?: ReactNode;
 }
 
 export function Input({

@@ -12,6 +12,8 @@ export interface CurrentUser {
   roleCode: string; // admin / manager / supervisor / inspector / 自定义
   roleName?: string;
   departmentName?: string;
+  /** storage 根下的相对路径,用 avatarURL() 转成可访问地址;空则回落文字头像 */
+  avatar?: string;
   isPlatformAdmin?: boolean;
   perms?: string[];
 }
@@ -42,7 +44,7 @@ export function getStoredUser(): CurrentUser | null {
   }
 }
 
-function setStoredUser(user: CurrentUser | null) {
+export function setStoredUser(user: CurrentUser | null) {
   try {
     if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
     else localStorage.removeItem(USER_KEY);

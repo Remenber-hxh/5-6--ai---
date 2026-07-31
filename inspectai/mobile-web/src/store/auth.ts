@@ -6,6 +6,7 @@ import {
   getToken,
   login as apiLogin,
   logout as apiLogout,
+  setStoredUser,
 } from "@/api/client";
 import { unblockAll } from "@/lib/uploadQueue";
 
@@ -14,6 +15,8 @@ interface AuthState {
   loggedIn: boolean;
   login: (username: string, password: string) => Promise<{ mustChangePassword?: boolean }>;
   logout: () => void;
+  /** 局部更新当前用户(改头像等),同时写回 localStorage 让刷新后不回退 */
+  patchUser: (patch: Partial<CurrentUser>) => void;
 }
 
 export const useAuth = create<AuthState>((set) => ({
@@ -30,6 +33,15 @@ export const useAuth = create<AuthState>((set) => ({
   logout() {
     apiLogout();
     set({ user: null, loggedIn: false });
+  },
+  patchUser(patch) {
+    set((s) => {
+      if (!s.user) return s;
+      const next = { ...s.user, ...patch };
+      // 本项目的登录态是从 localStorage 恢复的,只改内存的话刷新就回退了
+      setStoredUser(next);
+      return { user: next };
+    });
   },
 }));
 
