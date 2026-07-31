@@ -28,6 +28,10 @@ inspectai/.playwright-cli/
 
 # ---- 老备份 / 归档 ----
 _archive/
+# 本机杂物集中地(比赛 PPT 脚本、旧审计笔记等),见 _local/README.md
+_local/
+# Agent skill 包:本机工具在用,但属环境配置不属项目代码
+.agents/
 _recycle_*.ps1
 _recycle_*.tmp
 inspectai/release/
