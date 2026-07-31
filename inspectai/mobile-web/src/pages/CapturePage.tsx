@@ -2,6 +2,7 @@ import { Toast } from "@/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import BeianLine from "@/components/BeianLine";
 import PendingPanel from "@/components/PendingPanel";
 import { useAuth } from "@/store/auth";
 import { usePending } from "@/store/pending";
@@ -235,6 +236,9 @@ export default function CapturePage() {
             )}
           </button>
         </div>
+
+        {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
+        <BeianLine />
       </div>
 
       <PendingPanel />

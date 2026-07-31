@@ -1098,19 +1098,47 @@
 
 /* ===== ICP 备案号:钉在本屏底部,不参与卡片居中(与旧版一致) ===== */
 
+/* ===== ICP 备案号 =====
+   工信部要求首页可见并链接至 beian.miit.gov.cn。旧版在【登录页 + 拍照台】两处都放,
+   本项目一度只剩登录页 —— 首页重排时丢了,属合规回归。
+
+   基础样式必须是【文档流内】:悬浮条会压住底部主操作按钮(踩过一次)。
+   只有登录页是居中卡片布局,才特化成绝对定位钉在屏幕底。 */
 .beian-line {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.62;
+}
+.beian-line a {
+  color: rgba(234, 247, 255, 0.42);
+  text-decoration: none;
+}
+
+/* 登录页:居中卡片 + 钉底 */
+.center-screen .beian-line {
   position: absolute;
   left: 0;
   right: 0;
   bottom: calc(14px + var(--safe-bottom));
   margin: 0;
-  text-align: center;
-  font-size: 11px;
-  line-height: 1.4;
+  opacity: 1;
 }
-.beian-line a {
-  color: rgba(234, 247, 255, 0.42);
-  text-decoration: none;
+
+/* 拍照台:留在滚动区末尾。margin-top:auto 把它推到可用空间底部 ——
+   工作台磁贴以下原本是一片无用的空白,正好由它收口。 */
+.capture-main .beian-line {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-top: 14px;
+}
+@media (max-height: 700px) {
+  /* 矮屏给备案号腾一行(旧版同样处理) */
+  .capture-main .beian-line {
+    padding-top: 8px;
+    font-size: 10.5px;
+  }
 }
 
 a {

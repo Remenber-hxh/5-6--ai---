@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
+import BeianLine from "@/components/BeianLine";
 import { landingForRole, useAuth } from "@/store/auth";
 
 // 登录:一步走。身份(部门/角色/租户)由账号自动带出,不手选;登录后按角色自动落地。
@@ -73,12 +74,7 @@ export default function LoginPage() {
         <p className="screen-hint">忘记密码?联系主管或系统管理员重置</p>
       </div>
 
-      {/* 网站 ICP 备案号(工信部要求首页可见并链接至 beian.miit.gov.cn) */}
-      <p className="beian-line">
-        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">
-          苏ICP备2026048624号
-        </a>
-      </p>
+      <BeianLine />
     </div>
   );
 }
