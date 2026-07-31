@@ -47,10 +47,10 @@
 |---|---|---|
 | `go-backend` | Go,单二进制 | 业务主干:记录、资产、审批、工程任务、权限、租户。同时托管旧移动端静态页 |
 | `ai-service` | Python,仅标准库 | AI 调用层:视觉识别、文本总结、管理问答。屏蔽厂商差异 |
-| `admin-web` | React 18 + Vite + TS + antd | 管理后台(生产在用) |
+| `admin-web` | React 18 + Vite + TS + antd | 新管理后台,线上挂在 `/v2/`。**与旧后台 `/admin/` 并存**,尚未接管主路由 |
 | `mobile-web` | React 18 + Vite + TS + Arco Design Mobile | **新移动端,功能已对齐旧版,本地验收中**(未上生产),与旧版并存 |
 | `frontend` | 原生 JS SPA | 旧移动端(生产在用),待新版达标后退役 |
-| `admin-frontend` | 原生 JS | 旧后台,已被 `admin-web` 取代 |
+| `admin-frontend` | 原生 JS | 旧后台,**线上仍是主路由** `/admin/`(见 `nginx/nginx.conf`),未退役 |
 
 ---
 
@@ -173,12 +173,13 @@ bash scripts/restore.sh <日期>      # 恢复演练(→ 临时库,不碰生产)
 inspectai/
 ├── go-backend/cmd/server/   业务主干(~15k 行,31 个测试)
 ├── ai-service/              AI 调用层
-├── admin-web/               管理后台(React,生产在用)
+├── admin-web/               新管理后台(React,线上 /v2/)
+├── admin-frontend/          旧管理后台(原生 JS,线上 /admin/ —— 仍是主路由)
 ├── mobile-web/              新移动端(React,本地验收中)
-├── frontend/                旧移动端(生产在用)
+├── frontend/                旧移动端(原生 JS,生产在用)
 ├── scripts/                 部署 / 备份 / 恢复 / 本地启动
 ├── nginx/                   反向代理与 TLS 配置
-└── docs/                    设计方案与部署文档
+└── docs/                    活文档;archive/ 放已完成或已废弃的方案
 ```
 
 关键文档:
