@@ -139,15 +139,10 @@ export default function PendingPanel() {
     exitSelecting();
   }
 
-  if (!shots.length) {
-    return (
-      <div className="pending-panel pending-idle">
-        <span className="pending-idle-text">
-          拍下的照片会先存在这台手机上{online ? ",联网后自动上传" : ""}
-        </span>
-      </div>
-    );
-  }
+  // 队列空 = 不占位。原先这里常驻一行「拍下的照片会先存在这台手机上,联网后
+  // 自动上传」,在线时纯属废话,还在首页底部压着一大片空间。同样的信息现在由
+  // 拍照台的离线 NoticeBar 承担 —— 只在真离线时出现,并说清影响。
+  if (!shots.length) return null;
 
   const firstError = shots.find((s) => s.status === "blocked")?.lastError;
   const selectable = shots.filter((s) => s.status !== "uploading");

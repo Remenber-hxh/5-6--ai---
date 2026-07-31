@@ -258,15 +258,44 @@
 }
 
 /* 中部:内容比旧版高(取景框+相册+工作台),矮屏允许内部滚动兜底,不再硬挤压 */
-.capture-main {
+/* 滚动交给 Arco 的 PullRefresh(它自己 height:100% + overflow-y:auto),
+   这一层只负责给它一个确定高度。不给的话 height:100% 无参照,组件塌成 0。 */
+.capture-scroll {
   flex: 1;
   min-height: 0;
+}
+/* Arco 给内容层刷了白底(.arco-pull-refresh-content-wrapper background:#FFFFFF),
+   会把深色科技风整片冲白。这里抹平 —— 背景由 .capture-screen 的渐变负责。 */
+.capture-scroll .arco-pull-refresh,
+.capture-scroll .arco-pull-refresh-content-wrapper,
+.capture-scroll .arco-pull-refresh-content {
+  background: transparent;
+}
+/* 下拉提示的胶囊底色也是浅色系,换成玻璃质感 */
+.capture-scroll .arco-pull-refresh-label {
+  background: rgba(126, 255, 210, 0.1);
+  color: rgba(234, 247, 255, 0.72);
+  border-radius: 999px;
+}
+/* 让 .capture-main 能吃满可用高度 —— 备案号靠 margin-top:auto 沉底需要这个。
+   不能用 min-height:100%:百分比要对着【确定高度】的父级解析,而组件这两层
+   是 auto 高,会算成 0。改成一路 flex 传下去。 */
+.capture-scroll .arco-pull-refresh-content-wrapper,
+.capture-scroll .arco-pull-refresh-content {
+  display: flex;
+  flex-direction: column;
+}
+.capture-scroll .arco-pull-refresh-content {
+  flex: 1;
+}
+
+.capture-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   padding: clamp(6px, 2svh, 18px) 24px 0;
-  overflow-y: auto;
 }
 .capture-title {
   margin: 0 0 6px;
@@ -1570,6 +1599,45 @@ a {
 
 /* ===== 待办角标(红点)=====
    巡检员不用点进去就知道还有事没做完。数字超过 99 显示 99+。 */
+/* ===== NoticeBar 深色皮 =====
+   Arco 默认是浅色警示条(#FFF7E8 底 / #FF7D00 字),在深色科技风上会像块贴纸。
+   info = 翡翠玻璃(当前任务),warn = 琥珀玻璃(离线)。 */
+.app-notice.arco-notice-bar {
+  margin: 0 16px 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(67, 229, 172, 0.1);
+  border: 1px solid rgba(67, 229, 172, 0.22);
+  color: rgba(234, 247, 255, 0.86);
+  font-size: 12.5px;
+  line-height: 1.5;
+  align-items: center;
+}
+.app-notice.app-notice-warn.arco-notice-bar {
+  background: rgba(255, 196, 107, 0.1);
+  border-color: rgba(255, 196, 107, 0.28);
+  color: #ffd79a;
+}
+.app-notice .nb-ic {
+  flex: none;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 196, 107, 0.18);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* 工作台磁贴上的角标(Arco Badge 本体)。只管定位与配色,
+   计数/99+/出现动画由组件负责。深色底上用项目的告警红,不用 Arco 默认的 #F53F3F。 */
+.nav-tile .nt-badge.arco-badge {
+  top: 6px;
+  right: 8px;
+  background: #ff3b30;
+  box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.9);
+}
+
 .badge-dot {
   position: absolute;
   top: -2px;

@@ -12,3 +12,7 @@ export { Button } from "./Button";
 export { Input } from "./Input";
 export { NavBar } from "./NavBar";
 export { Progress } from "./Progress";
+export { Badge } from "./Badge";
+export { NoticeBar } from "./NoticeBar";
+export { Grid } from "./Grid";
+export { PullRefresh } from "./PullRefresh";

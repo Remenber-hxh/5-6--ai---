@@ -1,4 +1,4 @@
-import { Toast } from "@/ui";
+import { Badge, NoticeBar, PullRefresh, Toast } from "@/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -112,6 +112,31 @@ export default function CapturePage() {
     void init();
   }, [init]);
 
+  // 工作台入口。审批只对管理角色开,所以列数是动态的 —— 巡检员看到 3 个,
+  // 主管看到 4 个,都等宽铺满,不留空格子。
+  const tile = (icon: React.ReactNode, label: string, count: number) => (
+    <>
+      {icon}
+      <span className="nt-label">{label}</span>
+      {/* Badge 是红点本体,靠 .nav-tile 的 position:relative 定位 */}
+      <Badge count={count} className="nt-badge" />
+    </>
+  );
+  const tiles = [
+    { key: "tasks", render: tile(<IconTasks />, "我的任务", openTasks), onClick: () => nav("/tasks") },
+    { key: "ledger", render: tile(<IconLedger />, "设备健康", 0), onClick: () => nav("/ledger") },
+    ...(canReview
+      ? [
+          {
+            key: "approvals",
+            render: tile(<IconApproval />, "待审批", pendingApprovals),
+            onClick: () => nav("/approvals"),
+          },
+        ]
+      : []),
+    { key: "shots", render: tile(<IconPhotos />, "待处理照片", pendingShots), onClick: () => nav("/review") },
+  ];
+
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
     e.target.value = ""; // 允许同一文件重选
@@ -143,35 +168,54 @@ export default function CapturePage() {
         </span>
       </div>
 
-      {/* 当前任务横幅:从「我的任务」进来后常驻,提交时带上任务自动销账 */}
+      {/* 当前任务:从「我的任务」进来后常驻,提交时带上任务自动销账。
+          任务名可能很长,交给 NoticeBar 的 marquee 处理,不再自己截断。 */}
       {activeTask && (
-        <div className="task-banner">
-          <span className="tb-dot" />
-          <span className="tb-text">
-            正在执行:{activeTask.title || activeTask.workContent || "巡检任务"}
-          </span>
-          <button
-            className="tb-exit"
-            onClick={() => {
-              clearActiveTask();
-              nav(0);
-            }}
-          >
-            退出
-          </button>
-        </div>
+        <NoticeBar
+          leftContent={<span className="tb-dot" />}
+          rightContent={
+            <button
+              className="tb-exit"
+              onClick={() => {
+                clearActiveTask();
+                nav(0);
+              }}
+            >
+              退出
+            </button>
+          }
+        >
+          正在执行:{activeTask.title || activeTask.workContent || "巡检任务"}
+        </NoticeBar>
       )}
 
-      <div className="capture-main">
+      {/* 离线是这个产品的核心场景,不该只靠右上角一个小 pill 表达。
+          在线时这里不占位;离线时才出现,并说清影响(照片不会丢)。
+          原先底部那行常驻小字就是它的前身 —— 常驻但在线时纯属废话。 */}
+      {!online && (
+        <NoticeBar tone="warn" leftContent={<span className="nb-ic">离线</span>}>
+          没有网络也能拍。照片先存这台手机,联网后自动上传并补 AI 识别。
+        </NoticeBar>
+      )}
+
+      {/* 下拉刷新待办计数。原先只在进页面时拉一次,想看最新数得退出去再进来 ——
+          手机上下拉刷新是肌肉记忆,缺了它这屏是"死"的。
+          结构注意:.arco-pull-refresh 自己是滚动容器(height:100%; overflow-y:auto),
+          必须由外层 .capture-scroll 给出确定高度;内容的 flex 排版留在 .capture-main。
+          曾经图省事把 capture-main 的类直接扣在 PullRefresh 上 —— 它带
+          display:flex + align-items:center,把组件内部三层结构压成了 228px 宽。 */}
+      <div className="capture-scroll">
+        <PullRefresh onRefresh={loadBadges}>
+          <div className="capture-main">
         <div className="cap-hero">
           {/* 身份只留这一处:部门 · 角色(原先顶栏人名 + 按钮下人名部门重复) */}
           <p className="cap-eyebrow">
             {user?.departmentName || "默认部门"} · {user?.roleName || "巡检员"}
           </p>
           <h1 className="capture-title">对准巡检设备拍照</h1>
-          <p className="capture-sub">
-            {online ? "AI 会自动识别场景,调出对应的日报模板" : "没有网络也能拍,联网后自动上传识别"}
-          </p>
+          {/* 副标题恒定讲正常流程。离线这个例外由上方的 NoticeBar 承担 ——
+              两处都改文案会说同一件事两遍。 */}
+          <p className="capture-sub">AI 会自动识别场景,调出对应的日报模板</p>
         </div>
 
         {/* 整个取景框就是快门:弱网/手套/颠簸现场,不用瞄准一个小圆钮 */}
@@ -207,38 +251,22 @@ export default function CapturePage() {
           />
         </label>
 
-        {/* 工作台磁贴:取代旧版"文字链接+圆点"导航,角标即待办数 */}
+        {/* 工作台。布局仍用自己的 flex(等宽铺满,一行搞定)—— 试过 Arco 的 Grid,
+            它多套三层 DOM 和一套按列数算宽的逻辑,而这里本来 flex:1 就够了,
+            属于为用而用。角标则交给 Badge:maxCount、定位、出现动画都由它保证。 */}
         <p className="cap-nav-label">工作台</p>
         <div className="cap-nav">
-          <button className="nav-tile" onClick={() => nav("/tasks")}>
-            <IconTasks />
-            <span className="nt-label">我的任务</span>
-            {openTasks > 0 && <span className="badge-dot">{openTasks > 99 ? "99+" : openTasks}</span>}
-          </button>
-          <button className="nav-tile" onClick={() => nav("/ledger")}>
-            <IconLedger />
-            <span className="nt-label">设备健康</span>
-          </button>
-          {canReview && (
-            <button className="nav-tile" onClick={() => nav("/approvals")}>
-              <IconApproval />
-              <span className="nt-label">待审批</span>
-              {pendingApprovals > 0 && (
-                <span className="badge-dot">{pendingApprovals > 99 ? "99+" : pendingApprovals}</span>
-              )}
+          {tiles.map((t) => (
+            <button className="nav-tile" key={t.key} onClick={t.onClick}>
+              {t.render}
             </button>
-          )}
-          <button className="nav-tile" onClick={() => nav("/review")}>
-            <IconPhotos />
-            <span className="nt-label">待处理照片</span>
-            {pendingShots > 0 && (
-              <span className="badge-dot">{pendingShots > 99 ? "99+" : pendingShots}</span>
-            )}
-          </button>
+          ))}
         </div>
 
-        {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
-        <BeianLine />
+            {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
+            <BeianLine />
+          </div>
+        </PullRefresh>
       </div>
 
       <PendingPanel />
