@@ -9,63 +9,6 @@ import { usePending } from "@/store/pending";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
 import { listEngineeringTasks, listOfflineShots, listPendingChangeRequests } from "@/api/inspection";
 
-// 工作台磁贴图标:细线风(1.7px 描边,currentColor),与深色玻璃卡同语系。
-// 不引图标库 —— 5 个图标手写 SVG 比拉一个依赖轻得多。
-const IC = {
-  width: 22,
-  height: 22,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.7,
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
-
-function IconTasks() {
-  return (
-    <svg {...IC} aria-hidden>
-      <rect x="5.5" y="5" width="13" height="15.5" rx="2.2" />
-      <path d="M9 5.2V3.9a.9.9 0 0 1 .9-.9h4.2a.9.9 0 0 1 .9.9v1.3" />
-      <path d="m9.2 13.6 1.9 1.9 3.6-3.8" />
-    </svg>
-  );
-}
-function IconLedger() {
-  return (
-    <svg {...IC} aria-hidden>
-      <rect x="4" y="4" width="16" height="16" rx="3" />
-      <path d="M7.5 13h2.3l1.5-4 2.3 6.5 1.5-3.7h1.5" />
-    </svg>
-  );
-}
-function IconApproval() {
-  return (
-    <svg {...IC} aria-hidden>
-      <circle cx="12" cy="9.5" r="5.2" />
-      <path d="m9.9 9.5 1.5 1.5 3-3.1" />
-      <path d="m9.2 14.6-1.4 4.4 4.2-2 4.2 2-1.4-4.4" />
-    </svg>
-  );
-}
-function IconPhotos() {
-  return (
-    <svg {...IC} aria-hidden>
-      <rect x="7.5" y="4" width="12.5" height="12.5" rx="2.2" />
-      <path d="M4 9.5v8A2.5 2.5 0 0 0 6.5 20H16" />
-    </svg>
-  );
-}
-function IconAlbum() {
-  return (
-    <svg {...IC} width={18} height={18} aria-hidden>
-      <rect x="4" y="5" width="16" height="14" rx="2.2" />
-      <circle cx="9" cy="10" r="1.4" />
-      <path d="m6.5 16.5 4-4 3 3 3.2-3.2 2.8 2.7" />
-    </svg>
-  );
-}
-
 // 拍照台:拍多张 → 存进离线仓库 → 联网后自动上传补 AI 识别。
 // 弱网现场只管拍,照片与拍摄时间先落地,不被信号拖住巡检节奏。
 export default function CapturePage() {
@@ -112,29 +55,39 @@ export default function CapturePage() {
     void init();
   }, [init]);
 
-  // 工作台入口。审批只对管理角色开,所以列数是动态的 —— 巡检员看到 3 个,
-  // 主管看到 4 个,都等宽铺满,不留空格子。
-  const tile = (icon: React.ReactNode, label: string, count: number) => (
-    <>
-      {icon}
-      <span className="nt-label">{label}</span>
-      {/* Badge 是红点本体,靠 .nav-tile 的 position:relative 定位 */}
-      <Badge count={count} className="nt-badge" />
-    </>
+  // 次要入口(旧版 .hero-secondary 的文字链接排)。
+  // 「从相册上传」是 label 包 file input,不能做成 button —— 单列出来。
+  const linkBtn = (label: string, count: number, to: string) => (
+    <button className="link-btn" onClick={() => nav(to)}>
+      {label}
+      {/* Badge 是红点本体,靠 .link-btn 的 position:relative 定位 */}
+      <Badge count={count} className="lk-badge" />
+    </button>
   );
-  const tiles = [
-    { key: "tasks", render: tile(<IconTasks />, "我的任务", openTasks), onClick: () => nav("/tasks") },
-    { key: "ledger", render: tile(<IconLedger />, "设备健康", 0), onClick: () => nav("/ledger") },
+  const links = [
+    { key: "tasks", node: linkBtn("我的任务", openTasks, "/tasks") },
+    {
+      key: "album",
+      node: (
+        <label className="link-btn upload-wrap">
+          从相册上传
+          <input
+            className="upload-input"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={onPick}
+            aria-label="从相册上传"
+          />
+        </label>
+      ),
+    },
+    { key: "shots", node: linkBtn("待处理照片", pendingShots, "/review") },
+    { key: "ledger", node: linkBtn("设备健康", 0, "/ledger") },
+    // 审批只对管理角色开
     ...(canReview
-      ? [
-          {
-            key: "approvals",
-            render: tile(<IconApproval />, "待审批", pendingApprovals),
-            onClick: () => nav("/approvals"),
-          },
-        ]
+      ? [{ key: "approvals", node: linkBtn("待审批", pendingApprovals, "/approvals") }]
       : []),
-    { key: "shots", render: tile(<IconPhotos />, "待处理照片", pendingShots), onClick: () => nav("/review") },
   ];
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -151,21 +104,19 @@ export default function CapturePage() {
 
   return (
     <div className="capture-screen">
+      {/* 顶栏照旧版:左边只有产品名,右边一个带在线圆点的身份钮。
+          品牌徽章不在这里 —— 它居中在下面的大标题上方。 */}
       <div className="capture-top">
-        <span className="brand-badge">
-          <span className="brand-word">JADEAST</span>
-          <span className="brand-divider" />
-          <span className="brand-cn">智巡</span>
-        </span>
-        <span className="top-right">
-          <span className={online ? "net-pill net-on" : "net-pill net-off"}>
-            {online ? "在线" : "离线暂存"}
-          </span>
-          {/* 用户入口:点进去可看身份、退出登录(旧版右上角 user-window) */}
-          <button className="user-window" onClick={() => nav("/me")}>
-            {user?.displayName || user?.username || "巡检员"}
-          </button>
-        </span>
+        <span className="capture-wordmark">智巡</span>
+        {/* 在线状态收进身份钮的小圆点,不再单独一个 pill 抢位置;
+            真离线时下方会出现整条 NoticeBar,不靠这个小点表达。 */}
+        <button
+          className={online ? "user-window is-online" : "user-window is-offline"}
+          onClick={() => nav("/me")}
+        >
+          <span className="uw-dot" />
+          {user?.displayName || user?.username || "巡检员"}
+        </button>
       </div>
 
       {/* 当前任务:从「我的任务」进来后常驻,提交时带上任务自动销账。
@@ -208,18 +159,31 @@ export default function CapturePage() {
         <PullRefresh onRefresh={loadBadges}>
           <div className="capture-main">
         <div className="cap-hero">
-          {/* 身份只留这一处:部门 · 角色(原先顶栏人名 + 按钮下人名部门重复) */}
-          <p className="cap-eyebrow">
-            {user?.departmentName || "默认部门"} · {user?.roleName || "巡检员"}
-          </p>
+          {/* 品牌徽章居中在大标题上方 —— 旧版的层次:徽章 → 标题 → 副标题 →
+              取景框 → 快门 → 次要链接。之前把徽章挤到左上角,层次就散了。 */}
+          <span className="brand-badge">
+            <span className="brand-word">JADEAST</span>
+            <span className="brand-divider" />
+            <span className="brand-cn">智巡</span>
+          </span>
           <h1 className="capture-title">对准巡检设备拍照</h1>
           {/* 副标题恒定讲正常流程。离线这个例外由上方的 NoticeBar 承担 ——
               两处都改文案会说同一件事两遍。 */}
           <p className="capture-sub">AI 会自动识别场景,调出对应的日报模板</p>
         </div>
 
-        {/* 整个取景框就是快门:弱网/手套/颠簸现场,不用瞄准一个小圆钮 */}
-        <label className="vf-btn">
+        {/* 取景框是【画面区】,不是按钮 —— 里面有网格和虚线对准圈,提示"把设备放中间"。
+            曾经把快门塞进框里当成一个大按钮,两个概念糊在一起,观感和语义都塌了。 */}
+        <div className="viewfinder" aria-hidden>
+          <span className="vf-corner vf-tl" />
+          <span className="vf-corner vf-tr" />
+          <span className="vf-corner vf-bl" />
+          <span className="vf-corner vf-br" />
+          <span className="vf-scan" />
+        </div>
+
+        {/* 快门:框下方独立大圆钮,带发光外环。80px 触控目标,戴手套也够。 */}
+        <label className={saving ? "shutter is-busy" : "shutter"}>
           <input
             className="vf-input"
             type="file"
@@ -229,37 +193,19 @@ export default function CapturePage() {
             onChange={onPick}
             aria-label="拍照"
           />
-          <span className="vf-corner vf-tl" />
-          <span className="vf-corner vf-tr" />
-          <span className="vf-corner vf-bl" />
-          <span className="vf-corner vf-br" />
-          <span className="vf-scan" />
-          <span className={saving ? "vf-ring busy" : "vf-ring"} />
-          <span className="vf-text">{saving ? "保存中…" : "拍照"}</span>
         </label>
+        <span className="shutter-label">{saving ? "保存中…" : "拍照识别"}</span>
 
-        <label className="cap-album upload-wrap">
-          <IconAlbum />
-          从相册上传
-          <input
-            className="upload-input"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={onPick}
-            aria-label="从相册上传"
-          />
-        </label>
-
-        {/* 工作台。布局仍用自己的 flex(等宽铺满,一行搞定)—— 试过 Arco 的 Grid,
-            它多套三层 DOM 和一套按列数算宽的逻辑,而这里本来 flex:1 就够了,
-            属于为用而用。角标则交给 Badge:maxCount、定位、出现动画都由它保证。 */}
-        <p className="cap-nav-label">工作台</p>
-        <div className="cap-nav">
-          {tiles.map((t) => (
-            <button className="nav-tile" key={t.key} onClick={t.onClick}>
-              {t.render}
-            </button>
+        {/* 次要入口:旧版是一排轻量文字链接,不和主操作抢视觉重量。
+            之前做成四个实心磁贴 —— 查询类的「设备健康」被抬到和拍照同级,权重给错了。
+            计数仍用 Badge,只是缩成链接右上角的小红点。 */}
+        {/* 旧版用「·」做分隔符,但它只有 3 个入口从不换行。这里最多 5 个,
+            换行后第二行会以一个孤立的「·」开头 —— 改用 gap 排,不再插分隔符。 */}
+        <div className="hero-secondary">
+          {links.map((l) => (
+            <span className="hs-item" key={l.key}>
+              {l.node}
+            </span>
           ))}
         </div>
 

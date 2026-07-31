@@ -240,46 +240,53 @@
   justify-content: space-between;
   padding: 0 16px 8px;
 }
-.net-pill {
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid transparent;
+/* 左上产品名。品牌徽章不在顶栏 —— 它居中在下方大标题上方(旧版层次) */
+.capture-wordmark {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
 }
-.net-on {
-  color: var(--tech-jade);
-  border-color: rgba(67, 229, 172, 0.3);
-  background: rgba(67, 229, 172, 0.1);
+/* 在线状态收进身份钮里的小圆点,不再单独占一个 pill。
+   真离线时下方会出现整条 NoticeBar,不指望这个点把事说清。 */
+.uw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
 }
-.net-off {
-  color: #ffc46b;
-  border-color: rgba(255, 196, 107, 0.34);
-  background: rgba(255, 196, 107, 0.12);
+.user-window.is-online .uw-dot {
+  background: var(--tech-jade);
+  box-shadow: 0 0 8px rgba(67, 229, 172, 0.8);
+}
+.user-window.is-offline .uw-dot {
+  background: #ffc46b;
+  box-shadow: 0 0 8px rgba(255, 196, 107, 0.7);
 }
 
-/* 中部:内容比旧版高(取景框+相册+工作台),矮屏允许内部滚动兜底,不再硬挤压 */
-/* 滚动交给 Arco 的 PullRefresh(它自己 height:100% + overflow-y:auto),
-   这一层只负责给它一个确定高度。不给的话 height:100% 无参照,组件塌成 0。 */
+/* ===== 下拉刷新容器 =====
+   .arco-pull-refresh 自己是滚动容器(height:100% + overflow-y:auto),
+   这一层只负责给它确定高度 —— 不给的话 height:100% 无参照,组件塌成 0。
+   注意别把 .capture-main 的 flex 类扣到 PullRefresh 上:它内部三层结构,
+   遇到 align-items:center 会被压成 228px 宽(踩过)。 */
 .capture-scroll {
   flex: 1;
   min-height: 0;
 }
-/* Arco 给内容层刷了白底(.arco-pull-refresh-content-wrapper background:#FFFFFF),
-   会把深色科技风整片冲白。这里抹平 —— 背景由 .capture-screen 的渐变负责。 */
+/* 【别删】Arco 给这三层都刷了白底,会把深色科技风整片冲白。
+   这几条曾在一次整段重写中被误删,首页立刻变成灰白色。 */
 .capture-scroll .arco-pull-refresh,
 .capture-scroll .arco-pull-refresh-content-wrapper,
 .capture-scroll .arco-pull-refresh-content {
   background: transparent;
 }
-/* 下拉提示的胶囊底色也是浅色系,换成玻璃质感 */
 .capture-scroll .arco-pull-refresh-label {
   background: rgba(126, 255, 210, 0.1);
   color: rgba(234, 247, 255, 0.72);
   border-radius: 999px;
 }
-/* 让 .capture-main 能吃满可用高度 —— 备案号靠 margin-top:auto 沉底需要这个。
-   不能用 min-height:100%:百分比要对着【确定高度】的父级解析,而组件这两层
-   是 auto 高,会算成 0。改成一路 flex 传下去。 */
+/* 让 .capture-main 吃满可用高度 —— 备案号靠 margin-top:auto 沉底需要这个。
+   不能用 min-height:100%:百分比要对着确定高度的父级解析,这两层是 auto 高。 */
 .capture-scroll .arco-pull-refresh-content-wrapper,
 .capture-scroll .arco-pull-refresh-content {
   display: flex;
@@ -289,6 +296,18 @@
   flex: 1;
 }
 
+/* ===== 拍照台中部 =====
+   2026-07-31 回退到旧版的视觉层次。上一版把快门塞进取景框、次要入口做成四个
+   实心磁贴,结果:取景框空着没内容、背景是一片平渐变、查询类的「设备健康」
+   被抬到和拍照同级。用户直接说"比旧版丑好多好多" —— 对照旧版截图确认属实。
+
+   旧版之所以好看,是三样东西:
+     1. 背景是真实机房照片 + 网格光晕,有纵深,不是平渐变
+     2. 取景框内有网格 + 虚线对准圈,是"取景器"不是空盒子
+     3. 快门是框下方独立的发光大圆钮,语义清楚 */
+
+/* 背景:机房照片压暗 + 翡翠光晕 + 28px 网格,底部淡出。
+   照片 2.1MB 与旧版同一张,弱网首屏成本已知,先对齐视觉,压缩另议。 */
 .capture-main {
   flex: 1;
   display: flex;
@@ -296,14 +315,51 @@
   align-items: center;
   justify-content: flex-start;
   padding: clamp(6px, 2svh, 18px) 24px 0;
+  position: relative;
+  /* isolation 让 ::before/::after 的负 z-index 只在本层内部生效,
+     不会钻到 .capture-screen 的背景后面去 */
+  isolation: isolate;
+}
+.capture-main::before {
+  content: "";
+  position: absolute;
+  inset: -60px -40px -20px;
+  z-index: -2;
+  background:
+    linear-gradient(180deg, rgba(5, 13, 23, 0.45), rgba(5, 13, 23, 0.92) 64%, rgba(5, 13, 23, 1)),
+    url("/assets/zhixun-hero-tech.png") center top / cover no-repeat;
+  opacity: 0.34;
+}
+.capture-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(67, 229, 172, 0.16), transparent 34%),
+    linear-gradient(rgba(85, 215, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(85, 215, 255, 0.045) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
+  mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%);
+  -webkit-mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%);
+}
+
+/* 徽章 → 标题 → 副标题,居中成组 */
+.cap-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: clamp(10px, 2.4svh, 20px);
 }
 .capture-title {
-  margin: 0 0 6px;
-  font-size: clamp(20px, 5.4vw, 26px);
+  margin: 0;
+  font-size: clamp(21px, 5.6vw, 27px);
   font-weight: 800;
   letter-spacing: -0.01em;
   color: #fff;
   text-align: center;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.55);
 }
 .capture-sub {
   margin: 0;
@@ -313,150 +369,134 @@
   text-align: center;
 }
 
-/* 取景框即快门(2026-07-30 首页重排):旧版是装饰性空框 + 独立小圆快门,
-   框占着黄金位置却不干事。现在整框都是点按区 —— 弱网/手套/颠簸现场不用瞄准。 */
-.vf-btn {
+/* 取景框:画面区,不是按钮 */
+.viewfinder {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  width: min(100%, 320px);
-  height: clamp(168px, 27svh, 224px);
-  margin: clamp(12px, 2.6svh, 22px) auto 0;
-  border: 1px solid rgba(126, 255, 210, 0.16);
-  border-radius: 24px;
-  background:
-    radial-gradient(130% 120% at 50% 0%, rgba(67, 229, 172, 0.08), transparent 55%),
-    rgba(0, 0, 0, 0.22);
-  cursor: pointer;
-  transition: transform 120ms ease, border-color 160ms ease;
+  width: min(100%, 300px);
+  aspect-ratio: 1 / 1;
+  max-height: 34svh;
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(5, 17, 29, 0.72), rgba(10, 32, 50, 0.48));
+  border: 1px solid rgba(111, 255, 219, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 0 42px rgba(67, 229, 172, 0.17),
+    0 30px 80px rgba(0, 0, 0, 0.4);
+  animation: hudFloat 5.4s ease-in-out infinite;
 }
-.vf-btn:active {
-  transform: scale(0.985);
-  border-color: rgba(126, 255, 210, 0.42);
+/* 框内网格 */
+.viewfinder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image:
+    linear-gradient(rgba(85, 215, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(85, 215, 255, 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: center;
+  mask-image: radial-gradient(70% 70% at 50% 50%, #000 50%, transparent 100%);
+  -webkit-mask-image: radial-gradient(70% 70% at 50% 50%, #000 50%, transparent 100%);
+}
+/* 虚线对准圈:提示"把设备放中间" */
+.viewfinder::after {
+  content: "";
+  position: absolute;
+  inset: 23%;
+  border-radius: 50%;
+  border: 1px dashed rgba(111, 255, 219, 0.42);
+  box-shadow: 0 0 26px rgba(67, 229, 172, 0.13) inset;
+}
+@keyframes hudFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.vf-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid var(--tech-jade);
+  border-radius: 4px;
+  filter: drop-shadow(0 0 10px rgba(67, 229, 172, 0.65));
+}
+.vf-tl { top: 16px; left: 16px; border-right: 0; border-bottom: 0; }
+.vf-tr { top: 16px; right: 16px; border-left: 0; border-bottom: 0; }
+.vf-bl { bottom: 16px; left: 16px; border-right: 0; border-top: 0; }
+.vf-br { bottom: 16px; right: 16px; border-left: 0; border-top: 0; }
+.vf-scan {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  top: 50%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(67, 229, 172, 0.95), rgba(85, 215, 255, 0.85), transparent);
+  filter: drop-shadow(0 0 16px rgba(67, 229, 172, 0.82));
+  animation: vf-sweep 2.6s ease-in-out infinite;
+}
+
+/* 快门:框下方独立圆钮。80px 触控目标,戴手套够用。 */
+.shutter {
+  position: relative;
+  display: block;
+  width: 80px;
+  height: 80px;
+  margin: clamp(14px, 3svh, 26px) auto 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 280ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));
+}
+.shutter::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid rgba(111, 255, 219, 0.55);
+  box-shadow: 0 0 22px rgba(67, 229, 172, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+.shutter::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffffff 0%, #eef6f3 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: inset 250ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));
+}
+.shutter:active { transform: scale(0.94); }
+.shutter:active::after { inset: 12px; }
+.shutter.is-busy::after { inset: 14px; opacity: 0.7; }
+.shutter-label {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--ink-2);
+  text-align: center;
 }
 .vf-input {
   position: absolute;
   inset: 0;
-  opacity: 0;
   width: 100%;
   height: 100%;
+  opacity: 0;
   cursor: pointer;
 }
-.vf-corner {
-  position: absolute;
-  width: 26px;
-  height: 26px;
-  border: 2px solid var(--tech-jade);
-}
-.vf-tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0; }
-.vf-tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; }
-.vf-bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-radius: 0 0 0 8px; }
-.vf-br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
 
-/* 框内快门环:保留相机快门的心智模型,但只是视觉锚点,点按区是整个框 */
-.vf-ring {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.45), 0 10px 30px rgba(27, 224, 135, 0.28);
-}
-.vf-ring.busy { opacity: 0.55; }
-.vf-text {
-  font-size: 13px;
-  letter-spacing: 0.18em;
-  color: var(--ink-2);
-}
-
-/* 眉行:部门 · 角色,11px 加宽字距 —— 取代旧版快门下面重复的"姓名·部门"行 */
-.cap-eyebrow {
-  margin: 0 0 8px;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--ink-3);
-  text-align: center;
-}
-
-/* 相册上传:与拍照并列的次动作,描边胶囊(旧版把它混在一排文字链接里) */
-.cap-album {
-  position: relative;
-  overflow: hidden;
+/* 次要入口:轻量文字链接排,不和主操作抢重量(旧版 .hero-secondary) */
+.hero-secondary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: min(100%, 320px);
-  height: 42px;
-  margin: 12px auto 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
+  column-gap: 6px;
+  row-gap: 2px;
+  margin-top: clamp(14px, 3svh, 24px);
+  text-align: center;
 }
-.cap-album:active { background: rgba(255, 255, 255, 0.09); }
-.cap-album svg { color: var(--tech-jade); }
-
-/* 工作台磁贴:图标 + 名称 + 待办角标,四个入口等宽一排 */
-.cap-nav-label {
-  width: min(100%, 340px);
-  margin: clamp(14px, 3svh, 24px) auto 8px;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--ink-3);
-}
-.cap-nav {
-  display: flex;
-  gap: 10px;
-  width: min(100%, 340px);
-  margin: 0 auto;
-}
-.nav-tile {
-  position: relative; /* .badge-dot 的偏移参照 */
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+.hs-item {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 12px 4px 10px;
-  border: 1px solid rgba(126, 255, 210, 0.12);
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(12, 38, 70, 0.55), rgba(5, 20, 44, 0.6));
-  color: var(--tech-jade);
-  transition: transform 120ms ease, border-color 160ms ease;
-}
-.nav-tile:active {
-  transform: scale(0.95);
-  border-color: rgba(126, 255, 210, 0.36);
-}
-.nt-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--ink-2);
-}
-
-/* 取景框扫描线(旧版观感) */
-.vf-scan {
-  position: absolute;
-  left: 12%;
-  right: 12%;
-  top: 50%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--tech-jade), var(--tech-cyan), transparent);
-  opacity: 0.7;
-  animation: vf-sweep 2.6s ease-in-out infinite;
-}
-@keyframes vf-sweep {
-  0%, 100% { transform: translateY(-58px); opacity: 0.25; }
-  50% { transform: translateY(58px); opacity: 0.8; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .vf-scan { animation: none; }
 }
 
 /* ===== 待上传面板 ===== */
@@ -1430,6 +1470,9 @@ a {
 /* ===== 首页入口(user-window / task-banner;导航磁贴见"拍照台"一节)===== */
 .top-right { display: flex; align-items: center; gap: 8px; }
 .user-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 62px;
   padding: 5px 12px;
   border-radius: 999px;
@@ -1439,6 +1482,25 @@ a {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* 首页次要入口的文字链接(旧版 .link-btn)。
+   2026-07-30 的首页重排把它当死代码删了 —— 当时改成了实心磁贴。
+   磁贴视觉重量过大、把查询类的「设备健康」抬到和拍照同级,已回退。 */
+.link-btn {
+  position: relative; /* .lk-badge 的定位参照 */
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.15px;
+  cursor: pointer;
+}
+.link-btn:active { background: rgba(255, 255, 255, 0.06); color: var(--tech-jade); }
+.link-sep { color: rgba(234, 247, 255, 0.24); font-size: 12px; }
+
 .upload-wrap { overflow: hidden; }
 .upload-input {
   position: absolute;
@@ -1631,12 +1693,19 @@ a {
 
 /* 工作台磁贴上的角标(Arco Badge 本体)。只管定位与配色,
    计数/99+/出现动画由组件负责。深色底上用项目的告警红,不用 Arco 默认的 #F53F3F。 */
-.nav-tile .nt-badge.arco-badge {
-  top: 6px;
-  right: 8px;
+/* 次要链接右上角的小红点(Arco Badge 本体)。缩到 15px —— 它是提示,
+   不该在一排文字链接里抢主操作的注意力。 */
+.link-btn .lk-badge.arco-badge {
+  top: 0;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  line-height: 15px;
+  padding: 0 4px;
   background: #ff3b30;
   box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.9);
 }
+.link-btn .lk-badge .arco-badge-text { font-size: 10px; }
 
 .badge-dot {
   position: absolute;
