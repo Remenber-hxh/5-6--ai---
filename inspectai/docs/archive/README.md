@@ -27,6 +27,7 @@
 | 移动端组件库路线 | `../MIGRATE-ARCO-MOBILE.md` |
 | 移动端浅色页的设计规矩与色彩令牌 | `../MOBILE-WEB-OPTIMIZATION-2026-07-30.md` |
 | 产品方向与待解决问题 | `../product-notes.md` |
+| 两个旧前端怎么退役 | `../LEGACY-FRONTEND-RETIREMENT.md` |
 
 ## 注意
 
