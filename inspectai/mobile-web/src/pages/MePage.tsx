@@ -68,9 +68,12 @@ export default function MePage() {
             <Avatar name={name} src={user?.avatar} size="large" />
             <span className="me-avatar-edit">{busy ? <Loading size={16} color="#fff" /> : "换"}</span>
           </button>
+          {/* 【别用 .upload-input】那个类是给 <label> 包裹用的(absolute inset:0 铺满父级)。
+              这里是独立元素、靠 ref.click() 触发,没有定位父级 —— 用了会铺成一张
+              覆盖全屏的透明层,把页面上所有按钮的点击全部接走(踩过)。 */}
           <input
             ref={fileRef}
-            className="upload-input"
+            hidden
             type="file"
             accept="image/*"
             onChange={onPickAvatar}

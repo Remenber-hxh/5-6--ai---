@@ -1556,7 +1556,12 @@ a {
 .link-sep { color: rgba(234, 247, 255, 0.24); font-size: 12px; }
 
 .upload-wrap { overflow: hidden; }
-.upload-input {
+/* 【必须限定在 .upload-wrap 内】这是"透明 input 铺满 label"的写法,
+   靠父级的 position:relative 兜住。一旦脱离 .upload-wrap 单独使用,
+   absolute 会去找更外层的定位祖先,铺成一张覆盖全屏的透明层,
+   把页面上所有按钮的点击全部接走 —— 个人页踩过一次(所有按钮都变成传头像)。
+   独立触发的 file input 请直接用 hidden + ref.click()。 */
+.upload-wrap .upload-input {
   position: absolute;
   inset: 0;
   opacity: 0;
