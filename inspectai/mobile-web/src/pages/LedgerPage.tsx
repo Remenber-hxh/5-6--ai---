@@ -1,4 +1,4 @@
-import { Toast } from "@/ui";
+import { Skeleton, Toast } from "@/ui";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -121,10 +121,15 @@ export default function LedgerPage() {
     setFilter((cur) => ({ ...cur, [key]: cur[key] === value ? undefined : value }));
   }
 
+  // 加载态保留顶栏 + 骨架列表:页面结构立刻出现,数据到了直接填进去,
+  // 不再是一个转圈孤零零悬在空屏中间。avatar 位对应设备封面缩略图。
   if (loading) {
     return (
-      <div className="center-screen">
-        <span className="spinner" />
+      <div className="flow-screen">
+        <FlowHeader title="设备健康" onBack={() => nav("/")} />
+        <div className="scroll-area flow-body">
+          <Skeleton rows={6} avatar className="sk-list" />
+        </div>
       </div>
     );
   }

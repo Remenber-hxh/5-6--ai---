@@ -1,4 +1,4 @@
-import { Toast } from "@/ui";
+import { Skeleton, Toast } from "@/ui";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -64,10 +64,14 @@ export default function TasksPage() {
     nav("/");
   }
 
+  // 骨架列表代替空屏转圈:先出结构,数据到了填进去,视觉不跳变
   if (!tasks) {
     return (
-      <div className="center-screen">
-        <span className="spinner" />
+      <div className="flow-screen">
+        <FlowHeader title="我的任务" onBack={() => nav("/")} />
+        <div className="scroll-area flow-body">
+          <Skeleton rows={4} className="sk-list sk-card" />
+        </div>
       </div>
     );
   }

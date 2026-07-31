@@ -14,5 +14,7 @@ export { NavBar } from "./NavBar";
 export { Progress } from "./Progress";
 export { Badge } from "./Badge";
 export { NoticeBar } from "./NoticeBar";
-export { Grid } from "./Grid";
 export { PullRefresh } from "./PullRefresh";
+export { Skeleton } from "./Skeleton";
+export { Loading } from "./Loading";
+export { Avatar } from "./Avatar";

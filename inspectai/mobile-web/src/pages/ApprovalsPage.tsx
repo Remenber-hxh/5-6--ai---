@@ -1,4 +1,4 @@
-import { Toast } from "@/ui";
+import { Skeleton, Toast } from "@/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -138,10 +138,14 @@ export default function ApprovalsPage() {
     );
   }
 
+  // 骨架列表代替空屏转圈
   if (!list) {
     return (
-      <div className="center-screen">
-        <span className="spinner" />
+      <div className="flow-screen">
+        <FlowHeader title="待审批" onBack={() => nav("/")} />
+        <div className="scroll-area flow-body">
+          <Skeleton rows={3} className="sk-list sk-card" />
+        </div>
       </div>
     );
   }

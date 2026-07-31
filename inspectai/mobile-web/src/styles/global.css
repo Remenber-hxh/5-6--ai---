@@ -344,13 +344,27 @@
   -webkit-mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%);
 }
 
-/* 徽章 → 标题 → 副标题,居中成组 */
+/* 徽章 → 标题 → 副标题,居中成组。
+   techRise 是旧版的入场动效(620ms 上浮渐显),重构时丢了 —— 少了它这屏
+   是"啪"地出现,有了才像被打开。 */
 .cap-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   margin-bottom: clamp(10px, 2.4svh, 20px);
+  animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* 取景框、快门、链接排依次跟上,形成一个短暂的层次感 */
+.viewfinder { animation: hudFloat 5.4s ease-in-out infinite, techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both; }
+.shutter { animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both; }
+.hero-secondary { animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both; }
+@keyframes techRise {
+  from { transform: translateY(14px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cap-hero, .viewfinder, .shutter, .hero-secondary { animation: none; }
 }
 .capture-title {
   margin: 0;
@@ -1469,6 +1483,46 @@ a {
 
 /* ===== 首页入口(user-window / task-banner;导航磁贴见"拍照台"一节)===== */
 .top-right { display: flex; align-items: center; gap: 8px; }
+/* 顶栏身份钮:文字头像 + 姓名 + 在线圆点。
+   头像做【实心】徽章(翡翠底 + 深字):若和姓名同色同底,「张 张赦」会被读成
+   重复了一遍;实心之后它是个色块,和文字自然分层。 */
+.user-window .arco-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--tech-jade);
+  color: #05121d;
+}
+.uw-name { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 快门保存中:钮心的弧形 loading */
+.shutter-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* ===== 骨架屏(加载态)=====
+   浅色流程页用,替掉"一个转圈悬在空屏中间"。行距/圆角对齐真实卡片,
+   数据到了填进去时视觉不跳变。 */
+.sk-list .arco-skeleton {
+  margin: 0 16px 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.sk-list.sk-card .arco-skeleton { padding: 16px; }
+.sk-list .arco-skeleton-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+}
+
 .user-window {
   display: inline-flex;
   align-items: center;

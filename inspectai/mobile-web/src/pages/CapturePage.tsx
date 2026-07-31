@@ -1,4 +1,4 @@
-import { Badge, NoticeBar, PullRefresh, Toast } from "@/ui";
+import { Avatar, Badge, Loading, NoticeBar, PullRefresh, Toast } from "@/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -114,8 +114,10 @@ export default function CapturePage() {
           className={online ? "user-window is-online" : "user-window is-offline"}
           onClick={() => nav("/me")}
         >
+          {/* 文字头像:顶栏右端原本只有一段文字会显得飘,给它一个"这是个人"的锚点 */}
+          <Avatar name={user?.displayName || user?.username || "巡"} />
+          <span className="uw-name">{user?.displayName || user?.username || "巡检员"}</span>
           <span className="uw-dot" />
-          {user?.displayName || user?.username || "巡检员"}
         </button>
       </div>
 
@@ -182,7 +184,9 @@ export default function CapturePage() {
           <span className="vf-scan" />
         </div>
 
-        {/* 快门:框下方独立大圆钮,带发光外环。80px 触控目标,戴手套也够。 */}
+        {/* 快门:框下方独立大圆钮,带发光外环。80px 触控目标,戴手套也够。
+            保存中在钮心放一个弧形 loading,而不是只把按钮调暗 ——
+            调暗只说明"不能点",不说明"正在干活"。 */}
         <label className={saving ? "shutter is-busy" : "shutter"}>
           <input
             className="vf-input"
@@ -193,6 +197,11 @@ export default function CapturePage() {
             onChange={onPick}
             aria-label="拍照"
           />
+          {saving && (
+            <span className="shutter-loading">
+              <Loading size={26} color="#0a8a63" />
+            </span>
+          )}
         </label>
         <span className="shutter-label">{saving ? "保存中…" : "拍照识别"}</span>
 
