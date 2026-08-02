@@ -101,11 +101,20 @@ export default function MePage() {
           <Cell label="部门" text={user?.departmentName || "默认部门"} />
         </CellGroup>
 
+        <BeianLine />
+      </div>
+
+      {/* 退出登录钉在底部,不放进滚动区。
+          原来它跟在「部门」那行后面 —— 内容 938px、容器 788px,只多出 150px,
+          于是这个按钮【整个在折叠之下】,而视口底部看到的是一行普通 Cell,
+          页面看起来已经结束了,没有任何"下面还有东西"的提示。用户报"退出登录坏了",
+          实际是根本没意识到要往下滚。
+          注:自动化点击测不出这类问题 —— Playwright 点击前会自动滚到元素,
+          真人手指不会。这次是靠命中测试(elementFromPoint)才发现的。 */}
+      <div className="flow-foot">
         <button className="me-logout" onClick={() => void onLogout()}>
           退出登录
         </button>
-
-        <BeianLine />
       </div>
     </div>
   );

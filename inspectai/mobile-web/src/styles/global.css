@@ -2258,10 +2258,12 @@ a {
 }
 .me-ic svg { width: 20px; height: 20px; }
 
+/* 退出登录:现在钉在 .flow-foot 里(滚动区之外),所以不再自己留外边距。
+   红色是有意的 —— 这是本页唯一的破坏性操作,红在这里表达"想清楚再点",
+   和台账里表示设备异常的红是同一套语义,不冲突。 */
 .me-logout {
   display: block;
-  width: calc(100% - 32px);
-  margin: 18px 16px 0;
+  width: 100%;
   padding: 14px;
   border: 0;
   border-radius: 14px;
@@ -2271,6 +2273,7 @@ a {
   font-size: 16px;
   font-weight: 600;
 }
+.me-logout:active { background: #f2f2f7; }
 .me-logout:active { background: var(--lt-fill); }
 
 /* 登录页密码小眼睛。旧版验收清单点名要有 ——
