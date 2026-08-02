@@ -1013,11 +1013,13 @@
   box-shadow: var(--lt-shadow);
   overflow: hidden;
 }
+/* 分组标题。【左右必须和卡片对齐】原来是 padding:4px 22px 8px ——
+   左右 22px 而卡片外边距是 16px,标题比内容多缩进 6px,一眼就看出错位。 */
 .fld-group-title {
   font-size: 12px;
   font-weight: 500;
-  color: var(--lt-fg-2);
-  padding: 4px 22px 8px;
+  color: var(--lt-fg-3);
+  padding: 4px 16px 8px;
   letter-spacing: -0.01em;
 }
 .fld {
@@ -1488,17 +1490,22 @@ a {
   scrollbar-width: none;
 }
 .photo-strip::-webkit-scrollbar { display: none; }
+/* 缩略图 72 → 104px:巡检照片是要【看清拍到了什么】的,72px 只能看出
+   "有张图",看不出是铭牌还是地面。放大后一屏仍能露出三张半,
+   横向滑动的暗示还在。 */
 .photo-thumb {
   flex: none;
-  width: 72px;
-  height: 72px;
+  width: 104px;
+  height: 104px;
   padding: 0;
   border: 0.5px solid var(--lt-border);
   border-radius: 12px;
   overflow: hidden;
   background: var(--lt-fill);
 }
-.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Arco Image 自带 loading/error 层,给它把容器撑满 */
+.photo-thumb .arco-image,
+.photo-thumb .arco-image img { width: 100%; height: 100%; display: block; }
 
 /* ===== 场景确认页(旧版 classify-result / template-list)===== */
 .classify-result {

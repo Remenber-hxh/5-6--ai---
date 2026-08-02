@@ -1,4 +1,4 @@
-import { Button, Toast } from "@/ui";
+import { Button, Image, Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -296,7 +296,9 @@ export default function RecordPage() {
                       })
                     }
                   >
-                    <img src={url} alt="" loading="lazy" />
+                    {/* 用组件库的 Image:自带加载占位、失败兜底和自动重试。
+                        手写 <img> 在现场信号差时会白一片或直接裂图。 */}
+                    <Image src={url} radius={12} />
                   </button>
                 );
               })}
@@ -316,7 +318,7 @@ export default function RecordPage() {
           </div>
         )}
 
-        <div className="fld-group-title">日报字段</div>
+        {/* 「日报字段」标题删了:整页只有这一组字段,标题不起区分作用 */}
         <div className="fld-group">
           {rec.fields.map((f) => (
             <FieldRow key={f.code} field={f} recordId={rec.id} onSaved={mergeField} />
