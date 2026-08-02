@@ -94,6 +94,23 @@
   padding-bottom: var(--safe-bottom);
 }
 
+/* ===== 隐藏滚动条 =====
+   手机上滚动条是覆盖式、滑完自动消失的,本来就看不见;
+   桌面浏览器会常驻一条灰槽,把右边距吃掉一块、看着像排版坏了。
+   这是移动端产品,以手机的表现为准。
+   内容能不能滚,靠的是内容本身露出半截(以及下拉刷新),不靠这条槽提示。 */
+.scroll-area,
+.capture-scroll,
+.capture-scroll .arco-pull-refresh {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* 旧 Edge */
+}
+.scroll-area::-webkit-scrollbar,
+.capture-scroll::-webkit-scrollbar,
+.capture-scroll .arco-pull-refresh::-webkit-scrollbar {
+  display: none;
+}
+
 .center-screen {
   flex: 1;
   min-height: 0;
