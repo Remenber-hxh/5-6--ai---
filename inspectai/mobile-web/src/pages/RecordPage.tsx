@@ -233,12 +233,11 @@ export default function RecordPage() {
     );
   }
 
-  const done = rec.fields.filter((f) => f.value.trim()).length;
 
   return (
     <div className="flow-screen">
-      {/* 标题用旧版的固定文案(TITLES.form),模板名降到副行 —— 顶栏 17px
-          放不下长模板名,旧版也是把它放在正文里 */}
+      {/* 标题用旧版的固定文案(TITLES.form)。模板名不进标题 —— 顶栏 17px
+          放不下「电梯巡检(有机房)」这种长名,会被截断 */}
       <FlowHeader
         title="确认日报字段"
         onBack={() => nav("/")}
@@ -247,9 +246,10 @@ export default function RecordPage() {
       />
 
       <div className="scroll-area flow-body">
-        <p className="flow-caption">
-          {rec.templateName} · {rec.project} · {rec.pointName} · {done}/{rec.fields.length} 项已填
-        </p>
+        {/* 顶部那行「模板 · 项目 · 点位 · N/M 项已填」删了:
+            四段信息挤成一行小字,读起来费劲又占地方。
+            模板名在顶栏标题里已有语境;填写进度靠字段本身的填/未填状态
+            和顶部进度条就看得出来。 */}
         {/* 识别不稳:给出路,不能只报错(旧版:重拍 / 转人工) */}
         {rec.retakeReason && (
           <div className="retake-box">
