@@ -19,6 +19,11 @@ import { IconLedger, IconPhotos, IconShoot, IconTasks, IconUser } from "./icons"
 //   2. 巡检员填到一半误点 tab 就前功尽弃 —— 这类流程该是"进去就走完"
 const TAB_ROUTES = ["/", "/review", "/tasks", "/ledger", "/me"] as const;
 
+// 哪些顶层页是深色科技风。目前只有拍照台 —— 它是取景语境。
+// 其余(待处理/任务/台账/我的)都是浅色 iOS 风。底栏据此跟随,
+// 否则在浅色页底部就是一条焊上去的黑带。
+const DARK_ROUTES = new Set<string>(["/"]);
+
 export default function AppTabs() {
   const nav = useNavigate();
   const { pathname } = useLocation();
@@ -49,6 +54,7 @@ export default function AppTabs() {
   return (
     <TabBar
       activeKey={pathname}
+      dark={DARK_ROUTES.has(pathname)}
       onChange={(key) => nav(key)}
       items={[
         { key: "/", title: "巡检", icon: <IconShoot /> },

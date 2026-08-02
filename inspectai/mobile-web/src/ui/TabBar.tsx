@@ -26,14 +26,25 @@ export interface TabBarProps {
   /** 当前选中项的 key;不在 items 里则不高亮任何一项 */
   activeKey: string;
   onChange: (key: string) => void;
+  /**
+   * 跟随当前页面的主题。
+   *
+   * 本产品是有意的双主题:拍照台深(取景语境,深底让取景框和快门跳出来),
+   * 数据页浅(巡检员在户外强光下读数据,浅底可读性明显更好)——
+   * iOS 自己也是相机深、照片浅。
+   *
+   * 但底栏若固定一种色,在另一种页面上就是一条焊上去的外来色带。
+   * 五个 tab 里 1 深 4 浅,固定深色时台账页底部尤其刺眼。
+   */
+  dark?: boolean;
 }
 
-export function TabBar({ items, activeKey, onChange }: TabBarProps) {
+export function TabBar({ items, activeKey, onChange, dark }: TabBarProps) {
   const activeIndex = items.findIndex((i) => i.key === activeKey);
 
   return (
     <ArcoTabBar
-      className="app-tabbar"
+      className={dark ? "app-tabbar is-dark" : "app-tabbar"}
       // 【必须显式 false】tab-bar.js:19 里默认是 true —— 会加上
       // .arco-tab-bar-fixed(position:fixed; bottom:0),脱离文档流盖住页面
       // 底部内容(个人页的「退出登录」当场被盖住)。
