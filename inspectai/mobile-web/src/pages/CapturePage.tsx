@@ -63,18 +63,13 @@ export default function CapturePage() {
     <div className="capture-screen">
       {/* 顶栏照旧版:左边只有产品名,右边一个带在线圆点的身份钮。
           品牌徽章不在这里 —— 它居中在下面的大标题上方。 */}
+      {/* 顶栏只剩产品名 + 头像。原来那圈胶囊描边和在线绿点都去掉了 ——
+          在线状态离线时由下方整条 NoticeBar 表达,不需要常驻一个小点占着。
+          品牌徽章也删了:顶栏已经有「智巡」,中间再放一次是重复。 */}
       <div className="capture-top">
         <span className="capture-wordmark">智巡</span>
-        {/* 在线状态收进身份钮的小圆点,不再单独一个 pill 抢位置;
-            真离线时下方会出现整条 NoticeBar,不靠这个小点表达。 */}
-        <button
-          className={online ? "user-window is-online" : "user-window is-offline"}
-          onClick={() => nav("/me")}
-        >
-          {/* 文字头像:顶栏右端原本只有一段文字会显得飘,给它一个"这是个人"的锚点 */}
+        <button className="user-window" onClick={() => nav("/me")} aria-label="我的">
           <Avatar name={user?.displayName || user?.username || "巡"} src={user?.avatar} />
-          <span className="uw-name">{user?.displayName || user?.username || "巡检员"}</span>
-          <span className="uw-dot" />
         </button>
       </div>
 
@@ -117,20 +112,6 @@ export default function CapturePage() {
       <div className="capture-scroll">
         <PullRefresh onRefresh={refresh}>
           <div className="capture-main">
-        <div className="cap-hero">
-          {/* 品牌徽章居中在大标题上方 —— 旧版的层次:徽章 → 标题 → 副标题 →
-              取景框 → 快门 → 次要链接。之前把徽章挤到左上角,层次就散了。 */}
-          <span className="brand-badge">
-            <span className="brand-word">JADEAST</span>
-            <span className="brand-divider" />
-            <span className="brand-cn">智巡</span>
-          </span>
-          <h1 className="capture-title">对准巡检设备拍照</h1>
-          {/* 副标题恒定讲正常流程。离线这个例外由上方的 NoticeBar 承担 ——
-              两处都改文案会说同一件事两遍。 */}
-          <p className="capture-sub">AI 会自动识别场景,调出对应的日报模板</p>
-        </div>
-
         {/* 取景框是【画面区】,不是按钮 —— 里面有网格和虚线对准圈,提示"把设备放中间"。
             曾经把快门塞进框里当成一个大按钮,两个概念糊在一起,观感和语义都塌了。 */}
         <div className="viewfinder" aria-hidden>
