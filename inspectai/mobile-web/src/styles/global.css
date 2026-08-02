@@ -2409,20 +2409,24 @@ a {
   justify-content: center;
 }
 .tb-icon svg { width: 23px; height: 23px; }
-/* 角标本体是组件库的 Badge,这里只管定位和配色。
-   红色、无描边 —— 描边(那圈跟着底栏走的 2px)去掉后更干净。 */
+/* 角标本体是组件库的 Badge。
+   【不要自己写 top/left】Arco 的 .arco-badge-absolute 已经锚好了:
+     top:0; left:100%; margin-left:-8px; margin-top:-8px
+   也就是骑在图标右上角。我原先又加了 top:-4px + left:56%,和它的 margin
+   叠加成 -12px,角标整个飘到图标上方 12px 处 —— 就是"位置不对"的原因。
+   这里只调颜色和字号,定位交给组件。 */
 .tb-badge.arco-badge {
-  position: absolute;
-  top: -4px;
-  left: 56%;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  line-height: 15px;
   background: #ff3b30;
-  box-shadow: none;
+  height: 15px;
+  line-height: 15px;
+  font-size: 10px;
+  font-weight: 700;
+  /* Arco 的 margin-left:-8px 是给"贴在方形头像右上角"设计的:锚点 left:100%
+     再往回收 8px。但我们的图标只有 23px 宽、且四周没有实体边界,
+     角标会甩到两个 tab 之间的空当里(实测右超出 8~14px,数字越多越远)。
+     再往回收半个角标宽,让它压在图标右上角上而不是飘在旁边。 */
+  transform: translateX(-50%);
 }
-.tb-badge .arco-badge-text { font-size: 10px; font-weight: 700; }
 
 /* ===== 页面转场 =====
    转场传递层级:平级(底部 tab 之间)淡入淡出,下钻推入,返回退出。
