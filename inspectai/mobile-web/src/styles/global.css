@@ -353,8 +353,13 @@
      2. 取景框内有网格 + 虚线对准圈,是"取景器"不是空盒子
      3. 快门是框下方独立的发光大圆钮,语义清楚 */
 
-/* 背景:机房照片压暗 + 翡翠光晕 + 28px 网格,底部淡出。
-   照片 2.1MB 与旧版同一张,弱网首屏成本已知,先对齐视觉,压缩另议。 */
+/* 背景:科技纹理压暗 + 翡翠光晕 + 28px 网格,底部淡出。
+
+   【不要换回 zhixun-hero-tech.png】那是一张营销 banner,右半边印着
+   「JADEAST 智巡」和标语「从巡检记录到资产智能」。当背景用时那些字会
+   漏进界面 —— 和 UI 自己的品牌徽章重复,读起来像渲染出错。
+   现用图是裁掉右半、轻度模糊(2.2px)、压到 1100px 的 WebP:
+   2081KB → 28KB(减 99%)。它是纹理不是内容,模糊后不和前景文字抢注意力。 */
 .capture-main {
   flex: 1;
   display: flex;
@@ -374,7 +379,7 @@
   z-index: -2;
   background:
     linear-gradient(180deg, rgba(5, 13, 23, 0.45), rgba(5, 13, 23, 0.92) 64%, rgba(5, 13, 23, 1)),
-    url("/assets/zhixun-hero-tech.png") center top / cover no-repeat;
+    url("/assets/hero-bg.webp") center top / cover no-repeat;
   opacity: 0.34;
 }
 .capture-main::after {

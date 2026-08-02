@@ -5,7 +5,7 @@ import { listEngineeringTasks, listOfflineShots } from "@/api/inspection";
 import { usePending } from "@/store/pending";
 import { TabBar } from "@/ui";
 
-import { IconLedger, IconPhotos, IconShoot, IconTasks, IconUser } from "./icons";
+import { IconPhotos, IconShoot, IconTasks, IconUser } from "./icons";
 
 // ===== 底部常驻导航 =====
 //
@@ -17,7 +17,10 @@ import { IconLedger, IconPhotos, IconShoot, IconTasks, IconUser } from "./icons"
 // (设备详情、待审批)不显示:
 //   1. 流程页自己有底部主操作条(.flow-foot),两条底栏会打架
 //   2. 巡检员填到一半误点 tab 就前功尽弃 —— 这类流程该是"进去就走完"
-const TAB_ROUTES = ["/", "/review", "/tasks", "/ledger", "/me"] as const;
+// 台账不在底栏:它是【查询类】功能,不是巡检员的日常动线
+// (拍照 → 处理照片 → 销任务)。入口保留在「我的 → 设备健康」。
+// 四项比五项也更宽松,每个 tab 的点击区更大 —— 现场戴手套操作有意义。
+const TAB_ROUTES = ["/", "/review", "/tasks", "/me"] as const;
 
 // 哪些顶层页是深色科技风。目前只有拍照台 —— 它是取景语境。
 // 其余(待处理/任务/台账/我的)都是浅色 iOS 风。底栏据此跟随,
@@ -60,7 +63,6 @@ export default function AppTabs() {
         { key: "/", title: "巡检", icon: <IconShoot /> },
         { key: "/review", title: "待处理", icon: <IconPhotos />, badge: shots },
         { key: "/tasks", title: "任务", icon: <IconTasks />, badge: tasks },
-        { key: "/ledger", title: "台账", icon: <IconLedger /> },
         { key: "/me", title: "我的", icon: <IconUser /> },
       ]}
     />
