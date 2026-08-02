@@ -2248,7 +2248,15 @@ a {
   background: var(--lt-card);
 }
 .me-screen .arco-cell-text { color: var(--lt-fg-2); font-size: 14px; }
-.me-ic { margin-right: 10px; font-size: 16px; }
+/* 列表行图标位。SVG 用 currentColor,这里给它定色即可 —— 用品牌翡翠而非
+   全黑,列表扫下来有个节奏,又不至于像 emoji 那样每个一个颜色。 */
+.me-ic {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 10px;
+  color: var(--brand);
+}
+.me-ic svg { width: 20px; height: 20px; }
 
 .me-logout {
   display: block;

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { uploadMyAvatar } from "@/api/inspection";
 import BeianLine from "@/components/BeianLine";
 import FlowHeader from "@/components/FlowHeader";
+import { IconLedger, IconPhotos, IconTasks } from "@/components/icons";
 import { prepareAvatar } from "@/lib/avatar";
 import { useAuth } from "@/store/auth";
 
@@ -86,10 +87,12 @@ export default function MePage() {
         </div>
 
         {/* 管理角色登录后落在这一屏,给它该有的入口 —— 否则这页是个死胡同 */}
+        {/* 图标用手写细线 SVG,不用 emoji —— 🖼(U+1F5BC)在很多系统上没有字形,
+            这里一度渲染成豆腐块;而且 emoji 放在设置列表里也不像正经产品。 */}
         <CellGroup header="巡检">
-          <Cell label="我的任务" icon={<span className="me-ic">📋</span>} onClick={() => nav("/tasks")} />
-          <Cell label="待处理照片" icon={<span className="me-ic">🖼</span>} onClick={() => nav("/review")} />
-          <Cell label="设备健康" icon={<span className="me-ic">📈</span>} onClick={() => nav("/ledger")} />
+          <Cell label="我的任务" icon={<span className="me-ic"><IconTasks /></span>} onClick={() => nav("/tasks")} />
+          <Cell label="待处理照片" icon={<span className="me-ic"><IconPhotos /></span>} onClick={() => nav("/review")} />
+          <Cell label="设备健康" icon={<span className="me-ic"><IconLedger /></span>} onClick={() => nav("/ledger")} />
         </CellGroup>
 
         <CellGroup header="账号">
