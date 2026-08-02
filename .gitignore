@@ -15,11 +15,13 @@ inspectai/.playwright-cli/
 *.png
 *.jpg
 *.jpeg
-# 但 UI 必需的图必须进仓,否则线上是空白背景 ——
-# 旧版 frontend/assets 早已在仓库里,新移动端同理开例外。
+*.webp
+# 【例外必须写在所有扩展名规则之后】gitignore 是后规则胜出 ——
+# 这几条曾经夹在 *.jpeg 和 *.webp 中间,于是 webp 又被忽略回去,
+# 新做的 hero-bg.webp 差点没进仓(线上会是空背景)。
+# UI 必需的图必须进仓:旧版 frontend/assets 早已在仓库里,新移动端同理。
 !inspectai/frontend/assets/**
 !inspectai/mobile-web/public/assets/**
-*.webp
 # 但保留项目里真正用到的图（不在根目录）
 !inspectai/admin-frontend/**/*.png
 !inspectai/admin-frontend/**/*.jpg
