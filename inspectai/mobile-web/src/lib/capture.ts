@@ -60,7 +60,7 @@ export async function compressImage(file: File): Promise<File> {
  * 取当前定位。拿不到就返回 null —— 定位失败绝不能挡住拍照,
  * 现场信号差本来就是常态。
  */
-export function getGeo(timeoutMs = 6000): Promise<{ lat: number; lng: number; accuracy: number } | null> {
+export function getGeo(timeoutMs = 8000): Promise<{ lat: number; lng: number; accuracy: number } | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);
@@ -74,7 +74,17 @@ export function getGeo(timeoutMs = 6000): Promise<{ lat: number; lng: number; ac
           accuracy: pos.coords.accuracy,
         }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30_000 },
+      {
+        // 【不要 enableHighAccuracy】那会强制走 GPS,而巡检现场是机房、
+        // 泵房、变电所 —— 看不到天空,正是 GPS 最慢最容易失败的场景,
+        // 常常跑满超时才回来。关掉后走基站/WiFi 定位,通常一两秒内出结果。
+        // 这里要回答的问题是"这张照片是在哪栋楼拍的",百米级精度足够;
+        // 米级精度既拿不到,也没用。
+        enableHighAccuracy: false,
+        timeout: timeoutMs,
+        // 同一次巡检里连拍多张,一分钟内复用上次结果,不重复定位
+        maximumAge: 60_000,
+      },
     );
   });
 }

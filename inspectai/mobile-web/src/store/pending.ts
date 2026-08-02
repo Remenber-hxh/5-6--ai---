@@ -11,6 +11,7 @@ import {
   removeShot,
   removeShots,
   requestPersistentStorage,
+  updateShot,
 } from "@/lib/offlineStore";
 import { retryNow, runQueue, unblockAll } from "@/lib/uploadQueue";
 import { getStoredUser } from "@/api/client";
@@ -85,19 +86,25 @@ export const usePending = create<PendingState>((set, get) => ({
     if (!files.length) return { added: 0 };
     set({ saving: true });
     try {
-      // 定位取一次给这批共用:同次拍摄位置相同,也避免连续定位拖慢
-      const geo = await getGeo();
+      // 【定位不能挡着存照片】原来这里是 await getGeo(),定位跑完才开始压缩。
+      // 巡检员在机房里 —— 看不到天空,GPS 正是最慢的场景,经常跑满超时,
+      // 于是"存照片好慢"。而 geo 只在【上传时】作为表单字段用,
+      // 完全可以后补:照片先落地,定位到了再回填,和这个产品
+      // "先存下来、联网再补"的整体思路一致。
+      const geoPromise = getGeo();
+      const savedIds: string[] = [];
       let added = 0;
       for (const file of files) {
         const compressed = await compressImage(file);
         try {
-          await addShot({
+          const shot = await addShot({
             blob: compressed,
             fileName: compressed.name,
-            geo,
+            geo: null,
             userId,
             capturedAt: new Date().toISOString(),
           });
+          savedIds.push(shot.id);
           added += 1;
         } catch (err) {
           await get().refresh();
@@ -106,7 +113,26 @@ export const usePending = create<PendingState>((set, get) => ({
         }
       }
       await get().refresh();
-      void get().flush(); // 在线就立刻开始传,不用等定时器
+
+      // 定位回填 + 触发上传。不 await —— saving 到这里就结束了,
+      // 用户马上能继续拍下一张,不必等定位。
+      //
+      // 【上传要等定位落定再启动】否则信号好的时候上传会抢在定位前面,
+      // 那几张照片就永远没有位置了。上传是后台行为,用户并不在等它;
+      // 为了保住位置证据,晚几秒开始传是划算的。
+      // getGeo 永远 resolve(失败/超时给 null),所以这里不会挂住。
+      void geoPromise
+        .then(async (geo) => {
+          if (geo && savedIds.length) {
+            await Promise.all(savedIds.map((id) => updateShot(id, { geo })));
+            await get().refresh();
+          }
+        })
+        .catch(() => void 0)
+        .finally(() => {
+          void get().flush();
+        });
+
       return { added };
     } finally {
       set({ saving: false });
