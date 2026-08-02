@@ -430,6 +430,10 @@
 .album-fab {
   position: absolute;
   left: 50%;
+  /* 【必须显式给 top + translateY】只写 left 的话,绝对定位元素纵向用的是
+     "静态位置" —— 在 flex 容器里由 align-items 推算出来,和快门中心差了 13px,
+     看起来就是图标歪了。锚在 50% 再回拉一半高度才真正居中。 */
+  top: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -440,12 +444,55 @@
   margin-left: -23px;
   color: var(--tech-jade);
   opacity: 0;
-  transform: scale(0.5);
+  /* translateY(-50%) 要一直带着,不能只写在某个状态里 —— 否则展开动画
+     一跑,元素会先掉下去半个身位再弹回来。 */
+  transform: translateY(-50%) scale(0.5);
   pointer-events: none;
-  overflow: hidden;
   transition: opacity 200ms ease, transform 260ms cubic-bezier(0.22, 1.4, 0.5, 1),
               margin-left 260ms cubic-bezier(0.22, 1.4, 0.5, 1);
 }
+/* ===== 长按光波 =====
+   锁屏长按那种感觉:一圈光从快门向外扩散一次然后消散,不循环 ——
+   循环会变成"这里一直在加载"的错误暗示。
+
+   做成独立元素(不是 ::after):它靠 React 的 key 变化重新挂载来重放动画。
+   同一个类名反复加减,浏览器不会重启已结束的动画,连按两次就没反应了。 */
+.shutter-ripple {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  border-radius: 50%;
+  border: 2px solid rgba(111, 255, 219, 0.55);
+  pointer-events: none;
+  animation: shutter-ripple 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes shutter-ripple {
+  0%   { opacity: 0.9;  transform: scale(1);   border-width: 2px; }
+  70%  { opacity: 0.28; }
+  100% { opacity: 0;    transform: scale(2.4); border-width: 0.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shutter-ripple { animation: none; opacity: 0; }
+}
+
+/* 展开后图标底下垫一层柔光,替掉原来那个实心圆框 ——
+   线条图标浮在深色背景上容易糊,一层弥散的光既托住它又不成为"框"。 */
+.album-fab.is-open::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(67, 229, 172, 0.22), transparent 68%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutter-dock.is-rippling::after { animation: none; }
+}
+
 /* 没有底框托着,图标要稍大才立得住;加一点发光让它在深色背景上不糊 */
 .album-fab svg {
   width: 27px;
@@ -456,7 +503,7 @@
 /* 展开:滑到快门右侧。回弹曲线让它像"弹出来"而不是"移过去" */
 .album-fab.is-open {
   opacity: 1;
-  transform: scale(1);
+  transform: translateY(-50%) scale(1);
   /* 快门半径 40px,相册半径 23px。左边距 = 40 + 14(间隙)= 54,
      让两者留出一道缝而不是压在一起 —— 压着看起来像没排好版,
      也让"这是两个独立按钮"不够清楚。 */
@@ -566,7 +613,11 @@
   display: block;
   width: 80px;
   height: 80px;
-  margin: clamp(14px, 3svh, 26px) auto 0;
+  /* 【外边距归 .shutter-dock 管,这里必须是 0】
+     曾经这里留着 margin-top:25px,于是坞高 105 而快门高 80,
+     坞中心比快门中心高 13px —— 相册图标和光波都锚在坞的 50%,
+     结果双双偏上 13px。整个"图标歪了"就是这么来的。 */
+  margin: 0;
   border-radius: 50%;
   cursor: pointer;
   transition: transform 280ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));

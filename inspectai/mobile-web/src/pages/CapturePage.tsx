@@ -30,7 +30,13 @@ export default function CapturePage() {
 
   // 相册入口:长按快门从右侧滑出。不做成常驻按钮 —— 首页只留"拍照"一件事。
   const [albumOpen, setAlbumOpen] = useState(false);
-  const longPress = useLongPress(() => setAlbumOpen(true));
+  // 光波是一次性动画。用递增的 key 而不是布尔值:布尔值在动画没播完时
+  // 再次长按无法重放(类名没变化,浏览器不会重启动画),key 变了才会重挂。
+  const [ripple, setRipple] = useState(0);
+  const longPress = useLongPress(() => {
+    setAlbumOpen(true);
+    setRipple((n) => n + 1);
+  });
   const holding = longPress.holding;
 
   // 弹出后 5 秒自动收起:一直挂着会挡视线,用户也会以为它坏了。
@@ -142,6 +148,10 @@ export default function CapturePage() {
             相册入口不再是独立按钮 —— 首页只留"拍照"一件事,C 位更纯粹。
             但长按是隐藏手势,不知道的人永远找不到,所以下方文字明写出来。 */}
         <div className="shutter-dock">
+          {/* 光波是独立元素并带 key —— key 变化让它重新挂载,动画才会重放。
+              不能把 key 放在 .shutter-dock 上:那会把快门和相册一起重挂,
+              相册的展开过渡直接失效、file input 也会被重建。 */}
+          {ripple > 0 && <span className="shutter-ripple" key={ripple} aria-hidden />}
           <label
             className={
               (saving ? "shutter is-busy" : "shutter") + (holding ? " is-holding" : "")
