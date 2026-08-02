@@ -1,10 +1,11 @@
 import { Avatar, Loading, NoticeBar, PullRefresh, Toast } from "@/ui";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import BeianLine from "@/components/BeianLine";
 import { IconAlbum } from "@/components/icons";
 import PendingPanel from "@/components/PendingPanel";
+import { useLongPress } from "@/lib/useLongPress";
 import { useAuth } from "@/store/auth";
 import { usePending } from "@/store/pending";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
@@ -27,9 +28,18 @@ export default function CapturePage() {
     void init();
   }, [init]);
 
-  // 「从相册上传」保留在首页 —— 它和拍照是并列的两种录入方式,
-  // 弱网现场常先用系统相机拍完再批量选入,不该被降级到二级页面。
-  // 其余入口(任务/待处理/台账/我的)已交给底部常驻 TabBar。
+  // 相册入口:长按快门从右侧滑出。不做成常驻按钮 —— 首页只留"拍照"一件事。
+  const [albumOpen, setAlbumOpen] = useState(false);
+  const longPress = useLongPress(() => setAlbumOpen(true));
+  const holding = longPress.holding;
+
+  // 弹出后 5 秒自动收起:一直挂着会挡视线,用户也会以为它坏了。
+  // 5 秒够看清并点到 —— 再短来不及,再长就等于常驻按钮了。
+  useEffect(() => {
+    if (!albumOpen) return;
+    const t = window.setTimeout(() => setAlbumOpen(false), 5000);
+    return () => window.clearTimeout(t);
+  }, [albumOpen]);
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -128,38 +138,56 @@ export default function CapturePage() {
         {/* 快门:框下方独立大圆钮,带发光外环。80px 触控目标,戴手套也够。
             保存中在钮心放一个弧形 loading,而不是只把按钮调暗 ——
             调暗只说明"不能点",不说明"正在干活"。 */}
-        <label className={saving ? "shutter is-busy" : "shutter"}>
-          <input
-            className="vf-input"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            onChange={onPick}
-            aria-label="拍照"
-          />
-          {saving && (
-            <span className="shutter-loading">
-              <Loading size={26} color="#0a8a63" />
-            </span>
-          )}
-        </label>
-        <span className="shutter-label">{saving ? "保存中…" : "拍照识别"}</span>
+        {/* 快门 + 相册。长按快门,相册图标从它右侧滑出。
+            相册入口不再是独立按钮 —— 首页只留"拍照"一件事,C 位更纯粹。
+            但长按是隐藏手势,不知道的人永远找不到,所以下方文字明写出来。 */}
+        <div className="shutter-dock">
+          <label
+            className={
+              (saving ? "shutter is-busy" : "shutter") + (holding ? " is-holding" : "")
+            }
+            {...longPress.handlers}
+          >
+            <input
+              className="vf-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              onChange={onPick}
+              aria-label="拍照"
+            />
+            {saving && (
+              <span className="shutter-loading">
+                <Loading size={26} color="#0a8a63" />
+              </span>
+            )}
+          </label>
 
-        {/* 从相册上传:和拍照并列的录入方式,做成描边胶囊,
-            视觉重量低于快门但仍是一等入口。 */}
-        <label className="cap-album upload-wrap">
-          <IconAlbum />
-          从相册上传
-          <input
-            className="upload-input"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={onPick}
-            aria-label="从相册上传"
-          />
-        </label>
+          {/* 相册:长按后滑出。是 label 包 input —— 用户点它是一次全新的
+              用户手势,file picker 一定能打开;不依赖长按那一次手势的延续。 */}
+          <label
+            className={albumOpen ? "album-fab upload-wrap is-open" : "album-fab upload-wrap"}
+            aria-hidden={!albumOpen}
+          >
+            <IconAlbum />
+            <input
+              className="upload-input"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                setAlbumOpen(false);
+                void onPick(e);
+              }}
+              aria-label="从相册上传"
+              tabIndex={albumOpen ? 0 : -1}
+            />
+          </label>
+        </div>
+        <span className="shutter-label">
+          {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别 · 长按选相册"}
+        </span>
 
         {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
             <BeianLine />

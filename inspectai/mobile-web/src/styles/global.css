@@ -409,6 +409,61 @@
 }
 /* 取景框、快门、链接排依次跟上,形成一个短暂的层次感 */
 .viewfinder { animation: hudFloat 5.4s ease-in-out infinite, techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both; }
+/* 快门坞:快门 + 长按滑出的相册图标。相册相对快门定位,所以要 relative。 */
+.shutter-dock {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: clamp(14px, 3svh, 26px) auto 0;
+  width: min(100%, 320px);
+}
+
+/* 长按中的快门:轻微内缩,给"正在识别长按"的即时反馈。
+   没有这个反馈,用户按住 400ms 期间不知道系统有没有在响应。 */
+.shutter.is-holding { transform: scale(0.93); }
+.shutter.is-holding::before { border-color: rgba(111, 255, 219, 0.9); }
+
+/* 相册图标:默认收起在快门中心、缩小、透明。
+   【必须 pointer-events:none】收起时它仍在 DOM 里,不关掉命中就是一层
+   看不见的东西压在快门右侧 —— 个人页那个"所有按钮都变成传头像"就是这么来的。 */
+.album-fab {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-left: -23px;
+  border-radius: 50%;
+  border: 1px solid rgba(111, 255, 219, 0.28);
+  background: rgba(9, 24, 38, 0.86);
+  color: var(--tech-jade);
+  opacity: 0;
+  transform: scale(0.5);
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 200ms ease, transform 260ms cubic-bezier(0.22, 1.4, 0.5, 1),
+              margin-left 260ms cubic-bezier(0.22, 1.4, 0.5, 1);
+}
+.album-fab svg { width: 22px; height: 22px; }
+/* 展开:滑到快门右侧。回弹曲线让它像"弹出来"而不是"移过去" */
+.album-fab.is-open {
+  opacity: 1;
+  transform: scale(1);
+  /* 快门半径 40px,相册半径 23px。左边距 = 40 + 14(间隙)= 54,
+     让两者留出一道缝而不是压在一起 —— 压着看起来像没排好版,
+     也让"这是两个独立按钮"不够清楚。 */
+  margin-left: 54px;
+  pointer-events: auto;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 16px rgba(67, 229, 172, 0.22);
+}
+@media (prefers-reduced-motion: reduce) {
+  .album-fab { transition: opacity 120ms ease; }
+  .shutter.is-holding { transform: none; }
+}
+
 .shutter { animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both; }
 .hero-secondary { animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both; }
 @keyframes techRise {
@@ -549,33 +604,6 @@
   cursor: pointer;
 }
 
-/* 从相册上传:和拍照并列的第二种录入方式,描边胶囊。
-   视觉重量低于快门(它不是主操作),但仍是一等入口 —— 弱网现场常先用
-   系统相机拍完再批量选入,把它降级到二级页面会伤到真实工作流。
-
-   【这段曾被当成孤儿删掉】首页回退那次我先把它从 JSX 移走,orphan 扫描
-   于是报它 "CSS 里 0 处",就删了;后来加回按钮,文字直接继承 52px 根字号
-   变成巨字。删样式前要确认它是"永久不用"还是"这一版暂时没用"。 */
-.cap-album {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: min(100%, 320px);
-  height: 42px;
-  margin: clamp(12px, 2.4svh, 20px) auto 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.cap-album:active { background: rgba(255, 255, 255, 0.09); }
-.cap-album svg { width: 18px; height: 18px; color: var(--tech-jade); }
 
 /* 次要入口:轻量文字链接排,不和主操作抢重量(旧版 .hero-secondary) */
 .hero-secondary {
