@@ -2,6 +2,8 @@ import ArcoDialog from "@arco-design/mobile-react/esm/dialog";
 import "@arco-design/mobile-react/esm/dialog/style/css";
 import type { ReactNode } from "react";
 
+import { ARCO_CONTEXT } from "./arcoContext";
+
 // ===== Dialog 适配层 =====
 //
 // 这是本次迁移最危险的一处差异:
@@ -29,17 +31,23 @@ function confirm(config: ConfirmConfig): Promise<boolean> {
       settled = true;
       resolve(v);
     };
-    ArcoDialog.confirm({
-      title: config.title,
-      // Arco 的内容放 children(继承自 DialogProps),不是 content
-      children: config.content,
-      okText: config.confirmText ?? "确定",
-      cancelText: config.cancelText ?? "取消",
-      onOk: () => done(true),
-      onCancel: () => done(false),
-      // 必须有:点遮罩/返回键关闭时若不 resolve,await 会永久挂起、页面卡死
-      onClose: () => done(false),
-    });
+    ArcoDialog.confirm(
+      {
+        title: config.title,
+        // Arco 的内容放 children(继承自 DialogProps),不是 content
+        children: config.content,
+        okText: config.confirmText ?? "确定",
+        cancelText: config.cancelText ?? "取消",
+        onOk: () => done(true),
+        onCancel: () => done(false),
+        // 必须有:点遮罩/返回键关闭时若不 resolve,await 会永久挂起、页面卡死
+        onClose: () => done(false),
+      },
+      // 【第二个参数不能省】命令式弹窗渲染到 React 树之外的 portal,
+      // 拿不到 <ContextProvider> 里的 system。不传就退回 pc —— 而 Arco 没写
+      // .pc 样式,弹窗会变成一个白框、文字继承 52px 根字号占满整屏。
+      ARCO_CONTEXT,
+    );
   });
 }
 

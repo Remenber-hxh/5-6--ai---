@@ -2,6 +2,8 @@ import ArcoToast from "@arco-design/mobile-react/esm/toast";
 import "@arco-design/mobile-react/esm/toast/style/css";
 import type { ReactNode } from "react";
 
+import { ARCO_CONTEXT } from "./arcoContext";
+
 // ===== Toast 适配层 =====
 //
 // 对外保留 antd-mobile 的 `Toast.show({content, duration, position})` 签名,
@@ -29,11 +31,16 @@ function show(config: ToastConfig | string) {
   } catch {
     /* 已被自身超时关闭,忽略 */
   }
-  current = ArcoToast.toast({
-    content: cfg.content,
-    duration: cfg.duration ?? 2000,
-    direction: cfg.position ?? "center",
-  });
+  current = ArcoToast.toast(
+    {
+      content: cfg.content,
+      duration: cfg.duration ?? 2000,
+      direction: cfg.position ?? "center",
+    },
+    // 和 Dialog 同理:命令式 API 渲染到树外 portal,拿不到 <ContextProvider>
+    // 里的 system,不传就退回没有样式的 pc 分支
+    ARCO_CONTEXT,
+  );
 }
 
 export const Toast = {
