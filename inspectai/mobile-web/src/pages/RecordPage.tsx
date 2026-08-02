@@ -1,4 +1,4 @@
-import { Button, Image, Toast } from "@/ui";
+import { Button, Image, Segmented, Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -98,13 +98,26 @@ function FieldRow({
       </div>
       <div className="fld-value">
         {pillEl}
-        {field.options?.length ? (
+        {/* 选项 ≤3 用分段按钮:一次点击到位。实测这套模板的选择字段
+            全是 2 项(是/否),原生 <select> 要点两次(展开 + 选),
+            一页十几项,差别是实打实的。
+            超过 3 项仍退回原生 select —— 分段条塞不下,会挤成小方块点不准。 */}
+        {field.options?.length && field.options.length <= 3 ? (
+          <Segmented
+            options={field.options}
+            value={value}
+            onChange={(v) => {
+              setValue(v);
+              void commit(v); // 选择类改完即存,不等失焦
+            }}
+          />
+        ) : field.options?.length ? (
           <select
             className="fld-select"
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
-              void commit(e.target.value); // 选择类改完即存,不等失焦
+              void commit(e.target.value);
             }}
           >
             <option value="">请选择</option>
