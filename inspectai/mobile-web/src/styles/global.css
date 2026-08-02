@@ -433,12 +433,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 视觉上只有一个线条图标,但触控区仍保留 46px —— 裸图标的可点范围
+     只有笔画那么大,戴手套根本点不中。框去掉了,热区不能跟着去掉。 */
   width: 46px;
   height: 46px;
   margin-left: -23px;
-  border-radius: 50%;
-  border: 1px solid rgba(111, 255, 219, 0.28);
-  background: rgba(9, 24, 38, 0.86);
   color: var(--tech-jade);
   opacity: 0;
   transform: scale(0.5);
@@ -447,7 +446,13 @@
   transition: opacity 200ms ease, transform 260ms cubic-bezier(0.22, 1.4, 0.5, 1),
               margin-left 260ms cubic-bezier(0.22, 1.4, 0.5, 1);
 }
-.album-fab svg { width: 22px; height: 22px; }
+/* 没有底框托着,图标要稍大才立得住;加一点发光让它在深色背景上不糊 */
+.album-fab svg {
+  width: 27px;
+  height: 27px;
+  filter: drop-shadow(0 0 6px rgba(67, 229, 172, 0.45));
+}
+.album-fab:active svg { transform: scale(0.9); }
 /* 展开:滑到快门右侧。回弹曲线让它像"弹出来"而不是"移过去" */
 .album-fab.is-open {
   opacity: 1;
@@ -457,7 +462,6 @@
      也让"这是两个独立按钮"不够清楚。 */
   margin-left: 54px;
   pointer-events: auto;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 16px rgba(67, 229, 172, 0.22);
 }
 @media (prefers-reduced-motion: reduce) {
   .album-fab { transition: opacity 120ms ease; }
