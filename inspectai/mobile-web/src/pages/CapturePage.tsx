@@ -18,8 +18,8 @@ export default function CapturePage() {
   const user = useAuth((s) => s.user);
   const { online, saving, init, addFiles } = usePending();
   const activeTask = getActiveTask();
-  // 待办角标现在归底部 TabBar 管(它跨页常驻,数据也该在那一层拉)。
-  // 这里只留下拉刷新要用的动作 —— 首页下拉时顺带把服务器状态刷一次。
+  // 待办计数归底部 TabBar 管(它跨页常驻,数据也该在那一层拉)。
+  // 这里只留下拉刷新的动作 —— 首页下拉时顺带把服务器状态刷一次。
   const refresh = useCallback(async () => {
     await listOfflineShots().catch(() => []);
   }, []);
@@ -112,78 +112,76 @@ export default function CapturePage() {
       <div className="capture-scroll">
         <PullRefresh onRefresh={refresh}>
           <div className="capture-main">
-        {/* 取景框是【画面区】,不是按钮 —— 里面有网格和虚线对准圈,提示"把设备放中间"。
-            曾经把快门塞进框里当成一个大按钮,两个概念糊在一起,观感和语义都塌了。 */}
-        <div className="viewfinder" aria-hidden>
-          <span className="vf-corner vf-tl" />
-          <span className="vf-corner vf-tr" />
-          <span className="vf-corner vf-bl" />
-          <span className="vf-corner vf-br" />
-          <span className="vf-scan" />
-        </div>
+        {/* 取景框删干净了。点快门打开的是【系统相机】,对准动作发生在那里 ——
+            这个框从来没框住过任何东西,却一直有扫描线在动,暗示"正在识别"。
+            没有实景的情况下它就是个假框子。
 
-        {/* 快门:框下方独立大圆钮,带发光外环。80px 触控目标,戴手套也够。
-            保存中在钮心放一个弧形 loading,而不是只把按钮调暗 ——
-            调暗只说明"不能点",不说明"正在干活"。 */}
-        {/* 快门 + 相册。长按快门,相册图标从它右侧滑出。
-            相册入口不再是独立按钮 —— 首页只留"拍照"一件事,C 位更纯粹。
-            但长按是隐藏手势,不知道的人永远找不到,所以下方文字明写出来。 */}
-        <div className="shutter-dock">
-          {/* 光波是独立元素并带 key —— key 变化让它重新挂载,动画才会重放。
-              不能把 key 放在 .shutter-dock 上:那会把快门和相册一起重挂,
-              相册的展开过渡直接失效、file input 也会被重建。 */}
-          {ripple > 0 && <span className="shutter-ripple" key={ripple} aria-hidden />}
-          <label
-            className={
-              (saving ? "shutter is-busy" : "shutter") + (holding ? " is-holding" : "")
-            }
-            {...longPress.handlers}
-          >
-            <input
-              className="vf-input"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              multiple
-              onChange={onPick}
-              aria-label="拍照"
-            />
-            {saving && (
-              <span className="shutter-loading">
-                <Loading size={26} color="#0a8a63" />
-              </span>
-            )}
-          </label>
+            这里刻意【什么都不放】:首页只做拍照一件事,留白就是留白。 */}
 
-          {/* 相册:长按后滑出。是 label 包 input —— 用户点它是一次全新的
-              用户手势,file picker 一定能打开;不依赖长按那一次手势的延续。 */}
-          <label
-            className={albumOpen ? "album-fab upload-wrap is-open" : "album-fab upload-wrap"}
-            aria-hidden={!albumOpen}
-          >
-            <IconAlbum />
-            <input
-              className="upload-input"
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => {
-                setAlbumOpen(false);
-                void onPick(e);
-              }}
-              aria-label="从相册上传"
-              tabIndex={albumOpen ? 0 : -1}
-            />
-          </label>
-        </div>
-        <span className="shutter-label">
-          {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别 · 长按选相册"}
-        </span>
-
-        {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
-            <BeianLine />
           </div>
         </PullRefresh>
+      </div>
+
+      {/* 快门栏:钉在屏幕底部(滚动区之外),拇指自然落点。
+        相机 app 的快门都在底部 —— 单手举着手机时中间那个位置够不着。
+        保存中在钮心放弧形 loading,而不是只把按钮调暗:
+        调暗只说明"不能点",不说明"正在干活"。
+        长按是隐藏手势,下方文字必须写出来,否则相册入口等于消失。 */}
+      <div className="shutter-bar">
+      <div className="shutter-dock">
+        {/* 光波是独立元素并带 key —— key 变化让它重新挂载,动画才会重放。
+            不能把 key 放在 .shutter-dock 上:那会把快门和相册一起重挂,
+            相册的展开过渡直接失效、file input 也会被重建。 */}
+        {ripple > 0 && <span className="shutter-ripple" key={ripple} aria-hidden />}
+        <label
+          className={
+            (saving ? "shutter is-busy" : "shutter") + (holding ? " is-holding" : "")
+          }
+          {...longPress.handlers}
+        >
+          <input
+            className="vf-input"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            onChange={onPick}
+            aria-label="拍照"
+          />
+          {saving && (
+            <span className="shutter-loading">
+              <Loading size={26} color="#0a8a63" />
+            </span>
+          )}
+        </label>
+
+        {/* 相册:长按后滑出。是 label 包 input —— 用户点它是一次全新的
+            用户手势,file picker 一定能打开;不依赖长按那一次手势的延续。 */}
+        <label
+          className={albumOpen ? "album-fab upload-wrap is-open" : "album-fab upload-wrap"}
+          aria-hidden={!albumOpen}
+        >
+          <IconAlbum />
+          <input
+            className="upload-input"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(e) => {
+              setAlbumOpen(false);
+              void onPick(e);
+            }}
+            aria-label="从相册上传"
+            tabIndex={albumOpen ? 0 : -1}
+          />
+        </label>
+      </div>
+      <span className="shutter-label">
+        {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别 · 长按选相册"}
+      </span>
+      {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(工信部要求)。
+          放在快门栏里而不是滚动区:滚动区现在只到 616px,备案号会飘在半空。 */}
+      <BeianLine />
       </div>
 
       <PendingPanel />

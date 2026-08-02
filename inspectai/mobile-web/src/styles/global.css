@@ -386,7 +386,6 @@
    techRise 是旧版的入场动效(620ms 上浮渐显),重构时丢了 —— 少了它这屏
    是"啪"地出现,有了才像被打开。 */
 /* 取景框、快门、链接排依次跟上,形成一个短暂的层次感 */
-.viewfinder { animation: hudFloat 5.4s ease-in-out infinite, techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both; }
 /* 快门坞:快门 + 长按滑出的相册图标。相册相对快门定位,所以要 relative。 */
 .shutter-dock {
   position: relative;
@@ -506,76 +505,21 @@
   to { transform: translateY(0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cap-hero, .viewfinder, .shutter, .hero-secondary { animation: none; }
+  .shutter, .hero-secondary { animation: none; }
 }
 
-/* 取景框:画面区,不是按钮 */
-.viewfinder {
-  position: relative;
-  width: min(100%, 300px);
-  aspect-ratio: 1 / 1;
-  max-height: 34svh;
-  border-radius: 30px;
-  background: linear-gradient(145deg, rgba(5, 17, 29, 0.72), rgba(10, 32, 50, 0.48));
-  border: 1px solid rgba(111, 255, 219, 0.28);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
-    0 0 42px rgba(67, 229, 172, 0.17),
-    0 30px 80px rgba(0, 0, 0, 0.4);
-  animation: hudFloat 5.4s ease-in-out infinite;
-}
-/* 框内网格 */
-.viewfinder::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background-image:
-    linear-gradient(rgba(85, 215, 255, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(85, 215, 255, 0.12) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: center;
-  mask-image: radial-gradient(70% 70% at 50% 50%, #000 50%, transparent 100%);
-  -webkit-mask-image: radial-gradient(70% 70% at 50% 50%, #000 50%, transparent 100%);
-}
-/* 虚线对准圈:提示"把设备放中间" */
-.viewfinder::after {
-  content: "";
-  position: absolute;
-  inset: 23%;
-  border-radius: 50%;
-  border: 1px dashed rgba(111, 255, 219, 0.42);
-  box-shadow: 0 0 26px rgba(67, 229, 172, 0.13) inset;
-}
-@keyframes hudFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+/* ===== 快门栏 =====
+   钉在屏幕底部(滚动区之外),不参与滚动。相机 app 的快门都在底部 ——
+   单手举着手机时,屏幕中间那个位置拇指够不着。 */
+.shutter-bar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 16px 18px;
 }
 
-.vf-corner {
-  position: absolute;
-  width: 24px;
-  height: 24px;
-  border: 2.5px solid var(--tech-jade);
-  border-radius: 4px;
-  filter: drop-shadow(0 0 10px rgba(67, 229, 172, 0.65));
-}
-.vf-tl { top: 16px; left: 16px; border-right: 0; border-bottom: 0; }
-.vf-tr { top: 16px; right: 16px; border-left: 0; border-bottom: 0; }
-.vf-bl { bottom: 16px; left: 16px; border-right: 0; border-top: 0; }
-.vf-br { bottom: 16px; right: 16px; border-left: 0; border-top: 0; }
-.vf-scan {
-  position: absolute;
-  left: 14%;
-  right: 14%;
-  top: 50%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(67, 229, 172, 0.95), rgba(85, 215, 255, 0.85), transparent);
-  filter: drop-shadow(0 0 16px rgba(67, 229, 172, 0.82));
-  animation: vf-sweep 2.6s ease-in-out infinite;
-}
-
-/* 快门:框下方独立圆钮。80px 触控目标,戴手套够用。 */
+/* 快门:独立圆钮。80px 触控目标,戴手套够用。 */
 .shutter {
   position: relative;
   display: block;
