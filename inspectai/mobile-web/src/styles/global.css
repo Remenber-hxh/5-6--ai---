@@ -183,10 +183,14 @@
 }
 /* 【中间这层也要压】Arco 的结构是
      .arco-input-container(我们控高 44px)
-       └ .arco-input-wrap   ← ios 规则给了 height:1.08rem(56px)+ padding:0 0.32rem(16.64px)
+       └ .arco-input-wrap   ← height:1.08rem(56px)+ padding:0 0.32rem(16.64px)
            └ input.arco-input
    容器高 44 而这层 56,input 再 height:100% 就跟着 56 —— 撑破容器。
-   横向那 16.64px 也是多余的:容器已经给了 14px,叠起来文字会往右缩进。 */
+   横向那 16.64px 也是多余的:容器已经给了 14px,叠起来文字会往右缩进。
+
+   注:这些是 Arco 的【基础规则,不带平台限定】,从迁移那天起就在生效,
+   和固定 system="ios" 那次改动无关(input 的 .ios 分支只管 border,
+   而且适配层传了 border="none",一条都命中不了)。 */
 .field .arco-input-wrap {
   height: 100%;
   padding: 0;
@@ -194,8 +198,8 @@
 .field input.arco-input {
   color: #fff;
   font-size: 15px;
-  /* Arco ios 给 input 的纵向 padding 是 0.24rem = 12.48px,上下共 25px,
-     容器已用 height 管好高度,内部不需要再撑 */
+  /* Arco 给 input 的纵向 padding 是 0.24rem = 12.48px(同样是基础规则),
+     上下共 25px;容器已用 height 管好高度,内部不需要再撑 */
   padding: 0;
   height: 100%;
   line-height: normal;
