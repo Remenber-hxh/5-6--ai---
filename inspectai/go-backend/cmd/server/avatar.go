@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -37,9 +38,8 @@ func (s *Server) handleUpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = file.Close()
 
-	// 头像按用户分目录:换头像时旧文件留在原地,不做删除 ——
-	// 删除要处理"正在被 CDN/浏览器缓存引用"的旧路径,收益不抵复杂度。
-	// 单个用户的头像历史最多几十 KB,不构成存储压力。
+	// 头像按用户分目录 —— 换头像时清掉这个人的旧文件(见函数末尾)。
+	// 分目录的意义就在这里:清理时只需扫自己这一个目录,不会误伤别人。
 	targetDir := filepath.Join(s.storageDir, "avatars", sanitizeFileName(user.ID))
 	info, err := saveMultipartFile(targetDir, header, avatarMaxSize)
 	if err != nil {
@@ -61,5 +61,29 @@ func (s *Server) handleUpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 【顺序要紧】先落库、成功了再删旧文件。反过来的话,一旦更新失败,
+	// 这个人就既没有新头像记录、旧文件也没了 —— 直接掉成无头像。
+	pruneOldAvatars(targetDir, filepath.Base(info.Path))
+
 	writeJSON(w, http.StatusOK, map[string]any{"avatar": rel})
+}
+
+// pruneOldAvatars 删掉该用户目录下除 keep 之外的所有文件。
+//
+// 只扫这一个用户自己的目录,不会误伤别人。清理失败一律忽略:
+// 残留一个几 KB 的旧文件不影响任何功能,为它把一次成功的换头像判成失败不值得。
+//
+// 注意:删除会让其他设备上仍缓存着旧路径的页面拿到 404。前端 Avatar 组件
+// 对图片加载失败会回落到文字头像,所以最坏是"看到首字"而不是裂图。
+func pruneOldAvatars(dir, keep string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || e.Name() == keep {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
 }

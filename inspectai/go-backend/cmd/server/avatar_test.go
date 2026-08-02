@@ -127,3 +127,75 @@ func TestUpdateMyAvatar_PerUserIsolation(t *testing.T) {
 		t.Errorf("两人头像应各自独立:inspector=%q supervisor=%q", a.Avatar, b.Avatar)
 	}
 }
+
+// 换头像后旧文件被清掉,且只剩当前这一个 —— 反复换不会无限累积
+func TestUpdateMyAvatar_PrunesOldFiles(t *testing.T) {
+	srv, tokens := newClosedLoopServer(t)
+	dir := t.TempDir()
+	srv.storageDir = dir
+
+	var last string
+	for i := 0; i < 3; i++ {
+		w := httptest.NewRecorder()
+		srv.router(w, avatarUploadReq(t, tokens["inspector"], "a.png", tinyPNG))
+		if w.Code != http.StatusOK {
+			t.Fatalf("第 %d 次上传失败 %d: %s", i+1, w.Code, w.Body.String())
+		}
+		var resp struct {
+			Avatar string `json:"avatar"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		last = resp.Avatar
+	}
+
+	userDir := filepath.Dir(filepath.Join(dir, filepath.FromSlash(last)))
+	entries, err := os.ReadDir(userDir)
+	if err != nil {
+		t.Fatalf("读目录: %v", err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("换了 3 次后目录里有 %d 个文件 %v, 期望只剩 1 个", len(entries), names)
+	}
+	// 剩下的必须是最后那个,不能把新的删了留旧的
+	if len(entries) == 1 && entries[0].Name() != filepath.Base(last) {
+		t.Errorf("留下的是 %q, 期望最新的 %q", entries[0].Name(), filepath.Base(last))
+	}
+}
+
+// 清理只扫自己的目录 —— 绝不能删掉别人的头像
+func TestUpdateMyAvatar_PruneDoesNotTouchOthers(t *testing.T) {
+	srv, tokens := newClosedLoopServer(t)
+	srv.storageDir = t.TempDir()
+
+	// supervisor 先传一张
+	w := httptest.NewRecorder()
+	srv.router(w, avatarUploadReq(t, tokens["supervisor"], "sup.png", tinyPNG))
+	if w.Code != http.StatusOK {
+		t.Fatalf("supervisor 上传失败: %s", w.Body.String())
+	}
+	sup, _ := srv.userFromSessionToken(tokens["supervisor"])
+	supFile := filepath.Join(srv.storageDir, filepath.FromSlash(sup.Avatar))
+
+	// inspector 连传两次,触发自己的清理
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		srv.router(w, avatarUploadReq(t, tokens["inspector"], "ins.png", tinyPNG))
+		if w.Code != http.StatusOK {
+			t.Fatalf("inspector 上传失败: %s", w.Body.String())
+		}
+	}
+
+	// supervisor 的文件必须还在
+	if _, err := os.Stat(supFile); err != nil {
+		t.Errorf("supervisor 的头像被误删了: %v", err)
+	}
+	// 且库里指向的仍是原来那张
+	sup2, _ := srv.userFromSessionToken(tokens["supervisor"])
+	if sup2.Avatar != sup.Avatar {
+		t.Errorf("supervisor 的 avatar 被改了: %q → %q", sup.Avatar, sup2.Avatar)
+	}
+}

@@ -1,5 +1,6 @@
 import ArcoAvatar from "@arco-design/mobile-react/esm/avatar";
 import "@arco-design/mobile-react/esm/avatar/style/css";
+import { useState } from "react";
 
 import { avatarURL } from "@/lib/avatar";
 
@@ -31,12 +32,23 @@ function initial(name: string): string {
 
 export function Avatar({ name, src, size = "ultra-small", className }: AvatarProps) {
   const url = avatarURL(src);
+  // 图片取不到时回落文字头像。
+  //
+  // 这不是纸面上的边界情况:换头像时后端会删掉该用户的旧文件,而其他设备
+  // 上仍缓存着旧路径的页面会拿到 404。没有这个回落就是一个裂图。
+  // 用 url 作 key,是为了让换头像后重新挂载、清掉上一张的失败状态。
+  const [broken, setBroken] = useState(false);
+  const showPhoto = Boolean(url) && !broken;
+
   return (
     <ArcoAvatar
-      className={url ? `${className || ""} has-photo`.trim() : className}
+      key={url || "text"}
+      className={showPhoto ? `${className || ""} has-photo`.trim() : className}
       size={size}
       shape="circle"
-      {...(url ? { src: url } : { textAvatar: initial(name) })}
+      {...(showPhoto
+        ? { src: url as string, imageProps: { onError: () => setBroken(true) } }
+        : { textAvatar: initial(name) })}
     />
   );
 }
