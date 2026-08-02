@@ -18,4 +18,5 @@ export { PullRefresh } from "./PullRefresh";
 export { Skeleton } from "./Skeleton";
 export { Loading } from "./Loading";
 export { Avatar } from "./Avatar";
+export { TabBar } from "./TabBar";
 export { Cell, CellGroup } from "./Cell";

@@ -1,94 +1,35 @@
-import { Avatar, Badge, Loading, NoticeBar, PullRefresh, Toast } from "@/ui";
-import { useCallback, useEffect, useState } from "react";
+import { Avatar, Loading, NoticeBar, PullRefresh, Toast } from "@/ui";
+import { useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import BeianLine from "@/components/BeianLine";
+import { IconAlbum } from "@/components/icons";
 import PendingPanel from "@/components/PendingPanel";
 import { useAuth } from "@/store/auth";
 import { usePending } from "@/store/pending";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
-import { listEngineeringTasks, listOfflineShots, listPendingChangeRequests } from "@/api/inspection";
+import { listOfflineShots } from "@/api/inspection";
 
 // 拍照台:拍多张 → 存进离线仓库 → 联网后自动上传补 AI 识别。
 // 弱网现场只管拍,照片与拍摄时间先落地,不被信号拖住巡检节奏。
 export default function CapturePage() {
   const nav = useNavigate();
   const user = useAuth((s) => s.user);
-  const { online, saving, init, addFiles, uploadedTick } = usePending();
+  const { online, saving, init, addFiles } = usePending();
   const activeTask = getActiveTask();
-  // 待办角标:让巡检员一眼看到"还有事没做完",不用点进去才知道
-  const [pendingShots, setPendingShots] = useState(0);
-  const [openTasks, setOpenTasks] = useState(0);
-  const [pendingApprovals, setPendingApprovals] = useState(0);
-  // 审批是管理角色的活,巡检员不显示这个入口
-  const canReview = ["admin", "manager", "supervisor"].includes(user?.roleCode || "");
-
-  const loadBadges = useCallback(async () => {
-    // 角标是辅助信息,拉取失败静默降级为不显示,不打扰主流程
-    const [shots, tasks, crs] = await Promise.all([
-      listOfflineShots().catch(() => []),
-      listEngineeringTasks().catch(() => []),
-      canReview ? listPendingChangeRequests().catch(() => []) : Promise.resolve([]),
-    ]);
-    setPendingShots(shots.length);
-    setOpenTasks(tasks.filter((t) => t.status !== "已完成").length);
-    setPendingApprovals(crs.length);
-  }, [canReview]);
-
-  // uploadedTick 变化 = 刚有照片传上服务器,红点要立刻跟上,
-  // 否则用户拍完照看红点没动,会以为没生效。
-  useEffect(() => {
-    void loadBadges();
-    // 从其他页返回或切回前台时刷新,否则处理完照片红点还挂着
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void loadBadges();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [loadBadges, uploadedTick]);
+  // 待办角标现在归底部 TabBar 管(它跨页常驻,数据也该在那一层拉)。
+  // 这里只留下拉刷新要用的动作 —— 首页下拉时顺带把服务器状态刷一次。
+  const refresh = useCallback(async () => {
+    await listOfflineShots().catch(() => []);
+  }, []);
 
   useEffect(() => {
     void init();
   }, [init]);
 
-  // 次要入口(旧版 .hero-secondary 的文字链接排)。
-  // 「从相册上传」是 label 包 file input,不能做成 button —— 单列出来。
-  const linkBtn = (label: string, count: number, to: string) => (
-    <button className="link-btn" onClick={() => nav(to)}>
-      {label}
-      {/* Badge 是红点本体,靠 .link-btn 的 position:relative 定位 */}
-      <Badge count={count} className="lk-badge" />
-    </button>
-  );
-  const links = [
-    { key: "tasks", node: linkBtn("我的任务", openTasks, "/tasks") },
-    {
-      key: "album",
-      node: (
-        <label className="link-btn upload-wrap">
-          从相册上传
-          <input
-            className="upload-input"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={onPick}
-            aria-label="从相册上传"
-          />
-        </label>
-      ),
-    },
-    { key: "shots", node: linkBtn("待处理照片", pendingShots, "/review") },
-    { key: "ledger", node: linkBtn("设备健康", 0, "/ledger") },
-    // 审批只对管理角色开
-    ...(canReview
-      ? [{ key: "approvals", node: linkBtn("待审批", pendingApprovals, "/approvals") }]
-      : []),
-  ];
+  // 「从相册上传」保留在首页 —— 它和拍照是并列的两种录入方式,
+  // 弱网现场常先用系统相机拍完再批量选入,不该被降级到二级页面。
+  // 其余入口(任务/待处理/台账/我的)已交给底部常驻 TabBar。
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -158,7 +99,7 @@ export default function CapturePage() {
           曾经图省事把 capture-main 的类直接扣在 PullRefresh 上 —— 它带
           display:flex + align-items:center,把组件内部三层结构压成了 228px 宽。 */}
       <div className="capture-scroll">
-        <PullRefresh onRefresh={loadBadges}>
+        <PullRefresh onRefresh={refresh}>
           <div className="capture-main">
         <div className="cap-hero">
           {/* 品牌徽章居中在大标题上方 —— 旧版的层次:徽章 → 标题 → 副标题 →
@@ -205,20 +146,22 @@ export default function CapturePage() {
         </label>
         <span className="shutter-label">{saving ? "保存中…" : "拍照识别"}</span>
 
-        {/* 次要入口:旧版是一排轻量文字链接,不和主操作抢视觉重量。
-            之前做成四个实心磁贴 —— 查询类的「设备健康」被抬到和拍照同级,权重给错了。
-            计数仍用 Badge,只是缩成链接右上角的小红点。 */}
-        {/* 旧版用「·」做分隔符,但它只有 3 个入口从不换行。这里最多 5 个,
-            换行后第二行会以一个孤立的「·」开头 —— 改用 gap 排,不再插分隔符。 */}
-        <div className="hero-secondary">
-          {links.map((l) => (
-            <span className="hs-item" key={l.key}>
-              {l.node}
-            </span>
-          ))}
-        </div>
+        {/* 从相册上传:和拍照并列的录入方式,做成描边胶囊,
+            视觉重量低于快门但仍是一等入口。 */}
+        <label className="cap-album upload-wrap">
+          <IconAlbum />
+          从相册上传
+          <input
+            className="upload-input"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={onPick}
+            aria-label="从相册上传"
+          />
+        </label>
 
-            {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
+        {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(旧版同样两处都放) */}
             <BeianLine />
           </div>
         </PullRefresh>

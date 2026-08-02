@@ -532,6 +532,34 @@
   cursor: pointer;
 }
 
+/* 从相册上传:和拍照并列的第二种录入方式,描边胶囊。
+   视觉重量低于快门(它不是主操作),但仍是一等入口 —— 弱网现场常先用
+   系统相机拍完再批量选入,把它降级到二级页面会伤到真实工作流。
+
+   【这段曾被当成孤儿删掉】首页回退那次我先把它从 JSX 移走,orphan 扫描
+   于是报它 "CSS 里 0 处",就删了;后来加回按钮,文字直接继承 52px 根字号
+   变成巨字。删样式前要确认它是"永久不用"还是"这一版暂时没用"。 */
+.cap-album {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(100%, 320px);
+  height: 42px;
+  margin: clamp(12px, 2.4svh, 20px) auto 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cap-album:active { background: rgba(255, 255, 255, 0.09); }
+.cap-album svg { width: 18px; height: 18px; color: var(--tech-jade); }
+
 /* 次要入口:轻量文字链接排,不和主操作抢重量(旧版 .hero-secondary) */
 .hero-secondary {
   display: flex;
@@ -2320,4 +2348,54 @@ a {
   color: var(--tech-jade);
   font-size: 12px;
   cursor: pointer;
+}
+
+/* ===== 底部常驻导航 =====
+   放在 .app-shell(flex 列)的末尾,天然贴底 —— 不用 position:fixed,
+   也就不用为它另算占位高度(NavBar 在这上面踩过:占位比真实高度矮 10px)。
+
+   深浅两种屏共用一条:首页是深色科技风,台账/任务/我的是浅色 iOS 风。
+   若跟着页面变色,切 tab 时底栏会闪 —— 固定成深色玻璃,两边都压得住。 */
+.app-tabbar.arco-tab-bar {
+  flex: none;
+  background: rgba(6, 17, 29, 0.92);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid rgba(111, 255, 219, 0.14);
+  padding-bottom: var(--safe-bottom);
+}
+.app-tabbar .arco-tab-bar-item {
+  color: rgba(234, 247, 255, 0.45);
+  padding: 6px 0 4px;
+}
+.app-tabbar .arco-tab-bar-item-active { color: var(--tech-jade); }
+.app-tabbar .arco-tab-bar-item-title { font-size: 10.5px; letter-spacing: 0.2px; }
+.app-tabbar .arco-tab-bar-item-icon { line-height: 1; }
+
+/* 图标容器:角标以它为定位参照 */
+.tb-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tb-icon svg { width: 23px; height: 23px; }
+/* 角标不用红:这里是"还有几件事没做"的计数,不是错误。
+   红留给台账的设备异常和逾期任务 —— 全站都用红,红就不再有分量。 */
+.tb-badge {
+  position: absolute;
+  top: -4px;
+  left: 56%;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ff9500;
+  color: #1a1200;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.92);
 }

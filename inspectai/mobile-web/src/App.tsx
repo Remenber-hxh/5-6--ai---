@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import AppTabs from "@/components/AppTabs";
 import { useAuth } from "@/store/auth";
 import ApprovalsPage from "@/pages/ApprovalsPage";
 import AssetDetailPage from "@/pages/AssetDetailPage";
@@ -34,6 +35,11 @@ export default function App() {
         <Route path="/me" element={guard(<MePage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+
+      {/* 底部常驻导航。放在 Routes 之外、作为 .app-shell 的最后一个 flex 子元素,
+          天然贴底 —— 不用 position:fixed,也就不用为它另算占位高度。
+          它自己决定在哪些路由显示(只在 5 个顶层目的地)。 */}
+      {loggedIn && <AppTabs />}
     </div>
   );
 }

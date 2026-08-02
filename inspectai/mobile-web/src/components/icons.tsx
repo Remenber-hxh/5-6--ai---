@@ -61,6 +61,37 @@ export function IconPhotos() {
   );
 }
 
+/** 从相册上传:图片 + 山峰 */
+export function IconAlbum() {
+  return (
+    <svg {...IC} aria-hidden>
+      <rect x="3.5" y="5" width="17" height="14" rx="2.4" />
+      <circle cx="8.6" cy="9.8" r="1.5" />
+      <path d="m4.4 16.6 4.3-4 3 2.6 3.2-3.4 4.4 4.3" />
+    </svg>
+  );
+}
+
+/** 巡检(拍照):相机 */
+export function IconShoot() {
+  return (
+    <svg {...IC} aria-hidden>
+      <path d="M4 8.5h3l1.6-2.4h6.8L17 8.5h3a1 1 0 0 1 1 1v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V9.5a1 1 0 0 1 1-1Z" />
+      <circle cx="12" cy="13.2" r="3.4" />
+    </svg>
+  );
+}
+
+/** 我的:人像 */
+export function IconUser() {
+  return (
+    <svg {...IC} aria-hidden>
+      <circle cx="12" cy="8.2" r="3.7" />
+      <path d="M5 19.5c0-3.4 3.1-5.6 7-5.6s7 2.2 7 5.6" />
+    </svg>
+  );
+}
+
 /** 退出:门 + 箭头 */
 export function IconLogout() {
   return (
