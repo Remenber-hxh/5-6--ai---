@@ -2,6 +2,8 @@ import ArcoTabBar from "@arco-design/mobile-react/esm/tab-bar";
 import "@arco-design/mobile-react/esm/tab-bar/style/css";
 import type { ReactNode } from "react";
 
+import { Badge } from "./Badge";
+
 // ===== TabBar 适配层 =====
 //
 // 这一层做的事很少 —— Arco 的 TabBar 平台分支为 0(不像 dialog 有 52 条),
@@ -62,11 +64,10 @@ export function TabBar({ items, activeKey, onChange, dark }: TabBarProps) {
         icon: (
           <span className="tb-icon">
             {it.icon}
-            {/* 角标自己写:Arco TabBar 的 extra 槽在标题右侧,而移动端习惯是
-                图标右上角。数字大于 99 收成 99+,否则会把整个 tab 撑宽。 */}
-            {it.badge ? (
-              <em className="tb-badge">{it.badge > 99 ? "99+" : it.badge}</em>
-            ) : null}
+            {/* 角标用组件库的 Badge,不再手写:maxCount、出现/消失的缩放过渡、
+                药丸尺寸都由它保证。不放 Arco TabBar 自己的 extra 槽 ——
+                那个槽在标题右侧,而移动端习惯是图标右上角。 */}
+            <Badge count={it.badge} className="tb-badge" />
           </span>
         ),
       }))}

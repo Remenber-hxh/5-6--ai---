@@ -2409,27 +2409,20 @@ a {
   justify-content: center;
 }
 .tb-icon svg { width: 23px; height: 23px; }
-/* 角标不用红:这里是"还有几件事没做"的计数,不是错误。
-   红留给台账的设备异常和逾期任务 —— 全站都用红,红就不再有分量。
-   描边色跟着底栏走,否则深色页上会出现一圈白边。 */
-.tb-badge {
+/* 角标本体是组件库的 Badge,这里只管定位和配色。
+   红色、无描边 —— 描边(那圈跟着底栏走的 2px)去掉后更干净。 */
+.tb-badge.arco-badge {
   position: absolute;
   top: -4px;
   left: 56%;
   min-width: 15px;
   height: 15px;
   padding: 0 4px;
-  border-radius: 999px;
-  background: #ff9500;
-  color: #fff;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 700;
   line-height: 15px;
-  text-align: center;
-  box-shadow: 0 0 0 2px rgba(250, 250, 251, 0.95);
+  background: #ff3b30;
+  box-shadow: none;
 }
-.app-tabbar.is-dark .tb-badge { box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.92); }
+.tb-badge .arco-badge-text { font-size: 10px; font-weight: 700; }
 
 /* ===== 页面转场 =====
    转场传递层级:平级(底部 tab 之间)淡入淡出,下钻推入,返回退出。

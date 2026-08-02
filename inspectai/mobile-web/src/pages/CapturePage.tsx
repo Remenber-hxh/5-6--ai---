@@ -177,7 +177,7 @@ export default function CapturePage() {
         </label>
       </div>
       <span className="shutter-label">
-        {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别 · 长按选相册"}
+        {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别"}
       </span>
       {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(工信部要求)。
           放在快门栏里而不是滚动区:滚动区现在只到 616px,备案号会飘在半空。 */}
