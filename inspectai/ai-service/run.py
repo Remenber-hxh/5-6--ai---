@@ -152,6 +152,42 @@ def parse_json_response(text: str) -> dict:
 # ===== 千问调用 =====
 
 
+# 账号级错误:重试没用、换张图也没用、所有人都会撞上。
+# 必须和"这张图识别不出来"区分开 —— 后者是业务常态(照片糊了、角度不对),
+# 前者是服务整体不可用,得让管理员立刻知道,而不是让每个巡检员各撞一次。
+#
+# 取值来自阿里云百炼的错误码文档:
+# https://help.aliyun.com/zh/model-studio/error-code
+ACCOUNT_ERROR_CODES = (
+    "Arrearage",              # 欠费 / 免费额度耗尽
+    "InvalidApiKey",          # key 失效或写错
+    "Forbidden.Unpurchased",  # 模型未开通
+    "AllocationQuota",        # 配额分配用尽
+    "Throttling.RateQuota",   # 限流配额用尽
+)
+
+
+# 给最终用户看的话。不写"Arrearage"这种码 —— 巡检员看不懂,
+# 也不该让他以为是自己操作错了。
+ACCOUNT_ERROR_HINT = "AI 服务暂时不可用(账号额度已用尽),请联系管理员;本次可手动填写"
+
+
+# 最后一次账号级错误,给 /health 用。运维不该为了确认"是不是欠费"去翻日志。
+# 进程内变量:重启即清空 —— 这正是想要的,重启后第一次调用会重新暴露真实状态。
+LAST_ACCOUNT_ERROR: dict = {}
+
+
+def account_error_of(exc: Exception) -> str:
+    """从异常里认出账号级错误,返回错误码;不是账号问题则返回空串。"""
+    text = str(exc)
+    for code in ACCOUNT_ERROR_CODES:
+        if code in text:
+            LAST_ACCOUNT_ERROR.clear()
+            LAST_ACCOUNT_ERROR.update({"code": code, "at": now_iso(), "detail": text[:200]})
+            return code
+    return ""
+
+
 def call_qwen_chat(
     *,
     model: str,
@@ -221,6 +257,9 @@ def call_qwen_chat(
                     err_obj = payload.get("error") or {}
                     msg = err_obj.get("message", "unknown")
                     code = err_obj.get("code") or err_obj.get("type", "error")
+                    # 这里抛出后【不会被重试】:循环里只 catch TimeoutExpired,
+                    # 业务错误直接向上冒。对账号级错误(欠费/key 失效)正合适 ——
+                    # 重试多少次结果都一样,只会让用户白等。
                     raise RuntimeError(f"qwen error [{code}]: {msg}")
                 choices = payload.get("choices") or []
                 if not choices:
@@ -497,6 +536,14 @@ def analyze(payload: dict) -> dict:
         )
     except Exception as exc:
         print(f"[analyze] qwen failed: {exc}", file=sys.stderr)
+        acct = account_error_of(exc)
+        if acct:
+            # 账号级故障:别叫用户"重拍" —— 重拍一百次也是同样结果,
+            # 只会让他反复白干。直接说清是服务的问题,并给手动填写这条路。
+            print(f"[analyze] ACCOUNT ERROR {acct} —— AI 服务整体不可用", file=sys.stderr)
+            resp = retake_required(ACCOUNT_ERROR_HINT, payload)
+            resp["accountError"] = acct
+            return resp
         return retake_required(f"AI 调用失败：{str(exc)[:80]}，请重拍或转人工", payload)
 
     try:
@@ -946,11 +993,16 @@ def classify(payload: dict) -> dict:
         )
     except Exception as exc:
         print(f"[classify] qwen failed: {exc}", file=sys.stderr)
+        acct = account_error_of(exc)
+        if acct:
+            # 账号级故障:说人话,并标出来给上层用(后台挂横幅、运维告警)
+            print(f"[classify] ACCOUNT ERROR {acct} —— AI 服务整体不可用", file=sys.stderr)
         return {
             "templateId": "unknown",
             "templateName": "无法识别",
             "confidence": 0,
-            "reason": f"AI 调用失败：{str(exc)[:60]}",
+            "reason": ACCOUNT_ERROR_HINT if acct else f"AI 调用失败：{str(exc)[:60]}",
+            "accountError": acct,
             "alternatives": [],
             "needsManualPick": True,
         }
@@ -1154,6 +1206,10 @@ class Handler(BaseHTTPRequestHandler):
                 degraded_reasons.append("dashscope_key_missing")
             if not has_deepseek_key:
                 degraded_reasons.append("deepseek_key_missing")
+            # 账号级故障(欠费/key 失效/未开通)—— key 存在不代表能用,
+            # 这一条才是"为什么识别全都失败"的答案
+            if LAST_ACCOUNT_ERROR:
+                degraded_reasons.append("account_" + LAST_ACCOUNT_ERROR.get("code", "error"))
             write_json(self, 200, {
                 "status": "ok",
                 "service": "ai-service",
@@ -1161,6 +1217,8 @@ class Handler(BaseHTTPRequestHandler):
                 "hasKey": has_dashscope_key,
                 "hasDashscopeKey": has_dashscope_key,
                 "hasVisionKey": has_dashscope_key,
+                # 有值 = AI 整体不可用,不是个别照片识别不出来
+                "accountError": LAST_ACCOUNT_ERROR or None,
                 "hasDeepSeekKey": has_deepseek_key,
                 "managementAIReady": has_deepseek_key,
                 "managementAI": "deepseek" if has_deepseek_key else "rule_fallback",
