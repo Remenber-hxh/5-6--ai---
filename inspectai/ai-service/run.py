@@ -264,6 +264,10 @@ def call_qwen_chat(
                 choices = payload.get("choices") or []
                 if not choices:
                     raise RuntimeError("qwen response has no choices")
+                # 【调用成功就清掉账号故障标记】否则充值/换 key 之后 /health
+                # 会一直报 account_Arrearage 直到重启服务 —— 那是假警报,
+                # 比不报警更糟:运维会学会忽略它。
+                LAST_ACCOUNT_ERROR.clear()
                 return (choices[0].get("message") or {}).get("content") or ""
             except subprocess.TimeoutExpired:
                 last_err = RuntimeError(f"curl timeout after {timeout}s")
