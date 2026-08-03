@@ -22,14 +22,30 @@ export interface CellProps {
   onClick?: () => void;
   /** 可点则显示箭头;不传 onClick 时默认不可点 */
   showArrow?: boolean;
+  /**
+   * 上下分割线。Arco 默认 true(cell.js:20) —— 那是给列表里的行设计的。
+   * 单独当一张卡片用时会多出两条【通栏】横线,压在圆角上,要显式关掉。
+   */
+  bordered?: boolean;
   className?: string;
 }
 
-export function Cell({ label, desc, text, icon, children, onClick, showArrow, className }: CellProps) {
+export function Cell({
+  label,
+  desc,
+  text,
+  icon,
+  children,
+  onClick,
+  showArrow,
+  bordered,
+  className,
+}: CellProps) {
   const clickable = Boolean(onClick);
   return (
     <ArcoCell
       className={className}
+      bordered={bordered}
       label={label}
       desc={desc}
       text={text}

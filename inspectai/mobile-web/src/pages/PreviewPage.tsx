@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import FlowHeader from "@/components/FlowHeader";
+import RecordContext from "@/components/RecordContext";
 import { RecordDTO, getRecord, submitRecord } from "@/api/inspection";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
 
@@ -126,9 +127,10 @@ export default function PreviewPage() {
       />
 
       <div className="scroll-area flow-body">
-        {/* 顶部那行「模板 · 项目 · 点位」和「日报字段」标题都删了,
-            和填报页保持一致:四段信息挤成一行小字读起来费劲,
-            而整页只有这一组字段,标题也不起区分作用。 */}
+        {/* 上下文卡取代了原先那行灰色小字:同样的信息,分了主次就好读。
+            「日报字段」标题仍然不要 —— 整页只有这一组字段,它不起区分作用。 */}
+        <RecordContext rec={rec} />
+
         {/* 字段汇总:只读,要改回上一步 */}
         <div className="pv-card">
           {rec.fields.map((f) => (

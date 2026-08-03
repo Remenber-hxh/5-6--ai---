@@ -2142,6 +2142,59 @@ a {
 
 /* ===== 日报预览(旧版 scenePreview)===== */
 .pv-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
+/* ===== 记录上下文卡(旧版 .context,styles.css:738) =====
+   用 Arco Cell 打底,只改视觉。要掰的是它"列表里的一行"这个出身:
+   固定行高、通栏分割线、左右内边距由 Group 提供 —— 这里当独立卡片用。 */
+.rec-ctx.arco-cell {
+  margin: 0 16px 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+/* 行高写死在 inner 上(1.08rem,带副标题 1.48rem)。卡片高度该由内容
+   和内边距决定,不是由组件预设的列表行高决定。 */
+.rec-ctx .arco-cell-inner { height: auto; }
+.rec-ctx .cell-label-icon { margin-right: 12px; }
+.rec-ctx .arco-avatar {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+/* 主副标题吃掉剩余宽度、长名省略号收尾 —— Arco 给的是 auto 宽 + 25px
+   右间距,项目名一长会把右侧状态胶囊挤出屏幕。 */
+.rec-ctx.arco-cell .cell-label {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+.rec-ctx .cell-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-ctx.arco-cell .cell-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-ctx .cell-content { flex: none; }
+.ctx-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ctx-badge.ok { background: var(--c-green-soft); color: var(--ios-green); }
+.ctx-badge.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
+
 .pv-card {
   margin: 0 16px 12px;
   padding: 4px 14px;
