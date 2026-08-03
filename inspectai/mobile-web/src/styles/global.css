@@ -73,6 +73,31 @@
     linear-gradient(160deg, #061325 0%, #0a1f3a 55%, #06231e 100%);
 }
 
+/* ===== 文字:字重与数字 =====
+   字族在 index.html 的 <style> 里(要在 CSS 加载前就生效,免得闪一下)。
+
+   【字重只用 400 / 500 / 600 / 700 四档】
+   原来还有 750 和 800。没有一款系统中文字体有这两个字面:
+   PingFang SC 有 6 个真字重但最粗到 Semibold(600);微软雅黑只有
+   Regular(400) 和 Bold(700)。落不到真字面的字重会被浏览器【合成】——
+   笔画糊、粗细跳,同一屏上就显得"字体不统一"。四档已经够分层次。
+
+   【数字等宽】
+   这个 app 满屏是编号、次数、时间、百分比。默认比例数字里 "1" 比 "8" 窄,
+   竖着排的列表会左右毛边;tabular-nums 让每个数字占一样宽。
+   只给"数字要对齐"的地方开,正文里的数字用比例字形更好看。 */
+.lo-num,
+.ts-item b,
+.pending-count,
+.pv-v,
+.fld-value,
+.ar-sub,
+.cell-gap,
+.arco-badge-text {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
 /* ===== 应用外壳 ===== */
 
 .app-shell {
@@ -137,7 +162,7 @@
 .brand-word {
   color: #eafff8;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1;
 }
@@ -149,7 +174,7 @@
 .brand-cn {
   color: var(--tech-jade);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.12em;
   line-height: 1;
 }
@@ -171,7 +196,7 @@
 .screen-title {
   margin: 22px 0 6px;
   font-size: 28px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: #fff;
 }
@@ -267,7 +292,7 @@
   background: var(--btn-primary);
   color: var(--btn-primary-ink);
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   box-shadow: var(--btn-primary-shadow);
 }
@@ -640,7 +665,7 @@
 }
 .pending-count {
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--tech-jade);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -664,7 +689,7 @@
   background: var(--btn-primary);
   color: var(--btn-primary-ink);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   box-shadow: 0 6px 18px rgba(27, 224, 135, 0.28);
 }
@@ -743,7 +768,7 @@
   position: absolute;
   top: 3px;
   left: 3px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 4px;
@@ -970,7 +995,7 @@
   right: 0;
   bottom: 0;
   padding: 10px 4px 3px;
-  font-size: 10px;
+  font-size: 11px;
   color: #fff;
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.7));
   display: flex;
@@ -978,7 +1003,7 @@
   gap: 1px;
 }
 /* 离线时长:公开展示拍摄与上传的时间差,不隐藏 */
-.cell-gap { font-style: normal; font-size: 9px; color: #ffd479; }
+.cell-gap { font-style: normal; font-size: 11px; color: #ffd479; }
 /* ===== 识别结果 / 模板选择(旧版 iOS 卡片) ===== */
 
 .classify-box {
@@ -1238,7 +1263,7 @@
   right: 12px;
   bottom: 10px;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   color: rgba(67, 229, 172, 0.9);
 }
@@ -1257,7 +1282,7 @@
   background: var(--btn-primary);
   color: var(--btn-primary-ink);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
 }
 .viewer-btn:disabled { opacity: 0.6; }
 
@@ -1317,7 +1342,7 @@
   /* 矮屏给备案号腾一行(旧版同样处理) */
   .capture-main .beian-line {
     padding-top: 8px;
-    font-size: 10.5px;
+    font-size: 11px;
   }
 }
 
@@ -1725,7 +1750,7 @@ a {
 .ts-item + .ts-item { border-left: 0.5px solid var(--lt-border); }
 .ts-item b {
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--lt-fg);
   font-variant-numeric: tabular-nums;
@@ -1830,7 +1855,7 @@ a {
   background: rgba(67, 229, 172, 0.1);
   border: 1px solid rgba(67, 229, 172, 0.22);
   color: rgba(234, 247, 255, 0.86);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.5;
   align-items: center;
 }
@@ -1845,7 +1870,7 @@ a {
   padding: 1px 7px;
   border-radius: 999px;
   background: rgba(255, 196, 107, 0.18);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.3px;
 }
@@ -1929,7 +1954,7 @@ a {
   background: rgba(0, 0, 0, 0.4);
   color: #052015;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 15px;
   text-align: center;
 }
@@ -1975,7 +2000,7 @@ a {
 .lo-card.on { border-color: var(--brand-border); background: var(--brand-soft); }
 .lo-num {
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--lt-fg);
   font-variant-numeric: tabular-nums;
@@ -2491,7 +2516,7 @@ a {
    加字重给一个非颜色信号,选中就不再依赖辨色。 */
 .app-tabbar .arco-tab-bar-item-active { color: var(--brand); }
 .app-tabbar .arco-tab-bar-item-active .arco-tab-bar-item-title { font-weight: 600; }
-.app-tabbar .arco-tab-bar-item-title { font-size: 10.5px; letter-spacing: 0.2px; }
+.app-tabbar .arco-tab-bar-item-title { font-size: 11px; letter-spacing: 0.2px; }
 .app-tabbar .arco-tab-bar-item-icon { line-height: 1; }
 
 /* 深色变体:拍照台 */
