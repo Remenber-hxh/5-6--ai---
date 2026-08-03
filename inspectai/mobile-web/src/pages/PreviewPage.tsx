@@ -13,6 +13,15 @@ const POLL_MAX = 15;
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 const PRIORITY_TEXT: Record<string, string> = { high: "高", medium: "中", low: "低" };
 
+/**
+ * AI 总结结论 → 色档。照搬旧版 app.js:1274 的映射,不自己编 ——
+ * 口径一致才能让新旧两端对同一份记录显示同样的颜色。
+ * 未知结论落 warn(而不是 ok):拿不准时偏保守,别把没定论的说成正常。
+ */
+function statusTone(text: string): string {
+  return { 正常: "ok", 异常: "bad", 待复核: "warn" }[text] || "warn";
+}
+
 // 日报预览(旧版 scenePreview):字段汇总 + AI 总结 + AI 行动建议 → 提交
 export default function PreviewPage() {
   const { id = "" } = useParams();
@@ -117,11 +126,10 @@ export default function PreviewPage() {
       />
 
       <div className="scroll-area flow-body">
-        <p className="flow-caption">
-          {rec.templateName} · {rec.project} · {rec.pointName}
-        </p>
+        {/* 顶部那行「模板 · 项目 · 点位」和「日报字段」标题都删了,
+            和填报页保持一致:四段信息挤成一行小字读起来费劲,
+            而整页只有这一组字段,标题也不起区分作用。 */}
         {/* 字段汇总:只读,要改回上一步 */}
-        <div className="pv-title">日报字段</div>
         <div className="pv-card">
           {rec.fields.map((f) => (
             <div className="pv-row" key={f.code}>
@@ -133,20 +141,19 @@ export default function PreviewPage() {
 
         {rec.aiSummary && (
           <div className="pv-card ai-card">
+            {/* 结论标签放在标题行右端(旧版 #summaryStatus 的位置),
+                不放正文下方。它是这份总结的【结论】,和标题同级;
+                挂在正文后面会读成"正文的补充",而且孤零零一个标签很怪。 */}
             <div className="ai-head">
               <span className="ai-mark">✦</span>
               <span className="ai-title">AI 总结</span>
+              {rec.aiSummaryTags?.[0] && (
+                <span className={`sum-status ${statusTone(rec.aiSummaryTags[0])}`}>
+                  {rec.aiSummaryTags[0]}
+                </span>
+              )}
             </div>
             <div className="ai-body">{rec.aiSummary}</div>
-            {rec.aiSummaryTags && rec.aiSummaryTags.length > 0 && (
-              <div className="ai-tags">
-                {rec.aiSummaryTags.map((t) => (
-                  <span className="tag tag-brand" key={t}>
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
