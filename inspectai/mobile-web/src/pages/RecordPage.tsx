@@ -106,7 +106,6 @@ function FieldRow({
           <Picker
             options={field.options}
             value={value}
-            title={field.label}
             onChange={(v) => {
               setValue(v);
               void commit(v); // 选择类改完即存,不等失焦

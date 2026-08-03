@@ -1,54 +1,72 @@
-import ArcoPicker from "@arco-design/mobile-react/esm/picker";
-import "@arco-design/mobile-react/esm/picker/style/css";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// ===== 选择器 =====
+// ===== 下拉选择 =====
 //
-// 交互上就是下拉,但弹出的是【底部选择面板】而不是系统控件 ——
-// 原生 <select> 弹的是浏览器/系统自己的下拉框,灰底高亮、白框、字号不受控,
-// 和界面完全两套语言,这也是它难看的根源。Picker 由设计系统渲染,可控。
+// 点一下,在字段行下方展开一个整宽的选项列表 —— 经典下拉的形态:
+// 选项左对齐、逐行排列、超过若干项可滚动、当前值高亮。
 //
-// 触发器自己写成一行文本 + 箭头,和字段行的右对齐排版一致;
-// 面板交给组件,滚轮、确定/取消、遮罩、动画都不用自己维护。
+// 走过的四版,记下来免得再兜圈:
+//   1. 原生 <select>   系统控件,灰底高亮/白框/字号全不可控,和界面两套语言
+//   2. 分段按钮        少一次点击,但视觉过重,被否
+//   3. Picker 底部面板  滚轮 + 确定/取消,两项选择用它太隆重
+//   4. Popover.Menu    就地弹小气泡,但默认深色、宽度按内容,不是"下拉框"的样子
+//
+// 最后自己写:Arco 没有"整宽下拉列表"这个形态(它的 dropdown 是给筛选栏用的,
+// 撑满屏幕宽)。这里要的是贴着字段行的一小块列表,自己写反而更短更可控。
 
 export interface PickerProps {
   options: string[];
   value: string;
   onChange: (value: string) => void;
-  /** 未选时的占位 */
   placeholder?: string;
-  title?: string;
 }
 
-export function Picker({ options, value, onChange, placeholder = "请选择", title }: PickerProps) {
+export function Picker({ options, value, onChange, placeholder = "请选择" }: PickerProps) {
   const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // 点外面关掉。用 pointerdown 而不是 click:click 会和触发器自己的
+  // onClick 打架(先关再开,看起来像没反应)。
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open]);
 
   return (
-    <>
+    <div className="dd" ref={boxRef}>
       <button
         type="button"
-        className={value ? "pk-trigger" : "pk-trigger is-empty"}
-        onClick={() => setOpen(true)}
+        className={value ? "dd-trigger" : "dd-trigger is-empty"}
+        onClick={() => setOpen((v) => !v)}
       >
-        <span className="pk-text">{value || placeholder}</span>
-        <span className="pk-arrow" aria-hidden />
+        <span className="dd-text">{value || placeholder}</span>
+        <span className={open ? "dd-arrow is-open" : "dd-arrow"} aria-hidden />
       </button>
-      <ArcoPicker
-        visible={open}
-        title={title}
-        cascade={false}
-        data={[options.map((o) => ({ label: o, value: o }))]}
-        // 未选过时默认落在第一项上,避免打开就是空白
-        value={[value || options[0]]}
-        okText="确定"
-        dismissText="取消"
-        onOk={(v) => {
-          onChange(String(v?.[0] ?? ""));
-          setOpen(false);
-        }}
-        onDismiss={() => setOpen(false)}
-        onHide={() => setOpen(false)}
-      />
-    </>
+
+      {open && (
+        <ul className="dd-list" role="listbox">
+          {options.map((o) => (
+            <li key={o}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={o === value}
+                className={o === value ? "dd-item is-on" : "dd-item"}
+                onClick={() => {
+                  onChange(o);
+                  setOpen(false);
+                }}
+              >
+                {o}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

@@ -2521,15 +2521,24 @@ a {
   }
 }
 
-/* ===== 选择器触发行 =====
-   点它弹出 Arco Picker(底部面板)。原生 <select> 弹的是系统控件,
-   灰底高亮、白框、字号不受控,和界面两套语言 —— 那是它难看的根源。
-   触发器做成"文本 + 箭头"一行,和字段行的右对齐排版一致。 */
-.pk-trigger {
-  display: inline-flex;
+/* ===== 下拉选择 =====
+   点一下在字段行下方展开整宽列表:选项左对齐、逐行排列、当前值高亮、
+   超过 5 项可滚动。经典下拉的形态。
+
+   为什么自己写而不用组件:Arco 的 dropdown 是给【筛选栏】用的(撑满屏幕宽、
+   从顶栏下方推开),popover 是小气泡(宽度按内容、默认深色)。
+   都不是"贴着字段行的一小块列表"。这个形态自己写更短也更可控。 */
+.dd {
+  position: relative;
+  display: inline-block;
+  min-width: 96px;
+}
+.dd-trigger {
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
-  max-width: 100%;
+  width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2537,10 +2546,10 @@ a {
   color: var(--lt-fg);
   cursor: pointer;
 }
-.pk-trigger.is-empty .pk-text { color: var(--ios-gray); }
-.pk-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 箭头用边框拼,不引图标 —— 一个 6px 的小三角不值得多一个 SVG */
-.pk-arrow {
+.dd-trigger.is-empty .dd-text { color: var(--ios-gray); }
+.dd-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 箭头用边框拼,不引图标 —— 一个 6px 小三角不值得多一个 SVG */
+.dd-arrow {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2548,4 +2557,46 @@ a {
   border-right: 1.5px solid var(--ios-gray);
   border-bottom: 1.5px solid var(--ios-gray);
   transform: rotate(45deg);
+  transition: transform 160ms ease, margin 160ms ease;
+}
+.dd-arrow.is-open { transform: rotate(-135deg); margin-bottom: -2px; }
+
+/* 列表:紧贴触发器下方、右对齐。z-index 要高过后续字段行,
+   否则会被下面那行的背景盖住(同层叠上下文里后来者在上)。 */
+.dd-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 132px;
+  max-height: 208px; /* 约 5 项,再多就滚动 */
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border-radius: 10px;
+  border: 0.5px solid var(--lt-border);
+  background: var(--lt-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  scrollbar-width: none;
+}
+.dd-list::-webkit-scrollbar { display: none; }
+.dd-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--lt-fg);
+  text-align: left; /* 选项左对齐,和截图里的经典下拉一致 */
+  cursor: pointer;
+}
+.dd-item:active { background: var(--lt-fill); }
+/* 当前值:浅色底 + 品牌色,一眼看出选的是哪个 */
+.dd-item.is-on {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
 }
