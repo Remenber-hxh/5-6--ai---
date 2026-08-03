@@ -1,4 +1,4 @@
-import { Button, Image, Segmented, Toast } from "@/ui";
+import { Button, Image, Picker, Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -98,35 +98,20 @@ function FieldRow({
       </div>
       <div className="fld-value">
         {pillEl}
-        {/* 选项 ≤3 用分段按钮:一次点击到位。实测这套模板的选择字段
-            全是 2 项(是/否),原生 <select> 要点两次(展开 + 选),
-            一页十几项,差别是实打实的。
-            超过 3 项仍退回原生 select —— 分段条塞不下,会挤成小方块点不准。 */}
-        {field.options?.length && field.options.length <= 3 ? (
-          <Segmented
+        {/* 选择类统一用 Picker:交互是下拉,但弹的是【底部选择面板】而不是
+            系统控件。原生 <select> 的下拉样式完全不受控(灰底高亮、白框、
+            字号各异),那是它难看的根源。
+            (中间试过分段按钮,虽然少一次点击,但视觉上被否了。) */}
+        {field.options?.length ? (
+          <Picker
             options={field.options}
             value={value}
+            title={field.label}
             onChange={(v) => {
               setValue(v);
               void commit(v); // 选择类改完即存,不等失焦
             }}
           />
-        ) : field.options?.length ? (
-          <select
-            className="fld-select"
-            value={value}
-            onChange={(e) => {
-              setValue(e.target.value);
-              void commit(e.target.value);
-            }}
-          >
-            <option value="">请选择</option>
-            {field.options.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
         ) : (
           <input
             className="fld-input"
