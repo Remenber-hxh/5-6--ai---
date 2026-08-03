@@ -133,7 +133,9 @@ export default function RecordPage() {
   const [rec, setRec] = useState<RecordDTO | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [viewing, setViewing] = useState<PhotoMeta | null>(null);
+  // 看图存的是【第几张】而不是那一张的元数据:查看器现在能左右翻,
+  // 得把整组照片交给它。-1 表示没打开。
+  const [viewing, setViewing] = useState(-1);
   const kickedRef = useRef("");
 
   // 依赖只能是 id:循环里会 setRec,若把 rec 放进依赖会自噬 ——
@@ -185,6 +187,15 @@ export default function RecordPage() {
         : cur,
     );
   }
+
+  // 整组照片的元数据 —— 缩略图和查看器用【同一份】,翻页时顺序才对得上
+  const photos: PhotoMeta[] = (rec?.images || []).map((img) => ({
+    url: `/storage/uploads/${rec!.id}/${img.id}_${img.fileName}`,
+    fileName: img.fileName,
+    inspector: rec!.inspector,
+    project: rec!.project,
+    location: rec!.pointName,
+  }));
 
   // 只统计置信度 <95% 的 AI 字段;≥95% 视为可信,不需人工逐项确认(旧版口径)
   const lowConf = (rec?.fields || []).filter(
@@ -277,28 +288,13 @@ export default function RecordPage() {
           <>
             <div className="fld-group-title">巡检照片({rec.images.length} 张)</div>
             <div className="photo-strip">
-              {rec.images.map((img) => {
-                const url = `/storage/uploads/${rec.id}/${img.id}_${img.fileName}`;
-                return (
-                  <button
-                    className="photo-thumb"
-                    key={img.id}
-                    onClick={() =>
-                      setViewing({
-                        url,
-                        fileName: img.fileName,
-                        inspector: rec.inspector,
-                        project: rec.project,
-                        location: rec.pointName,
-                      })
-                    }
-                  >
-                    {/* 用组件库的 Image:自带加载占位、失败兜底和自动重试。
-                        手写 <img> 在现场信号差时会白一片或直接裂图。 */}
-                    <Image src={url} radius={12} />
-                  </button>
-                );
-              })}
+              {photos.map((p, i) => (
+                <button className="photo-thumb" key={p.url} onClick={() => setViewing(i)}>
+                  {/* 用组件库的 Image:自带加载占位、失败兜底和自动重试。
+                      手写 <img> 在现场信号差时会白一片或直接裂图。 */}
+                  <Image src={p.url} radius={12} />
+                </button>
+              ))}
             </div>
           </>
         )}
@@ -323,7 +319,7 @@ export default function RecordPage() {
         </div>
       </div>
 
-      {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
+      <PhotoViewer photos={photos} index={viewing} onClose={() => setViewing(-1)} />
 
       <div className="flow-foot">
         <Button block className="btn-primary" onClick={toPreview}>

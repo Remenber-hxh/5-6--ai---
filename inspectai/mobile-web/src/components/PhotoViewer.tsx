@@ -1,10 +1,16 @@
-import { Toast } from "@/ui";
-import { useEffect, useRef, useState } from "react";
+import { ImagePreview, Toast } from "@/ui";
+import { useEffect, useState } from "react";
+
+import type { PreviewPhoto } from "@/ui";
 
 // ===== 带水印的照片查看器 =====
 //
 // 设计原则:原图完整保留作证据(EXIF 不动),水印只在「查看 / 导出」时渲染为叠层。
 // 好处:水印可重画、可纠错,而原始证据不被破坏。
+//
+// 看图这部分交给组件库的 ImagePreview:双指缩放 / 双击放大 / 左右翻页。
+// 之前是自己写的"铺满一张图",看铭牌编号得眯眼,看下一张要退出来重点一次。
+// 这里只保留本项目独有的两件事:水印叠层 和 带水印导出。
 //
 // 必须讲清楚的边界:客户端画上去的水印是给人看的,不是证据。
 // 真正构成证据链的是服务器盖的收到时间 + 账号绑定 + 操作日志。
@@ -107,14 +113,22 @@ async function renderWatermarked(meta: PhotoMeta): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
 }
 
-export default function PhotoViewer({ meta, onClose }: { meta: PhotoMeta; onClose: () => void }) {
-  const [exporting, setExporting] = useState(false);
-  const lines = watermarkLines(meta);
-  const closeRef = useRef<HTMLButtonElement>(null);
+export interface PhotoViewerProps {
+  /** 整组照片 —— 传全组才能左右翻页,这是换掉手写查看器的主要收益 */
+  photos: PhotoMeta[];
+  /** 从第几张打开;< 0 表示关闭 */
+  index: number;
+  onClose: () => void;
+}
 
-  // Esc 关闭 + 打开时焦点落在关闭按钮,键盘可操作
+export default function PhotoViewer({ photos, index, onClose }: PhotoViewerProps) {
+  const [exporting, setExporting] = useState(false);
+  // 导出的是【当前这张】,翻页后要跟着变;openIndex 只管从哪张打开,
+  // 之后的翻页在组件内部,只能靠回调同步出来。
+  const [cur, setCur] = useState(index);
+  useEffect(() => setCur(index), [index]);
+
   useEffect(() => {
-    closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -123,7 +137,8 @@ export default function PhotoViewer({ meta, onClose }: { meta: PhotoMeta; onClos
   }, [onClose]);
 
   async function onExport() {
-    if (exporting) return;
+    const meta = photos[cur];
+    if (exporting || !meta) return;
     setExporting(true);
     try {
       const blob = await renderWatermarked(meta);
@@ -142,26 +157,48 @@ export default function PhotoViewer({ meta, onClose }: { meta: PhotoMeta; onClos
     }
   }
 
+  // 没有照片就整个不挂载。关闭时(index<0)【不】卸载:组件自己有收起动画,
+  // 提前拔掉会闪一下。
+  if (!photos.length) return null;
+
+  // 水印挂在每张图自己的叠层上,翻页自动跟着换
+  const items: PreviewPhoto[] = photos.map((m) => ({
+    src: m.url,
+    extraNode: (
+      <div className="viewer-mark">
+        {watermarkLines(m).map((l) => (
+          <div key={l}>{l}</div>
+        ))}
+        <span className="viewer-brand">智巡 JADEAST</span>
+      </div>
+    ),
+  }));
+
   return (
-    <div className="viewer" role="dialog" aria-label="查看照片">
-      <button ref={closeRef} className="viewer-close" onClick={onClose} aria-label="关闭">
-        ×
-      </button>
-      <div className="viewer-stage">
-        <img src={meta.url} alt={meta.fileName || ""} />
-        {/* 水印是叠层,不改动原图 */}
-        <div className="viewer-mark">
-          {lines.map((l) => (
-            <div key={l}>{l}</div>
-          ))}
-          <span className="viewer-brand">智巡 JADEAST</span>
+    <ImagePreview
+      photos={items}
+      index={index}
+      onClose={onClose}
+      onIndexChange={setCur}
+      extra={
+        // 这层盖在图上,默认不吃事件,否则单击关闭、拖动翻页都会被它挡住;
+        // 真正要点的元素各自把 pointer-events 打开。
+        <div className="viewer-ui" onClick={(e) => e.stopPropagation()}>
+          <button className="viewer-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+          {photos.length > 1 && (
+            <span className="viewer-count">
+              {cur + 1} / {photos.length}
+            </span>
+          )}
+          <div className="viewer-foot">
+            <button className="viewer-btn" onClick={() => void onExport()} disabled={exporting}>
+              {exporting ? "导出中…" : "保存带水印的照片"}
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="viewer-foot">
-        <button className="viewer-btn" onClick={() => void onExport()} disabled={exporting}>
-          {exporting ? "导出中…" : "保存带水印的照片"}
-        </button>
-      </div>
-    </div>
+      }
+    />
   );
 }

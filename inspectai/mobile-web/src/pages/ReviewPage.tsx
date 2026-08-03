@@ -31,7 +31,8 @@ export default function ReviewPage() {
   const [shots, setShots] = useState<OfflineShotDTO[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [viewing, setViewing] = useState<PhotoMeta | null>(null);
+  // 存序号而非单张元数据:查看器现在能在整组待上传照片间左右翻。-1 = 未打开
+  const [viewing, setViewing] = useState(-1);
   const [busy, setBusy] = useState(false);
   const user = useAuth((s) => s.user);
 
@@ -54,6 +55,17 @@ export default function ReviewPage() {
   }, [load]);
 
   const pickedIds = useMemo(() => [...picked], [picked]);
+
+  // 网格和查看器用同一份、同一顺序 —— 否则点第 3 张会翻到别的图上
+  const photos: PhotoMeta[] = shots.map((s) => ({
+    url: `/api/inspection/offline-shots/${s.id}/image`,
+    fileName: s.fileName,
+    capturedAt: s.capturedAt,
+    receivedAt: s.receivedAt,
+    inspector: user?.displayName || user?.username,
+    lat: s.lat,
+    lng: s.lng,
+  }));
 
   function toggle(id: string) {
     setPicked((cur) => {
@@ -141,7 +153,7 @@ export default function ReviewPage() {
         </div>
 
         <div className="shot-grid">
-          {shots.map((s) => {
+          {shots.map((s, i) => {
             const gap = offlineGap(s);
             return (
               <button
@@ -161,15 +173,7 @@ export default function ReviewPage() {
                   aria-label="查看大图"
                   onClick={(e) => {
                     e.stopPropagation(); // 看图不改变选中状态
-                    setViewing({
-                      url: `/api/inspection/offline-shots/${s.id}/image`,
-                      fileName: s.fileName,
-                      capturedAt: s.capturedAt,
-                      receivedAt: s.receivedAt,
-                      inspector: user?.displayName || user?.username,
-                      lat: s.lat,
-                      lng: s.lng,
-                    });
+                    setViewing(i);
                   }}
                 >
                   ⛶
@@ -181,7 +185,7 @@ export default function ReviewPage() {
 
       </div>
 
-      {viewing && <PhotoViewer meta={viewing} onClose={() => setViewing(null)} />}
+      <PhotoViewer photos={photos} index={viewing} onClose={() => setViewing(-1)} />
 
       <div className="flow-foot foot-row">
         <button className="foot-del" disabled={!picked.size || busy} onClick={() => void onDelete()}>
