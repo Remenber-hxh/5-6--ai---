@@ -10,9 +10,14 @@
  * 最主要的来源。自带一份,所有设备一模一样。
  *
  * 【拉丁和汉字分成两片】
- * 拉丁片 98KB,汉字片 1.27MB。这个 app 满屏是设备编号 K07、时间
+ * 拉丁片 78KB,汉字片 992KB。这个 app 满屏是设备编号 K07、时间
  * 2026-08-02 22:06、置信度百分比 —— 数字和字母几乎立刻就位,汉字在后面
- * 补上。合成一个文件的话,连数字都要等那 1.3MB。
+ * 补上。合成一个文件的话,连数字都要等那 1MB。
+ *
+ * 【只发 woff2,不留 woff 兜底】
+ * woff2 从 Chrome 36 / Safari 10 / Android 5 起就支持,这个 app 的用户
+ * 拿的是能跑摄像头和 IndexedDB 的手机,不存在支持 woff2 的问题。
+ * 多留一份 woff 会让仓库多 1.4MB,换不到任何真实覆盖。
  *
  * 【font-display: swap】
  * 字体没到就先用系统字体显示,到了再换。绝不能用 block:巡检员在机房里
@@ -25,7 +30,7 @@
 
 @font-face {
   font-family: "InspectSans";
-  src: url("../assets/fonts/inspect-sans-latin.woff") format("woff");
+  src: url("../assets/fonts/inspect-sans-latin.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -37,7 +42,7 @@
 
 @font-face {
   font-family: "InspectSans";
-  src: url("../assets/fonts/inspect-sans-cjk.woff") format("woff");
+  src: url("../assets/fonts/inspect-sans-cjk.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

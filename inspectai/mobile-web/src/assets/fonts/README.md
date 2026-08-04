@@ -9,9 +9,13 @@
 | 授权原文 | <http://scripts.sil.org/OFL> |
 | 上游 | <https://github.com/notofonts/noto-cjk> |
 
-`inspect-sans-latin.woff` / `inspect-sans-cjk.woff` 是从
+`inspect-sans-latin.woff2` / `inspect-sans-cjk.woff2` 是从
 `NotoSansSC-VF.ttf` 切出来的子集,生成方式见 `../../../scripts/build-fonts.py`。
 换机器或要改收字范围时重跑那个脚本即可,不要手工替换这两个文件。
+
+构建机器需要 `pip install fonttools brotli`。没装 brotli 时脚本会自动退回
+woff(大三成左右),并在输出里提示 —— 换台机器也构建得出来,只是文件大些。
+产物扩展名变了要同步改 `src/styles/fonts.css` 的 `url()` 和 `format()`。
 
 ## 为什么选它
 
@@ -20,11 +24,14 @@
 条款里对再分发有额外约定。**OFL 1.1 明确允许嵌入、子集化、随产品分发**,
 对我们要走软著和商业交付的情形最干净,所以选思源。
 
-## OFL 合规待办
+## OFL 合规
 
-OFL 要求分发时附带授权原文。目前仓库里**还没有** `OFL.txt` ——
-这台机器上找不到现成副本,而联网取文件需要先经确认。
+- [x] `OFL.txt` 已随附(OFL 1.1 全文,取自 <https://openfontlicense.org/>,
+      开头是本字体真实的版权行,与字体 name 表 nameID 0 一致)
+- [x] 保留字名不冲突 —— 本字体的 Reserved Font Name 是 `'Source'`,
+      我们的子集内部仍叫 `Noto Sans SC`,不含该保留名。
+      (CSS 里那个 `InspectSans` 只是 `@font-face` 的对外名字,
+      不改字体内部的 name 表,不涉及保留字名。)
+- [x] 未单独售卖字体本身,仅作为产品的一部分分发 —— OFL 允许。
 
-**上线前必须补上**:从 <http://scripts.sil.org/OFL> 取 OFL 1.1 全文,
-存为本目录下的 `OFL.txt`。字体文件内部的 name 表(nameID 13/14)已经带了
-授权声明和链接,但那只是声明,不能替代随附原文。
+对外交付或提交软著时,把本目录连同 `OFL.txt` 一起带上即可。

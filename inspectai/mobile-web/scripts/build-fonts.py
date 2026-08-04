@@ -89,6 +89,13 @@ def app_chars():
 
 
 def cut(src, name, codepoints):
+    """切一片并存成 woff2。
+
+    woff2 用 brotli 压缩,比 woff 的 zlib 小三成上下(实测汉字片
+    1272KB → 883KB)。需要 `pip install brotli`,只装在构建机器上,
+    不进产品。没装就退回 woff —— 少一个依赖比小三成更重要,
+    别让换台机器就构建不出来。
+    """
     font = TTFont(src, lazy=False)
     opts = subset.Options()
     opts.layout_features = ["*"]
@@ -97,10 +104,17 @@ def cut(src, name, codepoints):
     sub = subset.Subsetter(options=opts)
     sub.populate(unicodes=codepoints)
     sub.subset(font)
-    font.flavor = "woff"
-    path = os.path.join(OUT, name + ".woff")
+    try:
+        import brotli  # noqa: F401
+
+        ext = "woff2"
+    except ImportError:
+        ext = "woff"
+        print("! 没装 brotli,退回 woff(体积大三成左右);装上可用:pip install brotli")
+    font.flavor = ext
+    path = os.path.join(OUT, name + "." + ext)
     font.save(path)
-    return os.path.getsize(path)
+    return os.path.getsize(path), ext
 
 
 def main():
@@ -121,16 +135,18 @@ def main():
     app = app_chars()
     cjk = {ord(c) for c in (app | gb2312_level1())}
 
-    n_latin = cut(src, "inspect-sans-latin", latin & cmap)
-    n_cjk = cut(src, "inspect-sans-cjk", cjk & cmap)
+    n_latin, ext = cut(src, "inspect-sans-latin", latin & cmap)
+    n_cjk, _ = cut(src, "inspect-sans-cjk", cjk & cmap)
 
     print("源字体   %s  (%.1f MB)" % (os.path.basename(src), os.path.getsize(src) / 1048576))
     print("界面文案汉字 %d 个,并上 GB2312 一级表后共 %d 字" % (len(app), len(cjk)))
     print()
-    print("  %-28s %7s" % ("产物", "WOFF"))
-    print("  %-28s %6.0f KB" % ("inspect-sans-latin.woff", n_latin / 1024))
-    print("  %-28s %6.0f KB" % ("inspect-sans-cjk.woff", n_cjk / 1024))
-    print("  %-28s %6.0f KB" % ("合计", (n_latin + n_cjk) / 1024))
+    print("  %-30s %7s" % ("产物", ext.upper()))
+    print("  %-30s %6.0f KB" % ("inspect-sans-latin." + ext, n_latin / 1024))
+    print("  %-30s %6.0f KB" % ("inspect-sans-cjk." + ext, n_cjk / 1024))
+    print("  %-30s %6.0f KB" % ("合计", (n_latin + n_cjk) / 1024))
+    print()
+    print("产物扩展名变了的话,记得同步 src/styles/fonts.css 里的 url() 和 format()")
 
 
 if __name__ == "__main__":
