@@ -33,6 +33,10 @@ type RecordStore interface {
 	UpdateRecord(rec *Record) error
 	ListRecords(tenantID string, limit int) ([]*Record, error)
 	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+	// DeleteDraftRecord 删除【未提交】的记录及其关联行,并把当初认领的离线照片
+	// 放回待处理。已提交的记录是台账证据,这里一律拒绝 —— 要撤销走审批流。
+	// 记录已提交时返回 errRecordSubmitted,不存在/跨租户返回 sql.ErrNoRows。
+	DeleteDraftRecord(tenantID, id string) error
 }
 
 // TenantStore — 客户租户(仅平台超管可写)
@@ -325,6 +329,33 @@ func (s *MemStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *MemStore) DeleteDraftRecord(tenantID, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.records[id]
+	if !ok || rec.TenantID != tenantID {
+		return sql.ErrNoRows // 跨租户等同不存在,不泄露"这条 id 存在"
+	}
+	if rec.Submitted {
+		return errRecordSubmitted
+	}
+	delete(s.records, id)
+	for tid, t := range s.tasks {
+		if t != nil && t.RecordID == id {
+			delete(s.tasks, tid)
+		}
+	}
+	// 照片当初是【复制】进记录目录的,原始离线照片还在 —— 放回待处理,
+	// 不销毁。现场拍的东西不能因为草稿被删就没了。
+	for _, shot := range s.offlineShots {
+		if shot != nil && shot.RecordID == id {
+			shot.RecordID = ""
+			shot.Status = "uploaded"
+		}
+	}
+	return nil
 }
 
 func (s *MemStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
@@ -1273,6 +1304,47 @@ func (s *SQLiteStore) ListRecords(tenantID string, limit int) ([]*Record, error)
 		out = append(out, rec)
 	}
 	return out, rows.Err()
+}
+
+// errRecordSubmitted 已提交的记录不允许删除。它是台账证据,而且已经写进了
+// 资产快照和字段观测 —— 删掉会让台账对不上账。要撤销请走审批流。
+var errRecordSubmitted = errors.New("record already submitted")
+
+func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var submitted int
+	// 先在事务里锁定并确认状态,避免"查完到删之间被提交"的竞态 ——
+	// 那会删掉一条已经进了台账的记录。
+	row := tx.QueryRow(`SELECT submitted FROM records WHERE id=? AND tenant_id=?`, id, tenantID)
+	if err := row.Scan(&submitted); err != nil {
+		return err // 包含 sql.ErrNoRows:不存在或跨租户
+	}
+	if submitted != 0 {
+		return errRecordSubmitted
+	}
+
+	if _, err := tx.Exec(`DELETE FROM records WHERE id=? AND tenant_id=?`, id, tenantID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM ai_tasks WHERE record_id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM submission_idempotency WHERE record_id=?`, id); err != nil {
+		return err
+	}
+	// 照片当初是【复制】进记录目录的,原始离线照片还在 —— 放回待处理,不销毁。
+	// 现场拍的东西不能因为草稿被删就没了。
+	if _, err := tx.Exec(
+		`UPDATE offline_shots SET record_id='', status='uploaded' WHERE record_id=? AND tenant_id=?`,
+		id, tenantID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {

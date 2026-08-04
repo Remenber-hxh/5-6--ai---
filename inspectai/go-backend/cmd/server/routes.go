@@ -69,6 +69,8 @@ var apiRoutes = []apiRoute{
 	// 离线照片:弱网现场先存手机、联网后上传(带幂等键,重传不产生重复)
 	{http.MethodPost, "/api/inspection/offline-shots", guardNone, "", (*Server).handleUploadOfflineShot},
 	{http.MethodGet, "/api/inspection/offline-shots", guardNone, "", (*Server).handleListOfflineShots},
+	// 底栏角标只要两个数字,不必拉两个完整列表(实测省 120KB/次)
+	{http.MethodGet, "/api/inspection/badge-counts", guardNone, "", (*Server).handleBadgeCounts},
 	// 用已上传的离线照片做识别(照片已在服务器上,不重传)
 	{http.MethodPost, "/api/inspection/offline-shots/classify", guardNone, "", (*Server).handleClassifyOfflineShots},
 	// 批量删除未成单的离线照片(已并入记录的不在此删)

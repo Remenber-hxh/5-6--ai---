@@ -299,6 +299,15 @@ func (s *Server) handleUploadOfflineShot(w http.ResponseWriter, r *http.Request)
 }
 
 // handleListOfflineShots 列出本人(管理角色则本租户全部)已上传的离线照片。
+// shotIsPending 未成单的照片才算"待处理"。
+//
+// 移动端一直在【客户端】做这个过滤(listOfflineShots 里的 filter(!s.recordId)),
+// 也就是说已成单的照片被完整传了一遍再扔掉 —— 白花的流量。挪到服务端来,
+// 顺带保证角标计数和列表页口径一致:两边都用这一个判断。
+func shotIsPending(s *OfflineShot) bool {
+	return s != nil && strings.TrimSpace(s.RecordID) == ""
+}
+
 func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) {
 	userID := ""
 	if !s.hasSupervisorAccess(r) {
@@ -311,6 +320,16 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
+	}
+	// 默认保持原样(admin-web 要看全量);移动端传 ?pending=1 只要未成单的。
+	if r.URL.Query().Get("pending") == "1" {
+		kept := make([]*OfflineShot, 0, len(shots))
+		for _, shot := range shots {
+			if shotIsPending(shot) {
+				kept = append(kept, shot)
+			}
+		}
+		shots = kept
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots})
 }
@@ -336,7 +355,8 @@ func (s *Server) handleOfflineShotImage(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusForbidden, "forbidden", "非法路径")
 		return
 	}
-	http.ServeFile(w, r, clean)
+	// 走统一图片出口:带缓存头,支持 ?w= 出缩略图(见 image_thumb.go)
+	s.serveImage(w, r, clean)
 }
 
 // handleClassifyOfflineShots 用已上传的离线照片做场景识别。

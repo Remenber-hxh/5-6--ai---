@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -1841,6 +1842,8 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(parts) == 1 && r.Method == http.MethodGet:
 		s.handleGetRecord(w, r, recordID)
+	case len(parts) == 1 && r.Method == http.MethodDelete:
+		s.handleDeleteDraftRecord(w, r, recordID)
 	case len(parts) == 2 && parts[1] == "images" && r.Method == http.MethodPost:
 		s.handleUploadImages(w, r, recordID)
 	case len(parts) == 2 && parts[1] == "ai-tasks" && r.Method == http.MethodPost:
@@ -1858,6 +1861,38 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "")
 	}
+}
+
+// handleDeleteDraftRecord 删掉一条【未提交】的巡检记录(草稿)。
+//
+// 为什么需要:识别失败、选错点位、测试留下的半截记录,原来只能一直躺在库里,
+// 巡检员没有任何办法收拾。
+//
+// 边界:
+//   - 只删未提交的。已提交的记录进了台账、写了资产快照和字段观测,删掉会让
+//     台账对不上账 —— 要撤销走审批流(change-requests)。
+//   - 归属校验复用 requireRecordAccess(write=true),巡检员只能删自己的。
+//   - 当初认领的离线照片放回待处理,不销毁 —— 现场拍的东西不能因为删草稿就没了。
+//   - 记录目录里的照片副本删掉;删不掉只记日志,不让整个请求失败:
+//     库里已经没这条记录了,残留几个文件比返回"删除失败"要好收拾。
+func (s *Server) handleDeleteDraftRecord(w http.ResponseWriter, r *http.Request, id string) {
+	tenantID := s.tenantForRequest(r)
+	if err := s.store.DeleteDraftRecord(tenantID, id); err != nil {
+		switch {
+		case errors.Is(err, errRecordSubmitted):
+			writeError(w, http.StatusConflict, "record_submitted", "已提交的记录不能删除，请走数据修改申请")
+		case errors.Is(err, sql.ErrNoRows):
+			writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
+		default:
+			writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		}
+		return
+	}
+	dir := filepath.Join(s.storageDir, "uploads", id)
+	if err := os.RemoveAll(dir); err != nil {
+		log.Printf("WARN: 删除记录 %s 的图片目录失败: %v", id, err)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request, id string) {
@@ -2531,7 +2566,8 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		http.ServeFile(w, r, filepath.Join(s.storageDir, clean))
+		// 走统一图片出口:带缓存头,支持 ?w= 出缩略图(见 image_thumb.go)
+		s.serveImage(w, r, filepath.Join(s.storageDir, clean))
 		return
 	}
 	if r.URL.Path == "/" || !strings.Contains(filepath.Base(r.URL.Path), ".") {
