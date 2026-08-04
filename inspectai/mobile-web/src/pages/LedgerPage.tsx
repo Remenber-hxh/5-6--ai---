@@ -1,9 +1,12 @@
-import { Skeleton, Toast } from "@/ui";
-import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/ui";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import EmptyState from "@/components/EmptyState";
 import FlowHeader from "@/components/FlowHeader";
-import { AssetDTO, AssetSummary, listAssets } from "@/api/inspection";
+import StatusTag from "@/components/StatusTag";
+import { AssetDTO, listAssets } from "@/api/inspection";
+import { useResource } from "@/hooks/useResource";
 
 /** 状态 → 视觉档位。与旧版 statusLevel 口径一致 */
 function tone(status: string): { cls: string; text: string } {
@@ -49,41 +52,42 @@ function coverURL(a: AssetDTO): string | null {
   return "/storage/" + encodeURI(raw.substring(i + "/storage/".length));
 }
 
-type Filter = { project?: string; assetType?: string; level?: string; today?: boolean };
+type Filter = {
+  project?: string;
+  assetType?: string;
+  level?: string;
+  today?: boolean;
+};
 
 // 设备健康(旧版 sceneLedger):概览四数 + 分组筛选 + 资产列表
 export default function LedgerPage() {
   const nav = useNavigate();
-  const [assets, setAssets] = useState<AssetDTO[]>([]);
-  const [summary, setSummary] = useState<AssetSummary | null>(null);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>({});
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const data = await listAssets();
-        setAssets(data.assets);
-        setSummary(data.summary);
-      } catch {
-        Toast.show({ content: "台账加载失败" });
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // useResource 负责竞态防护、卸载保护和错误提示 —— 原来这里是裸的
+  // useEffect + try/catch,慢响应回来会盖掉新状态(见 hooks/useResource.ts)
+  const { data, loading } = useResource((signal) => listAssets(signal), [], {
+    errorText: "台账加载失败",
+  });
+  const assets = data?.assets ?? [];
+  const summary = data?.summary ?? null;
 
   const stats = useMemo(() => {
     const today = todayStr();
     // 需跟进口径与旧版一致:异常 + 待复核 + 待维修;未巡检不算需跟进
     const risk = summary
       ? (summary.warning || 0) + (summary.danger || 0) + (summary.repair || 0)
-      : assets.filter((a) => ["异常", "待复核", "待维修"].includes(a.lastStatus)).length;
+      : assets.filter((a) =>
+          ["异常", "待复核", "待维修"].includes(a.lastStatus),
+        ).length;
     return {
       total: summary?.total ?? assets.length,
-      normal: summary?.normal ?? assets.filter((a) => a.lastStatus === "正常").length,
+      normal:
+        summary?.normal ?? assets.filter((a) => a.lastStatus === "正常").length,
       risk,
-      today: assets.filter((a) => (a.lastInspectedAt || "").slice(0, 10) === today).length,
+      today: assets.filter(
+        (a) => (a.lastInspectedAt || "").slice(0, 10) === today,
+      ).length,
     };
   }, [assets, summary]);
 
@@ -92,9 +96,14 @@ export default function LedgerPage() {
     return assets.filter((a) => {
       if (filter.project && a.project !== filter.project) return false;
       if (filter.assetType && a.assetType !== filter.assetType) return false;
-      if (filter.today && (a.lastInspectedAt || "").slice(0, 10) !== today) return false;
+      if (filter.today && (a.lastInspectedAt || "").slice(0, 10) !== today)
+        return false;
       if (filter.level === "normal" && a.lastStatus !== "正常") return false;
-      if (filter.level === "risk" && !["异常", "待复核", "待维修"].includes(a.lastStatus)) return false;
+      if (
+        filter.level === "risk" &&
+        !["异常", "待复核", "待维修"].includes(a.lastStatus)
+      )
+        return false;
       return true;
     });
   }, [assets, filter]);
@@ -103,22 +112,31 @@ export default function LedgerPage() {
   const projects = useMemo(() => {
     if (summary?.projects?.length) return summary.projects;
     const m = new Map<string, number>();
-    assets.forEach((a) => a.project && m.set(a.project, (m.get(a.project) || 0) + 1));
+    assets.forEach(
+      (a) => a.project && m.set(a.project, (m.get(a.project) || 0) + 1),
+    );
     return [...m].map(([value, count]) => ({ value, count }));
   }, [assets, summary]);
 
   const types = useMemo(() => {
     if (summary?.assetTypes?.length) return summary.assetTypes;
     const m = new Map<string, number>();
-    assets.forEach((a) => a.assetType && m.set(a.assetType, (m.get(a.assetType) || 0) + 1));
+    assets.forEach(
+      (a) => a.assetType && m.set(a.assetType, (m.get(a.assetType) || 0) + 1),
+    );
     return [...m].map(([value, count]) => ({ value, count }));
   }, [assets, summary]);
 
-  const hasFilter = Boolean(filter.project || filter.assetType || filter.level || filter.today);
+  const hasFilter = Boolean(
+    filter.project || filter.assetType || filter.level || filter.today,
+  );
 
   /** 点同一项 = 取消选择,不用另找清除按钮 */
   function pick<K extends keyof Filter>(key: K, value: Filter[K]) {
-    setFilter((cur) => ({ ...cur, [key]: cur[key] === value ? undefined : value }));
+    setFilter((cur) => ({
+      ...cur,
+      [key]: cur[key] === value ? undefined : value,
+    }));
   }
 
   // 加载态保留顶栏 + 骨架列表:页面结构立刻出现,数据到了直接填进去,
@@ -177,7 +195,9 @@ export default function LedgerPage() {
               {projects.map((g) => (
                 <button
                   key={g.value}
-                  className={filter.project === g.value ? "lg-chip on" : "lg-chip"}
+                  className={
+                    filter.project === g.value ? "lg-chip on" : "lg-chip"
+                  }
                   onClick={() => pick("project", g.value)}
                 >
                   {g.value} <em>{g.count}</em>
@@ -194,7 +214,9 @@ export default function LedgerPage() {
               {types.map((g) => (
                 <button
                   key={g.value}
-                  className={filter.assetType === g.value ? "lg-chip on" : "lg-chip"}
+                  className={
+                    filter.assetType === g.value ? "lg-chip on" : "lg-chip"
+                  }
                   onClick={() => pick("assetType", g.value)}
                 >
                   {g.value} <em>{g.count}</em>
@@ -212,30 +234,39 @@ export default function LedgerPage() {
 
         <div className="asset-list">
           {shown.length === 0 ? (
-            <div className="empty-state">
-              <span className="es-badge">∅</span>
-              <span className="es-title">没有符合条件的设备</span>
-              <span className="es-hint">{hasFilter ? "点上方「清除筛选」再看全部" : "还没有设备数据"}</span>
-            </div>
+            <EmptyState
+              title="没有符合条件的设备"
+              hint={hasFilter ? "点上方「清除筛选」再看全部" : "还没有设备数据"}
+            />
           ) : (
             shown.map((a) => {
               const t = tone(a.lastStatus);
               const cover = coverURL(a);
               return (
-                <button className="asset-row" key={a.id} onClick={() => nav(`/asset/${encodeURIComponent(a.id)}`)}>
+                <button
+                  className="asset-row"
+                  key={a.id}
+                  onClick={() => nav(`/asset/${encodeURIComponent(a.id)}`)}
+                >
                   {/* 旧版每行有设备封面图,重构时丢了。状态由右侧标签表达,不再另画圆点 */}
                   {cover ? (
-                    <img className="ar-cover" src={cover} alt="" loading="lazy" />
+                    <img
+                      className="ar-cover"
+                      src={cover}
+                      alt=""
+                      loading="lazy"
+                    />
                   ) : (
                     <span className="ar-cover ar-cover-empty" aria-hidden />
                   )}
                   <span className="ar-main">
                     <span className="ar-name">{a.assetName}</span>
                     <span className="ar-sub">
-                      {a.project || "—"} · 巡检 {a.inspectionCount} 次 · {fmtDate(a.lastInspectedAt)}
+                      {a.project || "—"} · 巡检 {a.inspectionCount} 次 ·{" "}
+                      {fmtDate(a.lastInspectedAt)}
                     </span>
                   </span>
-                  <span className={`tag tag-${t.cls}`}>{t.text}</span>
+                  <StatusTag text={t.text} />
                 </button>
               );
             })

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { listEngineeringTasks, listOfflineShots } from "@/api/inspection";
+import { getBadgeCounts } from "@/api/inspection";
+import { useResource } from "@/hooks/useResource";
 import { usePending } from "@/store/pending";
 import { TabBar } from "@/ui";
 
@@ -32,25 +32,25 @@ export default function AppTabs() {
   const { pathname } = useLocation();
   // 拍完照上传成功会推进这个计数,角标要跟着动,否则用户拍完看角标没变
   const uploadedTick = usePending((s) => s.uploadedTick);
-  const [shots, setShots] = useState(0);
-  const [tasks, setTasks] = useState(0);
 
   const visible = (TAB_ROUTES as readonly string[]).includes(pathname);
 
-  const load = useCallback(async () => {
-    // 角标是辅助信息,拉取失败静默降级为不显示,不打扰主流程
-    const [s, t] = await Promise.all([
-      listOfflineShots().catch(() => []),
-      listEngineeringTasks().catch(() => []),
-    ]);
-    setShots(s.length);
-    setTasks(t.filter((x) => ["进行中", "待整改", "逾期"].includes(x.status)).length);
-  }, []);
-
-  useEffect(() => {
-    if (!visible) return;
-    void load();
-  }, [load, visible, pathname, uploadedTick]);
+  // 【为什么不再拉两个完整列表】
+  // 角标只要两个数字,原来却把 offline-shots(82KB)和 engineering/tasks(38KB)
+  // 整个拉下来取 length,而这个 effect 依赖 pathname —— 每切一次标签重来一遍。
+  // 实测连切 5 次标签下行 2MB。后端现在直接给数,几十字节。
+  //
+  // errorText: null —— 角标是辅助信息,拉不到就不显示,不该弹提示打扰主流程。
+  const { data } = useResource(
+    (signal) => getBadgeCounts(signal),
+    [pathname, uploadedTick],
+    {
+      enabled: visible,
+      errorText: null,
+    },
+  );
+  const shots = data?.shots ?? 0;
+  const tasks = data?.tasks ?? 0;
 
   if (!visible) return null;
 

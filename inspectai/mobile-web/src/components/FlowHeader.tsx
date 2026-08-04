@@ -33,7 +33,13 @@ export interface FlowHeaderProps {
   dark?: boolean;
 }
 
-export default function FlowHeader({ title, onBack, action, step, dark }: FlowHeaderProps) {
+export default function FlowHeader({
+  title,
+  onBack,
+  action,
+  step,
+  dark,
+}: FlowHeaderProps) {
   return (
     <>
       <NavBar title={title} onBack={onBack} action={action} dark={dark} />

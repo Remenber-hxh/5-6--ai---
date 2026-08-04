@@ -1,5 +1,7 @@
 import { Avatar, Cell } from "@/ui";
 
+import StatusTag from "@/components/StatusTag";
+
 import type { RecordDTO } from "@/api/inspection";
 
 // ===== 记录上下文卡 =====
@@ -23,10 +25,10 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 export default function RecordContext({ rec }: { rec: RecordDTO }) {
-  const status = STATUS_TEXT[rec.recognitionStatus] || rec.recognitionStatus || "-";
-  // 只有"已识别"是绿的;其余(含人工填写、待重拍)都是提醒态 —— 旧版同样口径:
-  // 别把"还需要人做点什么"显示成一切正常。
-  const tone = rec.recognitionStatus === "recognized" && !rec.manualRequired ? "ok" : "warn";
+  const status =
+    STATUS_TEXT[rec.recognitionStatus] || rec.recognitionStatus || "-";
+  // 色档由 StatusTag 按文案统一判 —— 全站同一个"待复核"要一个颜色。
+  // 只有"已识别"是绿的,其余(含人工填写、待重拍)都是提醒态。
 
   return (
     <Cell
@@ -36,7 +38,7 @@ export default function RecordContext({ rec }: { rec: RecordDTO }) {
       label={`${rec.project || ""} · ${rec.pointName || ""}`}
       desc={`${rec.templateName || ""} · ${rec.inspector || ""}`}
     >
-      <span className={`ctx-badge ${tone}`}>{status}</span>
+      <StatusTag text={status} />
     </Cell>
   );
 }

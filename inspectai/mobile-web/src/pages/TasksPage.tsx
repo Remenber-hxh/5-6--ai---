@@ -1,13 +1,13 @@
 import { Skeleton, Toast } from "@/ui";
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import EmptyState from "@/components/EmptyState";
 import FlowHeader from "@/components/FlowHeader";
-import {
-  EngineeringTaskDTO,
-  listEngineeringTasks,
-  startEngineeringTask,
-} from "@/api/inspection";
+import StatusTag from "@/components/StatusTag";
+import { listEngineeringTasks, startEngineeringTask } from "@/api/inspection";
+import { useResource } from "@/hooks/useResource";
+
+import type { EngineeringTaskDTO } from "@/api/inspection";
 import { setActiveTask } from "@/store/activeTask";
 import { useAuth } from "@/store/auth";
 
@@ -23,13 +23,6 @@ const VISIBLE_STATUS = ["进行中", "待整改", "逾期"];
 /** 排序:逾期最先,再进行中,再待整改(旧版 TASK_STATUS_ORDER 的语义) */
 const ORDER: Record<string, number> = { 逾期: 0, 进行中: 1, 待整改: 2 };
 
-/** 任务状态 → 全站统一标签的语义档位(.tag-*) */
-function statusTone(s: string): string {
-  if (s === "逾期") return "danger";
-  if (s === "进行中") return "ok";
-  return "brand";
-}
-
 function fmtDue(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -42,18 +35,15 @@ export default function TasksPage() {
   const nav = useNavigate();
   const user = useAuth((s) => s.user);
   const me = user?.displayName || user?.username || "";
-  const [tasks, setTasks] = useState<EngineeringTaskDTO[] | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        setTasks(await listEngineeringTasks());
-      } catch {
-        Toast.show({ content: "任务加载失败" });
-        setTasks([]);
-      }
-    })();
-  }, []);
+  // 竞态防护/卸载保护/错误提示都在 useResource 里(见 hooks/useResource.ts)
+  const { data, loading } = useResource(
+    (signal) => listEngineeringTasks(signal),
+    [],
+    {
+      errorText: "任务加载失败",
+    },
+  );
+  const tasks = loading ? null : (data ?? []);
 
   async function start(task: EngineeringTaskDTO) {
     setActiveTask(task); // 记住当前任务,拍照提交时带上,提交后自动销账
@@ -79,7 +69,9 @@ export default function TasksPage() {
   const dispatched = tasks.filter((t) => VISIBLE_STATUS.includes(t.status));
   // 优先只看派给自己的;一条都没派到就退回显示全部(旧版同样的兜底,
   // 免得任务没填负责人时巡检员看到空列表)
-  const mine = dispatched.filter((t) => !t.assigneeName || t.assigneeName === me);
+  const mine = dispatched.filter(
+    (t) => !t.assigneeName || t.assigneeName === me,
+  );
   const open = mine.length ? mine : dispatched;
 
   const sorted = [...open].sort(
@@ -101,11 +93,11 @@ export default function TasksPage() {
       <div className="scroll-area flow-body">
         <p className="flow-caption">待办的工程巡检任务</p>
         {sorted.length === 0 ? (
-          <div className="empty-state">
-            <span className="es-badge">✓</span>
-            <span className="es-title">任务清零</span>
-            <span className="es-hint">暂无待办巡检任务,新任务下发后会出现在这里</span>
-          </div>
+          <EmptyState
+            icon="✓"
+            title="任务清零"
+            hint="暂无待办巡检任务,新任务下发后会出现在这里"
+          />
         ) : (
           <>
             <div className="task-summary">
@@ -129,11 +121,15 @@ export default function TasksPage() {
               return (
                 <article className="task-card" key={t.id}>
                   <div className="task-card-head">
-                    <span className={`tag tag-${statusTone(t.status)}`}>{t.status || "待执行"}</span>
-                    {t.dueAt && <span className="task-due">{fmtDue(t.dueAt)}</span>}
+                    <StatusTag text={t.status || "待执行"} />
+                    {t.dueAt && (
+                      <span className="task-due">{fmtDue(t.dueAt)}</span>
+                    )}
                   </div>
                   <div className="task-title">{title}</div>
-                  {t.assetName && <div className="task-asset">{t.assetName}</div>}
+                  {t.assetName && (
+                    <div className="task-asset">{t.assetName}</div>
+                  )}
                   {showDesc && <p className="task-desc">{t.workContent}</p>}
                   <button className="task-start" onClick={() => void start(t)}>
                     开始巡检

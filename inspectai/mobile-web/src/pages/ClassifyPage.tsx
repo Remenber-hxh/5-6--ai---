@@ -31,13 +31,20 @@ export default function ClassifyPage() {
       return;
     }
     try {
-      const [res, tpls] = await Promise.all([classifyOfflineShots(shotIds), listTemplates()]);
+      const [res, tpls] = await Promise.all([
+        classifyOfflineShots(shotIds),
+        listTemplates(),
+      ]);
       setTemplates(tpls);
       setResult(res.classify);
     } catch {
       setTemplates(await listTemplates().catch(() => []));
       // 识别失败不阻断:转手动选模板,照片仍在服务器上不会丢
-      setResult({ templateId: "unknown", templateName: "无法识别", needsManualPick: true });
+      setResult({
+        templateId: "unknown",
+        templateName: "无法识别",
+        needsManualPick: true,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -65,13 +72,21 @@ export default function ClassifyPage() {
 
   return (
     <div className="flow-screen">
-      <FlowHeader title="确认场景" onBack={() => nav("/review")} step="classify" />
+      <FlowHeader
+        title="确认场景"
+        onBack={() => nav("/review")}
+        step="classify"
+      />
 
       <div className="scroll-area flow-body">
         <p className="flow-caption">已选 {shotIds.length} 张照片</p>
         <div className={uncertain ? "classify-result warn" : "classify-result"}>
-          <div className="cr-label">{uncertain ? "AI 不太确定" : "AI 识别为"}</div>
-          <div className="cr-name">{uncertain ? "请手动选择模板" : result.templateName}</div>
+          <div className="cr-label">
+            {uncertain ? "AI 不太确定" : "AI 识别为"}
+          </div>
+          <div className="cr-name">
+            {uncertain ? "请手动选择模板" : result.templateName}
+          </div>
           <div className="cr-conf">
             {uncertain
               ? result.error || "未识别到典型设备"
@@ -83,7 +98,11 @@ export default function ClassifyPage() {
         {uncertain && (
           <div className="template-list">
             {templates.map((t) => (
-              <button className="template-row" key={t.id} onClick={() => void go(t.id)}>
+              <button
+                className="template-row"
+                key={t.id}
+                onClick={() => void go(t.id)}
+              >
                 <span className="tr-icon">{t.name.charAt(0)}</span>
                 <span className="tr-meta">
                   <span className="tr-name">{t.name}</span>
@@ -98,7 +117,12 @@ export default function ClassifyPage() {
 
       {!uncertain && (
         <div className="flow-foot">
-          <Button block className="btn-primary" loading={busy} onClick={() => void go(result.templateId)}>
+          <Button
+            block
+            className="btn-primary"
+            loading={busy}
+            onClick={() => void go(result.templateId)}
+          >
             下一步 · 填写日报
           </Button>
         </div>

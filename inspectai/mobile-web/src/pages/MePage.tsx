@@ -40,7 +40,9 @@ export default function MePage() {
       patchUser({ avatar: path });
       Toast.show({ content: "头像已更新", position: "bottom" });
     } catch (err) {
-      Toast.show({ content: err instanceof Error ? err.message : "头像上传失败" });
+      Toast.show({
+        content: err instanceof Error ? err.message : "头像上传失败",
+      });
     } finally {
       setBusy(false);
     }
@@ -65,9 +67,15 @@ export default function MePage() {
       <div className="scroll-area flow-body">
         {/* 身份区:点头像即换 */}
         <div className="me-hero">
-          <button className="me-avatar" onClick={() => fileRef.current?.click()} disabled={busy}>
+          <button
+            className="me-avatar"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+          >
             <Avatar name={name} src={user?.avatar} size="large" />
-            <span className="me-avatar-edit">{busy ? <Loading size={16} color="#fff" /> : "换"}</span>
+            <span className="me-avatar-edit">
+              {busy ? <Loading size={16} color="#fff" /> : "换"}
+            </span>
           </button>
           {/* 【别用 .upload-input】那个类是给 <label> 包裹用的(absolute inset:0 铺满父级)。
               这里是独立元素、靠 ref.click() 触发,没有定位父级 —— 用了会铺成一张
@@ -82,7 +90,8 @@ export default function MePage() {
           />
           <h1 className="me-name">{name}</h1>
           <p className="me-sub">
-            {user?.roleName || user?.roleCode} · {user?.departmentName || "默认部门"}
+            {user?.roleName || user?.roleCode} ·{" "}
+            {user?.departmentName || "默认部门"}
           </p>
         </div>
 
@@ -90,9 +99,33 @@ export default function MePage() {
         {/* 图标用手写细线 SVG,不用 emoji —— 🖼(U+1F5BC)在很多系统上没有字形,
             这里一度渲染成豆腐块;而且 emoji 放在设置列表里也不像正经产品。 */}
         <CellGroup header="巡检">
-          <Cell label="我的任务" icon={<span className="me-ic"><IconTasks /></span>} onClick={() => nav("/tasks")} />
-          <Cell label="待处理照片" icon={<span className="me-ic"><IconPhotos /></span>} onClick={() => nav("/review")} />
-          <Cell label="设备健康" icon={<span className="me-ic"><IconLedger /></span>} onClick={() => nav("/ledger")} />
+          <Cell
+            label="我的任务"
+            icon={
+              <span className="me-ic">
+                <IconTasks />
+              </span>
+            }
+            onClick={() => nav("/tasks")}
+          />
+          <Cell
+            label="待处理照片"
+            icon={
+              <span className="me-ic">
+                <IconPhotos />
+              </span>
+            }
+            onClick={() => nav("/review")}
+          />
+          <Cell
+            label="设备健康"
+            icon={
+              <span className="me-ic">
+                <IconLedger />
+              </span>
+            }
+            onClick={() => nav("/ledger")}
+          />
         </CellGroup>
 
         <CellGroup header="账号">

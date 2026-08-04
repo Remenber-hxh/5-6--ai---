@@ -1,11 +1,17 @@
 import { Button, Dialog, Toast } from "@/ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import { useAuth } from "@/store/auth";
-import { OfflineShotDTO, deleteOfflineShots, listOfflineShots } from "@/api/inspection";
+import {
+  OfflineShotDTO,
+  deleteOfflineShots,
+  listOfflineShots,
+} from "@/api/inspection";
+import { useResource } from "@/hooks/useResource";
 
 /** 拍摄与上传的时间差:离线越久差越大。公开展示,不隐藏 */
 function offlineGap(shot: OfflineShotDTO): string {
@@ -28,31 +34,25 @@ function fmtTime(iso: string): string {
 // 已上传照片 → 选中 → AI 识别场景 → 确认模板 → 成单
 export default function ReviewPage() {
   const nav = useNavigate();
-  const [shots, setShots] = useState<OfflineShotDTO[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
   // 存序号而非单张元数据:查看器现在能在整组待上传照片间左右翻。-1 = 未打开
   const [viewing, setViewing] = useState(-1);
   const [busy, setBusy] = useState(false);
   const user = useAuth((s) => s.user);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const list = await listOfflineShots();
-      setShots(list);
-      // 默认全选:绝大多数情况就是把刚传的这批一起成单
-      setPicked(new Set(list.map((s) => s.id)));
-    } catch {
-      Toast.show({ content: "加载失败,请下拉重试" });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data,
+    loading,
+    reload: load,
+  } = useResource((signal) => listOfflineShots(signal), [], {
+    errorText: "加载失败,请下拉重试",
+  });
+  const shots = data ?? [];
 
+  // 默认全选:绝大多数情况就是把刚传的这批一起成单
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (data) setPicked(new Set(data.map((s) => s.id)));
+  }, [data]);
 
   const pickedIds = useMemo(() => [...picked], [picked]);
 
@@ -110,11 +110,7 @@ export default function ReviewPage() {
   }
 
   if (loading) {
-    return (
-      <div className="center-screen">
-        <span className="spinner" />
-      </div>
-    );
+    return <CenterLoading />;
   }
 
   if (!shots.length) {
@@ -145,7 +141,11 @@ export default function ReviewPage() {
           <button
             className="sel-btn"
             onClick={() =>
-              setPicked(picked.size === shots.length ? new Set() : new Set(shots.map((s) => s.id)))
+              setPicked(
+                picked.size === shots.length
+                  ? new Set()
+                  : new Set(shots.map((s) => s.id)),
+              )
             }
           >
             {picked.size === shots.length ? "全不选" : "全选"}
@@ -161,8 +161,16 @@ export default function ReviewPage() {
                 className={picked.has(s.id) ? "grid-cell picked" : "grid-cell"}
                 onClick={() => toggle(s.id)}
               >
-                <img src={`/api/inspection/offline-shots/${s.id}/image`} alt="" loading="lazy" />
-                <span className="cell-check">{picked.has(s.id) ? "✓" : ""}</span>
+                {/* 格子只有 110px,原图是 900×1600 —— 一页 20 张就是 1.1MB。
+                    ?w=240 让后端出小图(2 倍屏够用),大图留给点开看的查看器。 */}
+                <img
+                  src={`/api/inspection/offline-shots/${s.id}/image?w=240`}
+                  alt=""
+                  loading="lazy"
+                />
+                <span className="cell-check">
+                  {picked.has(s.id) ? "✓" : ""}
+                </span>
                 <span className="cell-meta">
                   {fmtTime(s.capturedAt)}
                   {gap && <em className="cell-gap">{gap}</em>}
@@ -182,13 +190,20 @@ export default function ReviewPage() {
             );
           })}
         </div>
-
       </div>
 
-      <PhotoViewer photos={photos} index={viewing} onClose={() => setViewing(-1)} />
+      <PhotoViewer
+        photos={photos}
+        index={viewing}
+        onClose={() => setViewing(-1)}
+      />
 
       <div className="flow-foot foot-row">
-        <button className="foot-del" disabled={!picked.size || busy} onClick={() => void onDelete()}>
+        <button
+          className="foot-del"
+          disabled={!picked.size || busy}
+          onClick={() => void onDelete()}
+        >
           删除{picked.size ? ` (${picked.size})` : ""}
         </button>
         <Button className="btn-primary foot-main" onClick={toClassify}>

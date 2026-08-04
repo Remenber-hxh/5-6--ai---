@@ -27,7 +27,9 @@ export default function LoginPage() {
       const role = useAuth.getState().user?.roleCode || "inspector";
       nav(landingForRole(role), { replace: true });
     } catch (err) {
-      Toast.show({ content: err instanceof ApiError ? err.message : "登录失败,请重试" });
+      Toast.show({
+        content: err instanceof ApiError ? err.message : "登录失败,请重试",
+      });
     } finally {
       setLoading(false);
     }
@@ -43,7 +45,9 @@ export default function LoginPage() {
         </span>
 
         <h1 className="screen-title">巡检员登录</h1>
-        <p className="screen-sub">请使用主管分配的账号登录,记录会自动归到你名下</p>
+        <p className="screen-sub">
+          请使用主管分配的账号登录,记录会自动归到你名下
+        </p>
 
         <div className="field">
           <span className="field-label">账号</span>
@@ -78,7 +82,12 @@ export default function LoginPage() {
           />
         </div>
 
-        <Button block className="btn-primary" loading={loading} onClick={submit}>
+        <Button
+          block
+          className="btn-primary"
+          loading={loading}
+          onClick={submit}
+        >
           登录
         </Button>
 

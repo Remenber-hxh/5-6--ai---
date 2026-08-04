@@ -25,12 +25,19 @@ const STEPS = {
 
 const TAGS = ["设备状态", "仪表读数", "异常风险", "日报模板"];
 
-export default function LoadingScene({ kind }: { kind: "classify" | "analyze" }) {
+export default function LoadingScene({
+  kind,
+}: {
+  kind: "classify" | "analyze";
+}) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     const started = Date.now();
-    const timer = setInterval(() => setElapsed((Date.now() - started) / 1000), 500);
+    const timer = setInterval(
+      () => setElapsed((Date.now() - started) / 1000),
+      500,
+    );
     return () => clearInterval(timer);
   }, [kind]);
 
@@ -61,7 +68,15 @@ export default function LoadingScene({ kind }: { kind: "classify" | "analyze" })
           <ol className="loading-steps">
             {steps.map((t, i) => {
               const state =
-                cur.step < 0 ? (i === 0 ? "active" : "") : i < cur.step ? "done" : i === cur.step ? "active" : "";
+                cur.step < 0
+                  ? i === 0
+                    ? "active"
+                    : ""
+                  : i < cur.step
+                    ? "done"
+                    : i === cur.step
+                      ? "active"
+                      : "";
               return (
                 <li className={`step ${state}`} key={t}>
                   <span className="step-dot" />

@@ -2,9 +2,13 @@ import { Button, Dialog, Toast } from "@/ui";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import RecordContext from "@/components/RecordContext";
+import StatusTag from "@/components/StatusTag";
 import { RecordDTO, getRecord, submitRecord } from "@/api/inspection";
+import { usePolling } from "@/hooks/usePolling";
+import { useResource } from "@/hooks/useResource";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
 
 /** AI 总结未就绪时轮询等待:提交后后端才异步生成总结 */
@@ -12,16 +16,11 @@ const POLL_MS = 2000;
 const POLL_MAX = 15;
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
-const PRIORITY_TEXT: Record<string, string> = { high: "高", medium: "中", low: "低" };
-
-/**
- * AI 总结结论 → 色档。照搬旧版 app.js:1274 的映射,不自己编 ——
- * 口径一致才能让新旧两端对同一份记录显示同样的颜色。
- * 未知结论落 warn(而不是 ok):拿不准时偏保守,别把没定论的说成正常。
- */
-function statusTone(text: string): string {
-  return { 正常: "ok", 异常: "bad", 待复核: "warn" }[text] || "warn";
-}
+const PRIORITY_TEXT: Record<string, string> = {
+  high: "高",
+  medium: "中",
+  low: "低",
+};
 
 // 日报预览(旧版 scenePreview):字段汇总 + AI 总结 + AI 行动建议 → 提交
 export default function PreviewPage() {
@@ -31,20 +30,31 @@ export default function PreviewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [waitingSummary, setWaitingSummary] = useState(false);
 
+  const { data: loaded } = useResource(
+    (signal) => getRecord(id, signal),
+    [id],
+    {
+      errorText: "记录加载失败",
+    },
+  );
   useEffect(() => {
-    let stop = false;
-    void (async () => {
-      try {
-        const fresh = await getRecord(id);
-        if (!stop) setRec(fresh);
-      } catch {
-        Toast.show({ content: "记录加载失败" });
-      }
-    })();
-    return () => {
-      stop = true;
-    };
-  }, [id]);
+    if (loaded) setRec(loaded);
+  }, [loaded]);
+
+  // AI 总结是提交后异步生成的,轮询等它出来。原来这段写在 onSubmit 里,
+  // 页面一卸载就断了 —— 和填报页那个 bug 是同一类,只是没人碰到过。
+  usePolling(() => getRecord(id), {
+    enabled: waitingSummary,
+    intervalMs: POLL_MS,
+    maxTicks: POLL_MAX,
+    onTick: setRec,
+    done: (fresh) => Boolean(fresh.aiSummary || fresh.aiSummaryError),
+    onGiveUp: () => setWaitingSummary(false),
+  });
+  // 等到了就收起"生成中"
+  useEffect(() => {
+    if (rec?.aiSummary || rec?.aiSummaryError) setWaitingSummary(false);
+  }, [rec?.aiSummary, rec?.aiSummaryError]);
 
   async function onSubmit() {
     if (!rec || submitting) return;
@@ -82,17 +92,9 @@ export default function PreviewPage() {
       if (getActiveTask()) clearActiveTask();
       Toast.show({ content: "已提交", position: "bottom" });
 
-      // AI 总结是提交后异步生成的,轮询等它出来再展示
-      if (!submitted.aiSummary) {
-        setWaitingSummary(true);
-        for (let i = 0; i < POLL_MAX; i++) {
-          await new Promise((r) => setTimeout(r, POLL_MS));
-          const fresh = await getRecord(rec.id);
-          setRec(fresh);
-          if (fresh.aiSummary || fresh.aiSummaryError) break;
-        }
-        setWaitingSummary(false);
-      }
+      // 总结还没生成好就开轮询(实际的等待逻辑在上面的 usePolling 里 ——
+      // 放在这里的话页面一卸载就断了)
+      if (!submitted.aiSummary) setWaitingSummary(true);
     } catch (err) {
       // 失败原因必须让用户看见 —— 后端会因"待重拍/必填缺失"等明确拒绝,
       // 吞掉错误会让人以为按钮坏了。
@@ -106,15 +108,12 @@ export default function PreviewPage() {
   }
 
   if (!rec) {
-    return (
-      <div className="center-screen">
-        <span className="spinner" />
-      </div>
-    );
+    return <CenterLoading />;
   }
 
   const recos = [...(rec.aiRecommendations || [])].sort(
-    (a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3),
+    (a, b) =>
+      (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3),
   );
 
   return (
@@ -150,9 +149,7 @@ export default function PreviewPage() {
               <span className="ai-mark">✦</span>
               <span className="ai-title">AI 总结</span>
               {rec.aiSummaryTags?.[0] && (
-                <span className={`sum-status ${statusTone(rec.aiSummaryTags[0])}`}>
-                  {rec.aiSummaryTags[0]}
-                </span>
+                <StatusTag text={rec.aiSummaryTags[0]} />
               )}
             </div>
             <div className="ai-body">{rec.aiSummary}</div>
@@ -190,7 +187,9 @@ export default function PreviewPage() {
 
         {rec.aiSummaryError && (
           <div className="pending-alert">
-            <span className="pa-msg">AI 总结生成异常:{rec.aiSummaryError}(已使用本地兜底文本)</span>
+            <span className="pa-msg">
+              AI 总结生成异常:{rec.aiSummaryError}(已使用本地兜底文本)
+            </span>
           </div>
         )}
       </div>
@@ -202,7 +201,12 @@ export default function PreviewPage() {
           </Button>
         ) : (
           /* 「返回修改」已由顶栏返回键承担,底部只留主操作 */
-          <Button block className="btn-primary" loading={submitting} onClick={() => void onSubmit()}>
+          <Button
+            block
+            className="btn-primary"
+            loading={submitting}
+            onClick={() => void onSubmit()}
+          >
             提交日报
           </Button>
         )}

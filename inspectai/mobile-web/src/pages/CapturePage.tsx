@@ -68,8 +68,15 @@ export default function CapturePage() {
           品牌徽章也删了:顶栏已经有「智巡」,中间再放一次是重复。 */}
       <div className="capture-top">
         <span className="capture-wordmark">智巡</span>
-        <button className="user-window" onClick={() => nav("/me")} aria-label="我的">
-          <Avatar name={user?.displayName || user?.username || "巡"} src={user?.avatar} />
+        <button
+          className="user-window"
+          onClick={() => nav("/me")}
+          aria-label="我的"
+        >
+          <Avatar
+            name={user?.displayName || user?.username || "巡"}
+            src={user?.avatar}
+          />
         </button>
       </div>
 
@@ -98,7 +105,10 @@ export default function CapturePage() {
           在线时这里不占位;离线时才出现,并说清影响(照片不会丢)。
           原先底部那行常驻小字就是它的前身 —— 常驻但在线时纯属废话。 */}
       {!online && (
-        <NoticeBar tone="warn" leftContent={<span className="nb-ic">离线</span>}>
+        <NoticeBar
+          tone="warn"
+          leftContent={<span className="nb-ic">离线</span>}
+        >
           没有网络也能拍。照片先存这台手机,联网后自动上传并补 AI 识别。
         </NoticeBar>
       )}
@@ -112,12 +122,11 @@ export default function CapturePage() {
       <div className="capture-scroll">
         <PullRefresh onRefresh={refresh}>
           <div className="capture-main">
-        {/* 取景框删干净了。点快门打开的是【系统相机】,对准动作发生在那里 ——
+            {/* 取景框删干净了。点快门打开的是【系统相机】,对准动作发生在那里 ——
             这个框从来没框住过任何东西,却一直有扫描线在动,暗示"正在识别"。
             没有实景的情况下它就是个假框子。
 
             这里刻意【什么都不放】:首页只做拍照一件事,留白就是留白。 */}
-
           </div>
         </PullRefresh>
       </div>
@@ -128,60 +137,67 @@ export default function CapturePage() {
         调暗只说明"不能点",不说明"正在干活"。
         长按是隐藏手势,下方文字必须写出来,否则相册入口等于消失。 */}
       <div className="shutter-bar">
-      <div className="shutter-dock">
-        {/* 光波是独立元素并带 key —— key 变化让它重新挂载,动画才会重放。
+        <div className="shutter-dock">
+          {/* 光波是独立元素并带 key —— key 变化让它重新挂载,动画才会重放。
             不能把 key 放在 .shutter-dock 上:那会把快门和相册一起重挂,
             相册的展开过渡直接失效、file input 也会被重建。 */}
-        {ripple > 0 && <span className="shutter-ripple" key={ripple} aria-hidden />}
-        <label
-          className={
-            (saving ? "shutter is-busy" : "shutter") + (holding ? " is-holding" : "")
-          }
-          {...longPress.handlers}
-        >
-          <input
-            className="vf-input"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            onChange={onPick}
-            aria-label="拍照"
-          />
-          {saving && (
-            <span className="shutter-loading">
-              <Loading size={26} color="#0a8a63" />
-            </span>
+          {ripple > 0 && (
+            <span className="shutter-ripple" key={ripple} aria-hidden />
           )}
-        </label>
+          <label
+            className={
+              (saving ? "shutter is-busy" : "shutter") +
+              (holding ? " is-holding" : "")
+            }
+            {...longPress.handlers}
+          >
+            <input
+              className="vf-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              onChange={onPick}
+              aria-label="拍照"
+            />
+            {saving && (
+              <span className="shutter-loading">
+                <Loading size={26} color="#0a8a63" />
+              </span>
+            )}
+          </label>
 
-        {/* 相册:长按后滑出。是 label 包 input —— 用户点它是一次全新的
+          {/* 相册:长按后滑出。是 label 包 input —— 用户点它是一次全新的
             用户手势,file picker 一定能打开;不依赖长按那一次手势的延续。 */}
-        <label
-          className={albumOpen ? "album-fab upload-wrap is-open" : "album-fab upload-wrap"}
-          aria-hidden={!albumOpen}
-        >
-          <IconAlbum />
-          <input
-            className="upload-input"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(e) => {
-              setAlbumOpen(false);
-              void onPick(e);
-            }}
-            aria-label="从相册上传"
-            tabIndex={albumOpen ? 0 : -1}
-          />
-        </label>
-      </div>
-      <span className="shutter-label">
-        {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别"}
-      </span>
-      {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(工信部要求)。
+          <label
+            className={
+              albumOpen
+                ? "album-fab upload-wrap is-open"
+                : "album-fab upload-wrap"
+            }
+            aria-hidden={!albumOpen}
+          >
+            <IconAlbum />
+            <input
+              className="upload-input"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                setAlbumOpen(false);
+                void onPick(e);
+              }}
+              aria-label="从相册上传"
+              tabIndex={albumOpen ? 0 : -1}
+            />
+          </label>
+        </div>
+        <span className="shutter-label">
+          {saving ? "保存中…" : albumOpen ? "点右侧图标选相册" : "拍照识别"}
+        </span>
+        {/* 登录后根域名首页 = 这一屏,备案号必须在这里也可见(工信部要求)。
           放在快门栏里而不是滚动区:滚动区现在只到 616px,备案号会飘在半空。 */}
-      <BeianLine />
+        <BeianLine />
       </div>
 
       <PendingPanel />

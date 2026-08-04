@@ -13,7 +13,10 @@ function fmtSize(bytes: number): string {
 }
 
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** 单张卡片。Blob URL 在卸载时回收,连拍多张不漏内存 */
@@ -56,8 +59,12 @@ function ShotCard({
           <span className="spinner" />
         </span>
       )}
-      {shot.status === "blocked" && <span className="shot-flag flag-blocked">需处理</span>}
-      {shot.status === "failed" && <span className="shot-flag flag-failed">待重试</span>}
+      {shot.status === "blocked" && (
+        <span className="shot-flag flag-blocked">需处理</span>
+      )}
+      {shot.status === "failed" && (
+        <span className="shot-flag flag-failed">待重试</span>
+      )}
 
       <span className="shot-time">{fmtTime(shot.capturedAt)}</span>
 
@@ -66,7 +73,11 @@ function ShotCard({
       ) : (
         <>
           {shot.status !== "uploading" && (
-            <button className="shot-x" onClick={() => void onDelete()} aria-label="删除">
+            <button
+              className="shot-x"
+              onClick={() => void onDelete()}
+              aria-label="删除"
+            >
               ×
             </button>
           )}
@@ -82,7 +93,8 @@ function ShotCard({
 }
 
 export default function PendingPanel() {
-  const { shots, online, persisted, usedBytes, flush, unblock, removeMany } = usePending();
+  const { shots, online, persisted, usedBytes, flush, unblock, removeMany } =
+    usePending();
   const [flushing, setFlushing] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -90,8 +102,13 @@ export default function PendingPanel() {
   const stats = useMemo(() => {
     const blocked = shots.filter((s) => s.status === "blocked").length;
     const uploading = shots.filter((s) => s.status === "uploading").length;
-    const stuck = shots.filter((s) => s.status === "blocked" || s.status === "failed").length;
-    const bytes = shots.reduce((sum, s) => sum + (Number(s.size) || s.blob?.size || 0), 0);
+    const stuck = shots.filter(
+      (s) => s.status === "blocked" || s.status === "failed",
+    ).length;
+    const bytes = shots.reduce(
+      (sum, s) => sum + (Number(s.size) || s.blob?.size || 0),
+      0,
+    );
     return { blocked, uploading, stuck, bytes };
   }, [shots]);
 
@@ -119,7 +136,10 @@ export default function PendingPanel() {
     setFlushing(true);
     try {
       const n = await flush();
-      Toast.show({ content: n > 0 ? `已上传 ${n} 张` : "暂无可上传的照片", position: "bottom" });
+      Toast.show({
+        content: n > 0 ? `已上传 ${n} 张` : "暂无可上传的照片",
+        position: "bottom",
+      });
     } finally {
       setFlushing(false);
     }
@@ -177,7 +197,10 @@ export default function PendingPanel() {
                     setPicked(
                       new Set(
                         shots
-                          .filter((s) => s.status === "blocked" || s.status === "failed")
+                          .filter(
+                            (s) =>
+                              s.status === "blocked" || s.status === "failed",
+                          )
                           .map((s) => s.id),
                       ),
                     )
@@ -186,7 +209,11 @@ export default function PendingPanel() {
                   选失败的
                 </button>
               )}
-              <button className="sel-btn danger" disabled={!picked.size} onClick={() => void deletePicked()}>
+              <button
+                className="sel-btn danger"
+                disabled={!picked.size}
+                onClick={() => void deletePicked()}
+              >
                 删除
               </button>
               <button className="sel-btn" onClick={exitSelecting}>
@@ -206,7 +233,11 @@ export default function PendingPanel() {
                 选择
               </button>
               {online ? (
-                <button className="pending-action" onClick={() => void onFlush()} disabled={flushing}>
+                <button
+                  className="pending-action"
+                  onClick={() => void onFlush()}
+                  disabled={flushing}
+                >
                   {stats.uploading > 0 || flushing ? "上传中…" : "立即上传"}
                 </button>
               ) : (

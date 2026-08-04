@@ -46,7 +46,9 @@ function gapText(captured?: string, received?: string): string {
   if (!a || !b || b <= a) return "";
   const mins = Math.round((b - a) / 60000);
   if (mins < 1) return "";
-  return mins < 60 ? `离线 ${mins} 分钟后上传` : `离线 ${Math.round(mins / 60)} 小时后上传`;
+  return mins < 60
+    ? `离线 ${mins} 分钟后上传`
+    : `离线 ${Math.round(mins / 60)} 小时后上传`;
 }
 
 /** 水印文本行 —— 查看与导出共用同一份,保证所见即所得 */
@@ -54,9 +56,11 @@ function watermarkLines(meta: PhotoMeta): string[] {
   const lines: string[] = [];
   if (meta.capturedAt) lines.push(`拍摄 ${fmt(meta.capturedAt)}`);
   const gap = gapText(meta.capturedAt, meta.receivedAt);
-  if (meta.receivedAt) lines.push(`上传 ${fmt(meta.receivedAt)}${gap ? ` · ${gap}` : ""}`);
+  if (meta.receivedAt)
+    lines.push(`上传 ${fmt(meta.receivedAt)}${gap ? ` · ${gap}` : ""}`);
   if (meta.inspector) lines.push(`巡检 ${meta.inspector}`);
-  if (meta.project || meta.location) lines.push([meta.project, meta.location].filter(Boolean).join(" · "));
+  if (meta.project || meta.location)
+    lines.push([meta.project, meta.location].filter(Boolean).join(" · "));
   if (typeof meta.lat === "number" && typeof meta.lng === "number") {
     lines.push(`定位 ${meta.lat.toFixed(5)}, ${meta.lng.toFixed(5)}`);
   }
@@ -89,7 +93,12 @@ async function renderWatermarked(meta: PhotoMeta): Promise<Blob | null> {
   const blockH = lines.length * lineH + pad * 2;
 
   // 底部渐变遮罩:保证浅色照片上文字也读得清
-  const grad = ctx.createLinearGradient(0, canvas.height - blockH * 1.4, 0, canvas.height);
+  const grad = ctx.createLinearGradient(
+    0,
+    canvas.height - blockH * 1.4,
+    0,
+    canvas.height,
+  );
   grad.addColorStop(0, "rgba(0,0,0,0)");
   grad.addColorStop(1, "rgba(0,0,0,0.72)");
   ctx.fillStyle = grad;
@@ -108,7 +117,11 @@ async function renderWatermarked(meta: PhotoMeta): Promise<Blob | null> {
   ctx.font = `800 ${Math.round(fontSize * 0.85)}px -apple-system, sans-serif`;
   ctx.fillStyle = "rgba(67,229,172,0.9)";
   const mark = "智巡 JADEAST";
-  ctx.fillText(mark, canvas.width - ctx.measureText(mark).width - pad, canvas.height - pad);
+  ctx.fillText(
+    mark,
+    canvas.width - ctx.measureText(mark).width - pad,
+    canvas.height - pad,
+  );
 
   return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
 }
@@ -121,7 +134,11 @@ export interface PhotoViewerProps {
   onClose: () => void;
 }
 
-export default function PhotoViewer({ photos, index, onClose }: PhotoViewerProps) {
+export default function PhotoViewer({
+  photos,
+  index,
+  onClose,
+}: PhotoViewerProps) {
   const [exporting, setExporting] = useState(false);
   // 导出的是【当前这张】,翻页后要跟着变;openIndex 只管从哪张打开,
   // 之后的翻页在组件内部,只能靠回调同步出来。
@@ -146,7 +163,8 @@ export default function PhotoViewer({ photos, index, onClose }: PhotoViewerProps
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = (meta.fileName || "photo").replace(/\.[^.]+$/, "") + "_水印.jpg";
+      a.download =
+        (meta.fileName || "photo").replace(/\.[^.]+$/, "") + "_水印.jpg";
       a.click();
       URL.revokeObjectURL(url);
       Toast.show({ content: "已保存带水印的照片", position: "bottom" });
@@ -193,7 +211,11 @@ export default function PhotoViewer({ photos, index, onClose }: PhotoViewerProps
             </span>
           )}
           <div className="viewer-foot">
-            <button className="viewer-btn" onClick={() => void onExport()} disabled={exporting}>
+            <button
+              className="viewer-btn"
+              onClick={() => void onExport()}
+              disabled={exporting}
+            >
               {exporting ? "导出中…" : "保存带水印的照片"}
             </button>
           </div>

@@ -2,6 +2,7 @@ import { Button, Image, Picker, Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
@@ -13,6 +14,8 @@ import {
   patchField,
   startAnalysis,
 } from "@/api/inspection";
+import { usePolling } from "@/hooks/usePolling";
+import { useResource } from "@/hooks/useResource";
 
 const POLL_MS = 2000;
 const POLL_MAX = 40; // 最长约 80 秒
@@ -22,7 +25,10 @@ function pillOf(f: FieldValue): { cls: string; text: string } | null {
   if (f.source === "human-confirmed") return { cls: "edited", text: "已确认" };
   if (f.source === "human-edited") return { cls: "edited", text: "已修改" };
   if (f.source === "ai" && f.confidence) {
-    return { cls: f.needsReview ? "review" : "confirmed", text: `AI ${Math.round(f.confidence * 100)}%` };
+    return {
+      cls: f.needsReview ? "review" : "confirmed",
+      text: `AI ${Math.round(f.confidence * 100)}%`,
+    };
   }
   if (f.source === "ai" && String(f.value || "").trim()) {
     return { cls: f.needsReview ? "review" : "confirmed", text: "AI 识别" };
@@ -57,10 +63,16 @@ function FieldRow({
   async function commit(next: string) {
     if (next === field.value) return;
     try {
-      const updated = await patchField(recordId, field.code, next, field.version, {
-        action: "correct",
-        durationMs: Date.now() - enteredAt.current,
-      });
+      const updated = await patchField(
+        recordId,
+        field.code,
+        next,
+        field.version,
+        {
+          action: "correct",
+          durationMs: Date.now() - enteredAt.current,
+        },
+      );
       onSaved(updated);
       enteredAt.current = Date.now();
     } catch (err) {
@@ -69,7 +81,9 @@ function FieldRow({
   }
 
   const pill = pillOf(field);
-  const pillEl = pill ? <span className={`ai-pill ${pill.cls}`}>{pill.text}</span> : null;
+  const pillEl = pill ? (
+    <span className={`ai-pill ${pill.cls}`}>{pill.text}</span>
+  ) : null;
 
   if (isLongText(field)) {
     return (
@@ -138,65 +152,63 @@ export default function RecordPage() {
   const [viewing, setViewing] = useState(-1);
   const kickedRef = useRef("");
 
-  // 依赖只能是 id:循环里会 setRec,若把 rec 放进依赖会自噬 ——
-  // effect 反复重启、清理函数置位导致 setAnalyzing(false) 永不执行,转圈停不下来。
+  // 首次加载。竞态防护和卸载保护在 useResource 里。
+  const { data: loaded } = useResource(
+    (signal) => getRecord(id, signal),
+    [id],
+    {
+      errorText: "记录加载失败",
+    },
+  );
   useEffect(() => {
-    let stop = false;
-    void (async () => {
-      let cur: RecordDTO;
-      try {
-        cur = await getRecord(id);
-      } catch {
-        Toast.show({ content: "记录加载失败" });
-        return;
-      }
-      if (stop) return;
-      setRec(cur);
+    if (loaded) setRec(loaded);
+  }, [loaded]);
 
-      // 【processing 也要接着等】原来这里是 `!== "not_started" 就 return`,
-      // 于是"识别已经在跑"被当成"没我的事",既不转圈也不轮询 —— 页面就停在
-      // 一堆空字段上,而后端十几秒后已经识别好了。用户看到的就是"识别完了
-      // 没填表"。会撞上这个分支的场合不止一种:
-      //   · 识别中刷新页面
-      //   · 从预览页返回填报页
-      //   · 从任务列表二次进入同一条记录
-      // (还有一个更隐蔽的:转场层曾让页面挂载两次,第二次必然撞上 —— 那个
-      //  已在 App.tsx 修掉,但这里的兜底得留着,上面三种是真实操作。)
-      const running = cur.recognitionStatus === "not_started" || cur.recognitionStatus === "processing";
-      if (!running) return;
+  // 【processing 也要接着等】原来是 `状态 !== "not_started" 就 return`,
+  // 于是"识别已经在跑"被当成"没我的事",既不转圈也不轮询 —— 页面停在一堆空
+  // 字段上,而后端十几秒后已经识别好了。用户看到的就是"识别完了没填表"。
+  // 会撞上这个分支的场合不止一种:识别中刷新、从预览页返回、从任务列表二次
+  // 进入同一条记录。(还有一个更隐蔽的:转场层曾让页面挂载两次,第二次必然
+  // 撞上 —— 那个已在 App.tsx 修掉,但这里的判断本来就该这么写。)
+  const running =
+    rec?.recognitionStatus === "not_started" ||
+    rec?.recognitionStatus === "processing";
 
-      setAnalyzing(true);
-      try {
-        // 只有还没开始的才发起;已经在跑的直接进轮询,不重复触发(会多花一次
-        // 模型调用,而且后端会把 CaptureAttempts 加一,凑够三次就误判成人工填写)
-        if (cur.recognitionStatus === "not_started" && kickedRef.current !== id) {
-          kickedRef.current = id;
-          await startAnalysis(id);
-        }
-        for (let i = 0; i < POLL_MAX && !stop; i++) {
-          await new Promise((r) => setTimeout(r, POLL_MS));
-          if (stop) return;
-          const fresh = await getRecord(id);
-          if (stop) return;
-          setRec(fresh);
-          if (fresh.recognitionStatus !== "processing" && fresh.recognitionStatus !== "not_started") break;
-        }
-      } catch {
-        Toast.show({ content: "AI 识别未成功,可手动填写" });
-      } finally {
-        setAnalyzing(false);
-      }
-    })();
-    return () => {
-      stop = true;
-    };
-  }, [id]);
+  // 还没开始的才发起识别;已经在跑的直接进轮询,不重复触发 ——
+  // 重复触发会多花一次模型调用,而且后端把 CaptureAttempts 加一,
+  // 凑够三次就误判成"人工填写"。
+  useEffect(() => {
+    if (rec?.recognitionStatus !== "not_started" || kickedRef.current === id)
+      return;
+    kickedRef.current = id;
+    void startAnalysis(id).catch(() =>
+      Toast.show({ content: "AI 识别未成功,可手动填写" }),
+    );
+  }, [id, rec?.recognitionStatus]);
+
+  useEffect(() => setAnalyzing(Boolean(running)), [running]);
+
+  usePolling(() => getRecord(id), {
+    enabled: Boolean(running),
+    intervalMs: POLL_MS,
+    maxTicks: POLL_MAX,
+    onTick: setRec,
+    done: (fresh) =>
+      fresh.recognitionStatus !== "processing" &&
+      fresh.recognitionStatus !== "not_started",
+    onGiveUp: () => Toast.show({ content: "AI 识别未成功,可手动填写" }),
+  });
 
   // 后端 PATCH 字段只返回该字段,按 code 合并(与旧版 Object.assign 同语义)
   function mergeField(updated: FieldValue) {
     setRec((cur) =>
       cur
-        ? { ...cur, fields: cur.fields.map((f) => (f.code === updated.code ? { ...f, ...updated } : f)) }
+        ? {
+            ...cur,
+            fields: cur.fields.map((f) =>
+              f.code === updated.code ? { ...f, ...updated } : f,
+            ),
+          }
         : cur,
     );
   }
@@ -212,7 +224,10 @@ export default function RecordPage() {
 
   // 只统计置信度 <95% 的 AI 字段;≥95% 视为可信,不需人工逐项确认(旧版口径)
   const lowConf = (rec?.fields || []).filter(
-    (f) => f.source === "ai" && String(f.value || "").trim() !== "" && (f.confidence || 0) < 0.95,
+    (f) =>
+      f.source === "ai" &&
+      String(f.value || "").trim() !== "" &&
+      (f.confidence || 0) < 0.95,
   );
 
   async function confirmAll() {
@@ -220,10 +235,15 @@ export default function RecordPage() {
     setConfirming(true);
     try {
       for (const f of lowConf) {
-        const updated = await patchField(rec.id, f.code, f.value, f.version, { action: "confirm" });
+        const updated = await patchField(rec.id, f.code, f.value, f.version, {
+          action: "confirm",
+        });
         mergeField(updated);
       }
-      Toast.show({ content: `已确认 ${lowConf.length} 项`, position: "bottom" });
+      Toast.show({
+        content: `已确认 ${lowConf.length} 项`,
+        position: "bottom",
+      });
     } catch {
       Toast.show({ content: "部分字段确认失败,请重试" });
     } finally {
@@ -247,13 +267,8 @@ export default function RecordPage() {
   if (analyzing) return <LoadingScene kind="analyze" />;
 
   if (!rec) {
-    return (
-      <div className="center-screen">
-        <span className="spinner" />
-      </div>
-    );
+    return <CenterLoading />;
   }
-
 
   return (
     <div className="flow-screen">
@@ -275,7 +290,9 @@ export default function RecordPage() {
         {rec.retakeReason && (
           <div className="retake-box">
             <div className="retake-why">{rec.retakeReason}</div>
-            <div className="retake-tries">已尝试 {rec.captureAttempts ?? 0} / 3 次</div>
+            <div className="retake-tries">
+              已尝试 {rec.captureAttempts ?? 0} / 3 次
+            </div>
             <div className="retake-acts">
               <button className="fld-btn" onClick={() => nav("/")}>
                 去补拍
@@ -299,10 +316,16 @@ export default function RecordPage() {
 
         {rec.images.length > 0 && (
           <>
-            <div className="fld-group-title">巡检照片({rec.images.length} 张)</div>
+            <div className="fld-group-title">
+              巡检照片({rec.images.length} 张)
+            </div>
             <div className="photo-strip">
               {photos.map((p, i) => (
-                <button className="photo-thumb" key={p.url} onClick={() => setViewing(i)}>
+                <button
+                  className="photo-thumb"
+                  key={p.url}
+                  onClick={() => setViewing(i)}
+                >
                   {/* 用组件库的 Image:自带加载占位、失败兜底和自动重试。
                       手写 <img> 在现场信号差时会白一片或直接裂图。 */}
                   <Image src={p.url} radius={12} />
@@ -327,12 +350,21 @@ export default function RecordPage() {
         {/* 「日报字段」标题删了:整页只有这一组字段,标题不起区分作用 */}
         <div className="fld-group">
           {rec.fields.map((f) => (
-            <FieldRow key={f.code} field={f} recordId={rec.id} onSaved={mergeField} />
+            <FieldRow
+              key={f.code}
+              field={f}
+              recordId={rec.id}
+              onSaved={mergeField}
+            />
           ))}
         </div>
       </div>
 
-      <PhotoViewer photos={photos} index={viewing} onClose={() => setViewing(-1)} />
+      <PhotoViewer
+        photos={photos}
+        index={viewing}
+        onClose={() => setViewing(-1)}
+      />
 
       <div className="flow-foot">
         <Button block className="btn-primary" onClick={toPreview}>

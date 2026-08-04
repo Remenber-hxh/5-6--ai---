@@ -1,6 +1,6 @@
 // 巡检流程 API —— 与旧版 frontend/ 走同一批后端接口,契约保持一致。
 
-import { api, getToken } from "@/api/client";
+import { api } from "@/api/client";
 
 export interface OfflineShotDTO {
   id: string;
@@ -83,8 +83,15 @@ export interface TemplateDTO {
 }
 
 /** 服务器上尚未成单的离线照片 */
-export async function listOfflineShots(): Promise<OfflineShotDTO[]> {
-  const body = await api<{ shots: OfflineShotDTO[] | null }>("/api/inspection/offline-shots?limit=200");
+export async function listOfflineShots(
+  signal?: AbortSignal,
+): Promise<OfflineShotDTO[]> {
+  // pending=1 让服务端只发未成单的。原来是全量发下来、客户端 filter 掉,
+  // 那部分字节纯属白传(实测这个接口 82KB)。
+  const body = await api<{ shots: OfflineShotDTO[] | null }>(
+    "/api/inspection/offline-shots?limit=200&pending=1",
+    { signal },
+  );
   return (body.shots || []).filter((s) => !s.recordId);
 }
 
@@ -96,26 +103,39 @@ export async function classifyOfflineShots(shotIds: string[]) {
   );
 }
 
-export async function listTemplates(): Promise<TemplateDTO[]> {
-  const body = await api<{ templates: TemplateDTO[] | null }>("/api/report/templates");
+export async function listTemplates(
+  signal?: AbortSignal,
+): Promise<TemplateDTO[]> {
+  const body = await api<{ templates: TemplateDTO[] | null }>(
+    "/api/report/templates",
+    { signal },
+  );
   return body.templates || [];
 }
 
 /** 成单:按 ID 认领离线照片(照片已在服务器上) */
-export async function createRecordFromShots(templateId: string, shotIds: string[]) {
+export async function createRecordFromShots(
+  templateId: string,
+  shotIds: string[],
+) {
   return api<RecordDTO>("/api/inspection/records", {
     method: "POST",
     body: JSON.stringify({ templateId, offlineShotIds: shotIds }),
   });
 }
 
-export async function getRecord(id: string): Promise<RecordDTO> {
-  return api<RecordDTO>(`/api/inspection/records/${id}`);
+export async function getRecord(
+  id: string,
+  signal?: AbortSignal,
+): Promise<RecordDTO> {
+  return api<RecordDTO>(`/api/inspection/records/${id}`, { signal });
 }
 
 /** 触发 AI 字段识别(异步任务) */
 export async function startAnalysis(id: string) {
-  return api<{ taskId?: string }>(`/api/inspection/records/${id}/ai-tasks`, { method: "POST" });
+  return api<{ taskId?: string }>(`/api/inspection/records/${id}/ai-tasks`, {
+    method: "POST",
+  });
 }
 
 export interface PatchFieldOpts {
@@ -139,30 +159,36 @@ export async function patchField(
   version: number,
   opts: PatchFieldOpts = {},
 ): Promise<FieldValue> {
-  return api<FieldValue>(`/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, version, ...opts }),
-  });
+  return api<FieldValue>(
+    `/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ value, version, ...opts }),
+    },
+  );
 }
 
 /** 转人工填写(AI 多次识别不稳时) */
 export async function enableManual(id: string) {
-  return api<RecordDTO>(`/api/inspection/records/${id}/manual`, { method: "POST" });
+  return api<RecordDTO>(`/api/inspection/records/${id}/manual`, {
+    method: "POST",
+  });
 }
 
 /** 提交。幂等键防弱网重复提交产生重复记录 */
 export async function submitRecord(id: string): Promise<RecordDTO> {
-  const res = await fetch(`/api/inspection/records/${id}/submit`, {
+  return api<RecordDTO>(`/api/inspection/records/${id}/submit`, {
     method: "POST",
-    headers: {
-      "X-InspectAI-Token": getToken(),
-      "Idempotency-Key": `sub_${id}_${Date.now().toString(36)}`,
-    },
+    headers: { "Idempotency-Key": `sub_${id}_${Date.now().toString(36)}` },
   });
-  const text = await res.text();
-  const body = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(body.message || "提交失败");
-  return body as RecordDTO;
+}
+
+/**
+ * 删除未提交的记录(草稿)。
+ * 后端只接受未提交的:已提交的进了台账,要撤销走数据修改申请。
+ */
+export async function deleteDraftRecord(id: string): Promise<void> {
+  await api<void>(`/api/inspection/records/${id}`, { method: "DELETE" });
 }
 
 // ===== 工程任务(我的任务) =====
@@ -181,8 +207,30 @@ export interface EngineeringTaskDTO {
   templateId?: string;
 }
 
-export async function listEngineeringTasks(): Promise<EngineeringTaskDTO[]> {
-  const body = await api<{ tasks: EngineeringTaskDTO[] | null }>("/api/engineering/tasks");
+/**
+ * 底栏角标的两个数字。
+ *
+ * 原来是把 offline-shots 和 engineering/tasks 两个完整列表拉下来取 length ——
+ * 一次 120KB,而底栏每切一次标签就重来一遍(实测切 5 次 2MB)。
+ * 后端现在直接给数,几十字节。口径由后端保证与两个列表页一致。
+ */
+export async function getBadgeCounts(
+  signal?: AbortSignal,
+): Promise<{ shots: number; tasks: number }> {
+  const body = await api<{ shots?: number; tasks?: number }>(
+    "/api/inspection/badge-counts",
+    { signal },
+  );
+  return { shots: body.shots || 0, tasks: body.tasks || 0 };
+}
+
+export async function listEngineeringTasks(
+  signal?: AbortSignal,
+): Promise<EngineeringTaskDTO[]> {
+  const body = await api<{ tasks: EngineeringTaskDTO[] | null }>(
+    "/api/engineering/tasks",
+    { signal },
+  );
   return body.tasks || [];
 }
 
@@ -196,10 +244,13 @@ export async function startEngineeringTask(id: string): Promise<void> {
 
 /** 批量删除未成单的离线照片。已并入巡检记录的不会被删(那是记录的证据) */
 export async function deleteOfflineShots(shotIds: string[]): Promise<number> {
-  const body = await api<{ deleted: number }>("/api/inspection/offline-shots/delete", {
-    method: "POST",
-    body: JSON.stringify({ shotIds }),
-  });
+  const body = await api<{ deleted: number }>(
+    "/api/inspection/offline-shots/delete",
+    {
+      method: "POST",
+      body: JSON.stringify({ shotIds }),
+    },
+  );
   return body.deleted;
 }
 
@@ -236,18 +287,29 @@ export interface AssetSummary {
   assetTypes?: AssetGroup[];
 }
 
-export async function listAssets(): Promise<{ assets: AssetDTO[]; summary: AssetSummary | null }> {
+export async function listAssets(
+  signal?: AbortSignal,
+): Promise<{ assets: AssetDTO[]; summary: AssetSummary | null }> {
   const body = await api<{
     assets: AssetDTO[] | null;
     summary?: AssetSummary;
     totalSummary?: AssetSummary;
-  }>("/api/assets");
-  return { assets: body.assets || [], summary: body.summary || body.totalSummary || null };
+  }>("/api/assets", { signal });
+  return {
+    assets: body.assets || [],
+    summary: body.summary || body.totalSummary || null,
+  };
 }
 
 /** 单台资产详情 */
-export async function getAsset(id: string): Promise<AssetDTO> {
-  const body = await api<{ asset: AssetDTO }>(`/api/assets/${encodeURIComponent(id)}`);
+export async function getAsset(
+  id: string,
+  signal?: AbortSignal,
+): Promise<AssetDTO> {
+  const body = await api<{ asset: AssetDTO }>(
+    `/api/assets/${encodeURIComponent(id)}`,
+    { signal },
+  );
   return body.asset;
 }
 
@@ -264,11 +326,14 @@ export interface AssetSnapshotDTO {
 export async function listAssetRecords(
   id: string,
   page = 1,
+  signal?: AbortSignal,
 ): Promise<{ snapshots: AssetSnapshotDTO[]; totalPages: number }> {
   const body = await api<{
     snapshots: AssetSnapshotDTO[] | null;
     totalPages?: number;
-  }>(`/api/assets/${encodeURIComponent(id)}/records?page=${page}&pageSize=20`);
+  }>(`/api/assets/${encodeURIComponent(id)}/records?page=${page}&pageSize=20`, {
+    signal,
+  });
   return { snapshots: body.snapshots || [], totalPages: body.totalPages || 1 };
 }
 
@@ -286,9 +351,14 @@ export interface ChangeRequestDTO {
   requestedAt?: string;
 }
 
-export async function listPendingChangeRequests(): Promise<ChangeRequestDTO[]> {
+export async function listPendingChangeRequests(
+  signal?: AbortSignal,
+): Promise<ChangeRequestDTO[]> {
   const body = await api<{ requests: ChangeRequestDTO[] | null }>(
     "/api/change-requests?status=pending",
+    {
+      signal,
+    },
   );
   return body.requests || [];
 }
@@ -319,15 +389,10 @@ export async function rejectChangeRequest(id: string, reviewNote: string) {
 export async function uploadMyAvatar(blob: Blob): Promise<string> {
   const fd = new FormData();
   fd.append("file", new File([blob], "avatar.jpg", { type: "image/jpeg" }));
-
-  const res = await fetch("/api/auth/me/avatar", {
+  // client 现在会识别 FormData 并跳过 JSON Content-Type,不用再绕开它裸写 fetch
+  const body = await api<{ avatar?: string }>("/api/auth/me/avatar", {
     method: "POST",
-    headers: { "X-InspectAI-Token": getToken() },
     body: fd,
   });
-  const text = await res.text();
-  // 后端对未知 /api 路径回 404 JSON(不是 200 + HTML),这里能安全解析
-  const body = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(body.message || "头像上传失败");
   return String(body.avatar || "");
 }

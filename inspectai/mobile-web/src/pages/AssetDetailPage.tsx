@@ -2,23 +2,11 @@ import { Toast } from "@/ui";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
-import { AssetDTO, AssetSnapshotDTO, getAsset, listAssetRecords } from "@/api/inspection";
-
-function tone(status: string): string {
-  switch (status) {
-    case "正常":
-      return "ok";
-    case "异常":
-      return "danger";
-    case "待复核":
-      return "warn";
-    case "待维修":
-      return "repair";
-    default:
-      return "unknown";
-  }
-}
+import StatusTag from "@/components/StatusTag";
+import { AssetSnapshotDTO, getAsset, listAssetRecords } from "@/api/inspection";
+import { useResource } from "@/hooks/useResource";
 
 function fmtWhen(iso?: string): string {
   if (!iso) return "";
@@ -32,32 +20,38 @@ function fmtWhen(iso?: string): string {
 export default function AssetDetailPage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
-  const [asset, setAsset] = useState<AssetDTO | null>(null);
-  const [snaps, setSnaps] = useState<AssetSnapshotDTO[]>([]);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
 
+  // 换设备(id 变)时 useResource 会作废上一次的飞行请求 —— 原来没有这层,
+  // 快速连点两台设备可能被先发后到的旧响应盖掉
+  const { data, loading } = useResource(
+    async (signal) => {
+      const [a, rec] = await Promise.all([
+        getAsset(id, signal),
+        listAssetRecords(id, 1, signal),
+      ]);
+      return { asset: a, snapshots: rec.snapshots, totalPages: rec.totalPages };
+    },
+    [id],
+    { errorText: "设备信息加载失败" },
+  );
+
+  // 首页数据来自 useResource,翻页追加的部分放在本地 —— id 变了要重置
+  const [more, setMore] = useState<AssetSnapshotDTO[]>([]);
   useEffect(() => {
-    void (async () => {
-      try {
-        const [a, rec] = await Promise.all([getAsset(id), listAssetRecords(id, 1)]);
-        setAsset(a);
-        setSnaps(rec.snapshots);
-        setTotalPages(rec.totalPages);
-      } catch {
-        Toast.show({ content: "设备信息加载失败" });
-      } finally {
-        setLoading(false);
-      }
-    })();
+    setMore([]);
+    setPage(1);
   }, [id]);
+
+  const asset = data?.asset ?? null;
+  const snaps = [...(data?.snapshots ?? []), ...more];
+  const totalPages = data?.totalPages ?? 1;
 
   async function loadMore() {
     const next = page + 1;
     try {
       const rec = await listAssetRecords(id, next);
-      setSnaps((cur) => [...cur, ...rec.snapshots]);
+      setMore((cur) => [...cur, ...rec.snapshots]);
       setPage(next);
     } catch {
       Toast.show({ content: "加载更多失败" });
@@ -65,11 +59,7 @@ export default function AssetDetailPage() {
   }
 
   if (loading) {
-    return (
-      <div className="center-screen">
-        <span className="spinner" />
-      </div>
-    );
+    return <CenterLoading />;
   }
   if (!asset) {
     return (
@@ -82,8 +72,6 @@ export default function AssetDetailPage() {
       </div>
     );
   }
-
-  const t = tone(asset.lastStatus);
 
   return (
     <div className="flow-screen">
@@ -98,7 +86,7 @@ export default function AssetDetailPage() {
         <div className="ad-card">
           <div className="ad-row">
             <span className="ad-k">当前状态</span>
-            <span className={`tag tag-${t}`}>{asset.lastStatus || "未巡检"}</span>
+            <StatusTag text={asset.lastStatus || "未巡检"} />
           </div>
           <div className="ad-row">
             <span className="ad-k">累计巡检</span>
@@ -106,7 +94,9 @@ export default function AssetDetailPage() {
           </div>
           <div className="ad-row">
             <span className="ad-k">最近巡检</span>
-            <span className="ad-v">{fmtWhen(asset.lastInspectedAt) || "未巡检"}</span>
+            <span className="ad-v">
+              {fmtWhen(asset.lastInspectedAt) || "未巡检"}
+            </span>
           </div>
           {asset.lastInspector && (
             <div className="ad-row">
@@ -114,7 +104,9 @@ export default function AssetDetailPage() {
               <span className="ad-v">{asset.lastInspector}</span>
             </div>
           )}
-          {asset.lastSummary && <div className="ad-summary">{asset.lastSummary}</div>}
+          {asset.lastSummary && (
+            <div className="ad-summary">{asset.lastSummary}</div>
+          )}
         </div>
 
         {/* 巡检历史 */}
@@ -127,7 +119,7 @@ export default function AssetDetailPage() {
               <div className="hist-item" key={s.id}>
                 <div className="hist-head">
                   <span className="hist-when">{fmtWhen(s.createdAt)}</span>
-                  <span className={`tag tag-${tone(s.status)}`}>{s.status || "—"}</span>
+                  <StatusTag text={s.status || "—"} />
                 </div>
                 {s.inspector && <div className="hist-who">{s.inspector}</div>}
                 {s.summary && <div className="hist-body">{s.summary}</div>}
