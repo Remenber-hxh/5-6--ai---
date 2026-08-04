@@ -6,6 +6,9 @@ import ContextProvider from "@arco-design/mobile-react/esm/context-provider";
 import setRootPixel from "@arco-design/mobile-react/tools/flexible";
 
 import App from "./App";
+// 字体声明放在 global 之前:@font-face 早一点进样式表,浏览器就早一点
+// 知道要去取哪个文件,少一次"先用系统字体渲染再换"的跳动。
+import "./styles/fonts.css";
 import "./styles/global.css";
 
 // Arco 是 rem 自适应体系(基准 1rem = 50px @ 375 设计稿),必须先设根字号,

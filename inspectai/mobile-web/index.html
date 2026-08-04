@@ -39,16 +39,17 @@
            这里给一个正常正文值,让继承落在安全处。 */
         font-size: 15px;
         line-height: 1.5;
-        /* 拉丁与数字先给系统 UI 字体(iOS 的 SF、Windows 的 Segoe UI),
-           汉字再往后落 —— 中文字体自带的西文字形普遍偏弱,而这个 app 满屏
-           是设备编号和时间。
-           中文按"各家自己的现代字体"排:华为的 HarmonyOS Sans、小米的 MiSans
-           都是机器自带、免下载,观感远好于退到微软雅黑。
-           微软雅黑放最后:它只有 Regular/Bold 两个真字重,排前面会让 500/600
-           全变成浏览器合成的假粗。 */
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-          "PingFang SC", "HarmonyOS Sans SC", "MiSans", "OPPO Sans",
-          "Noto Sans SC", "Source Han Sans SC", system-ui,
+        /* InspectSans 是我们自带的思源黑体子集(src/styles/fonts.css),
+           排第一,让所有设备长一样。它是可变字体,400/500/600/700 都是真
+           字面,不会出现浏览器合成的假粗。
+
+           后面整条是回落链,在字体下载完成前(font-display:swap)和生僻字
+           落不到子集里时兜底:拉丁与数字先给系统 UI 字体,中文按"各家自己
+           的现代字体"排 —— 华为的 HarmonyOS Sans、小米的 MiSans 都是机器
+           自带、免下载。微软雅黑放最后,它只有两个真字重。 */
+        font-family: "InspectSans", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+          "OPPO Sans", "Noto Sans SC", "Source Han Sans SC", system-ui,
           "Microsoft YaHei", sans-serif;
         -webkit-font-smoothing: antialiased;
       }
