@@ -152,11 +152,24 @@ export default function RecordPage() {
       }
       if (stop) return;
       setRec(cur);
-      if (cur.recognitionStatus !== "not_started") return;
+
+      // 【processing 也要接着等】原来这里是 `!== "not_started" 就 return`,
+      // 于是"识别已经在跑"被当成"没我的事",既不转圈也不轮询 —— 页面就停在
+      // 一堆空字段上,而后端十几秒后已经识别好了。用户看到的就是"识别完了
+      // 没填表"。会撞上这个分支的场合不止一种:
+      //   · 识别中刷新页面
+      //   · 从预览页返回填报页
+      //   · 从任务列表二次进入同一条记录
+      // (还有一个更隐蔽的:转场层曾让页面挂载两次,第二次必然撞上 —— 那个
+      //  已在 App.tsx 修掉,但这里的兜底得留着,上面三种是真实操作。)
+      const running = cur.recognitionStatus === "not_started" || cur.recognitionStatus === "processing";
+      if (!running) return;
 
       setAnalyzing(true);
       try {
-        if (kickedRef.current !== id) {
+        // 只有还没开始的才发起;已经在跑的直接进轮询,不重复触发(会多花一次
+        // 模型调用,而且后端会把 CaptureAttempts 加一,凑够三次就误判成人工填写)
+        if (cur.recognitionStatus === "not_started" && kickedRef.current !== id) {
           kickedRef.current = id;
           await startAnalysis(id);
         }
