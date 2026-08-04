@@ -27,6 +27,12 @@ export default defineConfig({
   },
   server: {
     port: 18091,
+    // 【必须显式绑全部网卡】不写 host 时 vite 只绑 IPv6 回环 [::1],
+    // 于是 http://localhost:18091 能开(Windows 把 localhost 解到 ::1),
+    // 而 http://127.0.0.1:18091 直接连不上 —— 更要命的是【手机连不上】,
+    // 而这是个移动端项目,不能在真机上打开等于没法验。
+    // 开了之后同一局域网内的设备都能访问这个开发服务器,只在本机开发时用。
+    host: true,
     proxy: {
       "/api": "http://127.0.0.1:18080",
       "/health": "http://127.0.0.1:18080",
