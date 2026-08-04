@@ -20,7 +20,12 @@ export interface ButtonProps {
   type?: "primary" | "ghost" | "default";
 }
 
-export function Button({ block = true, type = "primary", children, ...rest }: ButtonProps) {
+export function Button({
+  block = true,
+  type = "primary",
+  children,
+  ...rest
+}: ButtonProps) {
   return (
     <ArcoButton inline={!block} type={type} {...rest}>
       {children}

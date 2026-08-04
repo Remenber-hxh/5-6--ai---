@@ -9,16 +9,10 @@ import { useResource } from "@/hooks/useResource";
 
 import type { EngineeringTaskDTO } from "@/api/inspection";
 import { setActiveTask } from "@/store/activeTask";
-import { useAuth } from "@/store/auth";
 
-/**
- * 只有【已下发】的任务才该出现在巡检员手机上(旧版 myOpenTasks 的白名单)。
- *
- * 「待执行 / 待下发」= 管理员还没下发,巡检员不该看到;「已取消 / 已完成」同理。
- * 之前这里写的是黑名单 status !== "已完成",于是未下发和已取消的任务全漏了出来,
- * 而概览数字只统三种状态 —— 卡片数和数字对不上。改回白名单。
- */
-const VISIBLE_STATUS = ["进行中", "待整改", "逾期"];
+// 「该显示哪些任务」的规则已经收到后端(?scope=open-mine,见 open_tasks.go):
+// 在办三态 + 主管看全部 / 巡检员看自己的和未指派的。
+// 这里不再筛第二遍 —— 客户端各筛各的,正是底栏角标和页面数字对不上的来源。
 
 /** 排序:逾期最先,再进行中,再待整改(旧版 TASK_STATUS_ORDER 的语义) */
 const ORDER: Record<string, number> = { 逾期: 0, 进行中: 1, 待整改: 2 };
@@ -33,8 +27,6 @@ function fmtDue(iso?: string): string {
 // 我的任务:工程巡检任务闭环入口(旧版 sceneTasks)
 export default function TasksPage() {
   const nav = useNavigate();
-  const user = useAuth((s) => s.user);
-  const me = user?.displayName || user?.username || "";
   // 竞态防护/卸载保护/错误提示都在 useResource 里(见 hooks/useResource.ts)
   const { data, loading } = useResource(
     (signal) => listEngineeringTasks(signal),
@@ -66,15 +58,7 @@ export default function TasksPage() {
     );
   }
 
-  const dispatched = tasks.filter((t) => VISIBLE_STATUS.includes(t.status));
-  // 优先只看派给自己的;一条都没派到就退回显示全部(旧版同样的兜底,
-  // 免得任务没填负责人时巡检员看到空列表)
-  const mine = dispatched.filter(
-    (t) => !t.assigneeName || t.assigneeName === me,
-  );
-  const open = mine.length ? mine : dispatched;
-
-  const sorted = [...open].sort(
+  const sorted = [...tasks].sort(
     (a, b) =>
       (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) ||
       String(a.dueAt || "9999").localeCompare(String(b.dueAt || "9999")),

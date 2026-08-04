@@ -227,8 +227,11 @@ export async function getBadgeCounts(
 export async function listEngineeringTasks(
   signal?: AbortSignal,
 ): Promise<EngineeringTaskDTO[]> {
+  // scope=open-mine:服务端按"在办 + 该给我看的"筛好再发。
+  // 原来是全量发下来、页面在客户端再筛一遍 —— 于是角标(全租户 5 条)和
+  // 页面(派给我的 2 条)对不上。口径只留后端一份。
   const body = await api<{ tasks: EngineeringTaskDTO[] | null }>(
-    "/api/engineering/tasks",
+    "/api/engineering/tasks?scope=open-mine",
     { signal },
   );
   return body.tasks || [];

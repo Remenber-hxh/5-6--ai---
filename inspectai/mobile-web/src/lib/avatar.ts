@@ -56,7 +56,9 @@ async function loadBitmap(file: File): Promise<ImageBitmap> {
   }
 }
 
-function createImageBitmapFallback(img: HTMLImageElement): Promise<ImageBitmap> {
+function createImageBitmapFallback(
+  img: HTMLImageElement,
+): Promise<ImageBitmap> {
   // 没有 createImageBitmap 时,drawImage 直接吃 HTMLImageElement 也行 ——
   // 这里包一层同形状的对象,让上面的代码不用分支
   return Promise.resolve({

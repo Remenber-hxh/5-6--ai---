@@ -722,6 +722,11 @@ func (s *Server) handleListEngineeringTasks(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "list_engineering_tasks_failed", err.Error())
 		return
 	}
+	// ?scope=open-mine:只要"我的在办任务",与底栏角标共用同一套规则
+	// (见 open_tasks.go)。不传时保持原样 —— admin-web 要看全量。
+	if r.URL.Query().Get("scope") == "open-mine" {
+		items = openTasksFor(items, s.taskScopeName(r))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tasks":   items,
 		"summary": engineeringTaskSummary(items),

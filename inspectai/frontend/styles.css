@@ -2637,7 +2637,7 @@ body:has(#app[data-scene="loading"])::before {
   z-index: -2;
   background:
     linear-gradient(180deg, rgba(5, 13, 23, 0.45), rgba(5, 13, 23, 0.92) 64%, rgba(5, 13, 23, 1)),
-    url("/assets/zhixun-hero-tech.png") center top / cover no-repeat;
+    url("assets/zhixun-hero-tech.png") center top / cover no-repeat;
   opacity: 0.34;
   filter: saturate(1.0) contrast(1.02);
 }

@@ -21,7 +21,13 @@ export interface NoticeBarProps {
   onClick?: () => void;
 }
 
-export function NoticeBar({ children, leftContent, rightContent, tone = "info", onClick }: NoticeBarProps) {
+export function NoticeBar({
+  children,
+  leftContent,
+  rightContent,
+  tone = "info",
+  onClick,
+}: NoticeBarProps) {
   return (
     <ArcoNoticeBar
       className={tone === "warn" ? "app-notice app-notice-warn" : "app-notice"}

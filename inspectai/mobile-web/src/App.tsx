@@ -18,7 +18,8 @@ import ReviewPage from "@/pages/ReviewPage";
 // 巡检主流程:拍照 → (联网自动上传) → 选照片识别 → 填日报 → 提交
 export default function App() {
   const loggedIn = useAuth((s) => s.loggedIn);
-  const guard = (el: JSX.Element) => (loggedIn ? el : <Navigate to="/login" replace />);
+  const guard = (el: JSX.Element) =>
+    loggedIn ? el : <Navigate to="/login" replace />;
   const location = useLocation();
 
   return (
@@ -26,7 +27,7 @@ export default function App() {
       {/* 转场包在 Routes 外层:它按当前路径判断层级(平级淡入 / 下钻推入 / 返回退出)。
           底栏在外面,不参与转场 —— 它是常驻的,跟着页面一起淡会显得整个 app 在闪。 */}
       <PageTransition>
-      {/* 【location 必须显式传】不传的话 Routes 从 context 取当前路径,
+        {/* 【location 必须显式传】不传的话 Routes 从 context 取当前路径,
           于是【正在退出的那一层】也会跟着渲染成新页面 —— 结果是:
             · 新页面挂载两次(相隔约 130ms,正好是退出动画时长),
               每个页面的数据请求都发两遍
@@ -36,20 +37,23 @@ export default function App() {
           2026-08-03:填报页"识别完了却不填表"就是这么来的 —— 第一次挂载
           发起识别,130ms 后被卸载,轮询随之中断;第二次挂载看到状态已是
           processing,直接跳过(见 RecordPage 的注释)。 */}
-      <Routes location={location}>
-        <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <LoginPage />} />
-        <Route path="/" element={guard(<CapturePage />)} />
-        <Route path="/review" element={guard(<ReviewPage />)} />
-        <Route path="/classify" element={guard(<ClassifyPage />)} />
-        <Route path="/record/:id" element={guard(<RecordPage />)} />
-        <Route path="/preview/:id" element={guard(<PreviewPage />)} />
-        <Route path="/tasks" element={guard(<TasksPage />)} />
-        <Route path="/ledger" element={guard(<LedgerPage />)} />
-        <Route path="/approvals" element={guard(<ApprovalsPage />)} />
-        <Route path="/asset/:id" element={guard(<AssetDetailPage />)} />
-        <Route path="/me" element={guard(<MePage />)} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        <Routes location={location}>
+          <Route
+            path="/login"
+            element={loggedIn ? <Navigate to="/" replace /> : <LoginPage />}
+          />
+          <Route path="/" element={guard(<CapturePage />)} />
+          <Route path="/review" element={guard(<ReviewPage />)} />
+          <Route path="/classify" element={guard(<ClassifyPage />)} />
+          <Route path="/record/:id" element={guard(<RecordPage />)} />
+          <Route path="/preview/:id" element={guard(<PreviewPage />)} />
+          <Route path="/tasks" element={guard(<TasksPage />)} />
+          <Route path="/ledger" element={guard(<LedgerPage />)} />
+          <Route path="/approvals" element={guard(<ApprovalsPage />)} />
+          <Route path="/asset/:id" element={guard(<AssetDetailPage />)} />
+          <Route path="/me" element={guard(<MePage />)} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </PageTransition>
 
       {/* 底部常驻导航。放在 Routes 之外、作为 .app-shell 的最后一个 flex 子元素,

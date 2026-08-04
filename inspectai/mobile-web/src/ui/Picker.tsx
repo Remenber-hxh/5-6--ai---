@@ -21,7 +21,12 @@ export interface PickerProps {
   placeholder?: string;
 }
 
-export function Picker({ options, value, onChange, placeholder = "请选择" }: PickerProps) {
+export function Picker({
+  options,
+  value,
+  onChange,
+  placeholder = "请选择",
+}: PickerProps) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 

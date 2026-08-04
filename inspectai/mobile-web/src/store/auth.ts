@@ -16,7 +16,10 @@ import { Toast } from "@/ui";
 interface AuthState {
   user: CurrentUser | null;
   loggedIn: boolean;
-  login: (username: string, password: string) => Promise<{ mustChangePassword?: boolean }>;
+  login: (
+    username: string,
+    password: string,
+  ) => Promise<{ mustChangePassword?: boolean }>;
   logout: () => void;
   /** 后端返回 401 时由 client 触发,清本地登录态 */
   sessionExpired: () => void;

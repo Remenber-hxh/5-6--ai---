@@ -8,12 +8,12 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>智巡</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <script>
     // 防缓存：用每次加载的时间戳注入 CSS/JS，确保 demo 期间任何浏览器普通 F5 都能拉新版本
     (function () {
       var t = Date.now();
-      document.write('<link rel="stylesheet" href="/styles.css?t=' + t + '" />');
+      document.write('<link rel="stylesheet" href="styles.css?t=' + t + '" />');
       window.__assetTs = t;
     })();
   </script>
@@ -266,6 +266,6 @@
 
 </div>
 
-  <script>document.write('<scr' + 'ipt src="/app.js?t=' + (window.__assetTs || Date.now()) + '"></scr' + 'ipt>');</script>
+  <script>document.write('<scr' + 'ipt src="app.js?t=' + (window.__assetTs || Date.now()) + '"></scr' + 'ipt>');</script>
 </body>
 </html>

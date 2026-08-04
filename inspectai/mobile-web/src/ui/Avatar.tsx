@@ -30,7 +30,12 @@ function initial(name: string): string {
   return /[a-zA-Z]/.test(first) ? first.toUpperCase() : first;
 }
 
-export function Avatar({ name, src, size = "ultra-small", className }: AvatarProps) {
+export function Avatar({
+  name,
+  src,
+  size = "ultra-small",
+  className,
+}: AvatarProps) {
   const url = avatarURL(src);
   // 图片取不到时回落文字头像。
   //

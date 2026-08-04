@@ -20,7 +20,11 @@ export interface SkeletonProps {
   className?: string;
 }
 
-export function Skeleton({ rows = 5, avatar = false, className }: SkeletonProps) {
+export function Skeleton({
+  rows = 5,
+  avatar = false,
+  className,
+}: SkeletonProps) {
   return (
     <div className={className}>
       {Array.from({ length: rows }, (_, i) => (

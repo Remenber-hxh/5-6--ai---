@@ -21,7 +21,13 @@ export interface ImageProps {
   className?: string;
 }
 
-export function Image({ src, alt = "", radius = 12, fit = "cover", className }: ImageProps) {
+export function Image({
+  src,
+  alt = "",
+  radius = 12,
+  fit = "cover",
+  className,
+}: ImageProps) {
   return (
     <ArcoImage
       className={className}

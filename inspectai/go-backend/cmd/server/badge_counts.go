@@ -37,17 +37,12 @@ func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 		shots = 0 // 角标是辅助信息,取不到就显示 0,不让整个接口失败
 	}
 
+	// 和任务页共用 openTasksFor 这一个规则(见 open_tasks.go)。
+	// 第一版这里是自己数了一遍在办状态 —— 于是角标数全租户 5 条,而页面按
+	// "派给我的"只显示 2 条。同一件事有两个口径,用户看到的就是"任务对不上"。
 	tasks := 0
 	if list, err := s.store.ListEngineeringTasks(engineeringTaskFilterFromRequest(r)); err == nil {
-		for _, t := range list {
-			if t == nil {
-				continue
-			}
-			switch t.Status {
-			case engTaskStatusProcessing, engTaskStatusRectify, engTaskStatusOverdue:
-				tasks++
-			}
-		}
+		tasks = len(openTasksFor(list, s.taskScopeName(r)))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots, "tasks": tasks})

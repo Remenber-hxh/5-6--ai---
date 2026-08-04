@@ -6,7 +6,9 @@ const COMPRESS_MAX_EDGE = 1600;
 const COMPRESS_QUALITY = 0.82;
 const COMPRESS_SKIP_BYTES = 500 * 1024;
 
-async function decodeImage(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
+async function decodeImage(
+  file: Blob,
+): Promise<ImageBitmap | HTMLImageElement> {
   if (typeof createImageBitmap === "function") {
     try {
       return await createImageBitmap(file);
@@ -32,25 +34,32 @@ async function decodeImage(file: Blob): Promise<ImageBitmap | HTMLImageElement> 
  * 也不能因为压缩坏了证据照片。
  */
 export async function compressImage(file: File): Promise<File> {
-  if (!/^image\//.test(file.type) || file.size <= COMPRESS_SKIP_BYTES) return file;
+  if (!/^image\//.test(file.type) || file.size <= COMPRESS_SKIP_BYTES)
+    return file;
   try {
     const bmp = await decodeImage(file);
-    const w = "width" in bmp ? bmp.width : (bmp as HTMLImageElement).naturalWidth;
-    const h = "height" in bmp ? bmp.height : (bmp as HTMLImageElement).naturalHeight;
+    const w =
+      "width" in bmp ? bmp.width : (bmp as HTMLImageElement).naturalWidth;
+    const h =
+      "height" in bmp ? bmp.height : (bmp as HTMLImageElement).naturalHeight;
     if (!w || !h) return file;
 
     const ratio = Math.min(1, COMPRESS_MAX_EDGE / Math.max(w, h));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(w * ratio);
     canvas.height = Math.round(h * ratio);
-    canvas.getContext("2d")?.drawImage(bmp as CanvasImageSource, 0, 0, canvas.width, canvas.height);
+    canvas
+      .getContext("2d")
+      ?.drawImage(bmp as CanvasImageSource, 0, 0, canvas.width, canvas.height);
     if ("close" in bmp && typeof bmp.close === "function") bmp.close();
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", COMPRESS_QUALITY),
     );
     if (!blob || blob.size >= file.size) return file;
-    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", {
+      type: "image/jpeg",
+    });
   } catch {
     return file;
   }
@@ -60,7 +69,9 @@ export async function compressImage(file: File): Promise<File> {
  * 取当前定位。拿不到就返回 null —— 定位失败绝不能挡住拍照,
  * 现场信号差本来就是常态。
  */
-export function getGeo(timeoutMs = 8000): Promise<{ lat: number; lng: number; accuracy: number } | null> {
+export function getGeo(
+  timeoutMs = 8000,
+): Promise<{ lat: number; lng: number; accuracy: number } | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);

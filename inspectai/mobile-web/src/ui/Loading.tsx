@@ -16,7 +16,11 @@ export interface LoadingProps {
   className?: string;
 }
 
-export function Loading({ size = 20, color = "#43e5ac", className }: LoadingProps) {
+export function Loading({
+  size = 20,
+  color = "#43e5ac",
+  className,
+}: LoadingProps) {
   return (
     <ArcoLoading
       className={className}

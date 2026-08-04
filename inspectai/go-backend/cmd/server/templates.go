@@ -108,7 +108,7 @@ func reportTemplates() []ReportTemplate {
             AIPrompt:  "screen_reading",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
-				textField("asset_no", "UPS 主机编号", true, "ai"),
+				assetNoField("UPS 主机编号"),
 				choiceField("battery_alarm", "蓄电池组：是否有报警", true, []string{"否", "是"}),
 				choiceField("battery_appearance", "蓄电池组：外观", true, []string{"良好", "异常"}),
 				textField("battery_exception", "蓄电池组异常说明", false, "ai"),
@@ -139,7 +139,7 @@ func reportTemplates() []ReportTemplate {
             AIPrompt:  "substation",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
-				textField("asset_no", "变电所编号", true, "ai"),
+				assetNoField("变电所编号"),
 				choiceField("hv_appearance", "高压柜：外观检查是否良好", true, []string{"是", "否"}),
 				choiceField("meter_abnormal", "高压柜：电度表是否显示异常", true, []string{"否", "是"}),
 				choiceField("voltage_normal", "高压柜：电压是否正常", true, []string{"是", "否"}),
@@ -187,7 +187,7 @@ func reportTemplates() []ReportTemplate {
             AIPrompt:  "escalator",
 			Fields: []TemplateField{
 				textField("inspection_time", "检查时间", false, "ai"),
-				textField("asset_no", "扶梯编号", false, "ai"),
+				assetNoField("扶梯编号"),
 				textField("inspector", "巡检人员", false, "ai"),
 				// 自动扶梯及自动人行道
 				choiceField("entrance_sign", "出入口警示标识是否完好", false, []string{"是", "否"}),
@@ -216,7 +216,7 @@ func reportTemplates() []ReportTemplate {
             AIPrompt:  "elevator_machine_room",
 			Fields: []TemplateField{
 				textField("inspection_time", "检查时间", false, "ai"),
-				textFieldDefault("asset_no", "电梯编号", false, "ai", "HYZX-WJ-DT01"),
+				assetNoField("电梯编号"),
 				textField("inspector", "检查人员", false, "ai"),
 				// 机房及其设备
 				choiceField("door_window_sign", "机房门窗、警示标识完好", false, []string{"是", "否"}),
@@ -247,7 +247,7 @@ func reportTemplates() []ReportTemplate {
             AIPrompt:  "elevator_no_room",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期", false, "ai"),
-				textFieldDefault("asset_no", "电梯编号", false, "ai", "HYZX-WJ-DT01"),
+				assetNoField("电梯编号"),
 				textField("inspector", "检查人", false, "ai"),
 				// 无机房电梯无独立机房,只查轿厢/层站
 				choiceField("reg_mark", "电梯使用登记标志完好", false, []string{"是", "否"}),
@@ -281,6 +281,20 @@ func seedPoints() []Point {
 
 func textField(code, label string, required bool, source string) TemplateField {
 	return TemplateField{Code: code, Label: label, Kind: "text", Required: required, Source: source}
+}
+
+// assetNoField — 设备编号：一律人工选择/填写，AI 不代填。
+//
+// 【为什么单独一个构造函数】原来这几处写法各不相同：有的 required 有的不，
+// 两个电梯模板还各带一个写死的默认值 "HYZX-WJ-DT01"。那个默认值的后果不是
+// "标签不准"——asset_no 是资产台账的主键，识别失败时每条记录都会挂上同一个
+// 编号，于是不同的电梯在台账里被并成一台。而且它会被标成"已确认"，看起来
+// 像人核对过的。统一成这一个入口，杜绝再出现第二种写法。
+func assetNoField(label string) TemplateField {
+	return TemplateField{
+		Code: "asset_no", Label: label, Kind: "text",
+		Required: true, Source: "manual", ManualOnly: true,
+	}
 }
 
 // textFieldDefault — 带预填默认值的文本字段（移动端打开表单时自动填入）

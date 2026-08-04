@@ -7,7 +7,12 @@
 //   4. 幂等键 —— 弱网下"其实传成功了但响应没回来"的情况,重放不会产生重复记录
 
 import { getStoredUser, getToken } from "@/api/client";
-import { PendingShot, listShots, removeShot, updateShot } from "@/lib/offlineStore";
+import {
+  PendingShot,
+  listShots,
+  removeShot,
+  updateShot,
+} from "@/lib/offlineStore";
 
 /** 退避梯度(秒):5s → 15s → 1m → 5m → 15m,之后维持 15m */
 const BACKOFF_SECONDS = [5, 15, 60, 300, 900];
@@ -27,7 +32,12 @@ type UploadOutcome =
 
 async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
   const fd = new FormData();
-  fd.append("files", new File([shot.blob], shot.fileName, { type: shot.blob.type || "image/jpeg" }));
+  fd.append(
+    "files",
+    new File([shot.blob], shot.fileName, {
+      type: shot.blob.type || "image/jpeg",
+    }),
+  );
   fd.append("capturedAt", shot.capturedAt);
   if (shot.geo) {
     fd.append("lat", String(shot.geo.lat));
@@ -48,7 +58,10 @@ async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
     });
   } catch (err) {
     // fetch 抛异常 = 网络层问题(断网/超时/DNS),一定可重试
-    return { kind: "retry", reason: err instanceof Error ? err.message : "网络异常" };
+    return {
+      kind: "retry",
+      reason: err instanceof Error ? err.message : "网络异常",
+    };
   }
 
   if (res.ok) {
@@ -61,7 +74,11 @@ async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
     }
     try {
       const body = await res.json();
-      if (!body || typeof body !== "object" || !("imageId" in body || "id" in body || "ok" in body)) {
+      if (
+        !body ||
+        typeof body !== "object" ||
+        !("imageId" in body || "id" in body || "ok" in body)
+      ) {
         return { kind: "retry", reason: "服务端响应缺少上传结果,照片已保留" };
       }
     } catch {
@@ -72,7 +89,11 @@ async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
 
   // 401/403:登录态问题 —— 重试无意义,等用户重新登录
   if (res.status === 401 || res.status === 403) {
-    return { kind: "blocked", reason: "登录已失效,请重新登录", blockedKind: "auth" };
+    return {
+      kind: "blocked",
+      reason: "登录已失效,请重新登录",
+      blockedKind: "auth",
+    };
   }
   // 其余 4xx:服务端明确拒绝(文件格式/大小/参数),重试同样会被拒
   if (res.status >= 400 && res.status < 500) {
@@ -110,7 +131,9 @@ export async function runQueue(onProgress?: () => void): Promise<number> {
     // 而 `undefined <= now` 恒为 false —— 那些照片会永远选不中、传不上去。
     // 迁移已在 recoverStaleUploads 里做,这里再防一道,绝不因字段缺失卡住上传。
     const due = all.filter(
-      (s) => (s.status === "pending" || s.status === "failed" || !s.status) && (s.nextRetryAt || 0) <= now,
+      (s) =>
+        (s.status === "pending" || s.status === "failed" || !s.status) &&
+        (s.nextRetryAt || 0) <= now,
     );
 
     for (const shot of due) {
@@ -182,5 +205,9 @@ export async function unblockAll(onlyAuth = false): Promise<number> {
 
 /** 用户手动点"立即重试":清掉退避等待,让下一轮马上处理 */
 export async function retryNow(id: string): Promise<void> {
-  await updateShot(id, { status: "pending", nextRetryAt: 0, lastError: undefined });
+  await updateShot(id, {
+    status: "pending",
+    nextRetryAt: 0,
+    lastError: undefined,
+  });
 }

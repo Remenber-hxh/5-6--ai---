@@ -54,7 +54,10 @@ export function useLongPress(onLongPress: () => void) {
       onPointerMove: (e: React.PointerEvent) => {
         const s = start.current;
         if (!s) return;
-        if (Math.abs(e.clientX - s.x) > MOVE_TOLERANCE || Math.abs(e.clientY - s.y) > MOVE_TOLERANCE) {
+        if (
+          Math.abs(e.clientX - s.x) > MOVE_TOLERANCE ||
+          Math.abs(e.clientY - s.y) > MOVE_TOLERANCE
+        ) {
           clear();
         }
       },

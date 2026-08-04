@@ -24,7 +24,8 @@ export interface ToastConfig {
 let current: { close: () => void } | null = null;
 
 function show(config: ToastConfig | string) {
-  const cfg: ToastConfig = typeof config === "string" ? { content: config } : config;
+  const cfg: ToastConfig =
+    typeof config === "string" ? { content: config } : config;
   // 先关上一条,补上 Arco 缺的单实例语义
   try {
     current?.close();

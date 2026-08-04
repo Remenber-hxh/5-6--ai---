@@ -1819,6 +1819,13 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	// 记录归属租户,与创建者一致
 	rec.TenantID = s.tenantForRequest(r)
 
+	// 设备编号做成下拉:选项 = 台账里同类设备已有的编号。
+	//
+	// 前端 FieldRow 的规则是"有 options 就渲染下拉、没有就渲染输入框",
+	// 所以这里天然带兜底 —— 新点位第一次巡检时台账还没有同类设备,
+	// 选项为空,巡检员照样能手填。不能为了做成下拉就把新设备挡在门外。
+	s.fillAssetNoOptions(rec)
+
 	if err := s.store.CreateRecord(rec); err != nil {
 		writeError(w, http.StatusInternalServerError, "create_record_failed", err.Error())
 		return
@@ -2552,6 +2559,13 @@ func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 
 // ===== 静态文件 =====
 
+// legacyAppPrefix 旧版移动端的挂载前缀。
+//
+// 2026-08-04:新版 mobile-web 接管根路径,旧版整体挪到 /old/。
+// 旧版 index.html 里的 4 处资源引用同时从绝对路径改成相对路径,
+// 这样它在 / 和 /old/ 下都能跑 —— 万一要回滚,改一行环境变量即可。
+const legacyAppPrefix = "/old"
+
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/storage/") {
 		// 提供上传图片访问（避免暴露任意文件，仅 storage 子树）
@@ -2570,27 +2584,66 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		s.serveImage(w, r, filepath.Join(s.storageDir, clean))
 		return
 	}
-	if r.URL.Path == "/" || !strings.Contains(filepath.Base(r.URL.Path), ".") {
+
+	// 旧版移动端:/old/**
+	//
+	// 少了尾斜杠必须重定向 —— 旧版的资源是相对路径引用的,在 /old 下会解析成
+	// /favicon.svg(根),那是新版的地盘,直接白屏。
+	if r.URL.Path == legacyAppPrefix {
+		http.Redirect(w, r, legacyAppPrefix+"/", http.StatusMovedPermanently)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, legacyAppPrefix+"/") {
+		s.serveSPA(w, r, s.frontendDir, legacyAppPrefix+"/")
+		return
+	}
+
+	// 根路径:新版 mobile-web 的构建产物
+	s.serveSPA(w, r, s.mobileWebDir, "/")
+}
+
+// serveSPA 发一个单页应用的静态目录:命中文件就发文件,否则回落 index.html。
+// urlPrefix 是它挂在哪个路径下,发文件前要先剥掉。
+func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request, root, urlPrefix string) {
+	index := filepath.Join(root, "index.html")
+
+	// 目录不存在时给一句能照着做的话。
+	// 新版是要 npm run build 才有 dist 的,忘了构建就直接一片空白 ——
+	// 那种时候人第一反应是"后端挂了",能白查很久。
+	if _, err := os.Stat(index); err != nil {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, "前端还没构建:找不到 %s\n\n请执行:\n  cd mobile-web && npm install && npm run build\n\n旧版仍可访问:%s/\n",
+			index, legacyAppPrefix)
+		return
+	}
+
+	serveIndex := func() {
+		// index.html 绝不能强缓存:缓存住了用户永远拿不到新版本
 		w.Header().Set("Cache-Control", "no-store, must-revalidate")
-		http.ServeFile(w, r, filepath.Join(s.frontendDir, "index.html"))
+		http.ServeFile(w, r, index)
+	}
+
+	urlPath := strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(urlPrefix, "/"))
+	if urlPath == "" || urlPath == "/" || !strings.Contains(path.Base(urlPath), ".") {
+		serveIndex()
 		return
 	}
 	// 用 path.Clean（URL 路径包，跨平台一致）而不是 filepath.Clean
 	// 后者在 Linux 会把 "/styles.css" 当作绝对路径，导致下面 IsAbs 误判返 403。
-	cleanURL := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
-	rel := strings.TrimPrefix(cleanURL, "/")
+	rel := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(urlPath, "/")), "/")
 	if rel == "" || rel == "." {
-		http.ServeFile(w, r, filepath.Join(s.frontendDir, "index.html"))
+		serveIndex()
 		return
 	}
-	// 二次校验：阻止 .. 段、Windows 盘符等逃逸到 frontendDir 之外
+	// 二次校验：阻止 .. 段、Windows 盘符等逃逸到根目录之外
 	if strings.Contains(rel, "..") || filepath.IsAbs(rel) || (len(rel) >= 2 && rel[1] == ':') {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	fullPath := filepath.Join(s.frontendDir, filepath.FromSlash(rel))
-	// 终态校验：解出的最终路径必须仍在 frontendDir 子树里（防符号链接 / Join 行为差异）
-	if absRoot, err := filepath.Abs(s.frontendDir); err == nil {
+	fullPath := filepath.Join(root, filepath.FromSlash(rel))
+	// 终态校验：解出的最终路径必须仍在 root 子树里（防符号链接 / Join 行为差异）
+	if absRoot, err := filepath.Abs(root); err == nil {
 		if absTarget, err := filepath.Abs(fullPath); err == nil {
 			if !strings.HasPrefix(absTarget, absRoot+string(filepath.Separator)) && absTarget != absRoot {
 				http.Error(w, "forbidden", http.StatusForbidden)
@@ -2604,7 +2657,7 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, fullPath)
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(s.frontendDir, "index.html"))
+	serveIndex()
 }
 
 func (s *Server) cleanupTmpClassifyDirs() (int, error) {
@@ -2763,7 +2816,21 @@ func applyRecognizedFields(rec *Record, recognized []RecognizedField) {
 	for _, f := range recognized {
 		byCode[f.Code] = f
 	}
+	// ManualOnly 字段(目前是设备编号)一律不让 AI 写。
+	// 它是资产台账的主键,AI 认错一个字符就会把两台设备并成一台,或者凭空
+	// 多出一台 —— 这种错在台账里很难发现,更难回滚。宁可让人多选一次。
+	manualOnly := map[string]bool{}
+	if tpl, ok := templateByID(rec.TemplateID); ok {
+		for _, f := range tpl.Fields {
+			if f.ManualOnly {
+				manualOnly[f.Code] = true
+			}
+		}
+	}
 	for i := range rec.Fields {
+		if manualOnly[rec.Fields[i].Code] {
+			continue
+		}
 		// 已经被人工修改过的字段，AI 不覆盖
 		if rec.Fields[i].Source == "human-confirmed" || rec.Fields[i].Source == "human-edited" {
 			continue

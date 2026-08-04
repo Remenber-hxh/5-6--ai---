@@ -71,7 +71,10 @@ function openDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function tx<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
   return openDB().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
@@ -191,16 +194,27 @@ export async function addShot(input: {
  *   不传 = 全部(仅供迁移/清理这类维护逻辑使用)。
  */
 export async function listShots(userId?: string): Promise<PendingShot[]> {
-  const all = await tx<PendingShot[]>("readonly", (s) => s.getAll() as IDBRequest<PendingShot[]>);
-  const scoped = userId ? all.filter((s) => !s.userId || s.userId === userId) : all;
+  const all = await tx<PendingShot[]>(
+    "readonly",
+    (s) => s.getAll() as IDBRequest<PendingShot[]>,
+  );
+  const scoped = userId
+    ? all.filter((s) => !s.userId || s.userId === userId)
+    : all;
   return scoped.sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
 }
 
 export async function getShot(id: string): Promise<PendingShot | undefined> {
-  return tx<PendingShot | undefined>("readonly", (s) => s.get(id) as IDBRequest<PendingShot | undefined>);
+  return tx<PendingShot | undefined>(
+    "readonly",
+    (s) => s.get(id) as IDBRequest<PendingShot | undefined>,
+  );
 }
 
-export async function updateShot(id: string, patch: Partial<PendingShot>): Promise<void> {
+export async function updateShot(
+  id: string,
+  patch: Partial<PendingShot>,
+): Promise<void> {
   const cur = await getShot(id);
   if (!cur) return;
   await tx("readwrite", (s) => s.put({ ...cur, ...patch }));
@@ -232,9 +246,12 @@ export async function recoverStaleUploads(): Promise<number> {
       patch.status = "pending";
       patch.nextRetryAt = 0;
     }
-    if (typeof s.nextRetryAt !== "number" || Number.isNaN(s.nextRetryAt)) patch.nextRetryAt = 0;
-    if (typeof s.retries !== "number" || Number.isNaN(s.retries)) patch.retries = 0;
-    if (typeof s.size !== "number" || Number.isNaN(s.size)) patch.size = s.blob?.size ?? 0;
+    if (typeof s.nextRetryAt !== "number" || Number.isNaN(s.nextRetryAt))
+      patch.nextRetryAt = 0;
+    if (typeof s.retries !== "number" || Number.isNaN(s.retries))
+      patch.retries = 0;
+    if (typeof s.size !== "number" || Number.isNaN(s.size))
+      patch.size = s.blob?.size ?? 0;
     if (!s.status) patch.status = "pending";
     if (!s.idempotencyKey) patch.idempotencyKey = newId("idem");
     if (!s.capturedAt) patch.capturedAt = new Date().toISOString();

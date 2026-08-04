@@ -21,7 +21,8 @@ type Server struct {
 	weworkBot          *WeWorkBotClient
 	publicBaseURL      string
 	storageDir         string
-	frontendDir        string
+	frontendDir        string // 旧版移动端(挂 /old/)
+	mobileWebDir       string // 新版移动端构建产物(挂根路径)
 	authToken          string
 	supervisorToken    string
 	corsAllowedOrigins map[string]bool
@@ -36,6 +37,9 @@ func main() {
 	loadDotEnvIfPresent()
 	storageDir := getenv("STORAGE_DIR", "../storage")
 	frontendDir := getenv("FRONTEND_DIR", "../frontend")
+	// 新版移动端接管根路径。要回滚就把 MOBILE_WEB_DIR 指回 ../frontend,
+	// 不用改代码 —— 演示前一天出问题时这一点很重要。
+	mobileWebDir := getenv("MOBILE_WEB_DIR", "../mobile-web/dist")
 	aiURL := getenv("AI_SERVICE_URL", "http://127.0.0.1:19100")
 	// 管理 AI(DeepSeek)走 ai-service 的 /management/* 内部路由 —— 不开新公网端口。
 	// 没单独设的话沿用 AI_SERVICE_URL,跟视觉识别共用同一个进程。
@@ -130,6 +134,7 @@ func main() {
 		analyticsClient:    NewAnalyticsClient(analyticsURL),
 		storageDir:         storageDir,
 		frontendDir:        frontendDir,
+		mobileWebDir:       mobileWebDir,
 		authToken:          authToken,
 		supervisorToken:    supervisorToken,
 		wework:             weworkClient,

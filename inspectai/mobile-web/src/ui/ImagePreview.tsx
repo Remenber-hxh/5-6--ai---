@@ -43,7 +43,13 @@ export interface ImagePreviewProps {
   extra?: ReactNode;
 }
 
-export function ImagePreview({ photos, index, onClose, onIndexChange, extra }: ImagePreviewProps) {
+export function ImagePreview({
+  photos,
+  index,
+  onClose,
+  onIndexChange,
+  extra,
+}: ImagePreviewProps) {
   return (
     <ArcoImagePreview
       images={photos}

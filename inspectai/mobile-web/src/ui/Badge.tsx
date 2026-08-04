@@ -24,5 +24,12 @@ export interface BadgeProps {
 
 export function Badge({ count = 0, maxCount = 99, className }: BadgeProps) {
   if (count <= 0) return null;
-  return <ArcoBadge className={className} text={count} maxCount={maxCount} absolute />;
+  return (
+    <ArcoBadge
+      className={className}
+      text={count}
+      maxCount={maxCount}
+      absolute
+    />
+  );
 }

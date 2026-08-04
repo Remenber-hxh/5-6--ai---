@@ -35,6 +35,12 @@ type TemplateField struct {
 	Source   string   `json:"source"` // ai / manual
 	Options  []string `json:"options,omitempty"`
 	Default  string   `json:"default,omitempty"` // 默认值，移动端表单可预填
+	// ManualOnly 人工填写，AI 不代填也不覆盖。
+	//
+	// 给设备编号这类【决定数据归属】的字段用:asset_no 是资产台账的主键
+	// (buildAsset 拿它当资产名),AI 认错一个字符就会把两台设备并成一台，
+	// 或者凭空多出一台。这种错在台账里很难发现，更难回滚。
+	ManualOnly bool `json:"manualOnly,omitempty"`
 }
 
 // FieldValue — 字段实例（每条记录里的一项）

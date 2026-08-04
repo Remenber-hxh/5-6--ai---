@@ -36,7 +36,9 @@ export function NavBar({ title, onBack, action, dark }: NavBarProps) {
       // undefined = 用 Arco 自带的返回箭头 SVG(currentColor,比旧版的「‹」字形干净)
       leftContent={onBack ? undefined : null}
       onClickLeft={onBack}
-      rightContent={action ? <span className="navbar-action">{action.text}</span> : null}
+      rightContent={
+        action ? <span className="navbar-action">{action.text}</span> : null
+      }
       onClickRight={action?.onClick}
     >
       <div className="navbar-title">{title}</div>

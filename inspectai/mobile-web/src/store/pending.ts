@@ -43,7 +43,10 @@ interface PendingState {
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
-  addFiles: (files: File[], userId: string) => Promise<{ added: number; error?: string }>;
+  addFiles: (
+    files: File[],
+    userId: string,
+  ) => Promise<{ added: number; error?: string }>;
   remove: (id: string) => Promise<void>;
   /** 批量删除选中的照片 */
   removeMany: (ids: string[]) => Promise<number>;
@@ -78,8 +81,16 @@ export const usePending = create<PendingState>((set, get) => ({
 
   async refresh() {
     // 按当前用户过滤:共用手机时不显示别人的照片
-    const [shots, info] = await Promise.all([listShots(currentUserId()), getStorageInfo()]);
-    set({ shots, usedBytes: info.usedBytes, freeBytes: info.freeBytes, persisted: info.persisted });
+    const [shots, info] = await Promise.all([
+      listShots(currentUserId()),
+      getStorageInfo(),
+    ]);
+    set({
+      shots,
+      usedBytes: info.usedBytes,
+      freeBytes: info.freeBytes,
+      persisted: info.persisted,
+    });
   },
 
   async addFiles(files, userId) {
@@ -108,7 +119,8 @@ export const usePending = create<PendingState>((set, get) => ({
           added += 1;
         } catch (err) {
           await get().refresh();
-          if (err instanceof StorageFullError) return { added, error: err.message };
+          if (err instanceof StorageFullError)
+            return { added, error: err.message };
           return { added, error: "保存失败,请重试" };
         }
       }
@@ -179,7 +191,9 @@ window.addEventListener("online", () => {
   usePending.setState({ online: true });
   void usePending.getState().flush();
 });
-window.addEventListener("offline", () => usePending.setState({ online: false }));
+window.addEventListener("offline", () =>
+  usePending.setState({ online: false }),
+);
 setInterval(() => {
   if (navigator.onLine) void usePending.getState().flush();
 }, TICK_MS);

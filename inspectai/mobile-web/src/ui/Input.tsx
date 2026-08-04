@@ -41,7 +41,11 @@ export function Input({
       type={type}
       // 关键:用 onInput 而非 onChange,否则打字时不更新
       onInput={(_e, v: string) => onChange?.(v)}
-      onPressEnter={onEnterPress ? (_e: KeyboardEvent<HTMLInputElement>) => onEnterPress() : undefined}
+      onPressEnter={
+        onEnterPress
+          ? (_e: KeyboardEvent<HTMLInputElement>) => onEnterPress()
+          : undefined
+      }
       nativeProps={autoComplete ? { autoComplete } : undefined}
       border="none"
       {...rest}

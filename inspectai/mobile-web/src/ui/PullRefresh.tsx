@@ -18,7 +18,12 @@ export interface PullRefreshProps {
   disabled?: boolean;
 }
 
-export function PullRefresh({ children, onRefresh, className, disabled }: PullRefreshProps) {
+export function PullRefresh({
+  children,
+  onRefresh,
+  className,
+  disabled,
+}: PullRefreshProps) {
   return (
     <ArcoPullRefresh
       className={className}
