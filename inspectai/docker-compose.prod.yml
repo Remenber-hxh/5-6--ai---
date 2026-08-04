@@ -129,6 +129,8 @@ services:
       BACKEND_ADDR: ":8080"
       AI_SERVICE_URL: "http://ai-service:9100"
       FRONTEND_DIR: "/app/frontend"
+      # 新版移动端占根路径;要回滚指回 /app/frontend 即可,不用重建镜像
+      MOBILE_WEB_DIR: "/app/mobile-web/dist"
       STORAGE_DIR: "/app/storage"
       DB_DRIVER: "mysql"
       # MYSQL_DSN 内嵌密码，故走 secret 文件。run.py / Go 都已实现 _FILE 兜底。

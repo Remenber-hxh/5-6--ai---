@@ -71,6 +71,80 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T ai-servic
 # "managementAI": "deepseek"
 ```
 
+## 3.5 日常更新（已经部署过之后）
+
+```bash
+cd /opt/inspectai-src/inspectai
+
+# 1) 拉代码。国内直连 GitHub 常超时，走 ghfast 代理
+git pull https://ghfast.top/https://github.com/Remenber-hxh/5-6--ai---.git main
+
+# 2) 重建并滚动更新（--env-file 不能省，见下方警告）
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+
+# 3) 看状态
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+```
+
+### ⚠ 三个必须知道的点
+
+**一、`--env-file .env.prod` 一条都不能少。**
+compose 里 nginx 的配置是这么挂的：
+
+```yaml
+- ${INSPECTAI_NGINX_CONF:-./nginx/nginx.bootstrap.conf}:/etc/nginx/nginx.conf:ro
+```
+
+少了 `--env-file`，这个变量取不到值，就会**静默回退到 HTTP-only 的引导配置**——
+HTTPS 直接没了，而命令本身不报任何错。任何一条 compose 命令都要带上它。
+
+**二、数据库迁移会自动跑。** 后端启动时执行 migration 008-011（多租户相关）。
+迁移是幂等的，但**更新前先备份**：
+
+```bash
+./scripts/backup.sh          # 落到 ./backups/<日期>/
+```
+
+**三、移动端根路径换人了（2026-08-04）。**
+
+| 地址 | 内容 |
+|---|---|
+| `/` | 新版 mobile-web |
+| `/old/` | 旧版（保留备用） |
+
+新版由 `go-backend` 镜像在构建时用 node 现编（见 `go-backend/Dockerfile` 的
+`web` 阶段），不需要在服务器上单独装 node。
+
+**要回滚到旧版**：改 `.env.prod` 加一行，重启后端即可，不必重建镜像：
+
+```bash
+echo 'MOBILE_WEB_DIR=/app/frontend' >> .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-deps go-backend
+```
+
+### 更新后的验收
+
+```bash
+# 后端活着、库还是 mysql
+curl -s https://<域名>/health
+
+# 新接口在（这次新增的）
+curl -s https://<域名>/api/inspection/badge-counts -H "Cookie: <登录后的 cookie>"
+
+# 根路径发的是新版：应该看到 <script type="module" src="./assets/index-xxx.js">
+curl -s https://<域名>/ | head -20
+
+# 旧版仍在
+curl -s -o /dev/null -w "%{http_code}
+" https://<域名>/old/
+```
+
+根路径如果返回 **503 且写着「前端还没构建」**，说明镜像里没有 `mobile-web/dist`
+——检查 `go-backend/Dockerfile` 的 `web` 阶段是否被跳过（比如用了旧镜像缓存），
+用 `--build --no-cache go-backend` 重来一次。
+
+---
+
 ## 4. 企业微信消息接入
 
 企业微信走“自建应用发送消息”，用于异常复核、审批、任务提醒等通知。后台用户表已有 `企业微信 UserID` 字段，后端已提供发送接口。

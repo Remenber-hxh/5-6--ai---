@@ -19,6 +19,18 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     cd go-backend && go build -trimpath -ldflags="-s -w" -o /out/inspectai ./cmd/server
 
+# ---- 新版移动端 ----
+# 2026-08-04 起 Go 后端的根路径发的是 mobile-web/dist(旧版挪到 /old/)。
+# 【必须在镜像里构建】否则容器里没有 dist,线上根路径会变成"前端还没构建"
+# 的提示页 —— 等于把移动端打挂。
+FROM node:20-alpine AS web
+WORKDIR /web
+# 先只拷清单,让依赖层能命中缓存(改前端代码不必重装依赖)
+COPY mobile-web/package.json mobile-web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY mobile-web/ ./
+RUN npm run build
+
 FROM alpine:3.20
 
 # 切 apk 源到腾讯云镜像（国内构建提速）
@@ -29,6 +41,8 @@ RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tencent.com|g' /etc/apk/repositorie
 WORKDIR /app
 COPY --from=build /out/inspectai /app/inspectai
 COPY frontend/ /app/frontend/
+# 旧版留在 /app/frontend(挂 /old/),新版占根路径
+COPY --from=web /web/dist /app/mobile-web/dist
 
 # 预建 /app/storage 并归属非 root 用户。
 # Why: 生产用 app_storage 命名卷挂载到 /app/storage。

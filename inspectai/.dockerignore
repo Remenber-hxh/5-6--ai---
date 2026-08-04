@@ -25,6 +25,13 @@ ai-service/__pycache__
 *.pid
 *.log
 
+# ---- 前端依赖：build context 杀手（mobile-web 一个就 105MB） ----
+# 镜像里是 npm ci 现装的（见 go-backend/Dockerfile 的 web 阶段），
+# 把宿主机的 node_modules 发过去纯属浪费，而且平台不同还可能装错二进制。
+**/node_modules
+# mobile-web/dist 同理：镜像内构建，不需要从宿主机带
+mobile-web/dist
+
 # ---- 历史快照：build context 杀手（每份 ~50MB 含 frontend 资源） ----
 release/
 _archive/
