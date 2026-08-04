@@ -24,3 +24,7 @@ export type { PreviewPhoto } from "./ImagePreview";
 export { Picker } from "./Picker";
 export { TabBar } from "./TabBar";
 export { Cell, CellGroup } from "./Cell";
+export { Collapse } from "./Collapse";
+export { DateField } from "./DateField";
+export { SwipeAction } from "./SwipeAction";
+export { Sticky } from "./Sticky";

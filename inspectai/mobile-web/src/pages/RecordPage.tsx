@@ -1,4 +1,4 @@
-import { Button, Image, Picker, Toast } from "@/ui";
+import { Button, DateField, Image, Picker, Toast } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -116,7 +116,17 @@ function FieldRow({
             系统控件。原生 <select> 的下拉样式完全不受控(灰底高亮、白框、
             字号各异),那是它难看的根源。
             (中间试过分段按钮,虽然少一次点击,但视觉上被否了。) */}
-        {field.options?.length ? (
+        {field.code === "inspection_time" ? (
+          /* 日期时间用滚轮选,不让人在小键盘上敲 16 个字符 ——
+             敲错一个后端就解析不出来,而巡检员是戴着手套操作的。 */
+          <DateField
+            value={value}
+            onChange={(v) => {
+              setValue(v);
+              void commit(v);
+            }}
+          />
+        ) : field.options?.length ? (
           <Picker
             options={field.options}
             value={value}

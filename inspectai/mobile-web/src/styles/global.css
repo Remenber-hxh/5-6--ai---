@@ -2739,3 +2739,30 @@ a {
   color: var(--brand);
   font-weight: 600;
 }
+
+/* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */
+.lg-filter { margin: 0 16px 12px; }
+.lg-filter .arco-collapse-header,
+.lg-filter .collapse-header {
+  padding: 12px 14px;
+  background: var(--lt-card);
+  border-radius: 14px;
+  box-shadow: var(--lt-shadow);
+}
+.cl-head { display: flex; align-items: center; width: 100%; }
+.cl-title { font-size: 14px; font-weight: 600; color: var(--lt-fg); }
+/* 收起时也要看得到当前筛的是什么 —— 否则用户不知道列表为什么少了 */
+.cl-extra { margin-left: auto; font-size: 12px; color: var(--lt-fg-2); }
+.lg-filter .lg-card { margin-top: 10px; }
+
+/* 分组标题吸顶。要有底色和轻微阴影,否则滚动时列表内容会从它下面透出来 */
+.asset-section {
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lt-fg-2);
+  background: var(--lt-bg);
+  box-shadow: 0 1px 0 var(--lt-border);
+}
+.asset-section.risk { color: #ff3b30; }
+.asset-section.ok { color: var(--ios-green); }
