@@ -45,6 +45,16 @@ type OfflineShotStore interface {
 	// 第二个返回值表示本次是否命中了已存在的记录(重放)。
 	CreateOfflineShot(shot *OfflineShot) (*OfflineShot, bool, error)
 	ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error)
+	// ListPendingOfflineShots 只列未成单的。
+	//
+	// 【必须在 SQL 里过滤,不能取回来再筛】ListOfflineShots 的 limit 作用在
+	// 【全部】照片上(而且 limit<=0 会被当成默认 100),先截断再筛的话,
+	// 最新 100 条里成单的多,未成单的就被截没了 —— 实测过:页面显示 20 张,
+	// 按这个口径只数出 6 张。
+	ListPendingOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error)
+	// CountPendingOfflineShots 未成单照片数。走 COUNT(*),不把行拉回来 ——
+	// 底栏角标只要一个数字。
+	CountPendingOfflineShots(tenantID, userID string) (int, error)
 	// MarkOfflineShotConsumed 标记照片已并入某条巡检记录,避免重复成单
 	MarkOfflineShotConsumed(tenantID, id, recordID string) error
 	// DeleteOfflineShots 批量删除未成单的照片,返回被删掉的行(供调用方清理磁盘文件)。
@@ -145,12 +155,26 @@ func (s *SQLiteStore) DeleteOfflineShots(tenantID string, ids []string) ([]*Offl
 }
 
 func (s *SQLiteStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
+	return s.listShots(tenantID, userID, limit, false)
+}
+
+func (s *SQLiteStore) ListPendingOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
+	return s.listShots(tenantID, userID, limit, true)
+}
+
+func (s *SQLiteStore) listShots(tenantID, userID string, limit int, pendingOnly bool) ([]*OfflineShot, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	// record_id='' 这一条必须进 WHERE,不能取回来再筛 —— LIMIT 是在筛之前
+	// 生效的,先截断就会把靠后的未成单照片截没。
+	where := ""
+	if pendingOnly {
+		where = " AND record_id=''"
+	}
 	rows, err := s.db.Query(
 		`SELECT `+offlineShotCols+` FROM offline_shots
-		 WHERE tenant_id=? AND (?='' OR user_id=?)
+		 WHERE tenant_id=? AND (?='' OR user_id=?)`+where+`
 		 ORDER BY captured_at DESC LIMIT ?`,
 		tenantID, userID, userID, limit)
 	if err != nil {
@@ -166,6 +190,15 @@ func (s *SQLiteStore) ListOfflineShots(tenantID, userID string, limit int) ([]*O
 		out = append(out, shot)
 	}
 	return out, rows.Err()
+}
+
+func (s *SQLiteStore) CountPendingOfflineShots(tenantID, userID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM offline_shots
+		 WHERE tenant_id=? AND (?='' OR user_id=?) AND record_id=''`,
+		tenantID, userID, userID).Scan(&n)
+	return n, err
 }
 
 // ===== MemStore 实现 =====
@@ -220,6 +253,14 @@ func (m *MemStore) DeleteOfflineShots(tenantID string, ids []string) ([]*Offline
 }
 
 func (m *MemStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
+	return m.listShots(tenantID, userID, limit, false)
+}
+
+func (m *MemStore) ListPendingOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
+	return m.listShots(tenantID, userID, limit, true)
+}
+
+func (m *MemStore) listShots(tenantID, userID string, limit int, pendingOnly bool) ([]*OfflineShot, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]*OfflineShot, 0, len(m.offlineShots))
@@ -230,12 +271,21 @@ func (m *MemStore) ListOfflineShots(tenantID, userID string, limit int) ([]*Offl
 		if userID != "" && s.UserID != userID {
 			continue
 		}
+		// 截断前先筛,和 SQL 版一致 —— 先截后筛会把靠后的未成单照片漏掉
+		if pendingOnly && !shotIsPending(s) {
+			continue
+		}
 		out = append(out, s)
 	}
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (m *MemStore) CountPendingOfflineShots(tenantID, userID string) (int, error) {
+	list, err := m.listShots(tenantID, userID, 0, true)
+	return len(list), err
 }
 
 // ===== HTTP =====
@@ -316,20 +366,19 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	shots, err := s.store.ListOfflineShots(s.tenantForRequest(r), userID, limit)
+	// 默认保持原样(admin-web 要看全量);移动端传 ?pending=1 只要未成单的。
+	// 过滤走 SQL,不是取回来再筛 —— LIMIT 在筛之前生效,先截断会漏。
+	tenantID := s.tenantForRequest(r)
+	var shots []*OfflineShot
+	var err error
+	if r.URL.Query().Get("pending") == "1" {
+		shots, err = s.store.ListPendingOfflineShots(tenantID, userID, limit)
+	} else {
+		shots, err = s.store.ListOfflineShots(tenantID, userID, limit)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
-	}
-	// 默认保持原样(admin-web 要看全量);移动端传 ?pending=1 只要未成单的。
-	if r.URL.Query().Get("pending") == "1" {
-		kept := make([]*OfflineShot, 0, len(shots))
-		for _, shot := range shots {
-			if shotIsPending(shot) {
-				kept = append(kept, shot)
-			}
-		}
-		shots = kept
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots})
 }

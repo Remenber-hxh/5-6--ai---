@@ -26,15 +26,15 @@ func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 
 	// 角标是辅助信息:某一路取不到就返回 0,不让整个接口失败 ——
 	// 底栏挂掉会让人以为 app 坏了,而它其实只是个数字。
-	shots := 0
-	if list, err := s.store.ListOfflineShots(s.tenantForRequest(r), userID, 0); err == nil {
-		// 必须只数未成单的:ListOfflineShots 返回全量,已成单的照片列表页不显示。
-		// 直接 len(list) 会让角标比用户点进去看到的条数多 —— 那比不显示更糟。
-		for _, shot := range list {
-			if shotIsPending(shot) {
-				shots++
-			}
-		}
+	// 走 COUNT(*),不把行拉回来。
+	//
+	// 【踩过的坑】第一版是 ListOfflineShots(..., 0) 再逐条筛。问题有两层:
+	// limit<=0 会被 store 当成"默认 100",而且筛在 LIMIT 之后 —— 最新 100 条里
+	// 成单的多,未成单的就被截没了。实测页面显示 20 张,角标却报 6。
+	// 角标和用户点进去看到的条数对不上,比不显示更糟。
+	shots, err := s.store.CountPendingOfflineShots(s.tenantForRequest(r), userID)
+	if err != nil {
+		shots = 0 // 角标是辅助信息,取不到就显示 0,不让整个接口失败
 	}
 
 	tasks := 0
