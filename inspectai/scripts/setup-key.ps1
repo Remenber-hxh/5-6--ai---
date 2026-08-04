@@ -1,4 +1,4 @@
-# 加密保存本地 AI API Key 到 .env.secure，默认保存 DashScope 密钥。
+﻿# 加密保存本地 AI API Key 到 .env.secure，默认保存 DashScope 密钥。
 # 用 Windows DPAPI（CurrentUser scope）加密，只有当前 Windows 账号能在本机解密
 # 用法：
 #   .\scripts\setup-key.ps1                  # 交互式输入，输入不回显

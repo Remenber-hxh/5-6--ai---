@@ -17,9 +17,14 @@
   --label: rgba(234, 247, 255, 0.72);
 
   /* 玻璃卡片(旧版 .login-box) */
-  --card-bg: linear-gradient(180deg, rgba(12, 38, 70, 0.82), rgba(5, 20, 44, 0.86));
+  --card-bg: linear-gradient(
+    180deg,
+    rgba(12, 38, 70, 0.82),
+    rgba(5, 20, 44, 0.86)
+  );
   --card-border: rgba(126, 255, 210, 0.18);
-  --card-shadow: 0 30px 90px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --card-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 
   /* 输入框 */
   --input-bg: rgba(0, 0, 0, 0.24);
@@ -43,7 +48,7 @@
        blue_btn #267EF0 / white_bg_1 #FFFFFF / gray_blue_94 #EBEDF0
        black #000000 / gray_60 #999999 / 分割线 黑 7%
      https://developer.work.weixin.qq.com/document/path/94600 */
-  --brand: #267EF0; /* 企微 blue_btn。白底对比 3.94:1 —— 够填充/图标/大字,正文别用 */
+  --brand: #267ef0; /* 企微 blue_btn。白底对比 3.94:1 —— 够填充/图标/大字,正文别用 */
   --brand-soft: rgba(38, 126, 240, 0.1);
   --brand-border: rgba(38, 126, 240, 0.22);
   --ios-green: #34c759;
@@ -68,8 +73,16 @@
 
   /* 屏幕背景:两点光晕 + 斜向渐变(旧版 .scene-login) */
   --screen-bg:
-    radial-gradient(circle at 18% 22%, rgba(34, 225, 255, 0.18), transparent 38%),
-    radial-gradient(circle at 84% 78%, rgba(27, 224, 135, 0.16), transparent 40%),
+    radial-gradient(
+      circle at 18% 22%,
+      rgba(34, 225, 255, 0.18),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 84% 78%,
+      rgba(27, 224, 135, 0.16),
+      transparent 40%
+    ),
     linear-gradient(160deg, #061325 0%, #0a1f3a 55%, #06231e 100%);
 }
 
@@ -203,7 +216,12 @@
 .brand-divider {
   width: 1px;
   height: 15px;
-  background: linear-gradient(180deg, transparent, rgba(111, 255, 219, 0.74), transparent);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(111, 255, 219, 0.74),
+    transparent
+  );
 }
 .brand-cn {
   color: var(--tech-jade);
@@ -267,7 +285,9 @@
   border: 1px solid var(--input-border);
   border-radius: 10px;
   background: var(--input-bg);
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 /* 【中间这层也要压】Arco 的结构是
      .arco-input-container(我们控高 44px)
@@ -330,8 +350,6 @@
   letter-spacing: 0.05em;
   box-shadow: var(--btn-primary-shadow);
 }
-
-
 
 .btn-primary.arco-button:active {
   transform: scale(0.99);
@@ -440,7 +458,12 @@
   inset: -60px -40px -20px;
   z-index: -2;
   background:
-    linear-gradient(180deg, rgba(5, 13, 23, 0.45), rgba(5, 13, 23, 0.92) 64%, rgba(5, 13, 23, 1)),
+    linear-gradient(
+      180deg,
+      rgba(5, 13, 23, 0.45),
+      rgba(5, 13, 23, 0.92) 64%,
+      rgba(5, 13, 23, 1)
+    ),
     url("/assets/hero-bg.webp") center top / cover no-repeat;
   opacity: 0.34;
 }
@@ -450,10 +473,17 @@
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(circle at 50% 46%, rgba(67, 229, 172, 0.16), transparent 34%),
+    radial-gradient(
+      circle at 50% 46%,
+      rgba(67, 229, 172, 0.16),
+      transparent 34%
+    ),
     linear-gradient(rgba(85, 215, 255, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(85, 215, 255, 0.045) 1px, transparent 1px);
-  background-size: auto, 28px 28px, 28px 28px;
+  background-size:
+    auto,
+    28px 28px,
+    28px 28px;
   mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%);
   -webkit-mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%);
 }
@@ -474,8 +504,12 @@
 
 /* 长按中的快门:轻微内缩,给"正在识别长按"的即时反馈。
    没有这个反馈,用户按住 400ms 期间不知道系统有没有在响应。 */
-.shutter.is-holding { transform: scale(0.93); }
-.shutter.is-holding::before { border-color: rgba(111, 255, 219, 0.9); }
+.shutter.is-holding {
+  transform: scale(0.93);
+}
+.shutter.is-holding::before {
+  border-color: rgba(111, 255, 219, 0.9);
+}
 
 /* 相册图标:默认收起在快门中心、缩小、透明。
    【必须 pointer-events:none】收起时它仍在 DOM 里,不关掉命中就是一层
@@ -501,8 +535,10 @@
      一跑,元素会先掉下去半个身位再弹回来。 */
   transform: translateY(-50%) scale(0.5);
   pointer-events: none;
-  transition: opacity 200ms ease, transform 260ms cubic-bezier(0.22, 1.4, 0.5, 1),
-              margin-left 260ms cubic-bezier(0.22, 1.4, 0.5, 1);
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.22, 1.4, 0.5, 1),
+    margin-left 260ms cubic-bezier(0.22, 1.4, 0.5, 1);
 }
 /* ===== 长按光波 =====
    锁屏长按那种感觉:一圈光从快门向外扩散一次然后消散,不循环 ——
@@ -523,12 +559,25 @@
   animation: shutter-ripple 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 @keyframes shutter-ripple {
-  0%   { opacity: 0.9;  transform: scale(1);   border-width: 2px; }
-  70%  { opacity: 0.28; }
-  100% { opacity: 0;    transform: scale(2.4); border-width: 0.5px; }
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+    border-width: 2px;
+  }
+  70% {
+    opacity: 0.28;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+    border-width: 0.5px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .shutter-ripple { animation: none; opacity: 0; }
+  .shutter-ripple {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 /* 展开后图标底下垫一层【暗色弥散阴影】,替掉原来那个实心圆框。
@@ -544,7 +593,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shutter-dock.is-rippling::after { animation: none; }
+  .shutter-dock.is-rippling::after {
+    animation: none;
+  }
 }
 
 /* 没有底框托着,图标要稍大才立得住。
@@ -554,11 +605,12 @@
 .album-fab svg {
   width: 27px;
   height: 27px;
-  filter:
-    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9))
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9))
     drop-shadow(0 3px 8px rgba(0, 0, 0, 0.75));
 }
-.album-fab:active svg { transform: scale(0.9); }
+.album-fab:active svg {
+  transform: scale(0.9);
+}
 /* 展开:滑到快门右侧。回弹曲线让它像"弹出来"而不是"移过去" */
 .album-fab.is-open {
   opacity: 1;
@@ -570,18 +622,35 @@
   pointer-events: auto;
 }
 @media (prefers-reduced-motion: reduce) {
-  .album-fab { transition: opacity 120ms ease; }
-  .shutter.is-holding { transform: none; }
+  .album-fab {
+    transition: opacity 120ms ease;
+  }
+  .shutter.is-holding {
+    transform: none;
+  }
 }
 
-.shutter { animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both; }
-.hero-secondary { animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both; }
+.shutter {
+  animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
+}
+.hero-secondary {
+  animation: techRise 620ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both;
+}
 @keyframes techRise {
-  from { transform: translateY(14px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .shutter, .hero-secondary { animation: none; }
+  .shutter,
+  .hero-secondary {
+    animation: none;
+  }
 }
 
 /* ===== 快门栏 =====
@@ -608,7 +677,8 @@
   margin: 0;
   border-radius: 50%;
   cursor: pointer;
-  transition: transform 280ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));
+  transition: transform 280ms
+    var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));
 }
 .shutter::before {
   content: "";
@@ -616,7 +686,9 @@
   inset: 0;
   border-radius: 50%;
   border: 3px solid rgba(111, 255, 219, 0.55);
-  box-shadow: 0 0 22px rgba(67, 229, 172, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  box-shadow:
+    0 0 22px rgba(67, 229, 172, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
 }
 .shutter::after {
   content: "";
@@ -624,12 +696,21 @@
   inset: 6px;
   border-radius: 50%;
   background: linear-gradient(180deg, #ffffff 0%, #eef6f3 100%);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 6px 18px rgba(0, 0, 0, 0.35);
   transition: inset 250ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));
 }
-.shutter:active { transform: scale(0.94); }
-.shutter:active::after { inset: 12px; }
-.shutter.is-busy::after { inset: 14px; opacity: 0.7; }
+.shutter:active {
+  transform: scale(0.94);
+}
+.shutter:active::after {
+  inset: 12px;
+}
+.shutter.is-busy::after {
+  inset: 14px;
+  opacity: 0.7;
+}
 .shutter-label {
   display: block;
   margin-top: 10px;
@@ -646,7 +727,6 @@
   opacity: 0;
   cursor: pointer;
 }
-
 
 /* 次要入口:轻量文字链接排,不和主操作抢重量(旧版 .hero-secondary) */
 .hero-secondary {
@@ -670,7 +750,11 @@
   flex: none;
   padding: 12px 14px calc(12px + var(--safe-bottom));
   border-top: 1px solid rgba(126, 255, 210, 0.14);
-  background: linear-gradient(180deg, rgba(6, 20, 34, 0.72), rgba(4, 14, 26, 0.92));
+  background: linear-gradient(
+    180deg,
+    rgba(6, 20, 34, 0.72),
+    rgba(4, 14, 26, 0.92)
+  );
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -727,7 +811,9 @@
   letter-spacing: 0.04em;
   box-shadow: 0 6px 18px rgba(27, 224, 135, 0.28);
 }
-.pending-action:disabled { opacity: 0.6; }
+.pending-action:disabled {
+  opacity: 0.6;
+}
 .pending-wait {
   font-size: 11px;
   color: #ffc46b;
@@ -746,7 +832,9 @@
   padding-bottom: 4px;
   scrollbar-width: none;
 }
-.pending-strip::-webkit-scrollbar { display: none; }
+.pending-strip::-webkit-scrollbar {
+  display: none;
+}
 
 .shot-card {
   position: relative;
@@ -765,9 +853,15 @@
   display: block;
 }
 /* 状态描边:一眼看出哪些出了问题 */
-.shot-blocked { border-color: rgba(255, 92, 76, 0.72); }
-.shot-failed { border-color: rgba(255, 196, 107, 0.62); }
-.shot-uploading { border-color: rgba(67, 229, 172, 0.6); }
+.shot-blocked {
+  border-color: rgba(255, 92, 76, 0.72);
+}
+.shot-failed {
+  border-color: rgba(255, 196, 107, 0.62);
+}
+.shot-uploading {
+  border-color: rgba(67, 229, 172, 0.6);
+}
 
 .shot-overlay {
   position: absolute;
@@ -784,7 +878,11 @@
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .shot-time {
   position: absolute;
@@ -808,8 +906,12 @@
   border-radius: 4px;
   color: #fff;
 }
-.flag-blocked { background: rgba(255, 92, 76, 0.9); }
-.flag-failed { background: rgba(230, 160, 40, 0.92); }
+.flag-blocked {
+  background: rgba(255, 92, 76, 0.9);
+}
+.flag-failed {
+  background: rgba(230, 160, 40, 0.92);
+}
 
 .shot-x {
   position: absolute;
@@ -879,7 +981,9 @@
    数值取自旧版 styles.css .topbar,含 56px 而非 Arco 默认的 44px。 */
 .app-navbar.arco-nav-bar {
   flex: none;
-  padding-top: var(--safe-top); /* 刘海:外层 content-box,padding 会正确累加进高度 */
+  padding-top: var(
+    --safe-top
+  ); /* 刘海:外层 content-box,padding 会正确累加进高度 */
   color: var(--lt-fg);
   background: rgba(250, 250, 251, 0.72);
   backdrop-filter: saturate(180%) blur(24px);
@@ -1003,8 +1107,12 @@
   opacity: 0.72;
   transition: opacity 140ms ease;
 }
-.grid-cell.picked { border-color: var(--brand); }
-.grid-cell.picked img { opacity: 1; }
+.grid-cell.picked {
+  border-color: var(--brand);
+}
+.grid-cell.picked img {
+  opacity: 1;
+}
 .cell-check {
   position: absolute;
   top: 5px;
@@ -1037,7 +1145,11 @@
   gap: 1px;
 }
 /* 离线时长:公开展示拍摄与上传的时间差,不隐藏 */
-.cell-gap { font-style: normal; font-size: 11px; color: #ffd479; }
+.cell-gap {
+  font-style: normal;
+  font-size: 11px;
+  color: #ffd479;
+}
 /* ===== 识别结果 / 模板选择(旧版 iOS 卡片) ===== */
 
 .classify-box {
@@ -1047,7 +1159,11 @@
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
 }
-.classify-head { font-size: 12px; color: var(--lt-fg-3); margin-bottom: 6px; }
+.classify-head {
+  font-size: 12px;
+  color: var(--lt-fg-3);
+  margin-bottom: 6px;
+}
 .classify-hit {
   font-size: 18px;
   font-weight: 700;
@@ -1064,7 +1180,11 @@
   background: var(--brand-soft);
   color: var(--brand);
 }
-.tpl-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tpl-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .tpl-item {
   padding: 8px 14px;
   border-radius: 999px;
@@ -1106,9 +1226,13 @@
   padding: 12px 18px;
   border-bottom: 0.5px solid var(--lt-border);
 }
-.fld:last-child { border-bottom: 0; }
+.fld:last-child {
+  border-bottom: 0;
+}
 /* 需复核的行淡橙底,一眼看出哪些要人工核对 */
-.fld-warn { background: rgba(255, 149, 0, 0.06); }
+.fld-warn {
+  background: rgba(255, 149, 0, 0.06);
+}
 
 .fld-label {
   flex: 0 0 104px;
@@ -1120,7 +1244,11 @@
   align-items: center;
   gap: 4px;
 }
-.fld-req { font-style: normal; color: #ff3b30; font-size: 13px; }
+.fld-req {
+  font-style: normal;
+  color: #ff3b30;
+  font-size: 13px;
+}
 
 .fld-value {
   flex: 1;
@@ -1147,24 +1275,33 @@
   border: 0.5px solid rgba(38, 126, 240, 0.18);
 }
 .ai-pill.confirmed {
-  background: var(--c-green-soft); color: var(--ios-green);
+  background: var(--c-green-soft);
+  color: var(--ios-green);
   border-color: rgba(52, 199, 89, 0.2);
 }
 .ai-pill.review {
-  background: var(--c-orange-soft); color: var(--ios-orange);
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
   border-color: rgba(255, 149, 0, 0.2);
 }
 .ai-pill.empty {
-  background: var(--lt-fill); color: var(--lt-fg-2);
+  background: var(--lt-fill);
+  color: var(--lt-fg-2);
   border-color: var(--lt-border);
 }
 .ai-pill.edited {
-  background: var(--brand-soft); color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
   border-color: rgba(38, 126, 240, 0.2);
 }
 
 /* 选项行 */
-.opt-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
 .opt {
   padding: 6px 12px;
   border-radius: 8px;
@@ -1180,7 +1317,8 @@
   font-weight: 600;
 }
 
-.fld-ai, .fld-reason {
+.fld-ai,
+.fld-reason {
   padding: 0 18px 10px;
   font-size: 11px;
   line-height: 1.5;
@@ -1200,7 +1338,9 @@
   min-width: 56px;
   text-align: center;
 }
-.fld-btn:disabled { opacity: 0.5; }
+.fld-btn:disabled {
+  opacity: 0.5;
+}
 
 .analyzing {
   display: flex;
@@ -1213,7 +1353,10 @@
   font-size: 13px;
   color: var(--brand);
 }
-.analyzing .spinner { border-top-color: var(--brand); border-color: rgba(38, 126, 240, 0.24); }
+.analyzing .spinner {
+  border-top-color: var(--brand);
+  border-color: rgba(38, 126, 240, 0.24);
+}
 
 /* 识别不稳时的出路(旧版:重拍 / 转人工)。
    注意:这里是【浅色】的一份 —— RecordPage 用 .flow-screen(浅色 iOS 风)。
@@ -1227,25 +1370,45 @@
   border: 0.5px solid rgba(255, 149, 0, 0.24);
 }
 /* 色值压到对暖底 5.47:1(WCAG AA 要 4.5) —— 巡检员在户外阳光下看,别省这一档 */
-.retake-why { font-size: 13px; line-height: 1.55; color: #934f00; }
+.retake-why {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #934f00;
+}
 .retake-tries {
   margin-top: 4px;
   font-size: 11px;
   color: var(--lt-fg-2);
   font-variant-numeric: tabular-nums;
 }
-.retake-acts { margin-top: 10px; display: flex; gap: 10px; justify-content: flex-end; }
+.retake-acts {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
 
-.rec-images { margin: 4px 16px 0; }
-.rec-images-head { font-size: 12px; color: var(--lt-fg-3); margin-bottom: 8px; }
-.rec-images .shot-card { border-color: var(--lt-border); background: var(--lt-fill); }
+.rec-images {
+  margin: 4px 16px 0;
+}
+.rec-images-head {
+  font-size: 12px;
+  color: var(--lt-fg-3);
+  margin-bottom: 8px;
+}
+.rec-images .shot-card {
+  border-color: var(--lt-border);
+  background: var(--lt-fill);
+}
 
 /* ===== 带水印的照片查看器 ===== */
 
 /* ===== 照片查看:壳交给组件库,壳上的东西自己摆 ===== */
 /* 每张图的叠层挂在 .preview-image-wrap-container 里,而它没写 position,
    水印要定位得先把锚点补上。 */
-.arco-image-preview .preview-image-wrap-container { position: relative; }
+.arco-image-preview .preview-image-wrap-container {
+  position: relative;
+}
 /* 工具层整层不吃事件:图上单击关闭、拖动翻页都要能穿过去。 */
 .viewer-ui {
   position: absolute;
@@ -1253,7 +1416,9 @@
   z-index: 3;
   pointer-events: none;
 }
-.viewer-ui button { pointer-events: auto; }
+.viewer-ui button {
+  pointer-events: auto;
+}
 .viewer-close {
   position: absolute;
   top: calc(10px + var(--safe-top));
@@ -1318,7 +1483,9 @@
   font-size: 14px;
   font-weight: 700;
 }
-.viewer-btn:disabled { opacity: 0.6; }
+.viewer-btn:disabled {
+  opacity: 0.6;
+}
 
 /* 网格里的"看大图"角标 */
 .cell-zoom {
@@ -1394,7 +1561,9 @@ a {
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  box-shadow: 0 1px 2px rgba(38, 126, 240, 0.2), 0 8px 20px rgba(38, 126, 240, 0.25);
+  box-shadow:
+    0 1px 2px rgba(38, 126, 240, 0.2),
+    0 8px 20px rgba(38, 126, 240, 0.25);
 }
 .flow-foot .btn-ghost.arco-button {
   min-height: 50px;
@@ -1406,7 +1575,6 @@ a {
   font-weight: 600;
 }
 
-
 /* ===== 识别中:整屏场景(复刻旧版 sceneLoading)===== */
 .loading-screen {
   flex: 1;
@@ -1416,13 +1584,23 @@ a {
   background: var(--screen-bg);
   padding-top: var(--safe-top);
 }
-.progress { height: 3px; background: rgba(67, 229, 172, 0.14); flex: none; }
+.progress {
+  height: 3px;
+  background: rgba(67, 229, 172, 0.14);
+  flex: none;
+}
 .progress-bar {
   height: 100%;
   background: linear-gradient(90deg, #12a968, var(--tech-cyan));
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.loading-body { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; }
+.loading-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
 .loading-box {
   text-align: center;
   width: 100%;
@@ -1432,13 +1610,20 @@ a {
   background: rgba(9, 24, 38, 0.62);
   border: 1px solid rgba(111, 255, 219, 0.14);
 }
-.loading-orbit { position: relative; width: 96px; height: 96px; margin: 0 auto 22px; }
+.loading-orbit {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 22px;
+}
 .orbit-core {
   position: absolute;
   inset: 36px;
   border-radius: 50%;
   background: #12a968;
-  box-shadow: 0 0 0 6px rgba(18, 169, 104, 0.16), 0 0 18px rgba(62, 230, 180, 0.5);
+  box-shadow:
+    0 0 0 6px rgba(18, 169, 104, 0.16),
+    0 0 18px rgba(62, 230, 180, 0.5);
   animation: orbitPulse 1.6s ease-in-out infinite;
 }
 .orbit-ring {
@@ -1460,10 +1645,22 @@ a {
   opacity: 0.7;
 }
 @keyframes orbitPulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.88); opacity: 0.82; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.88);
+    opacity: 0.82;
+  }
 }
-.loading-msg { font-size: 16px; font-weight: 600; color: #fff; margin: 0; }
+.loading-msg {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+}
 .loading-steps {
   list-style: none;
   margin: 22px 0 16px;
@@ -1474,21 +1671,42 @@ a {
   flex-direction: column;
   gap: 12px;
 }
-.step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-3); }
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
 .step-dot {
-  width: 9px; height: 9px; border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   flex: none;
-  transition: background 200ms ease, box-shadow 200ms ease;
+  transition:
+    background 200ms ease,
+    box-shadow 200ms ease;
 }
-.step.active { color: var(--ink); }
+.step.active {
+  color: var(--ink);
+}
 .step.active .step-dot {
   background: var(--tech-jade);
   box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.18);
 }
-.step.done { color: var(--ink-2); }
-.step.done .step-dot { background: #12a968; }
-.loading-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.step.done {
+  color: var(--ink-2);
+}
+.step.done .step-dot {
+  background: #12a968;
+}
+.loading-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
 .loading-tags span {
   font-size: 11px;
   padding: 3px 10px;
@@ -1498,7 +1716,10 @@ a {
   letter-spacing: 0.25px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .orbit-core, .orbit-ring { animation: none; }
+  .orbit-core,
+  .orbit-ring {
+    animation: none;
+  }
 }
 
 /* ===== 一键确认横幅(旧版 confirm-all-banner)===== */
@@ -1514,8 +1735,13 @@ a {
   font-size: 13px;
   color: #7c2d12;
 }
-.confirm-all .ca-msg { flex: 1; }
-.confirm-all b { font-size: 16px; color: #c2410c; }
+.confirm-all .ca-msg {
+  flex: 1;
+}
+.confirm-all b {
+  font-size: 16px;
+  color: #c2410c;
+}
 .confirm-all button {
   flex: none;
   padding: 7px 14px;
@@ -1526,12 +1752,15 @@ a {
   font-size: 13px;
   font-weight: 600;
 }
-.confirm-all button:disabled { opacity: 0.6; }
+.confirm-all button:disabled {
+  opacity: 0.6;
+}
 
 /* ===== 字段用原生输入控件 =====
    流程页的字段行刻意不用组件库的 Input:旧版就是原生控件 + 右对齐,
    自己写 CSS 更贴旧版观感,也省掉一层组件库皮肤覆盖。 */
-.fld-input, .fld-select {
+.fld-input,
+.fld-select {
   flex: 1;
   min-width: 0;
   border: 0;
@@ -1542,10 +1771,20 @@ a {
   font-family: inherit;
   color: var(--lt-fg);
 }
-.fld-input::placeholder { color: var(--ios-gray); }
-.fld-select { appearance: none; -webkit-appearance: none; }
-.fld-block { display: block; }
-.fld-block .fld-label { flex: none; margin-bottom: 8px; }
+.fld-input::placeholder {
+  color: var(--ios-gray);
+}
+.fld-select {
+  appearance: none;
+  -webkit-appearance: none;
+}
+.fld-block {
+  display: block;
+}
+.fld-block .fld-label {
+  flex: none;
+  margin-bottom: 8px;
+}
 .fld-textarea {
   width: 100%;
   min-height: 76px;
@@ -1568,7 +1807,9 @@ a {
   padding: 0 16px 14px;
   scrollbar-width: none;
 }
-.photo-strip::-webkit-scrollbar { display: none; }
+.photo-strip::-webkit-scrollbar {
+  display: none;
+}
 /* 缩略图 72 → 104px:巡检照片是要【看清拍到了什么】的,72px 只能看出
    "有张图",看不出是铭牌还是地面。放大后一屏仍能露出三张半,
    横向滑动的暗示还在。 */
@@ -1584,7 +1825,11 @@ a {
 }
 /* Arco Image 自带 loading/error 层,给它把容器撑满 */
 .photo-thumb .arco-image,
-.photo-thumb .arco-image img { width: 100%; height: 100%; display: block; }
+.photo-thumb .arco-image img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 
 /* ===== 场景确认页(旧版 classify-result / template-list)===== */
 .classify-result {
@@ -1604,8 +1849,15 @@ a {
   margin-bottom: 6px;
   letter-spacing: 0.5px;
 }
-.cr-name { font-size: 22px; color: var(--lt-fg); margin-bottom: 6px; }
-.cr-conf { font-size: 13px; color: var(--lt-fg-2); }
+.cr-name {
+  font-size: 22px;
+  color: var(--lt-fg);
+  margin-bottom: 6px;
+}
+.cr-conf {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
 
 .template-list {
   margin: 8px 16px 16px;
@@ -1624,23 +1876,50 @@ a {
   background: transparent;
   text-align: left;
 }
-.template-row:last-child { border-bottom: 0; }
-.template-row:active { background: var(--lt-fill); }
+.template-row:last-child {
+  border-bottom: 0;
+}
+.template-row:active {
+  background: var(--lt-fill);
+}
 .tr-icon {
-  width: 40px; height: 40px; border-radius: 50%;
-  background: var(--brand-soft); color: var(--brand);
-  display: grid; place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
   margin-right: 14px;
-  font-size: 15px; font-weight: 500;
+  font-size: 15px;
+  font-weight: 500;
   flex: none;
 }
-.tr-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.tr-name {
-  font-size: 15px; font-weight: 500; color: var(--lt-fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.tr-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.tr-sub { font-size: 12px; color: var(--lt-fg-2); }
-.tr-arrow { color: #c7c7cc; font-size: 20px; margin-left: 8px; flex: none; }
+.tr-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-sub {
+  font-size: 12px;
+  color: var(--lt-fg-2);
+}
+.tr-arrow {
+  color: #c7c7cc;
+  font-size: 20px;
+  margin-left: 8px;
+  flex: none;
+}
 
 /* ===== 首页入口(user-window / task-banner;导航磁贴见"拍照台"一节)===== */
 
@@ -1664,7 +1943,9 @@ a {
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
 }
-.sk-list.sk-card .arco-skeleton { padding: 16px; }
+.sk-list.sk-card .arco-skeleton {
+  padding: 16px;
+}
 .sk-list .arco-skeleton-avatar {
   width: 46px;
   height: 46px;
@@ -1711,10 +1992,18 @@ a {
   letter-spacing: 0.15px;
   cursor: pointer;
 }
-.link-btn:active { background: rgba(255, 255, 255, 0.06); color: var(--tech-jade); }
-.link-sep { color: rgba(234, 247, 255, 0.24); font-size: 12px; }
+.link-btn:active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tech-jade);
+}
+.link-sep {
+  color: rgba(234, 247, 255, 0.24);
+  font-size: 12px;
+}
 
-.upload-wrap { overflow: hidden; }
+.upload-wrap {
+  overflow: hidden;
+}
 /* 【必须限定在 .upload-wrap 内】这是"透明 input 铺满 label"的写法,
    靠父级的 position:relative 兜住。一旦脱离 .upload-wrap 单独使用,
    absolute 会去找更外层的定位祖先,铺成一张覆盖全屏的透明层,
@@ -1741,7 +2030,9 @@ a {
   border: 1px solid rgba(111, 255, 219, 0.2);
 }
 .tb-dot {
-  width: 8px; height: 8px; border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   background: var(--tech-jade);
   box-shadow: 0 0 0 4px rgba(67, 229, 172, 0.16);
   flex: none;
@@ -1781,7 +2072,9 @@ a {
   flex-direction: column;
   gap: 2px;
 }
-.ts-item + .ts-item { border-left: 0.5px solid var(--lt-border); }
+.ts-item + .ts-item {
+  border-left: 0.5px solid var(--lt-border);
+}
 .ts-item b {
   font-size: 22px;
   font-weight: 700;
@@ -1789,8 +2082,13 @@ a {
   color: var(--lt-fg);
   font-variant-numeric: tabular-nums;
 }
-.ts-item span { font-size: 11px; color: var(--lt-fg-2); }
-.ts-item.warn b { color: #ff3b30; }
+.ts-item span {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
+.ts-item.warn b {
+  color: #ff3b30;
+}
 /* 三个数字现在是筛选开关。选中态要足够明显 —— 不然用户点完看到列表变短了,
    却不知道是自己筛的还是数据没了。 */
 .ts-item {
@@ -1800,12 +2098,20 @@ a {
   border-radius: 12px;
   transition: background 140ms ease;
 }
-.ts-item.on { background: var(--brand-soft); }
+.ts-item.on {
+  background: var(--brand-soft);
+}
 .ts-item.on b,
-.ts-item.on span { color: var(--brand); }
-.ts-item.on.warn b { color: #ff3b30; }
+.ts-item.on span {
+  color: var(--brand);
+}
+.ts-item.on.warn b {
+  color: #ff3b30;
+}
 /* 数字是 0 的那一档点了只会得到空列表,禁掉并压暗 */
-.ts-item:disabled { opacity: 0.38; }
+.ts-item:disabled {
+  opacity: 0.38;
+}
 
 .task-card {
   margin: 0 16px 10px;
@@ -1814,11 +2120,32 @@ a {
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
 }
-.task-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.task-due { font-size: 11px; color: var(--lt-fg-2); }
-.task-title { font-size: 16px; font-weight: 600; color: var(--lt-fg); margin-bottom: 3px; }
-.task-asset { font-size: 12px; color: var(--lt-fg-2); }
-.task-desc { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--lt-fg-2); }
+.task-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.task-due {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
+.task-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--lt-fg);
+  margin-bottom: 3px;
+}
+.task-asset {
+  font-size: 12px;
+  color: var(--lt-fg-2);
+}
+.task-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lt-fg-2);
+}
 /* 旧版是柔和底 + 蓝字(--wx-blue-soft / --wx-blue),不是饱和蓝实心块。
    一屏叠四五张卡时,实心蓝会重得压住所有信息。 */
 .task-start {
@@ -1835,7 +2162,8 @@ a {
 .task-start:active {
   background: rgba(38, 126, 240, 0.18);
 }
-.task-empty, .task-loading {
+.task-empty,
+.task-loading {
   text-align: center;
   padding: 60px 20px;
   font-size: 14px;
@@ -1874,8 +2202,17 @@ a {
   background: var(--brand-soft);
   border: 1px solid var(--brand-border);
 }
-.es-title { font-size: 15px; font-weight: 600; color: var(--lt-fg); }
-.es-hint { margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--lt-fg-3); }
+.es-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lt-fg);
+}
+.es-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--lt-fg-3);
+}
 
 /* 深色屏(center-screen)上的描边按钮:无权限 / 设备不存在等屏用。
    之前错用浅色页的 .task-back —— 淡翡翠色块浮在深色底上,和玻璃卡风格脱节。 */
@@ -1890,7 +2227,9 @@ a {
   font-size: 15px;
   font-weight: 600;
 }
-.btn-dark-ghost:active { background: rgba(255, 255, 255, 0.08); }
+.btn-dark-ghost:active {
+  background: rgba(255, 255, 255, 0.08);
+}
 
 /* ===== 待办角标(红点)=====
    巡检员不用点进去就知道还有事没做完。数字超过 99 显示 99+。 */
@@ -1938,7 +2277,9 @@ a {
   background: #ff3b30;
   box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.9);
 }
-.link-btn .lk-badge .arco-badge-text { font-size: 10px; }
+.link-btn .lk-badge .arco-badge-text {
+  font-size: 10px;
+}
 
 .badge-dot {
   position: absolute;
@@ -1960,7 +2301,10 @@ a {
 
 /* 被拦下的照片:提示行内直接给"全部重试",不用逐张点。
    .pending-alert 本体样式在上方"待上传面板"一节,这里只放行内元素。 */
-.pa-msg { flex: 1; min-width: 0; }
+.pa-msg {
+  flex: 1;
+  min-width: 0;
+}
 .pa-btn {
   flex: none;
   padding: 5px 12px;
@@ -1973,7 +2317,11 @@ a {
 }
 
 /* ===== 待上传:多选删除 ===== */
-.sel-acts { display: flex; align-items: center; gap: 6px; }
+.sel-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .sel-btn {
   padding: 5px 11px;
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -1983,15 +2331,21 @@ a {
   font-size: 11px;
   font-weight: 600;
 }
-.sel-btn:active { background: rgba(255, 255, 255, 0.08); }
-.sel-btn:disabled { opacity: 0.4; }
+.sel-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sel-btn:disabled {
+  opacity: 0.4;
+}
 .sel-btn.danger {
   border-color: rgba(255, 92, 76, 0.5);
   background: rgba(255, 92, 76, 0.14);
   color: #ff9d90;
 }
 /* 多选中的卡片:翡翠描边 + 勾选角标,与选图页一致 */
-.shot-picked { border-color: var(--tech-jade); }
+.shot-picked {
+  border-color: var(--tech-jade);
+}
 .shot-pick {
   position: absolute;
   top: 3px;
@@ -2007,12 +2361,26 @@ a {
   line-height: 15px;
   text-align: center;
 }
-.shot-picked .shot-pick { background: var(--tech-jade); border-color: var(--tech-jade); }
+.shot-picked .shot-pick {
+  background: var(--tech-jade);
+  border-color: var(--tech-jade);
+}
 
 /* 选图页:标题行右侧全选 + 底部删除/识别并排 */
-.flow-sub-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.foot-row { display: flex; align-items: center; gap: 10px; }
-.foot-main { flex: 1; }
+.flow-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.foot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.foot-main {
+  flex: 1;
+}
 .foot-del {
   flex: none;
   height: 46px;
@@ -2024,7 +2392,9 @@ a {
   font-size: 15px;
   font-weight: 600;
 }
-.foot-del:disabled { opacity: 0.4; }
+.foot-del:disabled {
+  opacity: 0.4;
+}
 
 /* ===== 设备健康台账(旧版 sceneLedger)===== */
 .lo-row {
@@ -2043,10 +2413,18 @@ a {
   flex-direction: column;
   gap: 4px;
   align-items: center;
-  transition: border-color 140ms ease, background 140ms ease, transform 120ms ease;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 120ms ease;
 }
-.lo-card:active { transform: scale(0.97); }
-.lo-card.on { border-color: var(--brand-border); background: var(--brand-soft); }
+.lo-card:active {
+  transform: scale(0.97);
+}
+.lo-card.on {
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+}
 .lo-num {
   font-size: 24px;
   font-weight: 700;
@@ -2055,10 +2433,19 @@ a {
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.lo-num.ok { color: var(--ios-green); }
-.lo-num.warn { color: var(--ios-orange); }
-.lo-num.blue { color: var(--brand); }
-.lo-label { font-size: 11px; color: var(--lt-fg-2); }
+.lo-num.ok {
+  color: var(--ios-green);
+}
+.lo-num.warn {
+  color: var(--ios-orange);
+}
+.lo-num.blue {
+  color: var(--brand);
+}
+.lo-label {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
 
 .lg-card {
   margin: 0 16px 10px;
@@ -2067,1468 +2454,1990 @@ a {
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
 }
-.lg-title { font-size: 12px; color: var(--lt-fg-3); margin-bottom: 8px; }
-.lg-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.lg-chip {
-  padding: 6px 12px;
-  border: 1px solid var(--lt-border);
-  border-radius: 999px;
-  background: var(--lt-fill);
-  color: var(--lt-fg);
-  font-size: 12px;
-  transition: border-color 140ms ease, background 140ms ease;
-}
-.lg-chip em { font-style: normal; color: var(--lt-fg-2); margin-left: 3px; }
-.lg-chip.on {
-  border-color: var(--brand-border);
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-}
-.lg-chip.on em { color: var(--brand); }
-.lg-clear {
-  display: block;
-  width: calc(100% - 32px);
-  margin: 0 16px 12px;
-  padding: 9px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.asset-list {
-  margin: 0 16px;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.asset-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 13px 14px;
-  border: 0;
-  border-bottom: 0.5px solid var(--lt-border);
-  background: transparent;
-  text-align: left;
-}
-.asset-row:last-child { border-bottom: 0; }
-.asset-row:active { background: var(--lt-fill); }
-/* 设备封面缩略图(对齐旧版 .asset-cover)。
-   有照片的行一眼能认出是哪台设备;没照片的给同尺寸占位,保证左列对齐不参差。
-   状态由右侧标签表达,不再另画状态圆点(旧版也没有)。 */
-.ar-cover {
-  width: 46px;
-  height: 46px;
-  flex: none;
-  border-radius: 10px;
-  object-fit: cover;
-  background: var(--lt-fill);
-  display: block;
-}
-.ar-cover-empty {
-  position: relative;
-}
-/* 空占位里的相片轮廓,照旧版的做法(细描边小方块) */
-.ar-cover-empty::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 18px;
-  height: 14px;
-  margin: -7px 0 0 -9px;
-  border: 1.5px solid var(--ios-gray);
-  opacity: 0.45;
-  border-radius: 3px;
-}
-.ar-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.ar-name {
-  font-size: 15px; font-weight: 500; color: var(--lt-fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.ar-sub { font-size: 11px; color: var(--lt-fg-2); }
-
-/* ===== 状态标签(全站唯一一套)=====
-   历史上台账 .ar-tag、任务 .task-status、审批 .cr-tt 各写了一套,基底几乎相同
-   却对不齐:.cr-tt 少 font-weight、内边距还差 1px。这里收敛成一套语义标签。
-   配色只从令牌取,不在组件里散写(见 docs/MOBILE-WEB-OPTIMIZATION 的色彩规矩)。
-
-   没用 Arco 的 Tag:它要按语义把 color/bgColor 一个个当 props 传进 JSX,
-   等于把颜色从令牌搬回组件里散写,和上面那条规矩冲突。 */
-.tag {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.tag-brand { background: var(--brand-soft); color: var(--brand); }
-.tag-ok { background: var(--c-green-soft); color: var(--ios-green); }
-.tag-warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-.tag-danger { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
-.tag-repair { background: rgba(175, 82, 222, 0.12); color: #af52de; }
-.tag-unknown { background: var(--lt-fill); color: var(--lt-fg-2); }
-
-/* ===== 资产详情(旧版 sceneAsset)===== */
-.ad-card {
-  padding: 14px 16px;
-  margin: 0 16px 14px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.ad-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 0;
-  border-bottom: 0.5px solid var(--lt-border);
-}
-.ad-row:last-of-type { border-bottom: 0; }
-.ad-k { font-size: 13px; color: var(--lt-fg-2); }
-.ad-v { font-size: 14px; color: var(--lt-fg); font-weight: 500; }
-.ad-summary {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 0.5px solid var(--lt-border);
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--lt-fg-2);
-}
-.ad-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
-.ad-history { display: flex; flex-direction: column; gap: 8px; margin: 0 16px; }
-.hist-item {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.hist-head { display: flex; align-items: center; justify-content: space-between; }
-.hist-when { font-size: 13px; font-weight: 600; color: var(--lt-fg); font-variant-numeric: tabular-nums; }
-.hist-who { margin-top: 3px; font-size: 11px; color: var(--lt-fg-2); }
-.hist-body { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--lt-fg-2); }
-
-/* ===== 日报预览(旧版 scenePreview)===== */
-.pv-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
-/* ===== 记录上下文卡(旧版 .context,styles.css:738) =====
-   用 Arco Cell 打底,只改视觉。要掰的是它"列表里的一行"这个出身:
-   固定行高、通栏分割线、左右内边距由 Group 提供 —— 这里当独立卡片用。 */
-.rec-ctx.arco-cell {
-  margin: 0 16px 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-/* 行高写死在 inner 上(1.08rem,带副标题 1.48rem)。卡片高度该由内容
-   和内边距决定,不是由组件预设的列表行高决定。 */
-.rec-ctx .arco-cell-inner { height: auto; }
-.rec-ctx .cell-label-icon { margin-right: 12px; }
-.rec-ctx .arco-avatar {
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-  /* Arco 按 rem 出字号(0.28rem × 52 = 14.56px)。整页别的字都是整数 px,
-     只有它带小数,并排就是"看着不齐",而且非整数在非高清屏上发虚。 */
-  font-size: 15px;
-}
-/* 主副标题吃掉剩余宽度、长名省略号收尾 —— Arco 给的是 auto 宽 + 25px
-   右间距,项目名一长会把右侧状态胶囊挤出屏幕。 */
-.rec-ctx.arco-cell .cell-label {
-  flex: 1;
-  min-width: 0;
-  margin-right: 12px;
-}
-.rec-ctx .cell-title {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--lt-fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rec-ctx.arco-cell .cell-desc {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--lt-fg-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rec-ctx .cell-content { flex: none; }
-.ctx-badge {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.ctx-badge.ok { background: var(--c-green-soft); color: var(--ios-green); }
-.ctx-badge.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-
-.pv-card {
-  margin: 0 16px 12px;
-  padding: 4px 14px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.pv-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 0.5px solid var(--lt-border);
-}
-.pv-row:last-child { border-bottom: 0; }
-.pv-k { font-size: 14px; color: var(--lt-fg-2); flex: none; }
-.pv-v { font-size: 14px; color: var(--lt-fg); font-weight: 500; text-align: right; word-break: break-all; }
-
-.ai-card { padding: 14px; }
-/* AI 卡片。照旧版:标题行与正文之间有【分割线】,结论标签在标题行右端。 */
-.ai-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
-  border-bottom: 0.5px solid var(--lt-border);
-}
-.ai-mark { color: var(--brand); font-size: 13px; }
-.ai-mark.amber { color: var(--ios-orange); }
-.ai-title { font-size: 15px; font-weight: 600; color: var(--lt-fg); }
-.ai-body { font-size: 14px; line-height: 1.65; color: var(--lt-fg); white-space: pre-wrap; }
-
-/* 结论标签:靠 margin-left:auto 顶到标题行最右(旧版 .sum-status 同法)。
-   色档照搬旧版 app.js:1274 —— 正常绿 / 待复核橙 / 异常红,口径两端一致。 */
-.sum-status {
-  flex: none;
-  margin-left: auto;
-  padding: 2px 11px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.sum-status.ok { background: var(--c-green-soft); color: var(--ios-green); }
-.sum-status.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-.sum-status.bad { background: rgba(255, 59, 48, 0.12); color: #ff3b30; }
-/* 行动建议:优先级色块 + 正文 + 依据 */
-.reco { display: flex; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--lt-border); }
-.reco:last-child { border-bottom: 0; }
-.reco-pri {
-  flex: none;
-  width: 22px; height: 22px;
-  border-radius: 6px;
-  display: grid; place-items: center;
-  font-size: 11px; font-weight: 700;
-  background: var(--lt-fill); color: var(--lt-fg-2);
-}
-.reco-pri.high { background: rgba(255,59,48,0.12); color: #ff3b30; }
-.reco-pri.medium { background: var(--c-orange-soft); color: var(--ios-orange); }
-.reco-pri.low { background: var(--brand-soft); color: var(--brand); }
-.reco-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.reco-text { font-size: 14px; line-height: 1.55; color: var(--lt-fg); }
-.reco-meta { font-size: 12px; color: var(--lt-fg-2); }
-
-.foot-back {
-  flex: none;
-  height: 46px;
-  padding: 0 18px;
-  border: 1px solid var(--lt-border);
-  border-radius: 12px;
-  background: var(--lt-fill);
-  color: var(--lt-fg);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-/* ===== 待审批(旧版 sceneApprovals)===== */
-.cr-card {
-  margin: 0 16px 10px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.cr-head { display: flex; align-items: baseline; justify-content: space-between; }
-.cr-who { font-size: 15px; color: var(--lt-fg); }
-.cr-when { font-size: 11px; color: var(--lt-fg-2); font-variant-numeric: tabular-nums; }
-.cr-target { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.cr-tn {
-  flex: 1; min-width: 0;
-  font-size: 13px; color: var(--lt-fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.cr-view {
-  flex: none;
-  padding: 3px 10px;
-  border: 1px solid var(--lt-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--brand);
-  font-size: 11px;
-}
-.cr-patch {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--lt-fill);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--lt-fg);
-}
-.cr-reason { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--lt-fg-2); }
-.cr-note {
-  width: 100%;
-  height: 38px;
-  margin-top: 10px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--lt-fill);
-  color: var(--lt-fg);
-  font-size: 14px;
-  outline: none;
-}
-.cr-note:focus { border-color: var(--brand-border); background: var(--lt-card); }
-.cr-acts { display: flex; gap: 10px; margin-top: 10px; }
-.cr-btn {
-  flex: 1;
-  height: 40px;
-  border: 0;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.cr-btn:disabled { opacity: 0.5; }
-.cr-btn.reject { background: var(--lt-fill); color: var(--lt-fg); }
-.cr-btn.approve { background: var(--brand); color: #fff; }
-
-/* ===== 个人空间(/me)=====
-   之前只有一张居中玻璃卡 + 退出按钮,不像 app,像个登录后的落地页。
-   改成手机端"我的"页的通行形态:头部身份区 + 分组设置列表。
-   管理角色登录后正落在这一屏,所以它必须能通往别处,不能是死胡同。 */
-.me-screen .flow-body {
-  padding-bottom: 24px;
-}
-.me-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 16px 24px;
-}
-/* 点头像即换。右下角挂一个"换"字角标,不然没人知道能点 */
-.me-avatar {
-  position: relative;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  border-radius: 50%;
-  cursor: pointer;
-}
-.me-avatar .arco-avatar {
-  width: 76px;
-  height: 76px;
-  font-size: 30px;
-  font-weight: 700;
-  background: var(--brand);
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(38, 126, 240, 0.28);
-}
-.me-avatar .arco-avatar.has-photo { background: var(--lt-fill); }
-.me-avatar-edit {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  border: 2px solid var(--lt-bg);
-}
-.me-avatar:disabled { opacity: 0.7; }
-.me-name {
-  margin: 10px 0 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--lt-fg);
-}
-.me-sub {
-  margin: 0;
-  font-size: 13px;
-  color: var(--lt-fg-2);
-}
-
-/* Cell 分组:Arco 默认是通栏白底,这里收成 16px 外边距的圆角卡,
-   和台账/任务页的卡片语言统一 */
-.me-screen .arco-cell-group {
-  margin: 0 16px 14px;
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.me-screen .arco-cell-group-header {
-  padding: 0 0 8px 4px;
-  font-size: 12px;
-  color: var(--lt-fg-2);
-  background: transparent;
-}
-.me-screen .arco-cell {
-  margin-left: 0;
-  padding: 14px 16px;
-  color: var(--lt-fg);
-  font-size: 15px;
-  background: var(--lt-card);
-}
-.me-screen .arco-cell-text { color: var(--lt-fg-2); font-size: 14px; }
-/* 列表行图标位。SVG 用 currentColor,这里给它定色即可 —— 用品牌翡翠而非
-   全黑,列表扫下来有个节奏,又不至于像 emoji 那样每个一个颜色。 */
-.me-ic {
-  display: inline-flex;
-  align-items: center;
-  margin-right: 10px;
-  color: var(--brand);
-}
-.me-ic svg { width: 20px; height: 20px; }
-
-/* 退出登录:现在钉在 .flow-foot 里(滚动区之外),所以不再自己留外边距。
-   红色是有意的 —— 这是本页唯一的破坏性操作,红在这里表达"想清楚再点",
-   和台账里表示设备异常的红是同一套语义,不冲突。 */
-.me-logout {
-  display: block;
-  width: 100%;
-  padding: 14px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-  color: #ff3b30;
-  font-size: 16px;
-  font-weight: 600;
-}
-.me-logout:active { background: #f2f2f7; }
-.me-logout:active { background: var(--lt-fill); }
-
-/* 登录页密码小眼睛。旧版验收清单点名要有 ——
-   现场戴手套、强光下打错密码很常见,没有它只能反复清空重来。 */
-.pwd-eye {
-  padding: 4px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--tech-jade);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-/* ===== 底部常驻导航 =====
-   放在 .app-shell(flex 列)的末尾,天然贴底 —— 不用 position:fixed,
-   也就不用为它另算占位高度(NavBar 与 TabBar 的 fixed 默认值都踩过)。
-
-   【主题跟随页面】本产品是有意的双主题:拍照台深(取景语境),
-   数据页浅(户外强光下可读性更好)。五个 tab 里 1 深 4 浅,
-   所以【浅色是默认】,深色是 .is-dark 变体。
-   底栏若固定一种色,在另一种页面上就是一条焊上去的外来色带 ——
-   台账页底部那条黑带就是这么来的。 */
-.app-tabbar.arco-tab-bar {
-  flex: none;
-  background: rgba(250, 250, 251, 0.88);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-top: 0.5px solid var(--lt-border);
-  padding-bottom: var(--safe-bottom);
-  /* 切 tab 时底栏跟着换肤。整屏本来就在变,底栏跟着变才自然;
-     不跟着变反而突兀。150ms 足够跟上,又不会让人觉得在"等它变" */
-  transition: background-color 150ms ease, border-color 150ms ease;
-}
-.app-tabbar .arco-tab-bar-item {
-  color: var(--lt-fg-2);
-  padding: 6px 0 4px;
-  transition: color 150ms ease;
-}
-/* 选中态不能只靠颜色:绿/灰这条轴对部分色觉障碍不友好,
-   而且实测未选中的对比度(4.86)反而高于选中(4.17)—— 光看深浅是倒置的。
-   加字重给一个非颜色信号,选中就不再依赖辨色。 */
-.app-tabbar .arco-tab-bar-item-active { color: var(--brand); }
-.app-tabbar .arco-tab-bar-item-active .arco-tab-bar-item-title { font-weight: 600; }
-.app-tabbar .arco-tab-bar-item-title { font-size: 11px; letter-spacing: 0.2px; }
-.app-tabbar .arco-tab-bar-item-icon { line-height: 1; }
-
-/* 深色变体:拍照台 */
-.app-tabbar.is-dark.arco-tab-bar {
-  background: rgba(6, 17, 29, 0.92);
-  border-top-color: rgba(111, 255, 219, 0.14);
-}
-.app-tabbar.is-dark .arco-tab-bar-item { color: rgba(234, 247, 255, 0.45); }
-.app-tabbar.is-dark .arco-tab-bar-item-active { color: var(--tech-jade); }
-
-/* 图标容器:角标以它为定位参照 */
-.tb-icon {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.tb-icon svg { width: 23px; height: 23px; }
-/* 角标本体是组件库的 Badge。
-   【不要自己写 top/left】Arco 的 .arco-badge-absolute 已经锚好了:
-     top:0; left:100%; margin-left:-8px; margin-top:-8px
-   也就是骑在图标右上角。我原先又加了 top:-4px + left:56%,和它的 margin
-   叠加成 -12px,角标整个飘到图标上方 12px 处 —— 就是"位置不对"的原因。
-   这里只调颜色和字号,定位交给组件。 */
-.tb-badge.arco-badge {
-  background: #ff3b30;
-  height: 15px;
-  line-height: 15px;
-  font-size: 10px;
-  font-weight: 700;
-  /* 目标:角标【中心】落在图标右上角这个点上,一半压着图标、一半探出去。
-     Arco 的锚点是 left:100%(图标右边缘)+ margin-left:-8px。
-     那 8px 是给方形头像设计的,我们的图标只有 23px 宽又没有实体边界,
-     收 8px 会把角标拉到图标正上方(看着像居中,不是右上角)—— 所以清零,
-     只留 translateX(-50%) 把中心对准右边缘。
-     纵向 Arco 的 margin-top:-8px 正好让中心落在图标上边缘,不用动。 */
-  margin-left: 0;
-  transform: translateX(-50%);
-}
-
-/* ===== 页面转场 =====
-   转场传递层级:平级(底部 tab 之间)淡入淡出,下钻推入,返回退出。
-   总时长压在 200ms 内 —— 用户是戴手套赶时间的巡检员,动效再好看也是等待。
-
-   【只动 transform / opacity】这两个走合成器,不触发重排重绘。
-   动 width/height/top 会让整页每帧重新布局,低端安卓直接掉帧。 */
-
-/* 转场层必须"透明"地继承页面布局:页面是 .app-shell 的 flex 子元素,
-   靠 flex:1 撑满高度。中间插一层不带 flex 的 div,页面会塌成内容高度,
-   底栏跟着往上跳。 */
-.pg-layer {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 平级切换:纯淡入淡出。tab 之间没有上下级,滑动会误导方向 */
-.pg-fade-enter { opacity: 0; }
-.pg-fade-enter-active {
-  opacity: 1;
-  transition: opacity 180ms ease-out;
-}
-.pg-fade-exit { opacity: 1; }
-.pg-fade-exit-active {
-  opacity: 0;
-  transition: opacity 120ms ease-in;
-}
-
-/* 下钻:从右侧推入 —— "我进去了一层" */
-.pg-push-enter { opacity: 0; transform: translate3d(24px, 0, 0); }
-.pg-push-enter-active {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-  transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.pg-push-exit { opacity: 1; }
-.pg-push-exit-active {
-  opacity: 0;
-  transition: opacity 120ms ease-in;
-}
-
-/* 返回:向右退出 —— "我出来了" */
-.pg-pop-enter { opacity: 0; transform: translate3d(-16px, 0, 0); }
-.pg-pop-enter-active {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-  transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.pg-pop-exit { opacity: 1; transform: translate3d(0, 0, 0); }
-.pg-pop-exit-active {
-  opacity: 0;
-  transform: translate3d(24px, 0, 0);
-  transition: opacity 120ms ease-in, transform 120ms ease-in;
-}
-
-/* 系统里关了动效就一律不做 —— 前庭敏感的人会因这类位移不适 */
-@media (prefers-reduced-motion: reduce) {
-  .pg-fade-enter-active, .pg-fade-exit-active,
-  .pg-push-enter-active, .pg-push-exit-active,
-  .pg-pop-enter-active, .pg-pop-exit-active {
-    transition: none;
-    transform: none;
-  }
-}
-
-/* ===== 下拉选择 =====
-   点一下在字段行下方展开整宽列表:选项左对齐、逐行排列、当前值高亮、
-   超过 5 项可滚动。经典下拉的形态。
-
-   为什么自己写而不用组件:Arco 的 dropdown 是给【筛选栏】用的(撑满屏幕宽、
-   从顶栏下方推开),popover 是小气泡(宽度按内容、默认深色)。
-   都不是"贴着字段行的一小块列表"。这个形态自己写更短也更可控。 */
-.dd {
-  position: relative;
-  display: inline-block;
-  min-width: 96px;
-}
-.dd-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: 15px;
-  color: var(--lt-fg);
-  cursor: pointer;
-}
-.dd-trigger.is-empty .dd-text { color: var(--ios-gray); }
-.dd-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 箭头用边框拼,不引图标 —— 一个 6px 小三角不值得多一个 SVG */
-.dd-arrow {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  margin-bottom: 2px;
-  border-right: 1.5px solid var(--ios-gray);
-  border-bottom: 1.5px solid var(--ios-gray);
-  transform: rotate(45deg);
-  transition: transform 160ms ease, margin 160ms ease;
-}
-.dd-arrow.is-open { transform: rotate(-135deg); margin-bottom: -2px; }
-
-/* 列表:紧贴触发器下方、右对齐。z-index 要高过后续字段行,
-   否则会被下面那行的背景盖住(同层叠上下文里后来者在上)。 */
-.dd-list {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  min-width: 132px;
-  max-height: 208px; /* 约 5 项,再多就滚动 */
-  overflow-y: auto;
-  margin: 0;
-  padding: 4px 0;
-  list-style: none;
-  border-radius: 10px;
-  border: 0.5px solid var(--lt-border);
-  background: var(--lt-card);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  scrollbar-width: none;
-}
-.dd-list::-webkit-scrollbar { display: none; }
-.dd-item {
-  display: block;
-  width: 100%;
-  padding: 10px 14px;
-  border: 0;
-  background: transparent;
-  font-size: 15px;
-  line-height: 1.3;
-  color: var(--lt-fg);
-  text-align: left; /* 选项左对齐,和截图里的经典下拉一致 */
-  cursor: pointer;
-}
-.dd-item:active { background: var(--lt-fill); }
-/* 当前值:浅色底 + 品牌色,一眼看出选的是哪个 */
-.dd-item.is-on {
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-}
-
-/* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */
-
-/* 筛选栏(DropdownMenu)。默认是通栏白底,这里做成和上面统计卡同一张卡的
-   延续:圆角 + 阴影 + 左右 16px,不然它会像一条焊在页面上的横杠。 */
-.filter-bar {
-  margin: 0 16px 12px;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: var(--lt-shadow);
-}
-.filter-bar .arco-dropdown-menu-select {
-  font-size: 14px;
-  color: var(--lt-fg);
-}
-/* 选中某一项时高亮,让人一眼看出现在筛着东西 */
-.filter-bar .arco-dropdown-menu-select.active,
-.filter-bar .arco-dropdown-menu-select-active {
-  color: var(--brand);
-  font-weight: 600;
-}
-
 .lg-title {
   font-size: 12px;
   color: var(--lt-fg-3);
   margin-bottom: 8px;
 }
-.lg-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.lg-chip {
-  padding: 6px 12px;
-  border: 1px solid var(--lt-border);
-  border-radius: 999px;
-  background: var(--lt-fill);
-  color: var(--lt-fg);
-  font-size: 12px;
-  transition: border-color 140ms ease, background 140ms ease;
-}
-.lg-chip em { font-style: normal; color: var(--lt-fg-2); margin-left: 3px; }
-.lg-chip.on {
-  border-color: var(--brand-border);
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-}
-.lg-chip.on em { color: var(--brand); }
-.lg-clear {
-  display: block;
-  width: calc(100% - 32px);
-  margin: 0 16px 12px;
-  padding: 9px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.asset-list {
-  margin: 0 16px;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.asset-row {
+.lg-chips {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 13px 14px;
-  border: 0;
-  border-bottom: 0.5px solid var(--lt-border);
-  background: transparent;
-  text-align: left;
-}
-.asset-row:last-child { border-bottom: 0; }
-.asset-row:active { background: var(--lt-fill); }
-/* 设备封面缩略图(对齐旧版 .asset-cover)。
-   有照片的行一眼能认出是哪台设备;没照片的给同尺寸占位,保证左列对齐不参差。
-   状态由右侧标签表达,不再另画状态圆点(旧版也没有)。 */
-.ar-cover {
-  width: 46px;
-  height: 46px;
-  flex: none;
-  border-radius: 10px;
-  object-fit: cover;
-  background: var(--lt-fill);
-  display: block;
-}
-.ar-cover-empty {
-  position: relative;
-}
-/* 空占位里的相片轮廓,照旧版的做法(细描边小方块) */
-.ar-cover-empty::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 18px;
-  height: 14px;
-  margin: -7px 0 0 -9px;
-  border: 1.5px solid var(--ios-gray);
-  opacity: 0.45;
-  border-radius: 3px;
-}
-.ar-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.ar-name {
-  font-size: 15px; font-weight: 500; color: var(--lt-fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.ar-sub { font-size: 11px; color: var(--lt-fg-2); }
-
-/* ===== 状态标签(全站唯一一套)=====
-   历史上台账 .ar-tag、任务 .task-status、审批 .cr-tt 各写了一套,基底几乎相同
-   却对不齐:.cr-tt 少 font-weight、内边距还差 1px。这里收敛成一套语义标签。
-   配色只从令牌取,不在组件里散写(见 docs/MOBILE-WEB-OPTIMIZATION 的色彩规矩)。
-
-   没用 Arco 的 Tag:它要按语义把 color/bgColor 一个个当 props 传进 JSX,
-   等于把颜色从令牌搬回组件里散写,和上面那条规矩冲突。 */
-.tag {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.tag-brand { background: var(--brand-soft); color: var(--brand); }
-.tag-ok { background: var(--c-green-soft); color: var(--ios-green); }
-.tag-warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-.tag-danger { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
-.tag-repair { background: rgba(175, 82, 222, 0.12); color: #af52de; }
-.tag-unknown { background: var(--lt-fill); color: var(--lt-fg-2); }
-
-/* ===== 资产详情(旧版 sceneAsset)===== */
-.ad-card {
-  padding: 14px 16px;
-  margin: 0 16px 14px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.ad-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 0;
-  border-bottom: 0.5px solid var(--lt-border);
-}
-.ad-row:last-of-type { border-bottom: 0; }
-.ad-k { font-size: 13px; color: var(--lt-fg-2); }
-.ad-v { font-size: 14px; color: var(--lt-fg); font-weight: 500; }
-.ad-summary {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 0.5px solid var(--lt-border);
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--lt-fg-2);
-}
-.ad-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
-.ad-history { display: flex; flex-direction: column; gap: 8px; margin: 0 16px; }
-.hist-item {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.hist-head { display: flex; align-items: center; justify-content: space-between; }
-.hist-when { font-size: 13px; font-weight: 600; color: var(--lt-fg); font-variant-numeric: tabular-nums; }
-.hist-who { margin-top: 3px; font-size: 11px; color: var(--lt-fg-2); }
-.hist-body { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--lt-fg-2); }
-
-/* ===== 日报预览(旧版 scenePreview)===== */
-.pv-title { font-size: 13px; color: var(--lt-fg-2); margin: 4px 16px 8px; }
-/* ===== 记录上下文卡(旧版 .context,styles.css:738) =====
-   用 Arco Cell 打底,只改视觉。要掰的是它"列表里的一行"这个出身:
-   固定行高、通栏分割线、左右内边距由 Group 提供 —— 这里当独立卡片用。 */
-.rec-ctx.arco-cell {
-  margin: 0 16px 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-/* 行高写死在 inner 上(1.08rem,带副标题 1.48rem)。卡片高度该由内容
-   和内边距决定,不是由组件预设的列表行高决定。 */
-.rec-ctx .arco-cell-inner { height: auto; }
-.rec-ctx .cell-label-icon { margin-right: 12px; }
-.rec-ctx .arco-avatar {
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-  /* Arco 按 rem 出字号(0.28rem × 52 = 14.56px)。整页别的字都是整数 px,
-     只有它带小数,并排就是"看着不齐",而且非整数在非高清屏上发虚。 */
-  font-size: 15px;
-}
-/* 主副标题吃掉剩余宽度、长名省略号收尾 —— Arco 给的是 auto 宽 + 25px
-   右间距,项目名一长会把右侧状态胶囊挤出屏幕。 */
-.rec-ctx.arco-cell .cell-label {
-  flex: 1;
-  min-width: 0;
-  margin-right: 12px;
-}
-.rec-ctx .cell-title {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--lt-fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rec-ctx.arco-cell .cell-desc {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--lt-fg-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rec-ctx .cell-content { flex: none; }
-.ctx-badge {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.ctx-badge.ok { background: var(--c-green-soft); color: var(--ios-green); }
-.ctx-badge.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-
-.pv-card {
-  margin: 0 16px 12px;
-  padding: 4px 14px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.pv-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 0.5px solid var(--lt-border);
-}
-.pv-row:last-child { border-bottom: 0; }
-.pv-k { font-size: 14px; color: var(--lt-fg-2); flex: none; }
-.pv-v { font-size: 14px; color: var(--lt-fg); font-weight: 500; text-align: right; word-break: break-all; }
-
-.ai-card { padding: 14px; }
-/* AI 卡片。照旧版:标题行与正文之间有【分割线】,结论标签在标题行右端。 */
-.ai-head {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
-  border-bottom: 0.5px solid var(--lt-border);
 }
-.ai-mark { color: var(--brand); font-size: 13px; }
-.ai-mark.amber { color: var(--ios-orange); }
-.ai-title { font-size: 15px; font-weight: 600; color: var(--lt-fg); }
-.ai-body { font-size: 14px; line-height: 1.65; color: var(--lt-fg); white-space: pre-wrap; }
-
-/* 结论标签:靠 margin-left:auto 顶到标题行最右(旧版 .sum-status 同法)。
-   色档照搬旧版 app.js:1274 —— 正常绿 / 待复核橙 / 异常红,口径两端一致。 */
-.sum-status {
-  flex: none;
-  margin-left: auto;
-  padding: 2px 11px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.sum-status.ok { background: var(--c-green-soft); color: var(--ios-green); }
-.sum-status.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
-.sum-status.bad { background: rgba(255, 59, 48, 0.12); color: #ff3b30; }
-/* 行动建议:优先级色块 + 正文 + 依据 */
-.reco { display: flex; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--lt-border); }
-.reco:last-child { border-bottom: 0; }
-.reco-pri {
-  flex: none;
-  width: 22px; height: 22px;
-  border-radius: 6px;
-  display: grid; place-items: center;
-  font-size: 11px; font-weight: 700;
-  background: var(--lt-fill); color: var(--lt-fg-2);
-}
-.reco-pri.high { background: rgba(255,59,48,0.12); color: #ff3b30; }
-.reco-pri.medium { background: var(--c-orange-soft); color: var(--ios-orange); }
-.reco-pri.low { background: var(--brand-soft); color: var(--brand); }
-.reco-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.reco-text { font-size: 14px; line-height: 1.55; color: var(--lt-fg); }
-.reco-meta { font-size: 12px; color: var(--lt-fg-2); }
-
-.foot-back {
-  flex: none;
-  height: 46px;
-  padding: 0 18px;
-  border: 1px solid var(--lt-border);
-  border-radius: 12px;
-  background: var(--lt-fill);
-  color: var(--lt-fg);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-/* ===== 待审批(旧版 sceneApprovals)===== */
-.cr-card {
-  margin: 0 16px 10px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.cr-head { display: flex; align-items: baseline; justify-content: space-between; }
-.cr-who { font-size: 15px; color: var(--lt-fg); }
-.cr-when { font-size: 11px; color: var(--lt-fg-2); font-variant-numeric: tabular-nums; }
-.cr-target { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.cr-tn {
-  flex: 1; min-width: 0;
-  font-size: 13px; color: var(--lt-fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.cr-view {
-  flex: none;
-  padding: 3px 10px;
-  border: 1px solid var(--lt-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--brand);
-  font-size: 11px;
-}
-.cr-patch {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--lt-fill);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--lt-fg);
-}
-.cr-reason { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--lt-fg-2); }
-.cr-note {
-  width: 100%;
-  height: 38px;
-  margin-top: 10px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--lt-fill);
-  color: var(--lt-fg);
-  font-size: 14px;
-  outline: none;
-}
-.cr-note:focus { border-color: var(--brand-border); background: var(--lt-card); }
-.cr-acts { display: flex; gap: 10px; margin-top: 10px; }
-.cr-btn {
-  flex: 1;
-  height: 40px;
-  border: 0;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.cr-btn:disabled { opacity: 0.5; }
-.cr-btn.reject { background: var(--lt-fill); color: var(--lt-fg); }
-.cr-btn.approve { background: var(--brand); color: #fff; }
-
-/* ===== 个人空间(/me)=====
-   之前只有一张居中玻璃卡 + 退出按钮,不像 app,像个登录后的落地页。
-   改成手机端"我的"页的通行形态:头部身份区 + 分组设置列表。
-   管理角色登录后正落在这一屏,所以它必须能通往别处,不能是死胡同。 */
-.me-screen .flow-body {
-  padding-bottom: 24px;
-}
-.me-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 16px 24px;
-}
-/* 点头像即换。右下角挂一个"换"字角标,不然没人知道能点 */
-.me-avatar {
-  position: relative;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  border-radius: 50%;
-  cursor: pointer;
-}
-.me-avatar .arco-avatar {
-  width: 76px;
-  height: 76px;
-  font-size: 30px;
-  font-weight: 700;
-  background: var(--brand);
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(38, 126, 240, 0.28);
-}
-.me-avatar .arco-avatar.has-photo { background: var(--lt-fill); }
-.me-avatar-edit {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  border: 2px solid var(--lt-bg);
-}
-.me-avatar:disabled { opacity: 0.7; }
-.me-name {
-  margin: 10px 0 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--lt-fg);
-}
-.me-sub {
-  margin: 0;
-  font-size: 13px;
-  color: var(--lt-fg-2);
-}
-
-/* Cell 分组:Arco 默认是通栏白底,这里收成 16px 外边距的圆角卡,
-   和台账/任务页的卡片语言统一 */
-.me-screen .arco-cell-group {
-  margin: 0 16px 14px;
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-}
-.me-screen .arco-cell-group-header {
-  padding: 0 0 8px 4px;
-  font-size: 12px;
-  color: var(--lt-fg-2);
-  background: transparent;
-}
-.me-screen .arco-cell {
-  margin-left: 0;
-  padding: 14px 16px;
-  color: var(--lt-fg);
-  font-size: 15px;
-  background: var(--lt-card);
-}
-.me-screen .arco-cell-text { color: var(--lt-fg-2); font-size: 14px; }
-/* 列表行图标位。SVG 用 currentColor,这里给它定色即可 —— 用品牌翡翠而非
-   全黑,列表扫下来有个节奏,又不至于像 emoji 那样每个一个颜色。 */
-.me-ic {
-  display: inline-flex;
-  align-items: center;
-  margin-right: 10px;
-  color: var(--brand);
-}
-.me-ic svg { width: 20px; height: 20px; }
-
-/* 退出登录:现在钉在 .flow-foot 里(滚动区之外),所以不再自己留外边距。
-   红色是有意的 —— 这是本页唯一的破坏性操作,红在这里表达"想清楚再点",
-   和台账里表示设备异常的红是同一套语义,不冲突。 */
-.me-logout {
-  display: block;
-  width: 100%;
-  padding: 14px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--lt-card);
-  box-shadow: var(--lt-shadow);
-  color: #ff3b30;
-  font-size: 16px;
-  font-weight: 600;
-}
-.me-logout:active { background: #f2f2f7; }
-.me-logout:active { background: var(--lt-fill); }
-
-/* 登录页密码小眼睛。旧版验收清单点名要有 ——
-   现场戴手套、强光下打错密码很常见,没有它只能反复清空重来。 */
-.pwd-eye {
-  padding: 4px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--tech-jade);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-/* ===== 底部常驻导航 =====
-   放在 .app-shell(flex 列)的末尾,天然贴底 —— 不用 position:fixed,
-   也就不用为它另算占位高度(NavBar 与 TabBar 的 fixed 默认值都踩过)。
-
-   【主题跟随页面】本产品是有意的双主题:拍照台深(取景语境),
-   数据页浅(户外强光下可读性更好)。五个 tab 里 1 深 4 浅,
-   所以【浅色是默认】,深色是 .is-dark 变体。
-   底栏若固定一种色,在另一种页面上就是一条焊上去的外来色带 ——
-   台账页底部那条黑带就是这么来的。 */
-.app-tabbar.arco-tab-bar {
-  flex: none;
-  background: rgba(250, 250, 251, 0.88);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-top: 0.5px solid var(--lt-border);
-  padding-bottom: var(--safe-bottom);
-  /* 切 tab 时底栏跟着换肤。整屏本来就在变,底栏跟着变才自然;
-     不跟着变反而突兀。150ms 足够跟上,又不会让人觉得在"等它变" */
-  transition: background-color 150ms ease, border-color 150ms ease;
-}
-.app-tabbar .arco-tab-bar-item {
-  color: var(--lt-fg-2);
-  padding: 6px 0 4px;
-  transition: color 150ms ease;
-}
-/* 选中态不能只靠颜色:绿/灰这条轴对部分色觉障碍不友好,
-   而且实测未选中的对比度(4.86)反而高于选中(4.17)—— 光看深浅是倒置的。
-   加字重给一个非颜色信号,选中就不再依赖辨色。 */
-.app-tabbar .arco-tab-bar-item-active { color: var(--brand); }
-.app-tabbar .arco-tab-bar-item-active .arco-tab-bar-item-title { font-weight: 600; }
-.app-tabbar .arco-tab-bar-item-title { font-size: 11px; letter-spacing: 0.2px; }
-.app-tabbar .arco-tab-bar-item-icon { line-height: 1; }
-
-/* 深色变体:拍照台 */
-.app-tabbar.is-dark.arco-tab-bar {
-  background: rgba(6, 17, 29, 0.92);
-  border-top-color: rgba(111, 255, 219, 0.14);
-}
-.app-tabbar.is-dark .arco-tab-bar-item { color: rgba(234, 247, 255, 0.45); }
-.app-tabbar.is-dark .arco-tab-bar-item-active { color: var(--tech-jade); }
-
-/* 图标容器:角标以它为定位参照 */
-.tb-icon {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.tb-icon svg { width: 23px; height: 23px; }
-/* 角标本体是组件库的 Badge。
-   【不要自己写 top/left】Arco 的 .arco-badge-absolute 已经锚好了:
-     top:0; left:100%; margin-left:-8px; margin-top:-8px
-   也就是骑在图标右上角。我原先又加了 top:-4px + left:56%,和它的 margin
-   叠加成 -12px,角标整个飘到图标上方 12px 处 —— 就是"位置不对"的原因。
-   这里只调颜色和字号,定位交给组件。 */
-.tb-badge.arco-badge {
-  background: #ff3b30;
-  height: 15px;
-  line-height: 15px;
-  font-size: 10px;
-  font-weight: 700;
-  /* 目标:角标【中心】落在图标右上角这个点上,一半压着图标、一半探出去。
-     Arco 的锚点是 left:100%(图标右边缘)+ margin-left:-8px。
-     那 8px 是给方形头像设计的,我们的图标只有 23px 宽又没有实体边界,
-     收 8px 会把角标拉到图标正上方(看着像居中,不是右上角)—— 所以清零,
-     只留 translateX(-50%) 把中心对准右边缘。
-     纵向 Arco 的 margin-top:-8px 正好让中心落在图标上边缘,不用动。 */
-  margin-left: 0;
-  transform: translateX(-50%);
-}
-
-/* ===== 页面转场 =====
-   转场传递层级:平级(底部 tab 之间)淡入淡出,下钻推入,返回退出。
-   总时长压在 200ms 内 —— 用户是戴手套赶时间的巡检员,动效再好看也是等待。
-
-   【只动 transform / opacity】这两个走合成器,不触发重排重绘。
-   动 width/height/top 会让整页每帧重新布局,低端安卓直接掉帧。 */
-
-/* 转场层必须"透明"地继承页面布局:页面是 .app-shell 的 flex 子元素,
-   靠 flex:1 撑满高度。中间插一层不带 flex 的 div,页面会塌成内容高度,
-   底栏跟着往上跳。 */
-.pg-layer {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 平级切换:纯淡入淡出。tab 之间没有上下级,滑动会误导方向 */
-.pg-fade-enter { opacity: 0; }
-.pg-fade-enter-active {
-  opacity: 1;
-  transition: opacity 180ms ease-out;
-}
-.pg-fade-exit { opacity: 1; }
-.pg-fade-exit-active {
-  opacity: 0;
-  transition: opacity 120ms ease-in;
-}
-
-/* 下钻:从右侧推入 —— "我进去了一层" */
-.pg-push-enter { opacity: 0; transform: translate3d(24px, 0, 0); }
-.pg-push-enter-active {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-  transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.pg-push-exit { opacity: 1; }
-.pg-push-exit-active {
-  opacity: 0;
-  transition: opacity 120ms ease-in;
-}
-
-/* 返回:向右退出 —— "我出来了" */
-.pg-pop-enter { opacity: 0; transform: translate3d(-16px, 0, 0); }
-.pg-pop-enter-active {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-  transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.pg-pop-exit { opacity: 1; transform: translate3d(0, 0, 0); }
-.pg-pop-exit-active {
-  opacity: 0;
-  transform: translate3d(24px, 0, 0);
-  transition: opacity 120ms ease-in, transform 120ms ease-in;
-}
-
-/* 系统里关了动效就一律不做 —— 前庭敏感的人会因这类位移不适 */
-@media (prefers-reduced-motion: reduce) {
-  .pg-fade-enter-active, .pg-fade-exit-active,
-  .pg-push-enter-active, .pg-push-exit-active,
-  .pg-pop-enter-active, .pg-pop-exit-active {
-    transition: none;
-    transform: none;
-  }
-}
-
-/* ===== 下拉选择 =====
-   点一下在字段行下方展开整宽列表:选项左对齐、逐行排列、当前值高亮、
-   超过 5 项可滚动。经典下拉的形态。
-
-   为什么自己写而不用组件:Arco 的 dropdown 是给【筛选栏】用的(撑满屏幕宽、
-   从顶栏下方推开),popover 是小气泡(宽度按内容、默认深色)。
-   都不是"贴着字段行的一小块列表"。这个形态自己写更短也更可控。 */
-.dd {
-  position: relative;
-  display: inline-block;
-  min-width: 96px;
-}
-.dd-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: 15px;
-  color: var(--lt-fg);
-  cursor: pointer;
-}
-.dd-trigger.is-empty .dd-text { color: var(--ios-gray); }
-.dd-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 箭头用边框拼,不引图标 —— 一个 6px 小三角不值得多一个 SVG */
-.dd-arrow {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  margin-bottom: 2px;
-  border-right: 1.5px solid var(--ios-gray);
-  border-bottom: 1.5px solid var(--ios-gray);
-  transform: rotate(45deg);
-  transition: transform 160ms ease, margin 160ms ease;
-}
-.dd-arrow.is-open { transform: rotate(-135deg); margin-bottom: -2px; }
-
-/* 列表:紧贴触发器下方、右对齐。z-index 要高过后续字段行,
-   否则会被下面那行的背景盖住(同层叠上下文里后来者在上)。 */
-.dd-list {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  min-width: 132px;
-  max-height: 208px; /* 约 5 项,再多就滚动 */
-  overflow-y: auto;
-  margin: 0;
-  padding: 4px 0;
-  list-style: none;
-  border-radius: 10px;
-  border: 0.5px solid var(--lt-border);
-  background: var(--lt-card);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  scrollbar-width: none;
-}
-.dd-list::-webkit-scrollbar { display: none; }
-.dd-item {
-  display: block;
-  width: 100%;
-  padding: 10px 14px;
-  border: 0;
-  background: transparent;
-  font-size: 15px;
-  line-height: 1.3;
-  color: var(--lt-fg);
-  text-align: left; /* 选项左对齐,和截图里的经典下拉一致 */
-  cursor: pointer;
-}
-.dd-item:active { background: var(--lt-fill); }
-/* 当前值:浅色底 + 品牌色,一眼看出选的是哪个 */
-.dd-item.is-on {
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-}
-
-/* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */
-
-/* 筛选栏(DropdownMenu)。默认是通栏白底,这里做成和上面统计卡同一张卡的
-   延续:圆角 + 阴影 + 左右 16px,不然它会像一条焊在页面上的横杠。 */
-.filter-bar {
-  margin: 0 16px 12px;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: var(--lt-shadow);
-}
-.filter-bar .arco-dropdown-menu-select {
-  font-size: 14px;
-  color: var(--lt-fg);
-}
-/* 选中某一项时高亮,让人一眼看出现在筛着东西 */
-.filter-bar .arco-dropdown-menu-select.active,
-.filter-bar .arco-dropdown-menu-select-active {
-  color: var(--brand);
-  font-weight: 600;
-}
-
-/* 展开区:两组之间用一条细线分,不用卡片 */
-.lg-group + .lg-group {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 0.5px solid var(--lt-border);
-}
-.lg-body { padding: 0 16px 14px; }
-.lg-title {
-  font-size: 12px;
-  color: var(--lt-fg-3);
-  margin-bottom: 8px;
-}
-.lg-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .lg-chip {
   padding: 6px 12px;
   border: 1px solid var(--lt-border);
   border-radius: 999px;
   background: var(--lt-fill);
   color: var(--lt-fg);
-  font-size: 13px;
+  font-size: 12px;
   transition:
     border-color 140ms ease,
     background 140ms ease;
 }
-.lg-chip em { font-style: normal; color: var(--lt-fg-3); margin-left: 4px; }
+.lg-chip em {
+  font-style: normal;
+  color: var(--lt-fg-2);
+  margin-left: 3px;
+}
 .lg-chip.on {
-  border-color: var(--brand);
+  border-color: var(--brand-border);
   background: var(--brand-soft);
   color: var(--brand);
   font-weight: 600;
 }
-.lg-chip.on em { color: var(--brand); }
-
-/* 分组标题吸顶。要有底色,否则滚动时列表内容会从它下面透出来 */
-.asset-section {
-  padding: 10px 18px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--lt-fg-2);
-  background: var(--lt-bg);
+.lg-chip.on em {
+  color: var(--brand);
 }
-.asset-section.risk { color: #ff3b30; }
-.asset-section.ok { color: var(--ios-green); }
+.lg-clear {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 12px;
+  padding: 9px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.asset-list {
+  margin: 0 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-bottom: 0.5px solid var(--lt-border);
+  background: transparent;
+  text-align: left;
+}
+.asset-row:last-child {
+  border-bottom: 0;
+}
+.asset-row:active {
+  background: var(--lt-fill);
+}
+/* 设备封面缩略图(对齐旧版 .asset-cover)。
+   有照片的行一眼能认出是哪台设备;没照片的给同尺寸占位,保证左列对齐不参差。
+   状态由右侧标签表达,不再另画状态圆点(旧版也没有)。 */
+.ar-cover {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--lt-fill);
+  display: block;
+}
+.ar-cover-empty {
+  position: relative;
+}
+/* 空占位里的相片轮廓,照旧版的做法(细描边小方块) */
+.ar-cover-empty::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 14px;
+  margin: -7px 0 0 -9px;
+  border: 1.5px solid var(--ios-gray);
+  opacity: 0.45;
+  border-radius: 3px;
+}
+.ar-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ar-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ar-sub {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
+
+/* ===== 状态标签(全站唯一一套)=====
+   历史上台账 .ar-tag、任务 .task-status、审批 .cr-tt 各写了一套,基底几乎相同
+   却对不齐:.cr-tt 少 font-weight、内边距还差 1px。这里收敛成一套语义标签。
+   配色只从令牌取,不在组件里散写(见 docs/MOBILE-WEB-OPTIMIZATION 的色彩规矩)。
+
+   没用 Arco 的 Tag:它要按语义把 color/bgColor 一个个当 props 传进 JSX,
+   等于把颜色从令牌搬回组件里散写,和上面那条规矩冲突。 */
+.tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.tag-brand {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.tag-ok {
+  background: var(--c-green-soft);
+  color: var(--ios-green);
+}
+.tag-warn {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+.tag-danger {
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+}
+.tag-repair {
+  background: rgba(175, 82, 222, 0.12);
+  color: #af52de;
+}
+.tag-unknown {
+  background: var(--lt-fill);
+  color: var(--lt-fg-2);
+}
+
+/* ===== 资产详情(旧版 sceneAsset)===== */
+.ad-card {
+  padding: 14px 16px;
+  margin: 0 16px 14px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.ad-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.ad-row:last-of-type {
+  border-bottom: 0;
+}
+.ad-k {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
+.ad-v {
+  font-size: 14px;
+  color: var(--lt-fg);
+  font-weight: 500;
+}
+.ad-summary {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--lt-border);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--lt-fg-2);
+}
+.ad-title {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+  margin: 4px 16px 8px;
+}
+.ad-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 16px;
+}
+.hist-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.hist-when {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lt-fg);
+  font-variant-numeric: tabular-nums;
+}
+.hist-who {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
+.hist-body {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--lt-fg-2);
+}
+
+/* ===== 日报预览(旧版 scenePreview)===== */
+.pv-title {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+  margin: 4px 16px 8px;
+}
+/* ===== 记录上下文卡(旧版 .context,styles.css:738) =====
+   用 Arco Cell 打底,只改视觉。要掰的是它"列表里的一行"这个出身:
+   固定行高、通栏分割线、左右内边距由 Group 提供 —— 这里当独立卡片用。 */
+.rec-ctx.arco-cell {
+  margin: 0 16px 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+/* 行高写死在 inner 上(1.08rem,带副标题 1.48rem)。卡片高度该由内容
+   和内边距决定,不是由组件预设的列表行高决定。 */
+.rec-ctx .arco-cell-inner {
+  height: auto;
+}
+.rec-ctx .cell-label-icon {
+  margin-right: 12px;
+}
+.rec-ctx .arco-avatar {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+  /* Arco 按 rem 出字号(0.28rem × 52 = 14.56px)。整页别的字都是整数 px,
+     只有它带小数,并排就是"看着不齐",而且非整数在非高清屏上发虚。 */
+  font-size: 15px;
+}
+/* 主副标题吃掉剩余宽度、长名省略号收尾 —— Arco 给的是 auto 宽 + 25px
+   右间距,项目名一长会把右侧状态胶囊挤出屏幕。 */
+.rec-ctx.arco-cell .cell-label {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+.rec-ctx .cell-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-ctx.arco-cell .cell-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-ctx .cell-content {
+  flex: none;
+}
+.ctx-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ctx-badge.ok {
+  background: var(--c-green-soft);
+  color: var(--ios-green);
+}
+.ctx-badge.warn {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+
+.pv-card {
+  margin: 0 16px 12px;
+  padding: 4px 14px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.pv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.pv-row:last-child {
+  border-bottom: 0;
+}
+.pv-k {
+  font-size: 14px;
+  color: var(--lt-fg-2);
+  flex: none;
+}
+.pv-v {
+  font-size: 14px;
+  color: var(--lt-fg);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+.ai-card {
+  padding: 14px;
+}
+/* AI 卡片。照旧版:标题行与正文之间有【分割线】,结论标签在标题行右端。 */
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.ai-mark {
+  color: var(--brand);
+  font-size: 13px;
+}
+.ai-mark.amber {
+  color: var(--ios-orange);
+}
+.ai-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lt-fg);
+}
+.ai-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--lt-fg);
+  white-space: pre-wrap;
+}
+
+/* 结论标签:靠 margin-left:auto 顶到标题行最右(旧版 .sum-status 同法)。
+   色档照搬旧版 app.js:1274 —— 正常绿 / 待复核橙 / 异常红,口径两端一致。 */
+.sum-status {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sum-status.ok {
+  background: var(--c-green-soft);
+  color: var(--ios-green);
+}
+.sum-status.warn {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+.sum-status.bad {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+/* 行动建议:优先级色块 + 正文 + 依据 */
+.reco {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.reco:last-child {
+  border-bottom: 0;
+}
+.reco-pri {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--lt-fill);
+  color: var(--lt-fg-2);
+}
+.reco-pri.high {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+.reco-pri.medium {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+.reco-pri.low {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.reco-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.reco-text {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--lt-fg);
+}
+.reco-meta {
+  font-size: 12px;
+  color: var(--lt-fg-2);
+}
+
+.foot-back {
+  flex: none;
+  height: 46px;
+  padding: 0 18px;
+  border: 1px solid var(--lt-border);
+  border-radius: 12px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* ===== 待审批(旧版 sceneApprovals)===== */
+.cr-card {
+  margin: 0 16px 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.cr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.cr-who {
+  font-size: 15px;
+  color: var(--lt-fg);
+}
+.cr-when {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.cr-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cr-tn {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-view {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--lt-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--brand);
+  font-size: 11px;
+}
+.cr-patch {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--lt-fill);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lt-fg);
+}
+.cr-reason {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lt-fg-2);
+}
+.cr-note {
+  width: 100%;
+  height: 38px;
+  margin-top: 10px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 14px;
+  outline: none;
+}
+.cr-note:focus {
+  border-color: var(--brand-border);
+  background: var(--lt-card);
+}
+.cr-acts {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.cr-btn {
+  flex: 1;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.cr-btn:disabled {
+  opacity: 0.5;
+}
+.cr-btn.reject {
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+}
+.cr-btn.approve {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* ===== 个人空间(/me)=====
+   之前只有一张居中玻璃卡 + 退出按钮,不像 app,像个登录后的落地页。
+   改成手机端"我的"页的通行形态:头部身份区 + 分组设置列表。
+   管理角色登录后正落在这一屏,所以它必须能通往别处,不能是死胡同。 */
+.me-screen .flow-body {
+  padding-bottom: 24px;
+}
+.me-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 16px 24px;
+}
+/* 点头像即换。右下角挂一个"换"字角标,不然没人知道能点 */
+.me-avatar {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.me-avatar .arco-avatar {
+  width: 76px;
+  height: 76px;
+  font-size: 30px;
+  font-weight: 700;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(38, 126, 240, 0.28);
+}
+.me-avatar .arco-avatar.has-photo {
+  background: var(--lt-fill);
+}
+.me-avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border: 2px solid var(--lt-bg);
+}
+.me-avatar:disabled {
+  opacity: 0.7;
+}
+.me-name {
+  margin: 10px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--lt-fg);
+}
+.me-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
+
+/* Cell 分组:Arco 默认是通栏白底,这里收成 16px 外边距的圆角卡,
+   和台账/任务页的卡片语言统一 */
+.me-screen .arco-cell-group {
+  margin: 0 16px 14px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.me-screen .arco-cell-group-header {
+  padding: 0 0 8px 4px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  background: transparent;
+}
+.me-screen .arco-cell {
+  margin-left: 0;
+  padding: 14px 16px;
+  color: var(--lt-fg);
+  font-size: 15px;
+  background: var(--lt-card);
+}
+.me-screen .arco-cell-text {
+  color: var(--lt-fg-2);
+  font-size: 14px;
+}
+/* 列表行图标位。SVG 用 currentColor,这里给它定色即可 —— 用品牌翡翠而非
+   全黑,列表扫下来有个节奏,又不至于像 emoji 那样每个一个颜色。 */
+.me-ic {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 10px;
+  color: var(--brand);
+}
+.me-ic svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* 退出登录:现在钉在 .flow-foot 里(滚动区之外),所以不再自己留外边距。
+   红色是有意的 —— 这是本页唯一的破坏性操作,红在这里表达"想清楚再点",
+   和台账里表示设备异常的红是同一套语义,不冲突。 */
+.me-logout {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+  color: #ff3b30;
+  font-size: 16px;
+  font-weight: 600;
+}
+.me-logout:active {
+  background: #f2f2f7;
+}
+.me-logout:active {
+  background: var(--lt-fill);
+}
+
+/* 登录页密码小眼睛。旧版验收清单点名要有 ——
+   现场戴手套、强光下打错密码很常见,没有它只能反复清空重来。 */
+.pwd-eye {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--tech-jade);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ===== 底部常驻导航 =====
+   放在 .app-shell(flex 列)的末尾,天然贴底 —— 不用 position:fixed,
+   也就不用为它另算占位高度(NavBar 与 TabBar 的 fixed 默认值都踩过)。
+
+   【主题跟随页面】本产品是有意的双主题:拍照台深(取景语境),
+   数据页浅(户外强光下可读性更好)。五个 tab 里 1 深 4 浅,
+   所以【浅色是默认】,深色是 .is-dark 变体。
+   底栏若固定一种色,在另一种页面上就是一条焊上去的外来色带 ——
+   台账页底部那条黑带就是这么来的。 */
+.app-tabbar.arco-tab-bar {
+  flex: none;
+  background: rgba(250, 250, 251, 0.88);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--lt-border);
+  padding-bottom: var(--safe-bottom);
+  /* 切 tab 时底栏跟着换肤。整屏本来就在变,底栏跟着变才自然;
+     不跟着变反而突兀。150ms 足够跟上,又不会让人觉得在"等它变" */
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.app-tabbar .arco-tab-bar-item {
+  color: var(--lt-fg-2);
+  padding: 6px 0 4px;
+  transition: color 150ms ease;
+}
+/* 选中态不能只靠颜色:绿/灰这条轴对部分色觉障碍不友好,
+   而且实测未选中的对比度(4.86)反而高于选中(4.17)—— 光看深浅是倒置的。
+   加字重给一个非颜色信号,选中就不再依赖辨色。 */
+.app-tabbar .arco-tab-bar-item-active {
+  color: var(--brand);
+}
+.app-tabbar .arco-tab-bar-item-active .arco-tab-bar-item-title {
+  font-weight: 600;
+}
+.app-tabbar .arco-tab-bar-item-title {
+  font-size: 11px;
+  letter-spacing: 0.2px;
+}
+.app-tabbar .arco-tab-bar-item-icon {
+  line-height: 1;
+}
+
+/* 深色变体:拍照台 */
+.app-tabbar.is-dark.arco-tab-bar {
+  background: rgba(6, 17, 29, 0.92);
+  border-top-color: rgba(111, 255, 219, 0.14);
+}
+.app-tabbar.is-dark .arco-tab-bar-item {
+  color: rgba(234, 247, 255, 0.45);
+}
+.app-tabbar.is-dark .arco-tab-bar-item-active {
+  color: var(--tech-jade);
+}
+
+/* 图标容器:角标以它为定位参照 */
+.tb-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tb-icon svg {
+  width: 23px;
+  height: 23px;
+}
+/* 角标本体是组件库的 Badge。
+   【不要自己写 top/left】Arco 的 .arco-badge-absolute 已经锚好了:
+     top:0; left:100%; margin-left:-8px; margin-top:-8px
+   也就是骑在图标右上角。我原先又加了 top:-4px + left:56%,和它的 margin
+   叠加成 -12px,角标整个飘到图标上方 12px 处 —— 就是"位置不对"的原因。
+   这里只调颜色和字号,定位交给组件。 */
+.tb-badge.arco-badge {
+  background: #ff3b30;
+  height: 15px;
+  line-height: 15px;
+  font-size: 10px;
+  font-weight: 700;
+  /* 目标:角标【中心】落在图标右上角这个点上,一半压着图标、一半探出去。
+     Arco 的锚点是 left:100%(图标右边缘)+ margin-left:-8px。
+     那 8px 是给方形头像设计的,我们的图标只有 23px 宽又没有实体边界,
+     收 8px 会把角标拉到图标正上方(看着像居中,不是右上角)—— 所以清零,
+     只留 translateX(-50%) 把中心对准右边缘。
+     纵向 Arco 的 margin-top:-8px 正好让中心落在图标上边缘,不用动。 */
+  margin-left: 0;
+  transform: translateX(-50%);
+}
+
+/* ===== 页面转场 =====
+   转场传递层级:平级(底部 tab 之间)淡入淡出,下钻推入,返回退出。
+   总时长压在 200ms 内 —— 用户是戴手套赶时间的巡检员,动效再好看也是等待。
+
+   【只动 transform / opacity】这两个走合成器,不触发重排重绘。
+   动 width/height/top 会让整页每帧重新布局,低端安卓直接掉帧。 */
+
+/* 转场层必须"透明"地继承页面布局:页面是 .app-shell 的 flex 子元素,
+   靠 flex:1 撑满高度。中间插一层不带 flex 的 div,页面会塌成内容高度,
+   底栏跟着往上跳。 */
+.pg-layer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 平级切换:纯淡入淡出。tab 之间没有上下级,滑动会误导方向 */
+.pg-fade-enter {
+  opacity: 0;
+}
+.pg-fade-enter-active {
+  opacity: 1;
+  transition: opacity 180ms ease-out;
+}
+.pg-fade-exit {
+  opacity: 1;
+}
+.pg-fade-exit-active {
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+/* 下钻:从右侧推入 —— "我进去了一层" */
+.pg-push-enter {
+  opacity: 0;
+  transform: translate3d(24px, 0, 0);
+}
+.pg-push-enter-active {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pg-push-exit {
+  opacity: 1;
+}
+.pg-push-exit-active {
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+/* 返回:向右退出 —— "我出来了" */
+.pg-pop-enter {
+  opacity: 0;
+  transform: translate3d(-16px, 0, 0);
+}
+.pg-pop-enter-active {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pg-pop-exit {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+.pg-pop-exit-active {
+  opacity: 0;
+  transform: translate3d(24px, 0, 0);
+  transition:
+    opacity 120ms ease-in,
+    transform 120ms ease-in;
+}
+
+/* 系统里关了动效就一律不做 —— 前庭敏感的人会因这类位移不适 */
+@media (prefers-reduced-motion: reduce) {
+  .pg-fade-enter-active,
+  .pg-fade-exit-active,
+  .pg-push-enter-active,
+  .pg-push-exit-active,
+  .pg-pop-enter-active,
+  .pg-pop-exit-active {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ===== 下拉选择 =====
+   点一下在字段行下方展开整宽列表:选项左对齐、逐行排列、当前值高亮、
+   超过 5 项可滚动。经典下拉的形态。
+
+   为什么自己写而不用组件:Arco 的 dropdown 是给【筛选栏】用的(撑满屏幕宽、
+   从顶栏下方推开),popover 是小气泡(宽度按内容、默认深色)。
+   都不是"贴着字段行的一小块列表"。这个形态自己写更短也更可控。 */
+.dd {
+  position: relative;
+  display: inline-block;
+  min-width: 96px;
+}
+.dd-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  color: var(--lt-fg);
+  cursor: pointer;
+}
+.dd-trigger.is-empty .dd-text {
+  color: var(--ios-gray);
+}
+.dd-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 箭头用边框拼,不引图标 —— 一个 6px 小三角不值得多一个 SVG */
+.dd-arrow {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-bottom: 2px;
+  border-right: 1.5px solid var(--ios-gray);
+  border-bottom: 1.5px solid var(--ios-gray);
+  transform: rotate(45deg);
+  transition:
+    transform 160ms ease,
+    margin 160ms ease;
+}
+.dd-arrow.is-open {
+  transform: rotate(-135deg);
+  margin-bottom: -2px;
+}
+
+/* 列表:紧贴触发器下方、右对齐。z-index 要高过后续字段行,
+   否则会被下面那行的背景盖住(同层叠上下文里后来者在上)。 */
+.dd-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 132px;
+  max-height: 208px; /* 约 5 项,再多就滚动 */
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border-radius: 10px;
+  border: 0.5px solid var(--lt-border);
+  background: var(--lt-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  scrollbar-width: none;
+}
+.dd-list::-webkit-scrollbar {
+  display: none;
+}
+.dd-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--lt-fg);
+  text-align: left; /* 选项左对齐,和截图里的经典下拉一致 */
+  cursor: pointer;
+}
+.dd-item:active {
+  background: var(--lt-fill);
+}
+/* 当前值:浅色底 + 品牌色,一眼看出选的是哪个 */
+.dd-item.is-on {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */
+
+/* 筛选栏(DropdownMenu)。默认是通栏白底,这里做成和上面统计卡同一张卡的
+   延续:圆角 + 阴影 + 左右 16px,不然它会像一条焊在页面上的横杠。 */
+.filter-bar {
+  margin: 0 16px 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--lt-shadow);
+}
+.filter-bar .arco-dropdown-menu-select {
+  font-size: 14px;
+  color: var(--lt-fg);
+}
+/* 选中某一项时高亮,让人一眼看出现在筛着东西 */
+.filter-bar .arco-dropdown-menu-select.active,
+.filter-bar .arco-dropdown-menu-select-active {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* 展开的选项面板。Arco 默认每行 padding 和字号都是 0.32rem(=16.6px),
+   一行将近 50px 高 —— 13 个设备类型能铺满大半屏,而且 16.6px 是 rem 折算出
+   的小数字号,和全站的整数 px 对不齐。压到正常列表行的尺寸。 */
+.arco-dropdown-options-item {
+  padding: 11px 16px;
+  font-size: 14px;
+  line-height: 20px;
+}
+/* 选项多的时候面板自己滚,不要把整页顶下去 */
+.arco-dropdown-options-wrap {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+/* 当前选中项要标出来 —— 面板里全是一样的行,不标的话得回头看栏上的字 */
+.arco-dropdown-options-item.active,
+.arco-dropdown-options-item-active {
+  color: var(--brand);
+  font-weight: 600;
+  background: var(--brand-soft);
+}
+
+.lg-title {
+  font-size: 12px;
+  color: var(--lt-fg-3);
+  margin-bottom: 8px;
+}
+.lg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lg-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--lt-border);
+  border-radius: 999px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 12px;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+.lg-chip em {
+  font-style: normal;
+  color: var(--lt-fg-2);
+  margin-left: 3px;
+}
+.lg-chip.on {
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+.lg-chip.on em {
+  color: var(--brand);
+}
+.lg-clear {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 12px;
+  padding: 9px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.asset-list {
+  margin: 0 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-bottom: 0.5px solid var(--lt-border);
+  background: transparent;
+  text-align: left;
+}
+.asset-row:last-child {
+  border-bottom: 0;
+}
+.asset-row:active {
+  background: var(--lt-fill);
+}
+/* 设备封面缩略图(对齐旧版 .asset-cover)。
+   有照片的行一眼能认出是哪台设备;没照片的给同尺寸占位,保证左列对齐不参差。
+   状态由右侧标签表达,不再另画状态圆点(旧版也没有)。 */
+.ar-cover {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--lt-fill);
+  display: block;
+}
+.ar-cover-empty {
+  position: relative;
+}
+/* 空占位里的相片轮廓,照旧版的做法(细描边小方块) */
+.ar-cover-empty::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 14px;
+  margin: -7px 0 0 -9px;
+  border: 1.5px solid var(--ios-gray);
+  opacity: 0.45;
+  border-radius: 3px;
+}
+.ar-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ar-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ar-sub {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
+
+/* ===== 状态标签(全站唯一一套)=====
+   历史上台账 .ar-tag、任务 .task-status、审批 .cr-tt 各写了一套,基底几乎相同
+   却对不齐:.cr-tt 少 font-weight、内边距还差 1px。这里收敛成一套语义标签。
+   配色只从令牌取,不在组件里散写(见 docs/MOBILE-WEB-OPTIMIZATION 的色彩规矩)。
+
+   没用 Arco 的 Tag:它要按语义把 color/bgColor 一个个当 props 传进 JSX,
+   等于把颜色从令牌搬回组件里散写,和上面那条规矩冲突。 */
+.tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.tag-brand {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.tag-ok {
+  background: var(--c-green-soft);
+  color: var(--ios-green);
+}
+.tag-warn {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+.tag-danger {
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+}
+.tag-repair {
+  background: rgba(175, 82, 222, 0.12);
+  color: #af52de;
+}
+.tag-unknown {
+  background: var(--lt-fill);
+  color: var(--lt-fg-2);
+}
+
+/* ===== 资产详情(旧版 sceneAsset)===== */
+.ad-card {
+  padding: 14px 16px;
+  margin: 0 16px 14px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.ad-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.ad-row:last-of-type {
+  border-bottom: 0;
+}
+.ad-k {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
+.ad-v {
+  font-size: 14px;
+  color: var(--lt-fg);
+  font-weight: 500;
+}
+.ad-summary {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--lt-border);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--lt-fg-2);
+}
+.ad-title {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+  margin: 4px 16px 8px;
+}
+.ad-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 16px;
+}
+.hist-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.hist-when {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lt-fg);
+  font-variant-numeric: tabular-nums;
+}
+.hist-who {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--lt-fg-2);
+}
+.hist-body {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--lt-fg-2);
+}
+
+/* ===== 日报预览(旧版 scenePreview)===== */
+.pv-title {
+  font-size: 13px;
+  color: var(--lt-fg-2);
+  margin: 4px 16px 8px;
+}
+/* ===== 记录上下文卡(旧版 .context,styles.css:738) =====
+   用 Arco Cell 打底,只改视觉。要掰的是它"列表里的一行"这个出身:
+   固定行高、通栏分割线、左右内边距由 Group 提供 —— 这里当独立卡片用。 */
+.rec-ctx.arco-cell {
+  margin: 0 16px 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+/* 行高写死在 inner 上(1.08rem,带副标题 1.48rem)。卡片高度该由内容
+   和内边距决定,不是由组件预设的列表行高决定。 */
+.rec-ctx .arco-cell-inner {
+  height: auto;
+}
+.rec-ctx .cell-label-icon {
+  margin-right: 12px;
+}
+.rec-ctx .arco-avatar {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+  /* Arco 按 rem 出字号(0.28rem × 52 = 14.56px)。整页别的字都是整数 px,
+     只有它带小数,并排就是"看着不齐",而且非整数在非高清屏上发虚。 */
+  font-size: 15px;
+}
+/* 主副标题吃掉剩余宽度、长名省略号收尾 —— Arco 给的是 auto 宽 + 25px
+   右间距,项目名一长会把右侧状态胶囊挤出屏幕。 */
+.rec-ctx.arco-cell .cell-label {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+.rec-ctx .cell-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-ctx.arco-cell .cell-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-ctx .cell-content {
+  flex: none;
+}
+.ctx-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ctx-badge.ok {
+  background: var(--c-green-soft);
+  color: var(--ios-green);
+}
+.ctx-badge.warn {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+
+.pv-card {
+  margin: 0 16px 12px;
+  padding: 4px 14px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.pv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.pv-row:last-child {
+  border-bottom: 0;
+}
+.pv-k {
+  font-size: 14px;
+  color: var(--lt-fg-2);
+  flex: none;
+}
+.pv-v {
+  font-size: 14px;
+  color: var(--lt-fg);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+.ai-card {
+  padding: 14px;
+}
+/* AI 卡片。照旧版:标题行与正文之间有【分割线】,结论标签在标题行右端。 */
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.ai-mark {
+  color: var(--brand);
+  font-size: 13px;
+}
+.ai-mark.amber {
+  color: var(--ios-orange);
+}
+.ai-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lt-fg);
+}
+.ai-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--lt-fg);
+  white-space: pre-wrap;
+}
+
+/* 结论标签:靠 margin-left:auto 顶到标题行最右(旧版 .sum-status 同法)。
+   色档照搬旧版 app.js:1274 —— 正常绿 / 待复核橙 / 异常红,口径两端一致。 */
+.sum-status {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sum-status.ok {
+  background: var(--c-green-soft);
+  color: var(--ios-green);
+}
+.sum-status.warn {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+.sum-status.bad {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+/* 行动建议:优先级色块 + 正文 + 依据 */
+.reco {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.reco:last-child {
+  border-bottom: 0;
+}
+.reco-pri {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--lt-fill);
+  color: var(--lt-fg-2);
+}
+.reco-pri.high {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+.reco-pri.medium {
+  background: var(--c-orange-soft);
+  color: var(--ios-orange);
+}
+.reco-pri.low {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.reco-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.reco-text {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--lt-fg);
+}
+.reco-meta {
+  font-size: 12px;
+  color: var(--lt-fg-2);
+}
+
+.foot-back {
+  flex: none;
+  height: 46px;
+  padding: 0 18px;
+  border: 1px solid var(--lt-border);
+  border-radius: 12px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* ===== 待审批(旧版 sceneApprovals)===== */
+.cr-card {
+  margin: 0 16px 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.cr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.cr-who {
+  font-size: 15px;
+  color: var(--lt-fg);
+}
+.cr-when {
+  font-size: 11px;
+  color: var(--lt-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.cr-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cr-tn {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--lt-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-view {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--lt-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--brand);
+  font-size: 11px;
+}
+.cr-patch {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--lt-fill);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lt-fg);
+}
+.cr-reason {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lt-fg-2);
+}
+.cr-note {
+  width: 100%;
+  height: 38px;
+  margin-top: 10px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 14px;
+  outline: none;
+}
+.cr-note:focus {
+  border-color: var(--brand-border);
+  background: var(--lt-card);
+}
+.cr-acts {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.cr-btn {
+  flex: 1;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.cr-btn:disabled {
+  opacity: 0.5;
+}
+.cr-btn.reject {
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+}
+.cr-btn.approve {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* ===== 个人空间(/me)=====
+   之前只有一张居中玻璃卡 + 退出按钮,不像 app,像个登录后的落地页。
+   改成手机端"我的"页的通行形态:头部身份区 + 分组设置列表。
+   管理角色登录后正落在这一屏,所以它必须能通往别处,不能是死胡同。 */
+.me-screen .flow-body {
+  padding-bottom: 24px;
+}
+.me-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 16px 24px;
+}
+/* 点头像即换。右下角挂一个"换"字角标,不然没人知道能点 */
+.me-avatar {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.me-avatar .arco-avatar {
+  width: 76px;
+  height: 76px;
+  font-size: 30px;
+  font-weight: 700;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(38, 126, 240, 0.28);
+}
+.me-avatar .arco-avatar.has-photo {
+  background: var(--lt-fill);
+}
+.me-avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border: 2px solid var(--lt-bg);
+}
+.me-avatar:disabled {
+  opacity: 0.7;
+}
+.me-name {
+  margin: 10px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--lt-fg);
+}
+.me-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
+
+/* Cell 分组:Arco 默认是通栏白底,这里收成 16px 外边距的圆角卡,
+   和台账/任务页的卡片语言统一 */
+.me-screen .arco-cell-group {
+  margin: 0 16px 14px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.me-screen .arco-cell-group-header {
+  padding: 0 0 8px 4px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  background: transparent;
+}
+.me-screen .arco-cell {
+  margin-left: 0;
+  padding: 14px 16px;
+  color: var(--lt-fg);
+  font-size: 15px;
+  background: var(--lt-card);
+}
+.me-screen .arco-cell-text {
+  color: var(--lt-fg-2);
+  font-size: 14px;
+}
+/* 列表行图标位。SVG 用 currentColor,这里给它定色即可 —— 用品牌翡翠而非
+   全黑,列表扫下来有个节奏,又不至于像 emoji 那样每个一个颜色。 */
+.me-ic {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 10px;
+  color: var(--brand);
+}
+.me-ic svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* 退出登录:现在钉在 .flow-foot 里(滚动区之外),所以不再自己留外边距。
+   红色是有意的 —— 这是本页唯一的破坏性操作,红在这里表达"想清楚再点",
+   和台账里表示设备异常的红是同一套语义,不冲突。 */
+.me-logout {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+  color: #ff3b30;
+  font-size: 16px;
+  font-weight: 600;
+}
+.me-logout:active {
+  background: #f2f2f7;
+}
+.me-logout:active {
+  background: var(--lt-fill);
+}
+
+/* 登录页密码小眼睛。旧版验收清单点名要有 ——
+   现场戴手套、强光下打错密码很常见,没有它只能反复清空重来。 */
+.pwd-eye {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--tech-jade);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ===== 底部常驻导航 =====
+   放在 .app-shell(flex 列)的末尾,天然贴底 —— 不用 position:fixed,
+   也就不用为它另算占位高度(NavBar 与 TabBar 的 fixed 默认值都踩过)。
+
+   【主题跟随页面】本产品是有意的双主题:拍照台深(取景语境),
+   数据页浅(户外强光下可读性更好)。五个 tab 里 1 深 4 浅,
+   所以【浅色是默认】,深色是 .is-dark 变体。
+   底栏若固定一种色,在另一种页面上就是一条焊上去的外来色带 ——
+   台账页底部那条黑带就是这么来的。 */
+.app-tabbar.arco-tab-bar {
+  flex: none;
+  background: rgba(250, 250, 251, 0.88);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--lt-border);
+  padding-bottom: var(--safe-bottom);
+  /* 切 tab 时底栏跟着换肤。整屏本来就在变,底栏跟着变才自然;
+     不跟着变反而突兀。150ms 足够跟上,又不会让人觉得在"等它变" */
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.app-tabbar .arco-tab-bar-item {
+  color: var(--lt-fg-2);
+  padding: 6px 0 4px;
+  transition: color 150ms ease;
+}
+/* 选中态不能只靠颜色:绿/灰这条轴对部分色觉障碍不友好,
+   而且实测未选中的对比度(4.86)反而高于选中(4.17)—— 光看深浅是倒置的。
+   加字重给一个非颜色信号,选中就不再依赖辨色。 */
+.app-tabbar .arco-tab-bar-item-active {
+  color: var(--brand);
+}
+.app-tabbar .arco-tab-bar-item-active .arco-tab-bar-item-title {
+  font-weight: 600;
+}
+.app-tabbar .arco-tab-bar-item-title {
+  font-size: 11px;
+  letter-spacing: 0.2px;
+}
+.app-tabbar .arco-tab-bar-item-icon {
+  line-height: 1;
+}
+
+/* 深色变体:拍照台 */
+.app-tabbar.is-dark.arco-tab-bar {
+  background: rgba(6, 17, 29, 0.92);
+  border-top-color: rgba(111, 255, 219, 0.14);
+}
+.app-tabbar.is-dark .arco-tab-bar-item {
+  color: rgba(234, 247, 255, 0.45);
+}
+.app-tabbar.is-dark .arco-tab-bar-item-active {
+  color: var(--tech-jade);
+}
+
+/* 图标容器:角标以它为定位参照 */
+.tb-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tb-icon svg {
+  width: 23px;
+  height: 23px;
+}
+/* 角标本体是组件库的 Badge。
+   【不要自己写 top/left】Arco 的 .arco-badge-absolute 已经锚好了:
+     top:0; left:100%; margin-left:-8px; margin-top:-8px
+   也就是骑在图标右上角。我原先又加了 top:-4px + left:56%,和它的 margin
+   叠加成 -12px,角标整个飘到图标上方 12px 处 —— 就是"位置不对"的原因。
+   这里只调颜色和字号,定位交给组件。 */
+.tb-badge.arco-badge {
+  background: #ff3b30;
+  height: 15px;
+  line-height: 15px;
+  font-size: 10px;
+  font-weight: 700;
+  /* 目标:角标【中心】落在图标右上角这个点上,一半压着图标、一半探出去。
+     Arco 的锚点是 left:100%(图标右边缘)+ margin-left:-8px。
+     那 8px 是给方形头像设计的,我们的图标只有 23px 宽又没有实体边界,
+     收 8px 会把角标拉到图标正上方(看着像居中,不是右上角)—— 所以清零,
+     只留 translateX(-50%) 把中心对准右边缘。
+     纵向 Arco 的 margin-top:-8px 正好让中心落在图标上边缘,不用动。 */
+  margin-left: 0;
+  transform: translateX(-50%);
+}
+
+/* ===== 页面转场 =====
+   转场传递层级:平级(底部 tab 之间)淡入淡出,下钻推入,返回退出。
+   总时长压在 200ms 内 —— 用户是戴手套赶时间的巡检员,动效再好看也是等待。
+
+   【只动 transform / opacity】这两个走合成器,不触发重排重绘。
+   动 width/height/top 会让整页每帧重新布局,低端安卓直接掉帧。 */
+
+/* 转场层必须"透明"地继承页面布局:页面是 .app-shell 的 flex 子元素,
+   靠 flex:1 撑满高度。中间插一层不带 flex 的 div,页面会塌成内容高度,
+   底栏跟着往上跳。 */
+.pg-layer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 平级切换:纯淡入淡出。tab 之间没有上下级,滑动会误导方向 */
+.pg-fade-enter {
+  opacity: 0;
+}
+.pg-fade-enter-active {
+  opacity: 1;
+  transition: opacity 180ms ease-out;
+}
+.pg-fade-exit {
+  opacity: 1;
+}
+.pg-fade-exit-active {
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+/* 下钻:从右侧推入 —— "我进去了一层" */
+.pg-push-enter {
+  opacity: 0;
+  transform: translate3d(24px, 0, 0);
+}
+.pg-push-enter-active {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pg-push-exit {
+  opacity: 1;
+}
+.pg-push-exit-active {
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+/* 返回:向右退出 —— "我出来了" */
+.pg-pop-enter {
+  opacity: 0;
+  transform: translate3d(-16px, 0, 0);
+}
+.pg-pop-enter-active {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pg-pop-exit {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+.pg-pop-exit-active {
+  opacity: 0;
+  transform: translate3d(24px, 0, 0);
+  transition:
+    opacity 120ms ease-in,
+    transform 120ms ease-in;
+}
+
+/* 系统里关了动效就一律不做 —— 前庭敏感的人会因这类位移不适 */
+@media (prefers-reduced-motion: reduce) {
+  .pg-fade-enter-active,
+  .pg-fade-exit-active,
+  .pg-push-enter-active,
+  .pg-push-exit-active,
+  .pg-pop-enter-active,
+  .pg-pop-exit-active {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ===== 下拉选择 =====
+   点一下在字段行下方展开整宽列表:选项左对齐、逐行排列、当前值高亮、
+   超过 5 项可滚动。经典下拉的形态。
+
+   为什么自己写而不用组件:Arco 的 dropdown 是给【筛选栏】用的(撑满屏幕宽、
+   从顶栏下方推开),popover 是小气泡(宽度按内容、默认深色)。
+   都不是"贴着字段行的一小块列表"。这个形态自己写更短也更可控。 */
+.dd {
+  position: relative;
+  display: inline-block;
+  min-width: 96px;
+}
+.dd-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  color: var(--lt-fg);
+  cursor: pointer;
+}
+.dd-trigger.is-empty .dd-text {
+  color: var(--ios-gray);
+}
+.dd-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 箭头用边框拼,不引图标 —— 一个 6px 小三角不值得多一个 SVG */
+.dd-arrow {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-bottom: 2px;
+  border-right: 1.5px solid var(--ios-gray);
+  border-bottom: 1.5px solid var(--ios-gray);
+  transform: rotate(45deg);
+  transition:
+    transform 160ms ease,
+    margin 160ms ease;
+}
+.dd-arrow.is-open {
+  transform: rotate(-135deg);
+  margin-bottom: -2px;
+}
+
+/* 列表:紧贴触发器下方、右对齐。z-index 要高过后续字段行,
+   否则会被下面那行的背景盖住(同层叠上下文里后来者在上)。 */
+.dd-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 132px;
+  max-height: 208px; /* 约 5 项,再多就滚动 */
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border-radius: 10px;
+  border: 0.5px solid var(--lt-border);
+  background: var(--lt-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  scrollbar-width: none;
+}
+.dd-list::-webkit-scrollbar {
+  display: none;
+}
+.dd-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--lt-fg);
+  text-align: left; /* 选项左对齐,和截图里的经典下拉一致 */
+  cursor: pointer;
+}
+.dd-item:active {
+  background: var(--lt-fill);
+}
+/* 当前值:浅色底 + 品牌色,一眼看出选的是哪个 */
+.dd-item.is-on {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */

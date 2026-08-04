@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 # 打包当前 inspectai 目录为一份干净的部署 zip，给 Linux 服务器手动 scp 用。
 # 输出：release/inspectai-deploy-<时间戳>.zip

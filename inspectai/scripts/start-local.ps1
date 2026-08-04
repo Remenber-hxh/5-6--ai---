@@ -101,27 +101,41 @@ try {
   Pop-Location
 }
 
-# 新移动端:18080 的根路径发的是 mobile-web/dist,所以每次启动都要构建一次,
-# 否则改了前端却看不到变化,或者干脆撞上"前端还没构建"的 503。
-# 构建只要 2-3 秒,不值得为省这点时间去做增量判断。
+# Build the new mobile frontend. Port 18080 now serves mobile-web/dist at "/",
+# so a stale (or missing) dist means you either see no change after editing the
+# frontend, or hit the "not built yet" page. Takes 2-3s; not worth an
+# incremental check.
+#
+# NOTE: keep this file ASCII-only. Windows PowerShell 5.1 reads a BOM-less
+# script as ANSI (GBK on a Chinese system), so UTF-8 comments corrupt it.
+#
+# Everything here runs AFTER stop-local has already killed the services, so a
+# failure in this block would leave the machine with nothing running. Wrap it:
+# a frontend build must never be able to take the backend down with it.
+try {
 $webDir = Join-Path $root "mobile-web"
-if (Test-Path -LiteralPath (Join-Path $webDir "package.json")) {
-  Write-Host "[前端] 构建 mobile-web ..." -ForegroundColor Cyan
+if ($webDir -and (Test-Path -LiteralPath (Join-Path $webDir "package.json"))) {
+  Write-Host "[web] building mobile-web ..." -ForegroundColor Cyan
   Push-Location $webDir
   try {
     if (-not (Test-Path -LiteralPath (Join-Path $webDir "node_modules"))) {
-      Write-Host "  首次运行,npm install(约 1-2 分钟)..." -ForegroundColor Yellow
+      Write-Host "  first run, npm install (1-2 min) ..." -ForegroundColor Yellow
       & npm install
     }
     & npm run build 2>&1 | Set-Content -LiteralPath (Join-Path $logs "mobile-web-build.log")
     if ($LASTEXITCODE -ne 0) {
-      # 不 throw:后端还能起来,旧版 /old/ 也还在,总比整个起不来强
-      Write-Host "  !! mobile-web 构建失败,18080 会显示提示页;旧版仍可用 /old/" -ForegroundColor Red
-      Write-Host "     详见 $logs\mobile-web-build.log" -ForegroundColor DarkGray
+      # Do not throw: the backend can still start and /old/ still works,
+      # which beats failing the whole startup.
+      Write-Host "  !! mobile-web build failed. 18080 will show a hint page; legacy UI still at /old/" -ForegroundColor Red
+      Write-Host "     see $logs\mobile-web-build.log" -ForegroundColor DarkGray
     }
   } finally {
     Pop-Location
   }
+}
+} catch {
+  Write-Host "  !! mobile-web build step failed: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host "     continuing; backend will still start (legacy UI at /old/)" -ForegroundColor DarkGray
 }
 
 $aiLog = Join-Path $logs "ai-service-19100.log"
@@ -143,8 +157,8 @@ Set-Content -LiteralPath $goPid -Value $go.Id
 Start-Sleep -Seconds 2
 
 Write-Host "InspectAI Assistant started"
-Write-Host "新版移动端: http://127.0.0.1:18080/"
-Write-Host "旧版(备用): http://127.0.0.1:18080/old/"
+Write-Host "New mobile UI: http://127.0.0.1:18080/"
+Write-Host "Legacy UI:     http://127.0.0.1:18080/old/"
 Write-Host "Backend health: http://127.0.0.1:18080/health"
 Write-Host "AI health: http://127.0.0.1:19100/health"
 Write-Host "DB driver:   $env:DB_DRIVER"
