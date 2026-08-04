@@ -2741,28 +2741,77 @@ a {
 }
 
 /* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */
-.lg-filter { margin: 0 16px 12px; }
-.lg-filter .arco-collapse-header,
-.lg-filter .collapse-header {
-  padding: 12px 14px;
+
+/* 折叠面板【本身】就是那张卡,里面不再套第二层卡 ——
+   白卡片里套白卡片没有层次可言,只是把内容往里推了 14px,
+   还平白多出一圈阴影。展开后直接是"小标题 + 一排片"。 */
+.lg-filter {
+  margin: 0 16px 12px;
   background: var(--lt-card);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--lt-shadow);
+  overflow: hidden;
+}
+.lg-filter .arco-collapse,
+.lg-filter .arco-collapse-group {
+  background: transparent;
+}
+/* Arco 默认给每项加分割线,单项面板上那条线是多余的 */
+.lg-filter .arco-collapse::before,
+.lg-filter .arco-collapse::after {
+  display: none;
 }
 .cl-head { display: flex; align-items: center; width: 100%; }
-.cl-title { font-size: 14px; font-weight: 600; color: var(--lt-fg); }
+.cl-title { font-size: 15px; font-weight: 600; color: var(--lt-fg); }
 /* 收起时也要看得到当前筛的是什么 —— 否则用户不知道列表为什么少了 */
-.cl-extra { margin-left: auto; font-size: 12px; color: var(--lt-fg-2); }
-.lg-filter .lg-card { margin-top: 10px; }
+.cl-extra {
+  margin-left: auto;
+  margin-right: 6px;
+  font-size: 13px;
+  color: var(--lt-fg-2);
+}
+.lg-filter .arco-collapse-header { padding: 14px 16px; }
 
-/* 分组标题吸顶。要有底色和轻微阴影,否则滚动时列表内容会从它下面透出来 */
+/* 展开区:两组之间用一条细线分,不用卡片 */
+.lg-group + .lg-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--lt-border);
+}
+.lg-body { padding: 0 16px 14px; }
+.lg-title {
+  font-size: 12px;
+  color: var(--lt-fg-3);
+  margin-bottom: 8px;
+}
+.lg-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.lg-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--lt-border);
+  border-radius: 999px;
+  background: var(--lt-fill);
+  color: var(--lt-fg);
+  font-size: 13px;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+.lg-chip em { font-style: normal; color: var(--lt-fg-3); margin-left: 4px; }
+.lg-chip.on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+.lg-chip.on em { color: var(--brand); }
+
+/* 分组标题吸顶。要有底色,否则滚动时列表内容会从它下面透出来 */
 .asset-section {
-  padding: 8px 18px;
+  padding: 10px 18px 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--lt-fg-2);
   background: var(--lt-bg);
-  box-shadow: 0 1px 0 var(--lt-border);
 }
 .asset-section.risk { color: #ff3b30; }
 .asset-section.ok { color: var(--ios-green); }

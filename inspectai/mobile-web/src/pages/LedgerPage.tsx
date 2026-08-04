@@ -210,42 +210,46 @@ export default function LedgerPage() {
             extra={hasFilter ? `${shown.length} 台` : "全部"}
             defaultOpen={hasFilter}
           >
-            {projects.length > 1 && (
-              <div className="lg-card">
-                <div className="lg-title">项目</div>
-                <div className="lg-chips">
-                  {projects.map((g) => (
-                    <button
-                      key={g.value}
-                      className={
-                        filter.project === g.value ? "lg-chip on" : "lg-chip"
-                      }
-                      onClick={() => pick("project", g.value)}
-                    >
-                      {g.value} <em>{g.count}</em>
-                    </button>
-                  ))}
+            <div className="lg-body">
+              {projects.length > 1 && (
+                <div className="lg-group">
+                  <div className="lg-title">项目</div>
+                  <div className="lg-chips">
+                    {projects.map((g) => (
+                      <button
+                        key={g.value}
+                        className={
+                          filter.project === g.value ? "lg-chip on" : "lg-chip"
+                        }
+                        onClick={() => pick("project", g.value)}
+                      >
+                        {g.value} <em>{g.count}</em>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-            {types.length > 1 && (
-              <div className="lg-card">
-                <div className="lg-title">设备类型</div>
-                <div className="lg-chips">
-                  {types.map((g) => (
-                    <button
-                      key={g.value}
-                      className={
-                        filter.assetType === g.value ? "lg-chip on" : "lg-chip"
-                      }
-                      onClick={() => pick("assetType", g.value)}
-                    >
-                      {g.value} <em>{g.count}</em>
-                    </button>
-                  ))}
+              )}
+              {types.length > 1 && (
+                <div className="lg-group">
+                  <div className="lg-title">设备类型</div>
+                  <div className="lg-chips">
+                    {types.map((g) => (
+                      <button
+                        key={g.value}
+                        className={
+                          filter.assetType === g.value
+                            ? "lg-chip on"
+                            : "lg-chip"
+                        }
+                        onClick={() => pick("assetType", g.value)}
+                      >
+                        {g.value} <em>{g.count}</em>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </Collapse>
         )}
 

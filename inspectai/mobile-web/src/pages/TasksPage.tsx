@@ -10,9 +10,19 @@ import { useResource } from "@/hooks/useResource";
 import type { EngineeringTaskDTO } from "@/api/inspection";
 import { setActiveTask } from "@/store/activeTask";
 
-// 「该显示哪些任务」的规则已经收到后端(?scope=open-mine,见 open_tasks.go):
+// 「该显示哪些任务」的规则在后端(?scope=open-mine,见 open_tasks.go):
 // 在办三态 + 主管看全部 / 巡检员看自己的和未指派的。
-// 这里不再筛第二遍 —— 客户端各筛各的,正是底栏角标和页面数字对不上的来源。
+//
+// 【下面这个白名单不是"再筛一遍",是渲染不变量】
+// 这一页的每张卡片都带一个「开始巡检」按钮。已完成/已取消的任务配这个按钮
+// 是句病句 —— 用户点了会发生什么谁也说不清。所以这一页【只渲染能开始巡检
+// 的任务】,这条不依赖后端。
+//
+// 2026-08-04 就栽在这上面:我先把客户端的筛选去掉、后端还没重启,于是
+// 老接口发来的全量任务(含已完成)全渲染出来了,每张都挂着「开始巡检」。
+// 前后端版本错位是常态(SPA 还会被浏览器缓存住),页面不能假设服务端一定
+// 筛好了。注意这里【不】按负责人筛 —— 那个才是当初角标对不上的来源。
+const CAN_START = ["进行中", "待整改", "逾期"];
 
 /** 排序:逾期最先,再进行中,再待整改(旧版 TASK_STATUS_ORDER 的语义) */
 const ORDER: Record<string, number> = { 逾期: 0, 进行中: 1, 待整改: 2 };
@@ -58,7 +68,7 @@ export default function TasksPage() {
     );
   }
 
-  const sorted = [...tasks].sort(
+  const sorted = tasks.filter((t) => CAN_START.includes(t.status)).sort(
     (a, b) =>
       (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) ||
       String(a.dueAt || "9999").localeCompare(String(b.dueAt || "9999")),
