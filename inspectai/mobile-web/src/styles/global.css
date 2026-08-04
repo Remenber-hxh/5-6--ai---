@@ -98,6 +98,40 @@
   font-feature-settings: "tnum";
 }
 
+/* 【组件库的字号写在内层,外层写了不算】
+   Arco 的按钮和头像把 font-size 放在子元素上,而且按 rem 出(large 按钮
+   = 0.3rem = 15.6px,small 头像 = 0.28rem = 14.56px)。所以我给
+   .btn-primary 写的 17px、给 .me-avatar 写的 30px【一直没有生效】,
+   页面上真正渲染的是那两个小数值 —— 这也是整屏里仅有的非整数字号,
+   跟整数 px 并排就是"看着不齐",在非高清屏上还发虚。
+   让内层继承外层,把控制权交回我们自己写的那一层。
+
+   按尺寸档逐个写,是因为 Arco 的选择器带尺寸类(.arco-button.arco-button-size-large
+   .arco-button-text),权重比 .arco-button .arco-button-text 高一级,
+   少写一层就压不住 —— 第一版就是这么没生效的。 */
+.arco-button.arco-button-size-mini .arco-button-text,
+.arco-button.arco-button-size-small .arco-button-text,
+.arco-button.arco-button-size-medium .arco-button-text,
+.arco-button.arco-button-size-large .arco-button-text,
+.arco-avatar .arco-avatar-text {
+  font-size: inherit;
+}
+/* 同样的原因,这几处也得显式给整数字号(它们默认 0.28rem = 14.56px):
+   分组标题按全站"次要说明"的 12px,右侧值和正文一致 14px。 */
+.arco-cell-group .cell-group-header,
+.arco-cell-group .cell-group-footer,
+/* 下拉刷新的文案要带上 .is-ios:我们在 arcoContext.ts 里把平台钉死成 ios,
+   而 Arco 给 ios 单独写了一条 .arco-pull-refresh.is-ios .arco-pull-refresh-label
+   (0.28rem),权重比裸类名高一级。少写这一层就压不住。 */
+.arco-pull-refresh.is-ios .arco-pull-refresh-label,
+.arco-pull-refresh-label,
+.arco-pull-refresh-label-text {
+  font-size: 12px;
+}
+.arco-cell .cell-content .cell-text {
+  font-size: 14px;
+}
+
 /* ===== 应用外壳 ===== */
 
 .app-shell {
@@ -2188,6 +2222,9 @@ a {
   background: var(--brand-soft);
   color: var(--brand);
   font-weight: 600;
+  /* Arco 按 rem 出字号(0.28rem × 52 = 14.56px)。整页别的字都是整数 px,
+     只有它带小数,并排就是"看着不齐",而且非整数在非高清屏上发虚。 */
+  font-size: 15px;
 }
 /* 主副标题吃掉剩余宽度、长名省略号收尾 —— Arco 给的是 auto 宽 + 25px
    右间距,项目名一长会把右侧状态胶囊挤出屏幕。 */
@@ -2217,7 +2254,7 @@ a {
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 .ctx-badge.ok { background: var(--c-green-soft); color: var(--ios-green); }
@@ -2239,7 +2276,7 @@ a {
   border-bottom: 0.5px solid var(--lt-border);
 }
 .pv-row:last-child { border-bottom: 0; }
-.pv-k { font-size: 13px; color: var(--lt-fg-2); flex: none; }
+.pv-k { font-size: 14px; color: var(--lt-fg-2); flex: none; }
 .pv-v { font-size: 14px; color: var(--lt-fg); font-weight: 500; text-align: right; word-break: break-all; }
 
 .ai-card { padding: 14px; }
@@ -2264,8 +2301,8 @@ a {
   margin-left: auto;
   padding: 2px 11px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 }
 .sum-status.ok { background: var(--c-green-soft); color: var(--ios-green); }
 .sum-status.warn { background: var(--c-orange-soft); color: var(--ios-orange); }
@@ -2286,7 +2323,7 @@ a {
 .reco-pri.low { background: var(--brand-soft); color: var(--brand); }
 .reco-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .reco-text { font-size: 14px; line-height: 1.55; color: var(--lt-fg); }
-.reco-meta { font-size: 11px; color: var(--lt-fg-2); }
+.reco-meta { font-size: 12px; color: var(--lt-fg-2); }
 
 .foot-back {
   flex: none;
