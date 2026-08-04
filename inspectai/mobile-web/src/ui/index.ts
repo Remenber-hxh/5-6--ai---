@@ -26,5 +26,7 @@ export { TabBar } from "./TabBar";
 export { Cell, CellGroup } from "./Cell";
 export { Collapse } from "./Collapse";
 export { DateField } from "./DateField";
+export { FilterBar } from "./FilterBar";
+export type { FilterGroup } from "./FilterBar";
 export { SwipeAction } from "./SwipeAction";
 export { Sticky } from "./Sticky";

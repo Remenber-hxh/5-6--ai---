@@ -1,4 +1,4 @@
-import { Collapse, Skeleton, Sticky } from "@/ui";
+import { FilterBar, Skeleton, Sticky } from "@/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -201,56 +201,32 @@ export default function LedgerPage() {
           </button>
         </div>
 
-        {/* 筛选收进折叠面板:两组筛选片原来占了大半屏,而管理者进这页九成是
-            来看列表的。收起时标题行显示当前筛的是什么,不丢信息。 */}
+        {/* 筛选栏:组件库的 DropdownMenu(见 ui/FilterBar.tsx)。
+            之前是折叠面板里塞两排药丸片,11 个设备类型换行成 4 排、展开后
+            占大半屏,而"折叠面板"这个形态传达的是"这里有一块内容"而不是
+            "这里可以筛"。 */}
         {(projects.length > 1 || types.length > 1) && (
-          <Collapse
-            className="lg-filter"
-            title="筛选"
-            extra={hasFilter ? `${shown.length} 台` : "全部"}
-            defaultOpen={hasFilter}
-          >
-            <div className="lg-body">
-              {projects.length > 1 && (
-                <div className="lg-group">
-                  <div className="lg-title">项目</div>
-                  <div className="lg-chips">
-                    {projects.map((g) => (
-                      <button
-                        key={g.value}
-                        className={
-                          filter.project === g.value ? "lg-chip on" : "lg-chip"
-                        }
-                        onClick={() => pick("project", g.value)}
-                      >
-                        {g.value} <em>{g.count}</em>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {types.length > 1 && (
-                <div className="lg-group">
-                  <div className="lg-title">设备类型</div>
-                  <div className="lg-chips">
-                    {types.map((g) => (
-                      <button
-                        key={g.value}
-                        className={
-                          filter.assetType === g.value
-                            ? "lg-chip on"
-                            : "lg-chip"
-                        }
-                        onClick={() => pick("assetType", g.value)}
-                      >
-                        {g.value} <em>{g.count}</em>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </Collapse>
+          <FilterBar
+            groups={[
+              {
+                label: "项目",
+                options: projects.map((g) => ({
+                  value: g.value,
+                  count: g.count,
+                })),
+                value: filter.project ?? "",
+                onChange: (v) =>
+                  setFilter((cur) => ({ ...cur, project: v || undefined })),
+              },
+              {
+                label: "设备类型",
+                options: types.map((g) => ({ value: g.value, count: g.count })),
+                value: filter.assetType ?? "",
+                onChange: (v) =>
+                  setFilter((cur) => ({ ...cur, assetType: v || undefined })),
+              },
+            ]}
+          />
         )}
 
         {hasFilter && (

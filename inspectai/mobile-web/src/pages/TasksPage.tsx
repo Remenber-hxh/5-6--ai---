@@ -1,4 +1,5 @@
 import { Skeleton, Toast } from "@/ui";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import EmptyState from "@/components/EmptyState";
@@ -37,6 +38,9 @@ function fmtDue(iso?: string): string {
 // 我的任务:工程巡检任务闭环入口(旧版 sceneTasks)
 export default function TasksPage() {
   const nav = useNavigate();
+  // 点概览数字筛列表。再点一次取消 —— 和台账那四个数字同一个交互,
+  // 不另设"清除筛选"按钮:数字本身就是开关,少一个控件少一分学习成本。
+  const [pick, setPick] = useState<string | null>(null);
   // 竞态防护/卸载保护/错误提示都在 useResource 里(见 hooks/useResource.ts)
   const { data, loading } = useResource(
     (signal) => listEngineeringTasks(signal),
@@ -68,17 +72,22 @@ export default function TasksPage() {
     );
   }
 
-  const sorted = tasks.filter((t) => CAN_START.includes(t.status)).sort(
-    (a, b) =>
-      (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) ||
-      String(a.dueAt || "9999").localeCompare(String(b.dueAt || "9999")),
-  );
+  const sorted = tasks
+    .filter((t) => CAN_START.includes(t.status))
+    .sort(
+      (a, b) =>
+        (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) ||
+        String(a.dueAt || "9999").localeCompare(String(b.dueAt || "9999")),
+    );
   // 概览数字必须从【正在渲染的这份列表】算出来,否则数字和卡片数会对不上
-  const counts = {
-    doing: sorted.filter((t) => t.status === "进行中").length,
-    fixing: sorted.filter((t) => t.status === "待整改").length,
-    overdue: sorted.filter((t) => t.status === "逾期").length,
-  };
+  // 概览数字必须从【正在渲染的这份列表】算出来,否则数字和卡片数会对不上
+  const counts: Record<string, number> = {};
+  for (const st of CAN_START)
+    counts[st] = sorted.filter((t) => t.status === st).length;
+
+  // 点中某一档时列表只留那一档;数字本身不跟着变 —— 它们是"总共有多少",
+  // 跟着变的话点一下别的档就看不到了,等于把筛选入口自己关掉。
+  const shown = pick ? sorted.filter((t) => t.status === pick) : sorted;
 
   return (
     <div className="flow-screen">
@@ -95,21 +104,31 @@ export default function TasksPage() {
         ) : (
           <>
             <div className="task-summary">
-              <div className="ts-item">
-                <b>{counts.doing}</b>
-                <span>进行中</span>
-              </div>
-              <div className="ts-item">
-                <b>{counts.fixing}</b>
-                <span>待整改</span>
-              </div>
-              <div className={counts.overdue ? "ts-item warn" : "ts-item"}>
-                <b>{counts.overdue}</b>
-                <span>逾期</span>
-              </div>
+              {CAN_START.map((st) => {
+                const n = counts[st];
+                const on = pick === st;
+                return (
+                  <button
+                    key={st}
+                    className={[
+                      "ts-item",
+                      st === "逾期" && n ? "warn" : "",
+                      on ? "on" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    // 数字是 0 的那一档点了只会得到空列表,直接禁掉
+                    disabled={n === 0}
+                    onClick={() => setPick(on ? null : st)}
+                  >
+                    <b>{n}</b>
+                    <span>{st}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            {sorted.map((t) => {
+            {shown.map((t) => {
               const title = t.title || t.workContent || "巡检任务";
               const showDesc = t.workContent && !title.includes(t.workContent);
               return (

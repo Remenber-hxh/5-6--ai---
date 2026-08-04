@@ -101,6 +101,29 @@ try {
   Pop-Location
 }
 
+# 新移动端:18080 的根路径发的是 mobile-web/dist,所以每次启动都要构建一次,
+# 否则改了前端却看不到变化,或者干脆撞上"前端还没构建"的 503。
+# 构建只要 2-3 秒,不值得为省这点时间去做增量判断。
+$webDir = Join-Path $root "mobile-web"
+if (Test-Path -LiteralPath (Join-Path $webDir "package.json")) {
+  Write-Host "[前端] 构建 mobile-web ..." -ForegroundColor Cyan
+  Push-Location $webDir
+  try {
+    if (-not (Test-Path -LiteralPath (Join-Path $webDir "node_modules"))) {
+      Write-Host "  首次运行,npm install(约 1-2 分钟)..." -ForegroundColor Yellow
+      & npm install
+    }
+    & npm run build 2>&1 | Set-Content -LiteralPath (Join-Path $logs "mobile-web-build.log")
+    if ($LASTEXITCODE -ne 0) {
+      # 不 throw:后端还能起来,旧版 /old/ 也还在,总比整个起不来强
+      Write-Host "  !! mobile-web 构建失败,18080 会显示提示页;旧版仍可用 /old/" -ForegroundColor Red
+      Write-Host "     详见 $logs\mobile-web-build.log" -ForegroundColor DarkGray
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
 $aiLog = Join-Path $logs "ai-service-19100.log"
 $goLog = Join-Path $logs "go-backend-18080.log"
 
@@ -120,7 +143,8 @@ Set-Content -LiteralPath $goPid -Value $go.Id
 Start-Sleep -Seconds 2
 
 Write-Host "InspectAI Assistant started"
-Write-Host "Frontend: http://127.0.0.1:18080"
+Write-Host "新版移动端: http://127.0.0.1:18080/"
+Write-Host "旧版(备用): http://127.0.0.1:18080/old/"
 Write-Host "Backend health: http://127.0.0.1:18080/health"
 Write-Host "AI health: http://127.0.0.1:19100/health"
 Write-Host "DB driver:   $env:DB_DRIVER"
