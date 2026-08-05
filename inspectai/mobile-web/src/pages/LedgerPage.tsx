@@ -168,9 +168,18 @@ export default function LedgerPage() {
       <div className="scroll-area flow-body">
         {/* 概览四数,点击即筛选 */}
         <div className={hasFilter ? "lo-row filtering" : "lo-row"}>
-          <button className="lo-card" onClick={() => setFilter({})}>
-            <span className="lo-num">{stats.total}</span>
-            {/* total 含未巡检设备,写"已巡设备"会和列表里的未巡检行自相矛盾 */}
+          {/* 没有任何筛选时这张卡是选中态 —— 照旧版,表达"当前看的是全部"。
+              少了它,四张卡在初始状态下没有一张是亮的,选中态这个语言就没有
+              起点,用户点第一下之前不知道亮起来意味着什么。 */}
+          <button
+            className={hasFilter ? "lo-card" : "lo-card on"}
+            onClick={() => setFilter({})}
+          >
+            <span className={hasFilter ? "lo-num" : "lo-num blue"}>
+              {stats.total}
+            </span>
+            {/* 旧版这里写的是"已巡设备",但 total 含未巡检设备(现在有 2 台),
+                那个标签和列表里的"未巡检"分组自相矛盾。保留正确的说法。 */}
             <span className="lo-label">设备总数</span>
           </button>
           <button

@@ -53,6 +53,10 @@
   --brand-border: rgba(38, 126, 240, 0.22);
   --ios-green: #34c759;
   --ios-orange: #ff9500;
+  /* 旧版实测 rgb(255,59,48)。原来没有这个令牌,红色在各处硬写,
+     改一次要翻好几处。已全部收敛到这两个令牌。 */
+  --ios-red: #ff3b30;
+  --c-red-soft: rgba(255, 59, 48, 0.12);
   --ios-gray: #999999;
   --lt-bg: #ebedf0;
   --lt-card: #ffffff;
@@ -1246,7 +1250,7 @@
 }
 .fld-req {
   font-style: normal;
-  color: #ff3b30;
+  color: var(--ios-red);
   font-size: 13px;
 }
 
@@ -2087,7 +2091,7 @@ a {
   color: var(--lt-fg-2);
 }
 .ts-item.warn b {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 /* 三个数字现在是筛选开关。选中态要足够明显 —— 不然用户点完看到列表变短了,
    却不知道是自己筛的还是数据没了。 */
@@ -2106,7 +2110,7 @@ a {
   color: var(--brand);
 }
 .ts-item.on.warn b {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 /* 数字是 0 的那一档点了只会得到空列表,禁掉并压暗 */
 .ts-item:disabled {
@@ -2274,7 +2278,7 @@ a {
   height: 15px;
   line-height: 15px;
   padding: 0 4px;
-  background: #ff3b30;
+  background: var(--ios-red);
   box-shadow: 0 0 0 2px rgba(6, 17, 29, 0.9);
 }
 .link-btn .lk-badge .arco-badge-text {
@@ -2289,7 +2293,7 @@ a {
   height: 17px;
   padding: 0 5px;
   border-radius: 999px;
-  background: #ff3b30;
+  background: var(--ios-red);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -2388,7 +2392,7 @@ a {
   border: 1px solid rgba(255, 59, 48, 0.4);
   border-radius: 12px;
   background: rgba(255, 59, 48, 0.1);
-  color: #ff3b30;
+  color: var(--ios-red);
   font-size: 15px;
   font-weight: 600;
 }
@@ -2421,8 +2425,9 @@ a {
 .lo-card:active {
   transform: scale(0.97);
 }
+/* 选中态照旧版:只用淡蓝底,【不描边】。描边 + 底色两层强调叠在一起,
+   四张卡里有一张会显得比别人"重"太多。 */
 .lo-card.on {
-  border-color: var(--brand-border);
   background: var(--brand-soft);
 }
 /* 【怎么让人知道这四个数字能点】
@@ -2447,8 +2452,10 @@ a {
 .lo-num.ok {
   color: var(--ios-green);
 }
+/* 需跟进用【红】不用橙 —— 对齐旧版(实测 rgb(255,59,48))。
+   这一档是"有设备要处理",橙色读起来像提示,红色才是"去看看"。 */
 .lo-num.warn {
-  color: var(--ios-orange);
+  color: var(--ios-red);
 }
 .lo-num.blue {
   color: var(--brand);
@@ -2554,7 +2561,7 @@ a {
   opacity: 0.75;
 }
 .section-head.risk {
-  color: var(--ios-orange);
+  color: var(--ios-red);
 }
 .section-head.ok {
   color: var(--ios-green);
@@ -2917,8 +2924,8 @@ a {
   color: var(--ios-orange);
 }
 .sum-status.bad {
-  background: rgba(255, 59, 48, 0.12);
-  color: #ff3b30;
+  background: var(--c-red-soft);
+  color: var(--ios-red);
 }
 /* 行动建议:优先级色块 + 正文 + 依据 */
 .reco {
@@ -2943,8 +2950,8 @@ a {
   color: var(--lt-fg-2);
 }
 .reco-pri.high {
-  background: rgba(255, 59, 48, 0.12);
-  color: #ff3b30;
+  background: var(--c-red-soft);
+  color: var(--ios-red);
 }
 .reco-pri.medium {
   background: var(--c-orange-soft);
@@ -3201,7 +3208,7 @@ a {
   border-radius: 14px;
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
-  color: #ff3b30;
+  color: var(--ios-red);
   font-size: 16px;
   font-weight: 600;
 }
@@ -3297,7 +3304,7 @@ a {
    叠加成 -12px,角标整个飘到图标上方 12px 处 —— 就是"位置不对"的原因。
    这里只调颜色和字号,定位交给组件。 */
 .tb-badge.arco-badge {
-  background: #ff3b30;
+  background: var(--ios-red);
   height: 15px;
   line-height: 15px;
   font-size: 10px;
