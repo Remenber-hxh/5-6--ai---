@@ -1,6 +1,6 @@
 // 巡检流程 API —— 与旧版 frontend/ 走同一批后端接口,契约保持一致。
 
-import { api } from "@/api/client";
+import { api, getToken } from "@/api/client";
 
 export interface OfflineShotDTO {
   id: string;
@@ -325,19 +325,30 @@ export interface AssetSnapshotDTO {
   createdAt: string;
 }
 
-/** 按资产翻完整巡检历史(查快照表,不受记录列表窗口限制) */
+/**
+ * 按资产翻完整巡检历史(查快照表,不受记录列表窗口限制)。
+ *
+ * 【字段名对不上导致历史一直是空的】
+ * 后端这个接口返回的数组叫 `records`(handleAssetRecords),这里原来读的是
+ * `snapshots` —— 永远拿到 undefined,于是设备详情页对一台巡检过 24 次的电梯
+ * 也显示"暂无历史记录"。
+ *
+ * 这类错不会报错也不会白屏:字段取不到就是 undefined,`|| []` 一兜底,页面
+ * 看起来"正常地空着"。数组里每一项的结构其实是完全对得上的,只有外层这一
+ * 个键名不同。
+ */
 export async function listAssetRecords(
   id: string,
   page = 1,
   signal?: AbortSignal,
 ): Promise<{ snapshots: AssetSnapshotDTO[]; totalPages: number }> {
   const body = await api<{
-    snapshots: AssetSnapshotDTO[] | null;
+    records: AssetSnapshotDTO[] | null;
     totalPages?: number;
   }>(`/api/assets/${encodeURIComponent(id)}/records?page=${page}&pageSize=20`, {
     signal,
   });
-  return { snapshots: body.snapshots || [], totalPages: body.totalPages || 1 };
+  return { snapshots: body.records || [], totalPages: body.totalPages || 1 };
 }
 
 // ===== 数据修改审批 =====
@@ -398,4 +409,50 @@ export async function uploadMyAvatar(blob: Blob): Promise<string> {
     body: fd,
   });
   return String(body.avatar || "");
+}
+
+/**
+ * 发起数据修改申请。
+ *
+ * 【为什么目标可以是记录也可以是资产】
+ * 申请修改的本质是纠正"这次巡检填错/AI 认错的字段",所以默认目标是【最近
+ * 一次巡检记录】而不是资产台账 —— 改记录会连带把台账重算,改台账只是主管
+ * 直接改状态、不留巡检依据。旧版同一口径(app.js:1935)。
+ *
+ * patch.fields 只放【改动过】的字段:全量提交的话审批的人看不出来动了什么,
+ * 得自己逐项比对。
+ */
+export async function createChangeRequest(body: {
+  targetType: "record" | "asset";
+  targetId: string;
+  patch: Record<string, unknown>;
+  reason: string;
+}) {
+  return api("/api/change-requests", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * 补交照片:先传到临时目录拿 tmpDir + imageIds,再随 patch.addImages 一起提交。
+ * 审批通过后后端才把它们并入那次巡检 —— 没通过的照片不会污染巡检证据。
+ */
+export async function uploadDraftPhotos(
+  files: File[],
+): Promise<{ tmpDir: string; imageIds: string[] }> {
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  const res = await fetch("/api/change-requests/draft-photos", {
+    method: "POST",
+    headers: { "X-InspectAI-Token": getToken() },
+    body: fd,
+  });
+  const text = await res.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!res.ok) throw new Error(body.message || "照片上传失败");
+  return {
+    tmpDir: String(body.tmpDir || ""),
+    imageIds: ((body.files as { id: string }[]) || []).map((f) => f.id),
+  };
 }

@@ -30,3 +30,6 @@ export { FilterBar } from "./FilterBar";
 export type { FilterGroup } from "./FilterBar";
 export { SwipeAction } from "./SwipeAction";
 export { Sticky } from "./Sticky";
+export { Popup } from "./Popup";
+export { Textarea } from "./Textarea";
+export { Tag } from "./Tag";

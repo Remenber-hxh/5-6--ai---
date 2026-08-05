@@ -1,5 +1,7 @@
 import { Toast } from "@/ui";
 import { useEffect, useState } from "react";
+
+import ChangeRequestSheet from "@/components/ChangeRequestSheet";
 import { useNavigate, useParams } from "react-router-dom";
 
 import CenterLoading from "@/components/CenterLoading";
@@ -21,6 +23,7 @@ export default function AssetDetailPage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
   const [page, setPage] = useState(1);
+  const [crOpen, setCrOpen] = useState(false);
 
   // 换设备(id 变)时 useResource 会作废上一次的飞行请求 —— 原来没有这层,
   // 快速连点两台设备可能被先发后到的旧响应盖掉
@@ -109,6 +112,12 @@ export default function AssetDetailPage() {
           )}
         </div>
 
+        {/* 申请修改:旧版有、新版一直缺的发起端。审批闭环原来是断的 ——
+            主管能批能驳,巡检员却发不出申请,发现填错了只能找人口头说。 */}
+        <button className="ad-action" onClick={() => setCrOpen(true)}>
+          申请修改
+        </button>
+
         {/* 巡检历史 */}
         <div className="ad-title">巡检历史</div>
         {snaps.length === 0 ? (
@@ -134,6 +143,16 @@ export default function AssetDetailPage() {
           </button>
         )}
       </div>
+
+      {asset && (
+        <ChangeRequestSheet
+          visible={crOpen}
+          onClose={() => setCrOpen(false)}
+          asset={asset}
+          history={snaps}
+          onSubmitted={() => nav("/approvals")}
+        />
+      )}
     </div>
   );
 }
