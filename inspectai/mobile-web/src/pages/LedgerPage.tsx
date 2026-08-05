@@ -3,9 +3,9 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import EmptyState from "@/components/EmptyState";
-import AssetTypeIcon from "@/components/AssetTypeIcon";
+import AssetRow from "@/components/AssetRow";
 import FlowHeader from "@/components/FlowHeader";
-import StatusTag from "@/components/StatusTag";
+import SectionHeader from "@/components/SectionHeader";
 import { AssetDTO, listAssets } from "@/api/inspection";
 import { useResource } from "@/hooks/useResource";
 
@@ -20,9 +20,12 @@ import { useResource } from "@/hooks/useResource";
  */
 const RISK_STATUS = ["异常", "待复核", "待维修"];
 
-function groupAssets(
-  list: AssetDTO[],
-): { key: string; title: string; items: AssetDTO[] }[] {
+function groupAssets(list: AssetDTO[]): {
+  key: string;
+  title: string;
+  tone: "risk" | "ok" | "muted";
+  items: AssetDTO[];
+}[] {
   const risk: AssetDTO[] = [];
   const ok: AssetDTO[] = [];
   const never: AssetDTO[] = [];
@@ -31,10 +34,11 @@ function groupAssets(
     else if (a.lastStatus === "正常") ok.push(a);
     else never.push(a);
   }
+  // tone 决定分组标题那个圆点的颜色 —— 一页两三组,靠颜色定位比读字快
   return [
-    { key: "risk", title: `需跟进 ${risk.length}`, items: risk },
-    { key: "ok", title: `健康 ${ok.length}`, items: ok },
-    { key: "never", title: `未巡检 ${never.length}`, items: never },
+    { key: "risk", title: "需跟进", tone: "risk" as const, items: risk },
+    { key: "ok", title: "健康", tone: "ok" as const, items: ok },
+    { key: "never", title: "未巡检", tone: "muted" as const, items: never },
   ].filter((g) => g.items.length > 0);
 }
 
@@ -42,15 +46,6 @@ function groupAssets(
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function fmtDate(iso?: string): string {
-  if (!iso) return "未巡检";
-  const d = new Date(iso);
-  // Go 零值时间(0001-01-01)解析出来年份是 1,之前没防 —— 从未巡检的设备
-  // 行尾全挂着一个"12/31"。年份异常一律按未巡检处理。
-  if (Number.isNaN(d.getTime()) || d.getFullYear() < 2000) return "未巡检";
-  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 /**
@@ -245,49 +240,21 @@ export default function LedgerPage() {
             groupAssets(shown).map((g) => (
               <section className="asset-group" key={g.key}>
                 <Sticky topOffset={0}>
-                  <div className={`asset-section ${g.key}`}>{g.title}</div>
+                  <SectionHeader
+                    title={g.title}
+                    count={g.items.length}
+                    tone={g.tone}
+                  />
                 </Sticky>
                 <div className="asset-card">
-                  {g.items.map((a) => {
-                    const cover = coverURL(a);
-                    return (
-                      <button
-                        className="asset-row"
-                        key={a.id}
-                        onClick={() =>
-                          nav(`/asset/${encodeURIComponent(a.id)}`)
-                        }
-                      >
-                        {/* 旧版每行有设备封面图,重构时丢了。状态由右侧标签表达,不再另画圆点 */}
-                        {cover ? (
-                          <img
-                            className="ar-cover"
-                            src={cover}
-                            alt=""
-                            loading="lazy"
-                          />
-                        ) : (
-                          // 没有封面照就出类型图标。空灰框占了 63% 的行,
-                          // 看着像图挂了;类型图标至少能帮人认出这是台什么设备。
-                          <span className="ar-cover ar-cover-icon" aria-hidden>
-                            <AssetTypeIcon type={a.assetType} />
-                          </span>
-                        )}
-                        <span className="ar-main">
-                          <span className="ar-name">{a.assetName}</span>
-                          <span className="ar-sub">
-                            {/* 原来第一段是项目名,可整页设备都在同一个项目,
-                              等于白占位置。换成设备类型:既有信息量,又能把
-                              「K07」和「K7」这种只差一个字符的设备分开。 */}
-                            {a.assetType || a.project || "—"} · 巡检{" "}
-                            {a.inspectionCount} 次 ·{" "}
-                            {fmtDate(a.lastInspectedAt)}
-                          </span>
-                        </span>
-                        <StatusTag text={a.lastStatus || "未巡检"} />
-                      </button>
-                    );
-                  })}
+                  {g.items.map((a) => (
+                    <AssetRow
+                      key={a.id}
+                      asset={a}
+                      cover={coverURL(a)}
+                      onClick={() => nav(`/asset/${encodeURIComponent(a.id)}`)}
+                    />
+                  ))}
                 </div>
               </section>
             ))
