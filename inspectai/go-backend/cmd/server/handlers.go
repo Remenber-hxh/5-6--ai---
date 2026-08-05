@@ -1908,7 +1908,18 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
 		return
 	}
-	writeJSON(w, http.StatusOK, sanitizeRecordForCurrentTemplate(rec))
+	out := sanitizeRecordForCurrentTemplate(rec)
+	// 设备编号的候选每次读都重算,不吃建记录时那份快照。
+	//
+	// 快照的问题:记录建好之后管理员才在台账里加了这台设备,巡检员打开填报页
+	// 就是选不到它,只能手打——而手打出一个字母之差就会在台账里多出一台设备,
+	// 正是这个下拉要防的事。
+	//
+	// 这里每次 GET 多一次 ListAssets。填报页轮询识别结果时 2 秒一次,
+	// 十几秒的识别期间多几次查询——几十台设备的量级,不值得为此加缓存;
+	// 真到几千台再说,那时该做的是给 ListAssets 加类型过滤而不是缓存。
+	s.fillAssetNoOptions(out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, recordID string) {

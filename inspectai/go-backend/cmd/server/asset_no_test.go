@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,5 +85,75 @@ func TestAssetTypeMapsToSingleTemplate(t *testing.T) {
 			continue
 		}
 		owner[at] = tpl.ID
+	}
+}
+
+// 设备编号候选必须每次读都重算，并且不能弄丢已经填好的值。
+//
+// 两条都来自真实场景：
+//   1. 记录建好【之后】管理员才在台账里加了这台设备。若候选只在建记录时
+//      算一次，巡检员就是选不到它，只能手打 —— 手打差一个字母，台账里就多
+//      一台设备，正是这个下拉要防的事。
+//   2. 巡检员填的是台账里还没有的新设备（或那台设备后来被改名/删了）。
+//      刷新候选时若不把当前值并回去，他打开下拉会发现自己填的编号不在列表里，
+//      想确认一下都选不回来。
+func TestAssetNoOptionsRefreshAndKeepCurrentValue(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "assetno.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	srv := &Server{store: store}
+
+	tpl, ok := templateByID("elevator_machine_room")
+	if !ok {
+		t.Fatal("找不到有机房电梯模板")
+	}
+	mkRec := func(value string) *Record {
+		rec := &Record{
+			ID: "rec_t", TenantID: defaultTenantID, Project: "会议中心",
+			TemplateID: tpl.ID, Fields: initialFieldValues(tpl, "巡检员"),
+		}
+		for i := range rec.Fields {
+			if rec.Fields[i].Code == "asset_no" {
+				rec.Fields[i].Value = value
+			}
+		}
+		return rec
+	}
+	assetNo := func(rec *Record) *FieldValue {
+		f, _ := fieldByCode(rec.Fields, "asset_no")
+		return f
+	}
+
+	// 台账为空 → 保持输入框，不能挡住新设备
+	rec := mkRec("")
+	srv.fillAssetNoOptions(rec)
+	if got := assetNo(rec); len(got.Options) != 0 || got.Kind != "text" {
+		t.Fatalf("台账为空时应保持手填，得到 kind=%s options=%v", got.Kind, got.Options)
+	}
+
+	// 台账后加的设备，必须在下一次读时就出现
+	if err := store.CreateAsset(&AssetEntry{
+		ID: "a1", TenantID: defaultTenantID, Project: "会议中心",
+		AssetName: "K01", AssetType: tpl.AssetType, TemplateID: tpl.ID,
+	}); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	rec = mkRec("")
+	srv.fillAssetNoOptions(rec)
+	if got := assetNo(rec); got.Kind != "choice" || len(got.Options) != 1 || got.Options[0] != "K01" {
+		t.Fatalf("新加的设备没进候选：kind=%s options=%v", got.Kind, got.Options)
+	}
+
+	// 已填的新设备编号（台账里没有）必须留在候选里
+	rec = mkRec("K99-新装")
+	srv.fillAssetNoOptions(rec)
+	got := assetNo(rec)
+	if !slices.Contains(got.Options, "K99-新装") {
+		t.Fatalf("已填的值被刷没了：options=%v", got.Options)
+	}
+	if !slices.Contains(got.Options, "K01") {
+		t.Fatalf("台账里的设备丢了：options=%v", got.Options)
 	}
 }

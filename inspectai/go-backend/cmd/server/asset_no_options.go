@@ -70,6 +70,16 @@ func (s *Server) fillAssetNoOptions(rec *Record) {
 		seen[name] = true
 		opts = append(opts, name)
 	}
+	// 已经填了的值必须留在选项里。
+	//
+	// 两种情况会让它不在台账候选里:一是新设备(台账里还没有,巡检员手填的),
+	// 二是这条记录建好后那台设备被改名或删了。这时如果不并进去,巡检员打开
+	// 下拉会发现自己填的那个编号不在列表里 —— 想确认一下都选不回来,
+	// 只能改成别的。宁可多一个选项,不能让人丢掉已经填对的值。
+	if cur := strings.TrimSpace(rec.Fields[idx].Value); cur != "" && !seen[cur] {
+		opts = append(opts, cur)
+	}
+
 	if len(opts) == 0 {
 		return
 	}
