@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import EmptyState from "@/components/EmptyState";
+import AssetTypeIcon from "@/components/AssetTypeIcon";
 import FlowHeader from "@/components/FlowHeader";
 import StatusTag from "@/components/StatusTag";
 import { AssetDTO, listAssets } from "@/api/inspection";
@@ -170,9 +171,8 @@ export default function LedgerPage() {
       <FlowHeader title="设备健康" onBack={() => nav("/")} />
 
       <div className="scroll-area flow-body">
-        <p className="flow-caption">共 {stats.total} 台设备</p>
         {/* 概览四数,点击即筛选 */}
-        <div className="lo-row">
+        <div className={hasFilter ? "lo-row filtering" : "lo-row"}>
           <button className="lo-card" onClick={() => setFilter({})}>
             <span className="lo-num">{stats.total}</span>
             {/* total 含未巡检设备,写"已巡设备"会和列表里的未巡检行自相矛盾 */}
@@ -247,36 +247,48 @@ export default function LedgerPage() {
                 <Sticky topOffset={0}>
                   <div className={`asset-section ${g.key}`}>{g.title}</div>
                 </Sticky>
-                {g.items.map((a) => {
-                  const cover = coverURL(a);
-                  return (
-                    <button
-                      className="asset-row"
-                      key={a.id}
-                      onClick={() => nav(`/asset/${encodeURIComponent(a.id)}`)}
-                    >
-                      {/* 旧版每行有设备封面图,重构时丢了。状态由右侧标签表达,不再另画圆点 */}
-                      {cover ? (
-                        <img
-                          className="ar-cover"
-                          src={cover}
-                          alt=""
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span className="ar-cover ar-cover-empty" aria-hidden />
-                      )}
-                      <span className="ar-main">
-                        <span className="ar-name">{a.assetName}</span>
-                        <span className="ar-sub">
-                          {a.project || "—"} · 巡检 {a.inspectionCount} 次 ·{" "}
-                          {fmtDate(a.lastInspectedAt)}
+                <div className="asset-card">
+                  {g.items.map((a) => {
+                    const cover = coverURL(a);
+                    return (
+                      <button
+                        className="asset-row"
+                        key={a.id}
+                        onClick={() =>
+                          nav(`/asset/${encodeURIComponent(a.id)}`)
+                        }
+                      >
+                        {/* 旧版每行有设备封面图,重构时丢了。状态由右侧标签表达,不再另画圆点 */}
+                        {cover ? (
+                          <img
+                            className="ar-cover"
+                            src={cover}
+                            alt=""
+                            loading="lazy"
+                          />
+                        ) : (
+                          // 没有封面照就出类型图标。空灰框占了 63% 的行,
+                          // 看着像图挂了;类型图标至少能帮人认出这是台什么设备。
+                          <span className="ar-cover ar-cover-icon" aria-hidden>
+                            <AssetTypeIcon type={a.assetType} />
+                          </span>
+                        )}
+                        <span className="ar-main">
+                          <span className="ar-name">{a.assetName}</span>
+                          <span className="ar-sub">
+                            {/* 原来第一段是项目名,可整页设备都在同一个项目,
+                              等于白占位置。换成设备类型:既有信息量,又能把
+                              「K07」和「K7」这种只差一个字符的设备分开。 */}
+                            {a.assetType || a.project || "—"} · 巡检{" "}
+                            {a.inspectionCount} 次 ·{" "}
+                            {fmtDate(a.lastInspectedAt)}
+                          </span>
                         </span>
-                      </span>
-                      <StatusTag text={a.lastStatus || "未巡检"} />
-                    </button>
-                  );
-                })}
+                        <StatusTag text={a.lastStatus || "未巡检"} />
+                      </button>
+                    );
+                  })}
+                </div>
               </section>
             ))
           )}
