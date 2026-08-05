@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // 设备编号必须是人填的，AI 不能碰。
 //
@@ -54,5 +57,31 @@ func TestAssetNoIsNeverFilledByAI(t *testing.T) {
 		if f.Code == "inspection_time" && f.Value != "2026-08-04 10:00" {
 			t.Fatalf("普通字段没有被 AI 填上(value=%q)，测试本身可能失效了", f.Value)
 		}
+	}
+}
+
+// 守住 fillAssetNoOptions 依赖的前提:模板与 assetType 一一对应。
+//
+// 为什么这条要单独测:fillAssetNoOptions 按 assetType 取候选编号,而提交时
+// 资产主键 assetIDFor() 是 project+templateID+asset_no —— 带 templateID。
+// 两者口径只有在"一个 assetType 只属于一个模板"时才等价。一旦有人给两个
+// 模板配了同一个 assetType,巡检员就会在下拉里看到另一个模板的设备编号,
+// 选中提交后台账里会多出一台重复设备,而不是挂到原来那台上。
+// 那种错在台账上很难查(两台设备名字一模一样),所以在这里拦住。
+func TestAssetTypeMapsToSingleTemplate(t *testing.T) {
+	owner := map[string]string{}
+	for _, tpl := range reportTemplates() {
+		at := strings.TrimSpace(tpl.AssetType)
+		if at == "" {
+			continue
+		}
+		if prev, dup := owner[at]; dup {
+			t.Errorf("assetType %q 同时属于模板 %s 和 %s —— "+
+				"设备编号下拉会跨模板串台,提交后台账会多出重复设备。"+
+				"要么给它们不同的 assetType,要么把 fillAssetNoOptions 改成按 templateID 取",
+				at, prev, tpl.ID)
+			continue
+		}
+		owner[at] = tpl.ID
 	}
 }
