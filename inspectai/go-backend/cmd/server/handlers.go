@@ -1250,17 +1250,35 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "项目 / 编号 / 名称 均不能为空")
 		return
 	}
+	// 模板段决定这台设备的身份能不能和巡检记录对上。
+	//
+	// 后台的新建表单【没有模板这一项】,所以 req.TemplateID 永远是空。原来这里
+	// 直接填 "manual",于是手工建的资产是 项目::manual::编号,而它一被巡检,
+	// 记录算出的是 项目::真实模板::编号 —— 两条,必然重复。线上"新建的资产
+	// 大多数都重了"就是这么来的。
+	//
+	// 表单里有"设备类型",而类型和模板一一对应(TestAssetTypeMapsToSingleTemplate
+	// 守着),从类型反推即可,不用让用户多填一项。
 	tplPart := strings.TrimSpace(req.TemplateID)
 	if tplPart == "" {
+		tplPart = templateIDForAssetType(req.AssetType)
+	}
+	if tplPart == "" {
+		// 类型也认不出来(自定义类型)。仍然落 manual,但这台设备将来被巡检时
+		// 会靠 resolveAssetIdentity 按名字回查挂上去,不会再裂。
 		tplPart = "manual"
 	}
 	asset := &AssetEntry{
-		ID:          req.Project + "::" + tplPart + "::" + req.AssetKey,
+		// 编号必须过 sanitizeAssetIdent —— 巡检路径(assetIDFor)是过的,
+		// 这里不过的话,编号里有空格/斜杠时两边算出的 ID 不一样。
+		ID:          req.Project + "::" + tplPart + "::" + sanitizeAssetIdent(req.AssetKey),
 		TenantID:    s.tenantForRequest(r), // 新资产打上创建者所属租户
 		Project:     req.Project,
 		ProjectCode: req.Project,
 		PointID:     strings.TrimSpace(req.PointID),
-		TemplateID:  strings.TrimSpace(req.TemplateID),
+		// 存反推出来的模板,不是原始的空值 —— 否则台账里这台设备没有模板,
+		// 后续按模板筛选/匹配都会漏掉它。
+		TemplateID:  tplPart,
 		AssetType:   req.AssetType,
 		AssetKey:    req.AssetKey,
 		AssetName:   req.AssetName,
@@ -2386,6 +2404,13 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 	rec.Submitted = true
 	rec.SubmittedAt = &now
 	assets := buildAssets(rec, now)
+	// 优先挂到【已有】资产上,而不是按编号算出一个新 ID 就建新档。
+	//
+	// 编号是最容易不一致的东西:AI 读错过、后台改过名(改名只动 asset_name、
+	// 不动 id)、手工建档时模板段是 "manual"。任何一种不一致都会让同一台设备
+	// 在台账里裂成两条 —— 线上 71 台里十几台是这么来的。
+	// 见 asset_identity.go 的说明。
+	s.reuseExistingAssetIdentity(s.tenantForRequest(r), assets)
 	// P0-6 原子写入:日报/资产/快照/观测同事务,失败整体回滚,杜绝"日报已提交但快照漏写"
 	snaps, obs := buildRecordObservations(rec, assets, now)
 	if err := s.store.SubmitRecordWithAssets(rec, assets, snaps, obs); err != nil {
