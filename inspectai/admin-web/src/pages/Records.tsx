@@ -205,14 +205,24 @@ export default function Records() {
             </div>
             {!!current.images?.length && (
               <Image.PreviewGroup>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 4px" }}>
-                  {current.images.slice(0, 6).map((img, i) => (
+                <div style={{ fontSize: 12, color: "#888", margin: "12px 0 4px" }}>
+                  巡检照片 · {current.images.length} 张
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                  {/* 【不要再截断】这里原来是 images.slice(0, 6) —— 一次巡检拍 13 张,
+                      后台只显示 6 张,而且它套在 PreviewGroup 里,点开大图也翻不到
+                      第 7 张。照片是巡检的证据,复核的人必须能看全。
+                      82px 的缩略图换行排,13 张也就三行。 */}
+                  {current.images.map((img, i) => (
                     <Image
                       key={i}
                       width={82}
                       height={82}
                       style={{ objectFit: "cover", borderRadius: 6 }}
-                      src={mediaUrl(img.path || img.url)}
+                      /* 列表位只有 82px,却下原图(单张可达数百 KB)。?w=240 让后端
+                         出小图,点开大图时 PreviewGroup 用的仍是 preview 里的原图。 */
+                      src={mediaUrl(img.path || img.url) + "?w=240"}
+                      preview={{ src: mediaUrl(img.path || img.url) }}
                     />
                   ))}
                 </div>
