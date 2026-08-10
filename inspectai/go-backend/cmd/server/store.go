@@ -33,6 +33,11 @@ type RecordStore interface {
 	UpdateRecord(rec *Record) error
 	ListRecords(tenantID string, limit int) ([]*Record, error)
 	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+	// UpdateAssetInspectionCount 直接把巡检次数改成给定值。
+	// 回填补建的设备走 INSERT,次数被写成 1;这里按真实记录数纠正 ——
+	// 否则台账显示"巡检 1 次"而详情页里躺着十几条历史,自相矛盾。
+	UpdateAssetInspectionCount(tenantID, id string, count int) (int64, error)
+
 	// DeleteDraftRecord 删除【未提交】的记录及其关联行,并把当初认领的离线照片
 	// 放回待处理。已提交的记录是台账证据,这里一律拒绝 —— 要撤销走审批流。
 	// 记录已提交时返回 errRecordSubmitted,不存在/跨租户返回 sql.ErrNoRows。
@@ -329,6 +334,18 @@ func (s *MemStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *MemStore) UpdateAssetInspectionCount(tenantID, id string, count int) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.assets[id]
+	if !ok || a.TenantID != tenantID {
+		return 0, nil // 跨租户/不存在:影响 0 行,不算错
+	}
+	a.InspectionCount = count
+	a.UpdatedAt = time.Now()
+	return 1, nil
 }
 
 func (s *MemStore) DeleteDraftRecord(tenantID, id string) error {
@@ -1309,6 +1326,17 @@ func (s *SQLiteStore) ListRecords(tenantID string, limit int) ([]*Record, error)
 // errRecordSubmitted 已提交的记录不允许删除。它是台账证据,而且已经写进了
 // 资产快照和字段观测 —— 删掉会让台账对不上账。要撤销请走审批流。
 var errRecordSubmitted = errors.New("record already submitted")
+
+func (s *SQLiteStore) UpdateAssetInspectionCount(tenantID, id string, count int) (int64, error) {
+	res, err := s.db.Exec(
+		`UPDATE assets SET inspection_count=?, updated_at=? WHERE id=? AND tenant_id=?`,
+		count, nowStamp(), id, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
 
 func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) error {
 	tx, err := s.db.Begin()

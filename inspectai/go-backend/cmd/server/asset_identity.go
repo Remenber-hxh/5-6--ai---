@@ -141,3 +141,13 @@ func (s *Server) reuseExistingAssetIdentity(tenantID string, assets []*AssetEntr
 		}
 	}
 }
+
+// assetBackfillMaxRecords 启动回填一次扫多少条记录。
+//
+// 【为什么要有这么个数,而不是"全部"】ListRecords 的 limit<=0 会被当成默认
+// 100 条,所以不能靠传 0 表达"不限"。而真正无上限地把记录全读进内存,记录量
+// 涨上去之后会变成启动时的一次内存尖峰。
+//
+// 10 万条对这个项目远超实际量级(线上目前 600 条),同时把内存占用限在可控
+// 范围。撞到上限会打 WARN —— 那说明该把回填改成分页扫描了。
+const assetBackfillMaxRecords = 100000

@@ -946,31 +946,90 @@ func (s *Server) loadAssetsForDisplay(tenantID string) ([]*AssetEntry, error) {
 	return visible, nil
 }
 
+// ensureAssetLedgerFromRecords 启动时从巡检记录补建缺失的台账条目。
+//
+// 【这个函数造过两类脏数据,改法都写在这里】
+//
+// 一、每次重启都长出重复设备
+// 原来它直接拿 buildAssets 算出的 ID 去查"存在吗",不存在就插。而那个 ID 是
+// 项目::模板::编号 —— 模板是【这次巡检用了哪个模板】,AI 认错一次就换一个。
+// 同一台 K07 有 48 条记录走"有机房电梯"、2 条走"无机房电梯",于是台账里就是
+// 两条。删掉一条,下次重启又按记录算出来、又插回去 —— 手工清理根本守不住。
+// 现在先过 resolveAssetIdentity(与提交路径同一套口径),能挂到已有设备上的
+// 就不再新建。
+//
+// 二、巡检次数永远是 1
+// 新建走的是 UpsertAsset,而那条 SQL 是 INSERT ... VALUES(..., 1, ...)。
+// 于是回填出来的设备不管实际有多少条记录,次数都显示 1。线上 K06 显示 1 次、
+// 实际 20 次,就是这么来的。现在按这台设备真实的记录条数写。
+//
+// 【为什么扫全部而不是最近 500 条】
+// 原来限 500。线上已提交记录 507 条时,最早那批的资产永远补不回来 —— 而且
+// "补不回来"这件事没有任何提示,台账就是静悄悄少几台。补建是启动时跑一次的
+// 冷路径,全扫一遍的代价可以接受。
 func (s *Server) ensureAssetLedgerFromRecords() error {
 	// 启动时台账重建,无请求上下文;单租户过渡期按默认租户。
-	records, err := s.store.ListRecords(defaultTenantID, 500)
+	// 【不能传 0】ListRecords 把 limit<=0 当成"默认 100"(store.go),传 0 反而
+	// 比原来的 500 还少。这个坑在 ListOfflineShots 上已经栽过一次(角标数字
+	// 比页面少 14 张),这里显式给上限。
+	records, err := s.store.ListRecords(defaultTenantID, assetBackfillMaxRecords)
 	if err != nil {
 		return err
 	}
+	if len(records) >= assetBackfillMaxRecords {
+		// 真撞到上限说明记录量超出了这个冷路径的设计范围,该改成分页扫描。
+		// 不静默截断 —— 静默截断的后果是台账少几台而没人知道。
+		log.Printf("WARN: 台账回填扫描达到上限 %d 条,更早的记录未参与补建", assetBackfillMaxRecords)
+	}
+	existing, err := s.store.ListAssets(defaultTenantID)
+	if err != nil {
+		return err
+	}
+	known := make(map[string]bool, len(existing))
+	for _, a := range existing {
+		if a != nil {
+			known[a.ID] = true
+		}
+	}
+
 	latestByAssetID := map[string]*AssetEntry{}
+	recordCount := map[string]int{} // 资产 ID -> 记录条数,用来写真实巡检次数
 	for _, rec := range records {
 		if rec == nil || !rec.Submitted {
 			continue
 		}
 		for _, asset := range buildAssets(rec, assetLedgerTime(rec)) {
-			if _, exists := latestByAssetID[asset.ID]; exists {
-				continue
+			// 先看能不能挂到已有设备上(改名分家、手工建档的 manual:: 等),
+			// 挂得上就不算新设备。existing 是循环外查的一份,回填过程中
+			// 新插入的不在里面 —— 所以下面还要用 latestByAssetID 兜一层。
+			if id := resolveAssetIdentity(existing, asset.Project, asset.TemplateID, asset.AssetKey); id != "" {
+				asset.ID = id
+				if tplPart := assetIDTemplatePart(id); tplPart != "" {
+					asset.TemplateID = tplPart
+				}
+			}
+			recordCount[asset.ID]++
+			if _, dup := latestByAssetID[asset.ID]; dup {
+				continue // ListRecords 按时间倒序,先见到的就是最新的那条
 			}
 			latestByAssetID[asset.ID] = asset
 		}
 	}
+
 	for id, asset := range latestByAssetID {
-		// 启动时台账重建,无请求上下文;单租户过渡期按默认租户查存在性。
-		if existing, err := s.store.GetAsset(defaultTenantID, id); err == nil && existing != nil {
-			continue
+		if known[id] {
+			continue // 台账里已经有了,回填不碰它(它的状态由提交流维护)
 		}
 		if err := s.store.UpsertAsset(asset); err != nil {
 			return fmt.Errorf("backfill asset %s: %w", id, err)
+		}
+		// UpsertAsset 的 INSERT 把次数写成 1。补建的设备实际有多少条记录就写多少,
+		// 否则台账上"巡检 1 次"和详情页里十几条历史自相矛盾。
+		if n := recordCount[id]; n > 1 {
+			if _, err := s.store.UpdateAssetInspectionCount(defaultTenantID, id, n); err != nil {
+				// 次数不对不该让服务起不来:台账条目本身已经建好了
+				log.Printf("WARN: 回填设备 %s 的巡检次数失败: %v", id, err)
+			}
 		}
 	}
 	return nil
