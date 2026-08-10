@@ -68,9 +68,9 @@ func TestBackfillCountsRealRecordsNotOne(t *testing.T) {
 		}
 		t.Fatalf("5 条同一台设备的记录应只回填出 1 台，得到 %d 台", len(assets))
 	}
-	if assets[0].InspectionCount != 5 {
-		t.Fatalf("巡检次数应为真实记录数 5，得到 %d —— 又被写成常量了", assets[0].InspectionCount)
-	}
+	// 注意:这里【不】断言 InspectionCount。那一列已废弃、回填不再维护它。
+	// 巡检次数由 enrichAssetForDisplay 数快照现算,由
+	// TestInspectionCountIsDerivedNotStored 覆盖。
 }
 
 // 重启不能长出新设备:连跑两次回填，结果必须完全一样。
@@ -154,8 +154,11 @@ func TestInspectionCountIsDerivedNotStored(t *testing.T) {
 	}
 	id := assets[0].ID
 
-	// 人为把存量计数器改成一个错的值 —— 现算就该无视它
-	if _, err := store.UpdateAssetInspectionCount(defaultTenantID, id, 999); err != nil {
+	// 人为把那个已废弃的列改成一个错的值 —— 现算就该完全无视它。
+	// 直接写 SQL 而不是走 store 方法:store 里已经没有任何写这一列的入口了
+	// (这正是本次清理的目的),测试要模拟"库里躺着历史脏值"只能绕过去。
+	if _, err := store.db.Exec(
+		`UPDATE assets SET inspection_count=999 WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
 

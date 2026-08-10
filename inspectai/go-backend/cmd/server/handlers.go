@@ -971,9 +971,9 @@ func (s *Server) loadAssetsForDisplay(tenantID string) ([]*AssetEntry, error) {
 // 就不再新建。
 //
 // 二、巡检次数永远是 1
-// 新建走的是 UpsertAsset,而那条 SQL 是 INSERT ... VALUES(..., 1, ...)。
-// 于是回填出来的设备不管实际有多少条记录,次数都显示 1。线上 K06 显示 1 次、
-// 实际 20 次,就是这么来的。现在按这台设备真实的记录条数写。
+// 新建走的是 UpsertAsset,而那条 SQL 把 inspection_count 写成常量 1。线上 K06
+// 显示 1 次、实际 20 次就是这么来的。现在巡检次数改成【读时现算】(数快照,
+// 见 enrichAssetForDisplay),这一列已废弃,回填不再关心它。
 //
 // 【为什么扫全部而不是最近 500 条】
 // 原来限 500。线上已提交记录 507 条时,最早那批的资产永远补不回来 —— 而且
@@ -1005,7 +1005,6 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 	}
 
 	latestByAssetID := map[string]*AssetEntry{}
-	recordCount := map[string]int{} // 资产 ID -> 记录条数,用来写真实巡检次数
 	for _, rec := range records {
 		if rec == nil || !rec.Submitted {
 			continue
@@ -1020,7 +1019,6 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 					asset.TemplateID = tplPart
 				}
 			}
-			recordCount[asset.ID]++
 			if _, dup := latestByAssetID[asset.ID]; dup {
 				continue // ListRecords 按时间倒序,先见到的就是最新的那条
 			}
@@ -1034,14 +1032,6 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 		}
 		if err := s.store.UpsertAsset(asset); err != nil {
 			return fmt.Errorf("backfill asset %s: %w", id, err)
-		}
-		// UpsertAsset 的 INSERT 把次数写成 1。补建的设备实际有多少条记录就写多少,
-		// 否则台账上"巡检 1 次"和详情页里十几条历史自相矛盾。
-		if n := recordCount[id]; n > 1 {
-			if _, err := s.store.UpdateAssetInspectionCount(defaultTenantID, id, n); err != nil {
-				// 次数不对不该让服务起不来:台账条目本身已经建好了
-				log.Printf("WARN: 回填设备 %s 的巡检次数失败: %v", id, err)
-			}
 		}
 	}
 	return nil
@@ -1788,15 +1778,33 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 	return &clean
 }
 
+// 记录列表默认返回多少条,以及单次最多允许多少条。
+//
+// 上限存在的理由:一条记录带 fields_json / images_json,线上实测全量 654 KB。
+// 不设上限的话,一个 ?limit=999999 就能让后端一次序列化整库。
+const (
+	recordListDefaultLimit = 100
+	recordListMaxLimit     = 500
+)
+
 func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
+	// 【原来这里写死 100,而且完全不读查询参数】前端传 ?limit= 是摆设 ——
+	// admin-web 拿到的永远是最新 100 条、654 KB,想翻更早的记录没有任何办法。
+	limit := recordListDefaultLimit
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = min(n, recordListMaxLimit)
+		}
+	}
+
 	var records []*Record
 	var err error
 	if s.hasSupervisorAccess(r) {
-		records, err = s.store.ListRecords(s.tenantForRequest(r), 100)
+		records, err = s.store.ListRecords(s.tenantForRequest(r), limit)
 	} else if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, 100)
+		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, limit)
 	} else if s.localNoAuthAllowed(r) {
-		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), "", userName(r), "", 100)
+		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), "", userName(r), "", limit)
 	} else {
 		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
 		return
@@ -1805,7 +1813,13 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_records_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"records": sanitizeRecordsForCurrentTemplates(records)})
+	out := sanitizeRecordsForCurrentTemplates(records)
+	// 把口径回给调用方:拿到 limit 条时无从判断"是正好这么多,还是被截断了"。
+	writeJSON(w, http.StatusOK, map[string]any{
+		"records":   out,
+		"limit":     limit,
+		"truncated": len(out) >= limit,
+	})
 }
 
 func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
