@@ -55,6 +55,13 @@ type OfflineShotStore interface {
 	// CountPendingOfflineShots 未成单照片数。走 COUNT(*),不把行拉回来 ——
 	// 底栏角标只要一个数字。
 	CountPendingOfflineShots(tenantID, userID string) (int, error)
+	// OfflineShotsByIDs 按 ID 精确取照片。
+	//
+	// 【为什么不能"先列一批再筛"】原来的做法是 ListOfflineShots(…, 500) 拉最近
+	// 500 张建索引再查 —— 想要的照片只要不在这 500 张里就【静默丢掉】:
+	// 巡检员选了 13 张,成单后记录里只有 9 张,不报错、没日志。
+	// 照片是巡检的证据,少一张都不能靠"大概率在窗口里"来保证。
+	OfflineShotsByIDs(tenantID string, ids []string) ([]*OfflineShot, error)
 	// MarkOfflineShotConsumed 标记照片已并入某条巡检记录,避免重复成单
 	MarkOfflineShotConsumed(tenantID, id, recordID string) error
 	// DeleteOfflineShots 批量删除未成单的照片,返回被删掉的行(供调用方清理磁盘文件)。
@@ -192,6 +199,46 @@ func (s *SQLiteStore) listShots(tenantID, userID string, limit int, pendingOnly 
 	return out, rows.Err()
 }
 
+func (s *SQLiteStore) OfflineShotsByIDs(tenantID string, ids []string) ([]*OfflineShot, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// 占位符按 ID 个数动态拼。ID 本身仍然走参数绑定,不进 SQL 文本。
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	args = append(args, tenantID)
+	rows, err := s.db.Query(
+		`SELECT `+offlineShotCols+` FROM offline_shots
+		 WHERE id IN (`+ph+`) AND tenant_id=?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	byID := make(map[string]*OfflineShot, len(ids))
+	for rows.Next() {
+		shot, err := scanOfflineShot(rows)
+		if err != nil {
+			return nil, err
+		}
+		byID[shot.ID] = shot
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 按传入顺序返回 —— 调用方(成单、分类)依赖这个顺序,
+	// 数据库不保证 IN 查询的返回次序。
+	out := make([]*OfflineShot, 0, len(ids))
+	for _, id := range ids {
+		if shot, ok := byID[id]; ok {
+			out = append(out, shot)
+		}
+	}
+	return out, nil
+}
+
 func (s *SQLiteStore) CountPendingOfflineShots(tenantID, userID string) (int, error) {
 	var n int
 	err := s.db.QueryRow(
@@ -279,6 +326,18 @@ func (m *MemStore) listShots(tenantID, userID string, limit int, pendingOnly boo
 	}
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (m *MemStore) OfflineShotsByIDs(tenantID string, ids []string) ([]*OfflineShot, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*OfflineShot, 0, len(ids))
+	for _, id := range ids {
+		if shot, ok := m.offlineShots[id]; ok && shot != nil && shot.TenantID == tenantID {
+			out = append(out, shot)
+		}
 	}
 	return out, nil
 }
@@ -467,21 +526,11 @@ func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Reque
 // shotsByIDs 按 ID 取本租户的离线照片,顺序与传入 ID 一致。
 // 跨租户 ID 直接被过滤掉(等同不存在),不泄露存在性。
 func (s *Server) shotsByIDs(tenantID string, ids []string) ([]*OfflineShot, error) {
-	all, err := s.store.ListOfflineShots(tenantID, "", 500)
-	if err != nil {
-		return nil, err
-	}
-	byID := make(map[string]*OfflineShot, len(all))
-	for _, shot := range all {
-		byID[shot.ID] = shot
-	}
-	out := make([]*OfflineShot, 0, len(ids))
-	for _, id := range ids {
-		if shot, ok := byID[id]; ok {
-			out = append(out, shot)
-		}
-	}
-	return out, nil
+	// 【曾经是"先拉最近 500 张再从里面找"】那样一来,选中的照片只要不在
+	// 这 500 张里就被静默丢掉 —— 巡检员选了 13 张,成单后记录里只剩 9 张,
+	// 不报错、不留日志。照片是巡检的证据,不能靠"大概率在窗口里"来保证。
+	// 现在按 ID 直接查库,有多少张就是多少张。
+	return s.store.OfflineShotsByIDs(tenantID, ids)
 }
 
 // adoptOfflineShots 把离线照片并入某条巡检记录:复制进记录目录,并回填 record_id
