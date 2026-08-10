@@ -11,6 +11,8 @@ export interface CurrentUser {
   displayName: string;
   roleCode: string; // admin / manager / supervisor / inspector / 自定义
   roleName?: string;
+  /** active / disabled / local("本地免鉴权"下的占位身份,不是真会话) */
+  status?: string;
   departmentName?: string;
   /** storage 根下的相对路径,用 avatarURL() 转成可访问地址;空则回落文字头像 */
   avatar?: string;
@@ -130,7 +132,9 @@ export async function api<T>(path: string, init: ApiOptions = {}): Promise<T> {
     }
   }
   if (!res.ok) {
-    if (res.status === 401) {
+    // 【登录接口除外】密码输错后端也返回 401,当成"会话过期"去清登录态
+    // 会把上一个用户的本地信息一起抹掉,还可能触发一次多余的跳转。
+    if (res.status === 401 && path !== "/api/auth/login") {
       // 会话过期。原来每个页面各自报"加载失败",而本地还存着用户信息,
       // 看起来像"登着录但什么都打不开"。统一清掉并回登录页。
       onUnauthorized?.();
@@ -166,6 +170,29 @@ export async function login(
   const user: CurrentUser = { ...body.user, perms: body.perms };
   setStoredUser(user);
   return { user, mustChangePassword: body.mustChangePassword };
+}
+
+/**
+ * 校验本地 token 是否还有效,并顺带把服务端的最新身份取回来。
+ *
+ * 【为什么需要】登录态原本只看 localStorage 里有没有 token 这个字符串。
+ * token 早就失效了(会话过期、账号被停用、服务端换了库)本地也照样认,
+ * 于是进来看到的是完整的 App 外壳,然后每个页面各自弹"加载失败" ——
+ * 巡检员的感受是"登着录但什么都打不开",而不是"该重新登录了"。
+ *
+ * 返回 null 表示"没法确认"(离线、后端没起来):此时【不能】判定为失效,
+ * 机房里本来就常没信号,把人踢回登录页反而毁掉离线可用性。
+ */
+export async function fetchMe(): Promise<CurrentUser | null> {
+  const body = await api<{ user: CurrentUser; perms?: string[] }>(
+    "/api/auth/me",
+  );
+  const user = body.user;
+  if (!user) return null;
+  // 后端在"本地免鉴权"模式下会回一个 status=local 的占位身份。
+  // 那不是真会话,拿它覆盖本地用户会把显示名和角色改错。
+  if (user.status === "local") return null;
+  return { ...user, perms: body.perms };
 }
 
 export function logout() {

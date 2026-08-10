@@ -8,6 +8,8 @@ export interface CurrentUser {
   displayName: string;
   roleCode: string; // admin / manager / supervisor / inspector
   roleName?: string;
+  /** active / disabled / local("本地免鉴权"下的占位身份,不是真会话) */
+  status?: string;
   perms?: string[]; // 登录时下发的能力键列表(权限矩阵)
 }
 
@@ -53,6 +55,12 @@ export function setStoredUser(user: CurrentUser | null) {
   }
 }
 
+/** 会话失效时的出口。由 auth store 注册,避免 client 反向依赖 store。 */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -75,9 +83,14 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   } catch {
     /* 空响应 */
   }
-  if (res.status === 401) {
+  // 【登录接口除外】密码输错后端也是 401,当成"会话过期"会把上一个用户的
+  // 本地信息一并抹掉,还会多跳一次路由。
+  if (res.status === 401 && path !== "/api/auth/login") {
     setToken("");
     setStoredUser(null);
+    // 【光改 hash 不够】store 里的 loggedIn 还是 true,路由守卫会把 #/login
+    // 再弹回去 —— 表现是点什么都没反应。必须让 store 也知道。
+    onUnauthorized?.();
     if (!location.hash.includes("login")) location.hash = "#/login";
     throw new ApiError(401, data.message || "登录已过期,请重新登录");
   }
@@ -85,6 +98,17 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
     throw new ApiError(res.status, data.message || data.error || `请求失败 (${res.status})`);
   }
   return data as T;
+}
+
+/**
+ * 校验本地 token 是否还有效,并把服务端的最新身份取回来。
+ * 返回 null 表示"不是真会话"(本地免鉴权模式),此时不要覆盖本地用户。
+ */
+export async function fetchMe(): Promise<CurrentUser | null> {
+  const body = await api<{ user: CurrentUser; perms?: string[] }>("/api/auth/me");
+  const user = body.user;
+  if (!user || user.status === "local") return null;
+  return { ...user, perms: body.perms };
 }
 
 export interface LoginResult {

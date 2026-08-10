@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   CurrentUser,
   getStoredUser,
+  fetchMe,
   getToken,
   login as apiLogin,
   logout as apiLogout,
@@ -23,6 +24,8 @@ interface AuthState {
   logout: () => void;
   /** 后端返回 401 时由 client 触发,清本地登录态 */
   sessionExpired: () => void;
+  /** 开机校验:问后端这个 token 还认不认,顺带刷新身份与权限 */
+  revalidate: () => Promise<void>;
   /** 局部更新当前用户(改头像等),同时写回 localStorage 让刷新后不回退 */
   patchUser: (patch: Partial<CurrentUser>) => void;
 }
@@ -52,6 +55,23 @@ export const useAuth = create<AuthState>((set, get) => ({
     setStoredUser(null);
     set({ user: null, loggedIn: false });
     Toast.show({ content: "登录已过期,请重新登录" });
+  },
+  async revalidate() {
+    if (!getToken()) return;
+    try {
+      const me = await fetchMe();
+      // 服务端认这个会话:顺手把身份和权限刷新一遍。
+      // 管理员在后台改了某人的角色/权限后,原来要等他退出重登才生效。
+      if (me) {
+        setStoredUser(me);
+        set({ user: me, loggedIn: true });
+      }
+    } catch {
+      // 这里【什么都不做】是有意的:
+      //   401 → client 的全局出口已经走 sessionExpired 清干净了,不必重复;
+      //   其余(离线、后端没起来)→ 绝不能据此判定失效,机房本来就常没信号,
+      //     把人踢回登录页会直接毁掉离线可用性。
+    }
   },
   patchUser(patch) {
     set((s) => {

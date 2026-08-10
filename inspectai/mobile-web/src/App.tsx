@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import AppTabs from "@/components/AppTabs";
@@ -18,6 +19,19 @@ import ReviewPage from "@/pages/ReviewPage";
 // 巡检主流程:拍照 → (联网自动上传) → 选照片识别 → 填日报 → 提交
 export default function App() {
   const loggedIn = useAuth((s) => s.loggedIn);
+  const revalidate = useAuth((s) => s.revalidate);
+
+  // 开机问一次后端"这个 token 还认不认"。
+  //
+  // 【为什么必须问】登录态只看本地存没存过 token,失效了本地照样认:
+  // 进来是完整的 App 外壳,然后每个页面各自弹"加载失败" —— 巡检员的感受是
+  // "登着录但什么都打不开",而不是"该重新登录了"。真失效时这里会经由
+  // client 的 401 出口直接清干净并回登录页。
+  // 离线时【不】判失效,见 store 里的注释。
+  useEffect(() => {
+    void revalidate();
+  }, [revalidate]);
+
   const guard = (el: JSX.Element) =>
     loggedIn ? el : <Navigate to="/login" replace />;
   const location = useLocation();

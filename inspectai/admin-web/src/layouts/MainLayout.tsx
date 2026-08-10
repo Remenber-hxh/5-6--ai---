@@ -41,6 +41,17 @@ export default function MainLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, loggedIn, logout } = useAuth();
+  const revalidate = useAuth((s) => s.revalidate);
+
+  // 进后台先问一次"这个 token 还认不认"。
+  //
+  // 【为什么必须问】登录态原本只看本地存没存过 token,失效了本地照样认:
+  // 进来是完整的后台外壳,然后每个页面各自报"请求失败" ——
+  // 看起来像"系统坏了",而不是"该重新登录了"。真失效时 client 的 401 出口
+  // 会清干净登录态并回登录页。
+  useEffect(() => {
+    void revalidate();
+  }, [revalidate]);
   const [pending, setPending] = useState(0);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
 
