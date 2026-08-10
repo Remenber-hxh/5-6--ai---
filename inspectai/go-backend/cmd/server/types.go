@@ -291,6 +291,9 @@ type AssetEntry struct {
 	LastPhotoPath   string    `json:"lastPhotoPath,omitempty"`
 	CoverImagePath  string    `json:"coverImagePath,omitempty"` // 主管指定的封面图路径，入库
 	InspectionCount int       `json:"inspectionCount"`
+	// countedInspections 内部标记:列表路径已批量算过巡检次数,
+	// enrichAssetForDisplay 就不必再逐台查一遍。不出现在 JSON 里。
+	countedInspections bool
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 

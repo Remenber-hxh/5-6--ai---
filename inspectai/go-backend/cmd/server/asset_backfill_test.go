@@ -130,3 +130,59 @@ func TestBackfillReusesManuallyCreatedAsset(t *testing.T) {
 		t.Fatalf("应挂回手工建的那台 %q，实际是 %q", manual.ID, assets[0].ID)
 	}
 }
+
+// 巡检次数必须【现算】,而且列表和详情两条路径给出同一个数。
+//
+// 这条盯的是线上真实发生过的两类不一致:
+//
+//	K06 台账显示 1 次、实际 20 条快照(回填时被写成常量)
+//	HYZX-WJ-DT01 显示 44 次、实际 26 条(计数器被多加过)
+//
+// 只要还留着 assets.inspection_count 这个"第二份真相",它就会再漂。
+func TestInspectionCountIsDerivedNotStored(t *testing.T) {
+	srv, store := backfillTestServer(t)
+	base := time.Now().Add(-24 * time.Hour)
+	for i := range 3 {
+		seedSubmittedRecord(t, store, "rec_c"+itoa(i), "K07", base.Add(time.Duration(i)*time.Hour))
+	}
+	if err := srv.ensureAssetLedgerFromRecords(); err != nil {
+		t.Fatalf("回填: %v", err)
+	}
+	assets, err := store.ListAssets(defaultTenantID)
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("应有 1 台设备,得到 %d (err=%v)", len(assets), err)
+	}
+	id := assets[0].ID
+
+	// 人为把存量计数器改成一个错的值 —— 现算就该无视它
+	if _, err := store.UpdateAssetInspectionCount(defaultTenantID, id, 999); err != nil {
+		t.Fatal(err)
+	}
+
+	// 快照数才是真相。回填没写快照(那是提交流的事),这里补两条模拟历史。
+	snaps := []*AssetSnapshot{
+		{ID: "snap_x1", AssetID: id, RecordID: "rec_c0", Status: "正常", CreatedAt: base},
+		{ID: "snap_x2", AssetID: id, RecordID: "rec_c1", Status: "正常", CreatedAt: base},
+	}
+	if err := store.WriteAssetSnapshots(snaps, nil); err != nil {
+		t.Fatalf("WriteAssetSnapshots: %v", err)
+	}
+
+	list, err := srv.loadAssetsForDisplay(defaultTenantID)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("列表加载失败: %d 台 err=%v", len(list), err)
+	}
+	if list[0].InspectionCount != 2 {
+		t.Fatalf("列表次数应现算为 2(快照数),得到 %d —— 还在读存量计数器", list[0].InspectionCount)
+	}
+
+	one, err := store.GetAsset(defaultTenantID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.enrichAssetForDisplay(one)
+	if one.InspectionCount != list[0].InspectionCount {
+		t.Fatalf("详情 %d 与列表 %d 对不上 —— 两条路径口径不一致",
+			one.InspectionCount, list[0].InspectionCount)
+	}
+}

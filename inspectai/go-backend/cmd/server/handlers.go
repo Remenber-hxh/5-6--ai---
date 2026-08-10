@@ -935,8 +935,20 @@ func (s *Server) loadAssetsForDisplay(tenantID string) ([]*AssetEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 巡检次数现算,不用 assets.inspection_count 那个计数器 —— 它由三处各自
+	// 维护(提交 +1 / 回填覆盖 / 建档置 0),必然漂。线上实测 K06 显示 1 次
+	// 实际 20 次。一次 GROUP BY 拿全量,不是逐台查。
+	// 取不到就退回存量值:巡检次数不准比列表打不开好。
+	counts, err := s.store.CountSnapshotsByAsset(tenantID)
+	if err != nil {
+		counts = nil
+	}
 	visible := make([]*AssetEntry, 0, len(assets))
 	for _, a := range assets {
+		if counts != nil {
+			a.InspectionCount = counts[a.ID]
+			a.countedInspections = true // 已批量算过,enrich 里不必逐台再查
+		}
 		s.enrichAssetForDisplay(a)
 		if isLegacyZihanAggregateAsset(a) {
 			continue
@@ -1035,9 +1047,23 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 	return nil
 }
 
+// enrichAssetForDisplay 补齐展示用字段。
+//
+// 【巡检次数在这里现算】assets.inspection_count 是个由三处各自维护的计数器
+// (提交 +1 / 启动回填覆盖 / 手工建档置 0),必然漂 —— 线上实测过 K06 显示
+// 1 次实际 20 次、HYZX-WJ-DT01 显示 44 实际 26。巡检次数本来就等于"这台设备
+// 有多少条快照",直接数,不留第二份真相。
+//
+// 列表路径(loadAssetsForDisplay)已经用一次 GROUP BY 批量填好了,这里只服务
+// 单台详情 —— 靠 countedInspections 标记区分,避免列表里逐台再查一遍。
 func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 	if a == nil {
 		return
+	}
+	if !a.countedInspections {
+		if n, err := s.store.CountSnapshotsForAsset(a.TenantID, a.ID); err == nil {
+			a.InspectionCount = n
+		}
 	}
 	if a.ProjectCode == "" || a.TemplateID == "" || a.AssetKey == "" {
 		a.ProjectCode, a.TemplateID, a.AssetKey = deriveAssetDisplayKeys(a)

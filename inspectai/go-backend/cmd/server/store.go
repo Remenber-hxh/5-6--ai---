@@ -33,6 +33,16 @@ type RecordStore interface {
 	UpdateRecord(rec *Record) error
 	ListRecords(tenantID string, limit int) ([]*Record, error)
 	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+	// CountSnapshotsByAsset 每台设备有多少条巡检快照,一次查全租户。
+	//
+	// 【为什么要"现算"而不是读 assets.inspection_count】那一列是个计数器:
+	// 提交时 +1、启动回填时按记录数覆盖、手工建档时置 0 —— 三个地方各写各的,
+	// 必然漂。线上实测过 K06 显示 1 次实际 20 次、HYZX-WJ-DT01 显示 44 实际 26。
+	// 巡检次数本来就等于"这台设备有多少条快照",直接数,不留第二份真相。
+	CountSnapshotsByAsset(tenantID string) (map[string]int, error)
+	// CountSnapshotsForAsset 单台设备的快照数(详情页用)。
+	CountSnapshotsForAsset(tenantID, assetID string) (int, error)
+
 	// UpdateAssetInspectionCount 直接把巡检次数改成给定值。
 	// 回填补建的设备走 INSERT,次数被写成 1;这里按真实记录数纠正 ——
 	// 否则台账显示"巡检 1 次"而详情页里躺着十几条历史,自相矛盾。
@@ -334,6 +344,37 @@ func (s *MemStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *MemStore) CountSnapshotsByAsset(tenantID string) (map[string]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]int{}
+	for _, sn := range s.assetSnapshots {
+		if sn == nil {
+			continue
+		}
+		if a, ok := s.assets[sn.AssetID]; !ok || a.TenantID != tenantID {
+			continue // 租户隔离:按快照所属资产判定
+		}
+		out[sn.AssetID]++
+	}
+	return out, nil
+}
+
+func (s *MemStore) CountSnapshotsForAsset(tenantID, assetID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if a, ok := s.assets[assetID]; !ok || a.TenantID != tenantID {
+		return 0, nil
+	}
+	n := 0
+	for _, sn := range s.assetSnapshots {
+		if sn != nil && sn.AssetID == assetID {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (s *MemStore) UpdateAssetInspectionCount(tenantID, id string, count int) (int64, error) {
@@ -1326,6 +1367,38 @@ func (s *SQLiteStore) ListRecords(tenantID string, limit int) ([]*Record, error)
 // errRecordSubmitted 已提交的记录不允许删除。它是台账证据,而且已经写进了
 // 资产快照和字段观测 —— 删掉会让台账对不上账。要撤销请走审批流。
 var errRecordSubmitted = errors.New("record already submitted")
+
+func (s *SQLiteStore) CountSnapshotsByAsset(tenantID string) (map[string]int, error) {
+	rows, err := s.db.Query(`
+		SELECT s.asset_id, COUNT(*)
+		FROM asset_snapshots s
+		JOIN assets a ON a.id = s.asset_id
+		WHERE a.tenant_id = ?
+		GROUP BY s.asset_id`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) CountSnapshotsForAsset(tenantID, assetID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM asset_snapshots s
+		JOIN assets a ON a.id = s.asset_id
+		WHERE s.asset_id = ? AND a.tenant_id = ?`, assetID, tenantID).Scan(&n)
+	return n, err
+}
 
 func (s *SQLiteStore) UpdateAssetInspectionCount(tenantID, id string, count int) (int64, error) {
 	res, err := s.db.Exec(
