@@ -1,5 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag } from "antd";
+import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -9,6 +9,10 @@ import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagCol
 import { useUi } from "../store/ui";
 
 const STATUS_OPTIONS = ["异常", "待复核", "需补图", "人工填写", "已完成", "正常"];
+
+// 列表每页条数。定位逻辑要按它算目标在第几页,所以必须是常量 ——
+// 两处各写一个数,改一处就会错位。
+const PAGE_SIZE = 15;
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -25,8 +29,11 @@ export default function Records() {
   const [status, setStatus] = useState<string>("");
   const [kw, setKw] = useState("");
   const [tpl, setTpl] = useState("");
-  const { project } = useUi();
+  const { project, setProject } = useUi();
   const [selId, setSelId] = useState("");
+  const [page, setPage] = useState(1);
+  // 跳转定位后闪一下的那一行。只闪一次,之后回到普通选中态。
+  const [flashId, setFlashId] = useState("");
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [params] = useSearchParams();
@@ -38,7 +45,30 @@ export default function Records() {
         const focus = params.get("focus");
         const focusNo = params.get("focusNo");
         const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
-        if (hit) setSelId(hit.id);
+        if (hit) {
+          setSelId(hit.id);
+          setFlashId(hit.id);
+          // 【筛选可能把目标藏起来】项目/状态/关键词是跨页面留存的,从台账的
+          // 巡检轨迹点进来时,它们未必匹配这一条。藏起来的后果不是"看不到",
+          // 而是【看到错的那条】—— 下面"首行自动选中"那个兜底会把选中改成
+          // 列表第一条,右侧详情显示的是完全另一次巡检,而且没有任何提示。
+          const hidden =
+            (!!status && recordBusinessStatus(hit) !== status) ||
+            (!!tpl && hit.templateName !== tpl) ||
+            (!!kw &&
+              !(hit.pointName || "").includes(kw) &&
+              !(hit.recordNo || "").includes(kw) &&
+              !(hit.inspector || "").includes(kw)) ||
+            (!!project && hit.project !== project);
+          if (hidden) {
+            setStatus("");
+            setKw("");
+            setTpl("");
+            if (project && hit.project !== project) setProject("");
+            // 悄悄改掉用户的筛选是不礼貌的,至少要说一声为什么
+            message.info("已清除筛选，以显示你要看的那条记录");
+          }
+        }
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,6 +96,37 @@ export default function Records() {
   }, [rows]);
 
   const current = rows.find((r) => r.id === selId) || null;
+
+  // 让选中的那条【一定看得见】:算出它在第几页 → 翻过去 → 滚进视野。
+  //
+  // 【为什么必须做】从台账的巡检轨迹点进来带的是某条具体记录,而列表默认停在
+  // 第 1 页。目标在第 3 页时,右侧详情面板是对的,但左边高亮的那一行在屏幕外 ——
+  // 人对不上"到底是哪一条",等于没定位。
+  useEffect(() => {
+    if (!selId) return;
+    const idx = rows.findIndex((r) => r.id === selId);
+    if (idx < 0) return;
+    const target = Math.floor(idx / PAGE_SIZE) + 1;
+    setPage((p) => (p === target ? p : target));
+  }, [rows, selId]);
+
+  useEffect(() => {
+    if (!selId) return;
+    // 等 antd 把翻页后的行渲染出来再滚。直接同步查会拿到旧页的 DOM。
+    const t = setTimeout(() => {
+      document
+        .querySelector(".row-selected")
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [selId, page]);
+
+  // 闪完就清掉,免得之后手动点别的行时这一行还挂着强调样式
+  useEffect(() => {
+    if (!flashId) return;
+    const t = setTimeout(() => setFlashId(""), 1800);
+    return () => clearTimeout(t);
+  }, [flashId]);
 
   // 复核留痕随选中记录懒加载
   useEffect(() => {
@@ -157,8 +218,17 @@ export default function Records() {
             ),
           }}
           dataSource={rows}
-          pagination={{ pageSize: 15, showTotal: (t) => `共 ${t} 条` }}
-          rowClassName={(r) => (r.id === selId ? "row-selected" : "")}
+          pagination={{
+            pageSize: PAGE_SIZE,
+            current: page,
+            onChange: setPage,
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          rowClassName={(r) =>
+            [r.id === selId ? "row-selected" : "", r.id === flashId ? "row-focus-flash" : ""]
+              .filter(Boolean)
+              .join(" ")
+          }
           onRow={(r) => ({ onClick: () => setSelId(r.id), style: { cursor: "pointer" } })}
           columns={[
             { title: "时间", dataIndex: "createdAt", width: 140, render: (v) => fmtTime(v, true) },

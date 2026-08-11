@@ -94,3 +94,31 @@ body {
 .plan-bucket-cell:hover {
   background: #f6f9fc !important;
 }
+
+/* 跳转定位到某一行时的一次性强调。
+   常驻的 .row-selected 只有 7% 绿底,平时够用;但"我刚从台账的巡检轨迹点过来、
+   要找的就是这一条"需要更强的信号,否则视线还得自己在十几行里扫一遍。
+
+   【用 box-shadow 而不是 background】上面 .row-selected td 的 background 带
+   !important —— 按 CSS 优先级,!important 的作者样式【压过动画】,改 background
+   的关键帧根本不会生效(这类失效不报错,只是看着"动画没写对")。
+   inset 的大半径阴影相当于在原底色上盖一层,不碰 background。 */
+@keyframes row-focus-flash {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 9999px rgba(18, 169, 104, 0);
+  }
+  25%,
+  55% {
+    box-shadow: inset 0 0 0 9999px rgba(18, 169, 104, 0.22);
+  }
+}
+.row-focus-flash td {
+  animation: row-focus-flash 1.6s ease-in-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-focus-flash td {
+    animation: none;
+    box-shadow: inset 0 0 0 9999px rgba(18, 169, 104, 0.18);
+  }
+}
