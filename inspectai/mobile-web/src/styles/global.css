@@ -3117,7 +3117,8 @@ a {
   gap: 6px;
   padding: 20px 16px 24px;
 }
-/* 点头像即换。右下角挂一个"换"字角标,不然没人知道能点 */
+/* 点头像即换。原来右下角有个「换」字角标做提示,按产品要求去掉了 ——
+   现在没有可见提示,靠"头像可点"这个通行习惯。 */
 .me-avatar {
   position: relative;
   padding: 0;
@@ -3133,26 +3134,26 @@ a {
   font-weight: 700;
   background: var(--brand);
   color: #fff;
-  box-shadow: 0 6px 20px rgba(38, 126, 240, 0.28);
+  /* 白圈 + 中性投影。原来是一圈品牌蓝辉光(0 6px 20px rgba(38,126,240,.28)),
+     在灰底上像发光,是整屏唯一一处装饰性用色 —— 与"黑白灰打底、彩色只留给
+     功能性标记"的规范相悖。白圈让照片头像在灰底上有干净的边界,投影只交代高度。 */
+  box-shadow:
+    0 0 0 3px var(--lt-card),
+    0 4px 14px rgba(15, 23, 32, 0.12);
 }
 .me-avatar .arco-avatar.has-photo {
   background: var(--lt-fill);
 }
-.me-avatar-edit {
+/* 上传中的遮罩。铺满整个头像而不是挂角标 —— 角标已按产品要求去掉,
+   而"正在传"这个反馈不能一起去掉:弱网下压缩加上传要好几秒。 */
+.me-avatar-busy {
   position: absolute;
-  right: -2px;
-  bottom: -2px;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
   border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  border: 2px solid var(--lt-bg);
+  background: rgba(15, 23, 32, 0.45);
 }
 .me-avatar:disabled {
   opacity: 0.7;
@@ -3170,19 +3171,33 @@ a {
 }
 
 /* Cell 分组:Arco 默认是通栏白底,这里收成 16px 外边距的圆角卡,
-   和台账/任务页的卡片语言统一 */
+   和台账/任务页的卡片语言统一。
+
+   【卡片是 .cell-group-body,不是 .arco-cell-group】
+   Arco 把分组标题和内容一起放在 .arco-cell-group 里,而内层元素的类名
+   【不带 arco- 前缀】:.cell-group-header / .cell-group-body。
+   原来这里写的是 .arco-cell-group-header —— 组件库里【没有这个类】,
+   于是"标签放在卡片外、12px 灰字"的设计一次都没生效:标签被关在白卡
+   顶部,顶着 Arco 默认的 0.24rem 内边距,卡片上方白白空出一大块。
+   把卡片样式移到 .cell-group-body,外层只留外边距,标签才落到卡外。 */
 .me-screen .arco-cell-group {
-  margin: 0 16px 14px;
+  margin: 0 16px 18px;
+  background: transparent;
+  box-shadow: none;
+}
+.me-screen .arco-cell-group .cell-group-header {
+  padding: 0 0 8px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--lt-fg-2);
+  background: transparent;
+}
+.me-screen .arco-cell-group .cell-group-body {
   border-radius: 14px;
   overflow: hidden;
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
-}
-.me-screen .arco-cell-group-header {
-  padding: 0 0 8px 4px;
-  font-size: 12px;
-  color: var(--lt-fg-2);
-  background: transparent;
 }
 .me-screen .arco-cell {
   margin-left: 0;
@@ -3191,7 +3206,9 @@ a {
   font-size: 15px;
   background: var(--lt-card);
 }
-.me-screen .arco-cell-text {
+/* 同上:右侧值文字的真实类名是 .cell-text,套在 .cell-content 里。
+   写成 .arco-cell-text 是匹配不到的(全站另一处 L148 写对了,这里没跟上)。 */
+.me-screen .arco-cell .cell-content .cell-text {
   color: var(--lt-fg-2);
   font-size: 14px;
 }
@@ -3701,4 +3718,36 @@ a {
   padding: 12px 16px calc(12px + var(--safe-bottom));
   background: var(--lt-card);
   border-top: 0.5px solid var(--lt-border);
+}
+
+/* ===== 注册 / 改密码 ===== */
+
+/* 卡片里的文字按钮(「用注册码注册」「去登录」)。
+   做成 button 而不是 <a>:它不导航到外部 URL,是页内路由跳转;
+   用 <a href="#/..."> 在 HashRouter 下会多一次整页刷新。 */
+.link-btn {
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.link-btn:active {
+  opacity: 0.7;
+}
+
+/* 改密码页的表单区。这页是浅色流程页(不是登录页那种深色玻璃卡),
+   所以给一张白卡把三个输入框收在一起,和台账/任务页的卡片语言一致。 */
+.pwd-form {
+  margin: 12px 16px;
+  padding: 4px 16px 16px;
+  border-radius: 14px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.pwd-form .screen-hint {
+  margin: 14px 0 0;
+  text-align: left;
 }

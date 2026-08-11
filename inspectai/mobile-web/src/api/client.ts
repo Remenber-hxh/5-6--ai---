@@ -202,3 +202,46 @@ export function logout() {
   setToken("");
   setStoredUser(null);
 }
+
+/**
+ * 自助注册。凭注册码准入 —— 后端 /api/assets 对任何已登录用户开放,
+ * 没有码的话谁都能看到客户的设备台账。
+ *
+ * 成功后后端直接下发会话,不用再手动登一次。
+ */
+export async function register(input: {
+  username: string;
+  displayName: string;
+  password: string;
+  code: string;
+}): Promise<LoginResult> {
+  const body = await api<{
+    token: string;
+    user: CurrentUser;
+    perms?: string[];
+  }>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  setToken(body.token);
+  const user: CurrentUser = { ...body.user, perms: body.perms };
+  setStoredUser(user);
+  return { user };
+}
+
+/**
+ * 改自己的密码。
+ *
+ * 【后端改完会踢掉所有会话,包括当前这个】所以这里成功后必须把本地登录态
+ * 一起清掉、回登录页。不清的话页面看着还登着,下一个请求才 401 ——
+ * 用户会以为"改完密码就坏了"。
+ */
+export async function changeMyPassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await api("/api/auth/me/password", {
+    method: "POST",
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+}

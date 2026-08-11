@@ -57,6 +57,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleUserRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/roles/"):
 		s.handleRoleRoutes(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/registration-codes/"):
+		s.handleRegistrationCodeRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/engineering/tasks/"):
 		s.handleEngineeringTaskRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/assets/"):
@@ -88,6 +90,10 @@ func (s *Server) authorized(r *http.Request) bool {
 		return true
 	}
 	if r.URL.Path == "/api/auth/login" {
+		return true
+	}
+	// 注册当然是没登录的人才用。凭注册码准入,门槛在 handleRegister 里。
+	if r.URL.Path == "/api/auth/register" {
 		return true
 	}
 	protected := strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/storage/")

@@ -91,6 +91,16 @@ export default function LoginPage() {
           登录
         </Button>
 
+        <p className="screen-hint">
+          没有账号?
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => nav("/register")}
+          >
+            用注册码注册
+          </button>
+        </p>
         <p className="screen-hint">忘记密码?联系主管或系统管理员重置</p>
       </div>
 

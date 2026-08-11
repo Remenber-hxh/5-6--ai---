@@ -9,7 +9,9 @@ import AssetDetailPage from "@/pages/AssetDetailPage";
 import CapturePage from "@/pages/CapturePage";
 import ClassifyPage from "@/pages/ClassifyPage";
 import LedgerPage from "@/pages/LedgerPage";
+import ChangePasswordPage from "@/pages/ChangePasswordPage";
 import LoginPage from "@/pages/LoginPage";
+import RegisterPage from "@/pages/RegisterPage";
 import MePage from "@/pages/MePage";
 import PreviewPage from "@/pages/PreviewPage";
 import RecordPage from "@/pages/RecordPage";
@@ -56,6 +58,11 @@ export default function App() {
             path="/login"
             element={loggedIn ? <Navigate to="/" replace /> : <LoginPage />}
           />
+          {/* 注册和登录一样:已登录就别再进来了 */}
+          <Route
+            path="/register"
+            element={loggedIn ? <Navigate to="/" replace /> : <RegisterPage />}
+          />
           <Route path="/" element={guard(<CapturePage />)} />
           <Route path="/review" element={guard(<ReviewPage />)} />
           <Route path="/classify" element={guard(<ClassifyPage />)} />
@@ -66,6 +73,7 @@ export default function App() {
           <Route path="/approvals" element={guard(<ApprovalsPage />)} />
           <Route path="/asset/:id" element={guard(<AssetDetailPage />)} />
           <Route path="/me" element={guard(<MePage />)} />
+          <Route path="/me/password" element={guard(<ChangePasswordPage />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </PageTransition>

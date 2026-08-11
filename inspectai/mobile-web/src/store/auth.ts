@@ -7,6 +7,7 @@ import {
   getToken,
   login as apiLogin,
   logout as apiLogout,
+  register as apiRegister,
   setStoredUser,
   setToken,
   setUnauthorizedHandler,
@@ -21,6 +22,12 @@ interface AuthState {
     username: string,
     password: string,
   ) => Promise<{ mustChangePassword?: boolean }>;
+  register: (input: {
+    username: string;
+    displayName: string;
+    password: string;
+    code: string;
+  }) => Promise<void>;
   logout: () => void;
   /** 后端返回 401 时由 client 触发,清本地登录态 */
   sessionExpired: () => void;
@@ -40,6 +47,12 @@ export const useAuth = create<AuthState>((set, get) => ({
     // 用户重新登录后还要逐张点重试是荒谬的。
     void unblockAll(true).catch(() => void 0);
     return { mustChangePassword: res.mustChangePassword };
+  },
+  async register(input) {
+    // 后端注册成功就直接下发会话,所以这里和 login 一样落登录态,
+    // 不用让新人注册完再手动登一次。
+    const res = await apiRegister(input);
+    set({ user: res.user, loggedIn: true });
   },
   logout() {
     apiLogout();

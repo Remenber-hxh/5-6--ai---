@@ -33,13 +33,16 @@ var migrationList = []migration{
 	{9, "tenant_columns", (*SQLiteStore).migTenantColumns},
 	{10, "platform_admin_flag", (*SQLiteStore).migPlatformAdminFlag},
 	{11, "offline_shots", (*SQLiteStore).migOfflineShots},
+	{12, "registration_codes", (*SQLiteStore).migRegistrationCodes},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
 //
 // 时间戳刻意分两个:
-//   captured_at  手机声称的拍摄时间(可伪造,仅供参考)
-//   received_at  服务器收到时间(权威,客户端伪造不了)
+//
+//	captured_at  手机声称的拍摄时间(可伪造,仅供参考)
+//	received_at  服务器收到时间(权威,客户端伪造不了)
+//
 // 两者都存、在记录上分开展示,不隐藏离线造成的时间差 —— 对监管方而言,
 // 公开时间差比藏起来更可信。
 //
@@ -305,4 +308,53 @@ func (s *SQLiteStore) applyBaselineSchema() error {
 	}
 	_, err := s.db.Exec(schemaSQL)
 	return err
+}
+
+// migRegistrationCodes — 012:注册码。
+//
+// 巡检员自助注册需要一道门槛:/api/assets 对任何已登录用户开放,谁注册成功
+// 谁就能看到客户的全部设备台账和健康状态。所以注册必须凭码,码由管理员发。
+//
+// 码上带角色和租户,注册出来的账号直接落到对的位置,不用管理员事后再改。
+// max_uses = 0 表示不限次数(发给整个班组的长期码);expires_at 为空表示不过期。
+func (s *SQLiteStore) migRegistrationCodes() error {
+	stmt := `CREATE TABLE IF NOT EXISTS registration_codes (
+		id            TEXT PRIMARY KEY,
+		code          TEXT NOT NULL UNIQUE,
+		tenant_id     TEXT NOT NULL DEFAULT '` + defaultTenantID + `',
+		role_code     TEXT NOT NULL DEFAULT 'inspector',
+		department_id TEXT NOT NULL DEFAULT '',
+		note          TEXT NOT NULL DEFAULT '',
+		max_uses      INTEGER NOT NULL DEFAULT 0,
+		used_count    INTEGER NOT NULL DEFAULT 0,
+		expires_at    TEXT NOT NULL DEFAULT '',
+		disabled      INTEGER NOT NULL DEFAULT 0,
+		created_by    TEXT NOT NULL DEFAULT '',
+		created_at    TEXT NOT NULL DEFAULT '')`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS registration_codes (
+			id            VARCHAR(64)  NOT NULL PRIMARY KEY,
+			code          VARCHAR(64)  NOT NULL UNIQUE,
+			tenant_id     VARCHAR(64)  NOT NULL DEFAULT '` + defaultTenantID + `',
+			role_code     VARCHAR(64)  NOT NULL DEFAULT 'inspector',
+			department_id VARCHAR(64)  NOT NULL DEFAULT '',
+			note          VARCHAR(255) NOT NULL DEFAULT '',
+			max_uses      INT          NOT NULL DEFAULT 0,
+			used_count    INT          NOT NULL DEFAULT 0,
+			expires_at    VARCHAR(40)  NOT NULL DEFAULT '',
+			disabled      TINYINT      NOT NULL DEFAULT 0,
+			created_by    VARCHAR(64)  NOT NULL DEFAULT '',
+			created_at    VARCHAR(40)  NOT NULL DEFAULT '',
+			INDEX idx_registration_codes_tenant (tenant_id, disabled)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return err
+	}
+	if s.dialect == "sqlite" {
+		_, _ = s.db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_registration_codes_tenant
+			 ON registration_codes(tenant_id, disabled)`)
+	}
+	return nil
 }

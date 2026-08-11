@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { uploadMyAvatar } from "@/api/inspection";
 import BeianLine from "@/components/BeianLine";
 import FlowHeader from "@/components/FlowHeader";
-import { IconLedger, IconPhotos, IconTasks } from "@/components/icons";
+import { IconLedger, IconLock, IconPhotos, IconTasks } from "@/components/icons";
 import { prepareAvatar } from "@/lib/avatar";
 import { useAuth } from "@/store/auth";
 
@@ -73,9 +73,14 @@ export default function MePage() {
             disabled={busy}
           >
             <Avatar name={name} src={user?.avatar} size="large" />
-            <span className="me-avatar-edit">
-              {busy ? <Loading size={16} color="#fff" /> : "换"}
-            </span>
+            {/* 上传中盖一层。原来这里常驻一个「换」字角标(顺带兼作转圈位),
+                角标去掉后仍然需要一个"正在传"的反馈 —— 弱网下压缩加上传要好几秒,
+                没有任何反应用户会以为没点上,然后反复点。 */}
+            {busy && (
+              <span className="me-avatar-busy">
+                <Loading size={16} color="#fff" />
+              </span>
+            )}
           </button>
           {/* 【别用 .upload-input】那个类是给 <label> 包裹用的(absolute inset:0 铺满父级)。
               这里是独立元素、靠 ref.click() 触发,没有定位父级 —— 用了会铺成一张
@@ -128,10 +133,18 @@ export default function MePage() {
           />
         </CellGroup>
 
+        {/* 这一组原来列的是账号/角色/部门三行只读信息,而角色和部门在上面的
+            身份区已经写着了 —— 一屏之内说两遍同一句话。换成能【做事】的入口。 */}
         <CellGroup header="账号">
-          <Cell label="账号" text={user?.username} />
-          <Cell label="角色" text={user?.roleName || user?.roleCode} />
-          <Cell label="部门" text={user?.departmentName || "默认部门"} />
+          <Cell
+            label="修改密码"
+            icon={
+              <span className="me-ic">
+                <IconLock />
+              </span>
+            }
+            onClick={() => nav("/me/password")}
+          />
         </CellGroup>
 
         <BeianLine />

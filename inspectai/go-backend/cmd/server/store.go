@@ -118,6 +118,8 @@ type IdentityStore interface {
 	CreateUser(user *User, password string) error
 	UpdateUserProfile(id string, mutate func(*User)) error
 	SetUserPassword(id, password string) error
+	// VerifyUserPassword 只校验,不建会话、不改 last_login_at(自助改密码用)
+	VerifyUserPassword(id, password string) error
 	SetUserStatus(id, status string) error
 	DeleteSession(token string) error
 	DeleteUserSessions(userID string) error
@@ -172,6 +174,7 @@ type Store interface {
 	RecordStore
 	TenantStore
 	OfflineShotStore
+	RegistrationStore
 	AITaskStore
 	AssetStore
 	ConfirmLogStore
@@ -230,6 +233,7 @@ type MemStore struct {
 	promptTpls     map[string]PromptTemplate
 	rolePerms      map[string][]string
 	roles          map[string]*Role
+	regCodes       map[string]*RegistrationCode // key = code 本身
 }
 
 type memUser struct {
@@ -248,6 +252,7 @@ func NewMemStore() *MemStore {
 		submissions:    map[string]submissionState{},
 		users:          map[string]*memUser{},
 		sessions:       map[string]*LoginSession{},
+		regCodes:       map[string]*RegistrationCode{},
 		operationLogs:  map[string]*OperationLog{},
 		engPlans:       map[string]*EngineeringPlanItem{},
 		engTasks:       map[string]*EngineeringTask{},

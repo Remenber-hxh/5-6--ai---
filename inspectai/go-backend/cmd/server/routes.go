@@ -34,6 +34,11 @@ var apiRoutes = []apiRoute{
 	{http.MethodPost, "/api/auth/login", guardNone, "", (*Server).handleLogin},
 	{http.MethodGet, "/api/auth/me", guardNone, "", (*Server).handleMe},
 	{http.MethodPost, "/api/auth/logout", guardNone, "", (*Server).handleLogout},
+	// 注册是【免鉴权】的,还要在 authorized() 里放行(和 login 一样),
+	// 光在这里写 guardNone 不够 —— guard 是登录之后的分级,不是登录本身。
+	{http.MethodPost, "/api/auth/register", guardNone, "", (*Server).handleRegister},
+	// 自助改密码:任何已登录用户改【自己的】。改别人的仍是 /api/users/<id>/password(仅管理员)。
+	{http.MethodPost, "/api/auth/me/password", guardNone, "", (*Server).handleChangeMyPassword},
 	// 自助改头像:不带 userID,只认会话里的当前用户 —— 没有越权改他人的面。
 	// (PUT /api/users/<id> 整体是管理员门控,巡检员改不了自己的)
 	{http.MethodPost, "/api/auth/me/avatar", guardNone, "", (*Server).handleUpdateMyAvatar},
@@ -42,6 +47,10 @@ var apiRoutes = []apiRoute{
 	//     supervisor 固定:派发任务的责任人下拉依赖它,不入矩阵) ——
 	{http.MethodGet, "/api/users", guardSupervisor, "", (*Server).handleListUsers},
 	{http.MethodPost, "/api/users", guardAdmin, "", (*Server).handleCreateUser},
+
+	// —— 注册码(仅管理员:一张能自助注册的码流出去就是一道敞开的门)
+	{http.MethodGet, "/api/registration-codes", guardAdmin, "", (*Server).handleListRegistrationCodes},
+	{http.MethodPost, "/api/registration-codes", guardAdmin, "", (*Server).handleCreateRegistrationCode},
 	{http.MethodGet, "/api/roles", guardSupervisor, "", (*Server).handleListRoles},
 	{http.MethodPost, "/api/roles", guardAdmin, "", (*Server).handleCreateRole},
 	{http.MethodGet, "/api/departments", guardSupervisor, "", (*Server).handleListDepartments},
