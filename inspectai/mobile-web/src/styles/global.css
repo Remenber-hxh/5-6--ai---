@@ -367,6 +367,13 @@
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: var(--ink);
+  /* 【font-size 必须显式写】Arco 的 .arco-button 根元素是 font-size: 0,
+     而上面我们把 .arco-button-text 改成了 font-size: inherit —— 两条加起来,
+     外层不写字号,按钮文字就以 0 号字渲染:按钮框在、文字看不见,还不报错。
+     .btn-primary 一直有 15px 所以没事,这条漏了,"没有待处理的照片"那屏的
+     「去拍照」就是一个空框。2026-08-10 修。 */
+  font-size: 15px;
+  font-weight: 600;
 }
 
 /* ===== 拍照台 ===== */
