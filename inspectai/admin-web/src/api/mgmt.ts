@@ -536,3 +536,31 @@ export function setRegistrationCodeDisabled(id: string, disabled: boolean) {
     { method: "POST", body: JSON.stringify({ disabled }) },
   );
 }
+
+/**
+ * 某台设备的巡检轨迹。
+ *
+ * 【必须走这个接口,不能在前端筛全量记录】记录上的 pointId 是【巡检点位/模板】
+ * (比如"无机房电梯"),整栋楼的无机房电梯共用同一个 pointId —— 按它筛出来的
+ * 是"所有同类设备的记录",不是这一台的。后台的巡检轨迹一度就是这么串台的:
+ * KT-3 的轨迹里列着 FT-11、FT-12 的巡检时间。
+ *
+ * 资产快照(asset_snapshots)才是按 assetId 记的,这个接口查的就是它。
+ */
+export interface AssetSnapshotEntry {
+  id: string;
+  assetId: string;
+  /** 对应的巡检记录 ID —— 点进去看详情要用这个,不是快照自己的 id */
+  recordId: string;
+  status: string;
+  statusLevel?: string;
+  summary?: string;
+  inspector?: string;
+  createdAt: string;
+}
+
+export function listAssetSnapshots(assetId: string, pageSize = 5) {
+  return api<{ records: AssetSnapshotEntry[]; total: number }>(
+    `/api/assets/${encodeURIComponent(assetId)}/records?page=1&pageSize=${pageSize}`,
+  ).then((d) => ({ records: d.records || [], total: d.total || 0 }));
+}

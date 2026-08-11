@@ -4,10 +4,10 @@ import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, EngineeringTask, createAsset, deleteAsset, listAssets, listRecords, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
+import { AssetEntry, AssetSnapshotEntry, EngineeringTask, createAsset, deleteAsset, listAssetSnapshots, listAssets, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
 import { useUi } from "../store/ui";
-import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
+import { fmtTime, mediaUrl, statusTagColor } from "../lib/status";
 
 const levelTag = (a: AssetEntry) => {
   const s = a.lastStatus || "";
@@ -21,7 +21,6 @@ const levelTag = (a: AssetEntry) => {
 export default function Ledger() {
   const nav = useNavigate();
   const [assets, setAssets] = useState<AssetEntry[]>([]);
-  const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [kw, setKw] = useState("");
   const [type, setType] = useState("");
   const [current, setCurrent] = useState<AssetEntry | null>(null);
@@ -56,9 +55,12 @@ export default function Ledger() {
   }
 
   useEffect(() => {
-    Promise.all([listAssets(), listRecords(), listTasks()]).then(([as, rs, ts]) => {
+    // 【不再拉全量巡检记录】这个页面以前每次打开都要下载整份记录列表
+    // (每条带 fields_json / images_json,实测 654 KB),而它只被用来做两处
+    // 关联 —— 而那两处的关联键还是错的(按 pointId 而非 assetId)。
+    // 轨迹改成按资产单查,封面直接用资产自己的字段,这份下载就完全不需要了。
+    Promise.all([listAssets(), listTasks()]).then(([as, ts]) => {
       setAssets(as);
-      setRecords(rs);
       setTasks(ts);
       const focus = params.get("focus");
       if (focus) {
@@ -79,22 +81,20 @@ export default function Ledger() {
     [assets],
   );
 
-  // 资产 → 最近一张现场照片(取该点位最新带图记录)
+  // 资产 → 封面照。全部取自资产【自己】的字段,不去记录里找。
+  //
+  // 【原来还有一段兜底:按 pointId 到全量记录里找最新带图的一条】pointId 是
+  // 巡检点位/模板,同类设备共用 —— 那段兜底会把别的电梯的照片贴到这台头上
+  // (HT-3 一度显示的是一张空调温控器)。而且它本来就多余:下面这行的最后
+  // 一个回退已经是 a.lastPhotoPath,后端在 enrichAssetForDisplay 里填好了。
   const photoOf = useMemo(() => {
     const map: Record<string, string> = {};
-    const sorted = [...records].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     for (const a of assets) {
-      const preferred = a.coverImage?.path || a.coverImage?.url || a.coverImagePath || a.lastPhotoPath;
-      if (preferred) {
-        map[a.id] = mediaUrl(preferred);
-        continue;
-      }
-      const rec = sorted.find((r) => (r.pointId === a.pointId || r.id === a.lastRecordId) && r.images?.length);
-      const p = rec?.images?.[0];
-      if (p) map[a.id] = mediaUrl(p.path || p.url);
+      const p = a.coverImage?.path || a.coverImage?.url || a.coverImagePath || a.lastPhotoPath;
+      if (p) map[a.id] = mediaUrl(p);
     }
     return map;
-  }, [assets, records]);
+  }, [assets]);
 
   const rows = useMemo(
     () =>
@@ -110,13 +110,29 @@ export default function Ledger() {
     [assets, kw, type, project],
   );
 
-  const trail = useMemo(() => {
-    if (!current) return [];
-    return records
-      .filter((r) => r.pointId === current.pointId || r.id === current.lastRecordId)
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
-      .slice(0, 5);
-  }, [current, records]);
+  // 巡检轨迹:按【资产】查后端,不在前端筛全量记录。
+  //
+  // 【原来是 r.pointId === current.pointId】pointId 是巡检点位/模板
+  // (比如"无机房电梯"),整栋楼的无机房电梯共用同一个 —— 筛出来的是
+  // "所有同类设备的记录",不是这一台的。线上表现:KT-3 的轨迹里列着
+  // FT-11、FT-12 的巡检时间,而 KT-3 自己那条 10:58 反而不在里面。
+  // 不报错、不空白,看起来一切正常,所以一直没人发现。
+  //
+  // asset_snapshots 才是按 assetId 记的,后端 /api/assets/{id}/records 查的就是它。
+  const [trail, setTrail] = useState<AssetSnapshotEntry[]>([]);
+  useEffect(() => {
+    if (!current) {
+      setTrail([]);
+      return;
+    }
+    let alive = true; // 快速切换资产时,后回来的旧请求不能覆盖新结果
+    listAssetSnapshots(current.id, 5)
+      .then((d) => alive && setTrail(d.records))
+      .catch(() => alive && setTrail([]));
+    return () => {
+      alive = false;
+    };
+  }, [current]);
 
   const currentPhoto = current ? photoOf[current.id] : "";
   const coverInputId = current ? `asset-cover-${current.id}` : "asset-cover";
@@ -429,11 +445,13 @@ export default function Ledger() {
               <div style={{ color: "#8aa0b0", fontSize: 13 }}>暂无巡检记录</div>
             ) : (
               trail.map((r) => {
-                const s = recordBusinessStatus(r);
+                // 【点进去要用 recordId,不是快照自己的 id】快照是"这台设备在
+                // 某次巡检里的状态",记录才是那次巡检本身。传错了详情页什么都查不到。
+                const s = r.status || "已完成";
                 return (
                   <div
                     key={r.id}
-                    onClick={() => nav(`/record?focus=${encodeURIComponent(r.id)}`)}
+                    onClick={() => nav(`/record?focus=${encodeURIComponent(r.recordId)}`)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -456,7 +474,9 @@ export default function Ledger() {
                         color: "#5b6b78",
                       }}
                     >
-                      {(r.aiSummary || r.report || r.recordNo || "").slice(0, 30)}
+                      {/* 不用 slice 截断:外层已经 overflow:hidden + textOverflow:ellipsis,
+                          按宽度省略比按字数截更准,也不会把 emoji 劈成半个 */}
+                      {r.summary || "—"}
                     </span>
                   </div>
                 );
