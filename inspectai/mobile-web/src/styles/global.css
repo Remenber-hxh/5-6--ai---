@@ -3738,16 +3738,62 @@ a {
   opacity: 0.7;
 }
 
-/* 改密码页的表单区。这页是浅色流程页(不是登录页那种深色玻璃卡),
-   所以给一张白卡把三个输入框收在一起,和台账/任务页的卡片语言一致。 */
-.pwd-form {
+/* ===== 浅色页上的表单(.form-light)=====
+ *
+ * 【为什么必须单独一套】上面 .field / .field-label / .arco-input 那一整段
+ * 是给登录页那张【深色玻璃卡】写的:标签是半透明白、输入框底是半透明黑、
+ * 输入文字直接写死 color:#fff、placeholder 也是半透明白。
+ *
+ * 原样搬到浅色页上,结果是:标签几乎看不见、输入框成了灰块,而且
+ * 【打进去的字是白的】—— 用户看不到自己输了什么。改密码这种要输三遍的页面,
+ * 这一条足以让人完全没法用。2026-08-11 改密码页就是这么翻车的。
+ *
+ * 所以浅色页的表单一律加 .form-light,把那一段逐条压回浅色口径。
+ */
+.form-light {
   margin: 12px 16px;
   padding: 4px 16px 16px;
   border-radius: 14px;
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
 }
-.pwd-form .screen-hint {
+.form-light .field-label {
+  color: var(--lt-fg-2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.form-light .field .arco-input-container {
+  border-color: var(--lt-border);
+  background: var(--lt-fill);
+}
+.form-light .field .arco-input-container:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(38, 126, 240, 0.14);
+}
+.form-light .field input.arco-input {
+  color: var(--lt-fg);
+  caret-color: var(--brand);
+}
+.form-light .field input.arco-input::placeholder {
+  color: #9aa4ad;
+}
+/* 自动填充同理:上面那条深色的 inset 阴影会在浅色页上糊成一块黑,
+   而且 -webkit-text-fill-color:#fff 让填进来的账号密码看不见。 */
+.form-light .field input.arco-input:-webkit-autofill,
+.form-light .field input.arco-input:-webkit-autofill:hover,
+.form-light .field input.arco-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--lt-fg);
+  -webkit-box-shadow: 0 0 0 1000px var(--lt-fill) inset;
+  box-shadow: 0 0 0 1000px var(--lt-fill) inset;
+  caret-color: var(--brand);
+}
+/* 密码小眼睛在深色页用翡翠绿,浅色页跟主按钮一个色系,别一页两种强调色 */
+.form-light .pwd-eye {
+  color: var(--brand);
+  font-weight: 600;
+}
+.form-light .screen-hint {
   margin: 14px 0 0;
+  color: var(--lt-fg-2);
   text-align: left;
 }

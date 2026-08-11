@@ -69,12 +69,14 @@ export default function ChangePasswordPage() {
     </button>
   );
 
+  // 只挂 .flow-screen —— 浅色底和文字色都在它身上。原来还挂了 me-screen,
+  // 那是个人页专用的(卡片分组 / 头像 / 退出按钮),这页一条都用不到。
   return (
-    <div className="flow-screen me-screen">
+    <div className="flow-screen">
       <FlowHeader title="修改密码" onBack={() => nav(-1)} />
 
       <div className="scroll-area flow-body">
-        <div className="pwd-form">
+        <div className="form-light">
           <div className="field">
             <span className="field-label">当前密码</span>
             <Input
