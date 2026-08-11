@@ -488,3 +488,51 @@ export function extractActionProposal(reply: string): {
   }
   return { text: reply.replace(m[0], "").trim(), proposal };
 }
+
+// ===== 注册码 =====
+//
+// 巡检员自助注册的门槛。码上带角色和租户,注册出来的账号直接落到对的位置。
+// 【管理员角色的码后端会拒签】—— 一张能自助注册出管理员的码流出去,
+// 整个租户的数据就没门槛了。
+
+export interface RegistrationCodeEntry {
+  id: string;
+  code: string;
+  roleCode: string;
+  departmentId?: string;
+  note?: string;
+  /** 0 = 不限次数 */
+  maxUses: number;
+  usedCount: number;
+  /** 空 = 不过期 */
+  expiresAt?: string;
+  disabled: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export function listRegistrationCodes() {
+  return api<{ codes: RegistrationCodeEntry[] }>("/api/registration-codes").then(
+    (d) => d.codes || [],
+  );
+}
+
+export function createRegistrationCode(payload: {
+  roleCode: string;
+  maxUses: number;
+  expiresInDays: number;
+  note?: string;
+  departmentId?: string;
+}) {
+  return api<{ code: RegistrationCodeEntry }>("/api/registration-codes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then((d) => d.code);
+}
+
+export function setRegistrationCodeDisabled(id: string, disabled: boolean) {
+  return api<{ ok: boolean; disabled: boolean }>(
+    `/api/registration-codes/${encodeURIComponent(id)}/disable`,
+    { method: "POST", body: JSON.stringify({ disabled }) },
+  );
+}

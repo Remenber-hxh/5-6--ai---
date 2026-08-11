@@ -20,6 +20,7 @@ import {
   updateRole,
   updateUser,
 } from "../api/mgmt";
+import RegistrationCodes from "../components/RegistrationCodes";
 import { useAuth } from "../store/auth";
 import { fmtTime } from "../lib/status";
 
@@ -416,7 +417,11 @@ export default function Users() {
           ]}
         />
       </Card>
-    )}
-    </>
-  );
+      )}
+
+      {/* 注册码放在用户列表下面:它和"新建用户"是同一件事的两条路 ——
+          一个一个建 vs 发一张码让人自助注册。挨着放,管理员才会想起还有这条路。 */}
+      <RegistrationCodes roles={roles} />
+      </>
+    );
 }
