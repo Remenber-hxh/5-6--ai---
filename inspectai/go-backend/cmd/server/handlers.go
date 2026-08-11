@@ -3833,7 +3833,50 @@ func (s *Server) handleListChangeRequests(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+	s.fillChangeRequestTargetNames(r, list)
 	writeJSON(w, http.StatusOK, map[string]any{"requests": list})
+}
+
+// fillChangeRequestTargetNames 把 TargetID 翻成人看得懂的设备名。
+//
+// 审批的人要判断"这是在改哪台设备",而 TargetID 对资产是
+// "会议中心::elevator_no_room::KT-5"、对记录是 "rec_1754..." —— 都不能直接看。
+// 资产直接取名字;记录先查记录、再顺着它的资产 ID 取名字,取不到就退回点位名。
+func (s *Server) fillChangeRequestTargetNames(r *http.Request, list []*ChangeRequest) {
+	tenant := s.tenantForRequest(r)
+	// 同一台设备往往有多条申请,缓存一下别重复查库
+	cache := map[string]string{}
+	for _, cr := range list {
+		if cr == nil || cr.TargetName != "" {
+			continue
+		}
+		key := cr.TargetType + "|" + cr.TargetID
+		if name, ok := cache[key]; ok {
+			cr.TargetName = name
+			continue
+		}
+		// 【目标可能已经不存在】清理历史数据时删掉了记录,而引用它的修改申请
+		// 还留着 —— 成了孤儿。这种情况必须【说出来】:显示成空白会让审批的人
+		// 以为系统坏了,反复刷新;而它其实是永远也批不了的(applyChangeRequest
+		// 那一步同样查不到目标)。
+		name := ""
+		switch cr.TargetType {
+		case "asset":
+			if a, err := s.store.GetAsset(tenant, cr.TargetID); err == nil && a != nil {
+				name = firstNonEmpty(a.AssetName, a.AssetKey)
+			} else {
+				name = "设备已不存在"
+			}
+		case "record":
+			if rec, err := s.store.GetRecord(tenant, cr.TargetID); err == nil && rec != nil {
+				name = firstNonEmpty(fieldValue(rec.Fields, "asset_no"), rec.PointName)
+			} else {
+				name = "记录已不存在"
+			}
+		}
+		cache[key] = name
+		cr.TargetName = name
+	}
 }
 
 // handleChangeRequestRoutes 分发 /api/change-requests/{id}/{action}
@@ -3974,7 +4017,10 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 		status, _ := cr.Patch["lastStatus"].(string)
 		summary, _ := cr.Patch["lastSummary"].(string)
 		if name == "" && status == "" && summary == "" {
-			return nil, fmt.Errorf("asset patch 为空")
+			return nil, fmt.Errorf(
+				"这条申请没有可应用的台账改动(缺 assetName / lastStatus / lastSummary)。" +
+					"早期版本的移动端对台账目标发的是巡检记录的 patch 形状,提交时不会报错、" +
+					"到这一步才拦下。请驳回后重新提交")
 		}
 		return nil, updateAssetMetaExec(exec, defaultTenantID, cr.TargetID, name, status, summary)
 	case "record":
@@ -4217,7 +4263,10 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		status, _ := cr.Patch["lastStatus"].(string)
 		summary, _ := cr.Patch["lastSummary"].(string)
 		if name == "" && status == "" && summary == "" {
-			return fmt.Errorf("asset patch 为空")
+			return fmt.Errorf(
+				"这条申请没有可应用的台账改动(缺 assetName / lastStatus / lastSummary)。" +
+					"早期版本的移动端对台账目标发的是巡检记录的 patch 形状,提交时不会报错、" +
+					"到这一步才拦下。请驳回后重新提交")
 		}
 		_, err := s.store.UpdateAssetMeta(defaultTenantID, cr.TargetID, name, status, summary)
 		if err == nil && status == "正常" {

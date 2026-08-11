@@ -338,6 +338,12 @@ type ChangeRequest struct {
 	ReviewedAt  *time.Time     `json:"reviewedAt,omitempty"`
 	ReviewNote  string         `json:"reviewNote,omitempty"`
 	AppliedAt   *time.Time     `json:"appliedAt,omitempty"`
+
+	// TargetName 仅 API 展示时动态填充,不入库。
+	// 【为什么需要】TargetID 对资产是 "会议中心::elevator_no_room::KT-5",
+	// 对记录是 "rec_1754..." —— 审批的人看这两串东西判断不了在改哪台设备。
+	// 后台审批列表的「设备」列一度整列空白,就是因为只有 ID 没有名字。
+	TargetName string `json:"targetName,omitempty"`
 }
 
 // ChangeRequestFilter — ListChangeRequests 的查询条件

@@ -27,6 +27,11 @@ import type { AssetDTO, AssetSnapshotDTO, FieldValue } from "@/api/inspection";
 
 const REASONS = ["AI 识别有误", "现场已整改", "补拍补录", "误判,实际正常"];
 
+// 资产台账能改的三样。【必须和后端 applyChangeRequestSQL 的 asset 分支对齐】——
+// 那里只认 assetName / lastStatus / lastSummary 三个键,发别的键会"提交成功、
+// 审批时报 asset patch 为空"。选项取自后台台账编辑表单,两端保持一致。
+const ASSET_STATUS = ["正常", "异常", "待复核", "待维修"];
+
 /** 判断字段是不是"待复核"。与台账/AI 总结同一套是否语义(旧版 crfFieldIsBad) */
 function fieldIsBad(f: FieldValue): boolean {
   const v = String(f.value || "").trim();
@@ -69,6 +74,8 @@ export default function ChangeRequestSheet({
   const [target, setTarget] = useState(targets[0]?.value || "");
   const [fields, setFields] = useState<FieldValue[] | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  /** 选中"资产台账"时改的三项(和记录的字段编辑是两套,键名也不同) */
+  const [assetEdits, setAssetEdits] = useState<Record<string, string>>({});
   const [reason, setReason] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -107,6 +114,22 @@ export default function ChangeRequestSheet({
   const valueOf = (f: FieldValue) => edits[f.code] ?? f.value ?? "";
   const changed = (fields || []).filter((f) => valueOf(f) !== (f.value || ""));
 
+  // 资产那三项里真正被改动过的。原值取自当前台账,没动的不提交 ——
+  // 审批的人一眼就该看出动了什么。
+  const assetPatch = (): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    const base: Record<string, string> = {
+      assetName: asset.assetName || "",
+      lastStatus: asset.lastStatus || "",
+      lastSummary: asset.lastSummary || "",
+    };
+    for (const k of Object.keys(base)) {
+      const v = (assetEdits[k] ?? base[k]).trim();
+      if (v && v !== base[k]) out[k] = v;
+    }
+    return out;
+  };
+
   async function submit() {
     const [kind, id] = splitTarget(target);
     if (!id) return;
@@ -114,6 +137,40 @@ export default function ChangeRequestSheet({
       Toast.show({ content: "请填写修改理由" });
       return;
     }
+
+    // 【两种目标的 patch 形状完全不同】
+    // 记录:{ fields: [...] }(+ addImages)
+    // 资产:{ assetName?, lastStatus?, lastSummary? }
+    // 以前不分,资产也发 fields —— 后端创建时只校验"patch 非空",所以提交
+    // 成功;等主管点通过才炸一句"asset patch 为空",而申请已经躺在待办里了。
+    if (kind === "asset") {
+      const ap = assetPatch();
+      if (!Object.keys(ap).length) {
+        Toast.show({ content: "没有改动任何一项" });
+        return;
+      }
+      setBusy(true);
+      try {
+        await createChangeRequest({
+          targetType: "asset",
+          targetId: id,
+          patch: ap,
+          reason: reason.trim(),
+        });
+        Toast.show({ content: "已提交,等待主管审批", position: "bottom" });
+        onClose();
+        onSubmitted?.();
+      } catch (err) {
+        Toast.show({
+          content: err instanceof Error ? err.message : "提交失败",
+          duration: 3500,
+        });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     if (!changed.length && !photos.length) {
       Toast.show({ content: "没有任何修改" });
       return;
@@ -155,6 +212,7 @@ export default function ChangeRequestSheet({
     }
   }
 
+  const isAsset = splitTarget(target)[0] === "asset";
   const bad = (fields || []).filter(fieldIsBad);
   const rest = (fields || []).filter((f) => !fieldIsBad(f));
 
@@ -178,14 +236,52 @@ export default function ChangeRequestSheet({
           }}
         />
 
-        {fields === null ? (
-          splitTarget(target)[0] === "record" ? (
-            <div className="cr-hint">正在取这次巡检的字段…</div>
-          ) : (
+        {isAsset ? (
+          /* 资产台账:能改的就是后端认的这三项。
+             以前这里只有一句"建议优先选巡检记录"的劝退提示,没有任何可改的
+             东西 —— 选了资产的人只能靠补张照片才提交得出去,而后端的 asset
+             分支根本不看照片,于是审批时必炸。 */
+          <>
             <div className="cr-hint">
-              直接改台账状态不留巡检依据,建议优先选一次巡检记录来改。
+              改台账不留巡检依据。只有"这次巡检没问题、是台账状态记错了"才用它,
+              否则请选一次巡检记录来改。
             </div>
-          )
+
+            <div className="cr-sec">设备状态</div>
+            <div className="cr-chips">
+              {ASSET_STATUS.map((st) => {
+                const cur = assetEdits.lastStatus ?? asset.lastStatus ?? "";
+                return (
+                  <Tag
+                    key={st}
+                    type={cur === st ? "primary" : "hollow"}
+                    onClick={() =>
+                      setAssetEdits((c) => ({ ...c, lastStatus: st }))
+                    }
+                  >
+                    {st}
+                  </Tag>
+                );
+              })}
+            </div>
+
+            <div className="cr-sec">设备名称</div>
+            <Input
+              value={assetEdits.assetName ?? asset.assetName ?? ""}
+              onChange={(v) => setAssetEdits((c) => ({ ...c, assetName: v }))}
+              placeholder="设备名称"
+            />
+
+            <div className="cr-sec">状态说明</div>
+            <Textarea
+              value={assetEdits.lastSummary ?? asset.lastSummary ?? ""}
+              onChange={(v) => setAssetEdits((c) => ({ ...c, lastSummary: v }))}
+              placeholder="台账上显示的那句说明"
+              maxLength={200}
+            />
+          </>
+        ) : fields === null ? (
+          <div className="cr-hint">正在取这次巡检的字段…</div>
         ) : (
           <>
             {bad.length > 0 && (
@@ -217,6 +313,10 @@ export default function ChangeRequestSheet({
           </>
         )}
 
+        {/* 【资产目标下不显示补交照片】后端的 asset 分支完全不看 addImages ——
+            放着只会让人以为传上去了。照片属于某一次巡检,不属于台账。 */}
+        {!isAsset && (
+          <>
         <div className="cr-label">补交照片</div>
         <label className="cr-photo">
           <input
@@ -233,6 +333,8 @@ export default function ChangeRequestSheet({
         <div className="cr-note">
           审批通过后才并入这次巡检 —— 没通过的照片不会进证据链
         </div>
+          </>
+        )}
 
         <div className="cr-label">修改理由</div>
         <div className="cr-chips">
@@ -261,7 +363,10 @@ export default function ChangeRequestSheet({
           loading={busy}
           onClick={() => void submit()}
         >
-          提交申请{changed.length ? ` · 改了 ${changed.length} 项` : ""}
+          提交申请
+          {(isAsset ? Object.keys(assetPatch()).length : changed.length) > 0
+            ? ` · 改了 ${isAsset ? Object.keys(assetPatch()).length : changed.length} 项`
+            : ""}
         </Button>
       </div>
     </Popup>

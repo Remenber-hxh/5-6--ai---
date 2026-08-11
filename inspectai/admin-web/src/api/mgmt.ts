@@ -60,20 +60,31 @@ export function uploadAssetCover(assetId: string, file: File) {
   }).then((d) => d.asset);
 }
 
+/**
+ * 修改申请。
+ *
+ * 【字段名以 Go 的 ChangeRequest 为准】这个接口以前写的是 type / createdAt /
+ * requesterName / assetName —— 后端返回的却是 targetType / requestedAt /
+ * requestedBy / (没有名字,只有 targetId)。四个全对不上,于是审批列表的
+ * 时间、类型、设备、申请人【整整四列都是空的】,而理由和状态碰巧对上了,
+ * 所以页面看起来"能用",只是查不出是谁在改哪台设备。
+ * TypeScript 也帮不上忙:这些字段全是可选的,拼错只会得到 undefined。
+ */
 export interface ChangeRequest {
   id: string;
-  type?: string;
-  status?: string; // pending / approved / rejected
+  /** "asset" / "record" */
+  targetType?: string;
+  targetId?: string;
+  /** 后端动态填充的可读名称(设备名 / 设备编号),不入库 */
+  targetName?: string;
+  /** 待应用的补丁。record 是 { fields: [...] },asset 是 { assetName?, lastStatus?, lastSummary? } */
+  patch?: Record<string, unknown>;
+  status?: string; // pending / approved / rejected / withdrawn
   reason?: string;
-  requesterName?: string;
-  assetId?: string;
-  assetName?: string;
-  recordId?: string;
-  createdAt?: string;
-  fieldKey?: string;
-  fieldLabel?: string;
-  oldValue?: string;
-  newValue?: string;
+  requestedBy?: string;
+  requestedAt?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
   reviewNote?: string;
 }
 
