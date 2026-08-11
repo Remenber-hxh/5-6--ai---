@@ -3721,11 +3721,28 @@ func hashFile(path string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// truncate 按【字符】截断,不是字节。
+//
+// 【原来是 s[:max]】Go 的字符串下标是字节下标,一个汉字 3 字节 —— 截断点
+// 落在汉字中间就会把它劈成半个,输出无效 UTF-8,显示成 "??"。
+// 企业微信群里那条 "AI建议:...有效期内??.." 就是这么来的。
+//
+// 为什么是"偶尔":纯中文时 90 字节正好是 30 个整字,不会劈;而 AI 建议里
+// 混着 "KT-5" 这类 ASCII,边界一偏移就落进汉字中间。这类 bug 不报错、
+// 不进日志,只有人看到群消息时才发现。
+//
+// 注意语义变了:max 现在是字符数,同样的数字能装下更多内容(90 字节 ≈ 30 字
+// → 90 字),这也更接近当初写这些数字时的意图。落库的 ai_summary_error 是
+// VARCHAR(512),MySQL 按字符计,120 字符装得下。
+//
+// (management_ai.go 里的 truncateRunes 做的是同一件事,区别只是它会先
+// TrimSpace。两个helper并存本身就是这次踩坑的原因。)
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	rs := []rune(s)
+	if len(rs) <= max {
 		return s
 	}
-	return s[:max] + "…"
+	return string(rs[:max]) + "…"
 }
 
 // ===== 修改申请（审批流） =====
