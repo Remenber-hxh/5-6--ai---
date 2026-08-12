@@ -10,6 +10,7 @@ import { RecordDTO, getRecord, submitRecord } from "@/api/inspection";
 import { usePolling } from "@/hooks/usePolling";
 import { useResource } from "@/hooks/useResource";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
+import { clearRetakeTarget, getRetakeTarget } from "@/store/retake";
 
 /** AI 总结未就绪时轮询等待:提交后后端才异步生成总结 */
 const POLL_MS = 2000;
@@ -90,7 +91,18 @@ export default function PreviewPage() {
       setRec(submitted);
       // 关联的工程任务由后端自动销账,本地清掉当前任务标记
       if (getActiveTask()) clearActiveTask();
-      Toast.show({ content: "已提交", position: "bottom" });
+
+      // 复检提交完毕:清掉上下文,否则下一次普通拍照还会被强制成这台设备的
+      // 模板和编号 —— 那会把不相干的巡检记录全挂到它头上。
+      const wasRetake = getRetakeTarget();
+      if (wasRetake) clearRetakeTarget();
+
+      Toast.show({
+        content: wasRetake
+          ? `复检已提交,「${wasRetake.assetName}」健康档案已更新`
+          : "已提交",
+        position: "bottom",
+      });
 
       // 总结还没生成好就开轮询(实际的等待逻辑在上面的 usePolling 里 ——
       // 放在这里的话页面一卸载就断了)

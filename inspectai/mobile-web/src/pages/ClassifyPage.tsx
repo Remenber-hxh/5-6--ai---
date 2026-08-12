@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
+import { getRetakeTarget } from "@/store/retake";
 import {
   ClassifyResult,
   TemplateDTO,
@@ -53,11 +54,21 @@ export default function ClassifyPage() {
     void run();
   }, [run]);
 
+  // 复检:目标设备用哪个模板是【已知】的,不该再让 AI 猜一次 ——
+  // 猜错了这条记录就落到别的模板上,原来那条异常照样挂着,而且多出一台"新设备"。
+  const retake = getRetakeTarget();
+
   async function go(templateId: string) {
+    if (retake?.templateId) templateId = retake.templateId;
     if (busy || !templateId || templateId === "unknown") return;
     setBusy(true);
     try {
-      const rec = await createRecordFromShots(templateId, shotIds);
+      // 点位也带上:同一台设备的记录要落在同一个点位下
+      const rec = await createRecordFromShots(
+        templateId,
+        shotIds,
+        retake?.pointId || undefined,
+      );
       nav(`/record/${rec.id}`, { replace: true });
     } catch (err) {
       Toast.show({ content: err instanceof Error ? err.message : "创建失败" });

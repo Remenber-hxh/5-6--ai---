@@ -16,6 +16,7 @@ import {
 } from "@/api/inspection";
 import { usePolling } from "@/hooks/usePolling";
 import { useResource } from "@/hooks/useResource";
+import { getRetakeTarget } from "@/store/retake";
 
 const POLL_MS = 2000;
 const POLL_MAX = 40; // 最长约 80 秒
@@ -171,7 +172,27 @@ export default function RecordPage() {
     },
   );
   useEffect(() => {
-    if (loaded) setRec(loaded);
+    if (!loaded) return;
+    const rt = getRetakeTarget();
+    if (!rt?.assetNo) {
+      setRec(loaded);
+      return;
+    }
+    // 复检:把目标设备编号写进 asset_no。
+    //
+    // 【这一步才是决定归属的】前面强制模板和点位只保证"落在同一类、同一处",
+    // 后端认资产身份靠的是 asset_no(见 assetIDFor)。不写的话,AI 从照片里
+    // 认出来的编号可能和目标不一致 —— 复检出来的记录会挂到另一台设备上,
+    // 原来那条异常照样挂着,而且台账里多一台。
+    // source 标成 manual:这是人指定的,不是识别出来的,别让后续流程当成低置信。
+    setRec({
+      ...loaded,
+      fields: loaded.fields.map((f) =>
+        f.code === "asset_no"
+          ? { ...f, value: rt.assetNo, source: "manual", confidence: 1 }
+          : f,
+      ),
+    });
   }, [loaded]);
 
   // 【processing 也要接着等】原来是 `状态 !== "not_started" 就 return`,
