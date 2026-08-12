@@ -215,8 +215,45 @@ export default function MainLayout() {
           >
             <Outlet />
           </motion.div>
-          {/* 网站 ICP 备案号(工信部要求),常驻内容区底部 */}
+          {/* 【首页(/)不渲染】那是 AgentHome 的整屏布局,它自己页底已经有一份;
+              两份都在的话这一份会掉到它的深色面板外面、露在白底上被截断。 */}
+          {loc.pathname !== "/" && (
+          <>
+          {/* 网站备案号,常驻内容区底部。
+              ICP 是工信部要求(链 beian.miit.gov.cn);公安联网备案要求编号放在
+              底部并链到全国公安机关互联网站安全管理服务平台 —— 现在的域名是
+              beian.mps.gov.cn,老的 www.beian.gov.cn 已经迁走,别再用旧链接。 */}
           <div style={{ textAlign: "center", padding: "12px 0 2px", color: "#9aa7b2", fontSize: 12 }}>
+            <a
+              href="https://beian.mps.gov.cn/#/query/webSearch?code=32020602003940"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                color: "inherit",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 3,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {/* 警徽图标。文件缺失时自己藏起来,不要留碎图占位 ——
+                  备案文字才是合规要求,图标是惯例。原图 36×40,宽高按比例写死。放 public/beian-gongan.png 即可。
+                  【不带开头的斜杠】本页线上挂在 /v2/ 下,绝对路径会指到站点根。 */}
+              <img
+                src="beian-gongan.png"
+                alt=""
+                width={12}
+                height={13}
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+              苏公网安备32020602003940号
+            </a>
+            <span style={{ margin: "0 6px", opacity: 0.5 }} aria-hidden>
+              ·
+            </span>
             <a
               href="https://beian.miit.gov.cn/"
               target="_blank"
@@ -226,6 +263,8 @@ export default function MainLayout() {
               苏ICP备2026048624号
             </a>
           </div>
+          </>
+          )}
         </Content>
       </Layout>
     </Layout>

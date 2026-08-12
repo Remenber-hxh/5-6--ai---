@@ -385,15 +385,49 @@ export default function AgentHome() {
       <div style={st.foot}>
         {/* 免责声明绝对定位水平居中;备案号靠左、操作链接靠右,三者互不挤占 */}
         <span style={st.footDisclaimer}>AI 生成的内容仅供参考,请以实际数据为准</span>
-        {/* 首页是整屏布局,盖住了 MainLayout 内容区底部的备案号,这里补一处 */}
-        <a
-          href="https://beian.miit.gov.cn/"
-          target="_blank"
-          rel="noopener"
-          style={{ ...st.footLink, textDecoration: "none" }}
+        {/* 首页是整屏布局,盖住了 MainLayout 内容区底部的备案号,这里补一处。
+            MainLayout 那份在首页路由下【不渲染】—— 两份都在的话,它会掉到
+            这张深色面板外面、露在白底上被截断(2026-08-11 加公安备案时踩到)。 */}
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            whiteSpace: "nowrap",
+          }}
         >
-          苏ICP备2026048624号
-        </a>
+          <a
+            href="https://beian.mps.gov.cn/#/query/webSearch?code=32020602003940"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              ...st.footLink,
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 3,
+            }}
+          >
+            <img
+              src="beian-gongan.png"
+              alt=""
+              width={11}
+              height={12}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+            苏公网安备32020602003940号
+          </a>
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener"
+            style={{ ...st.footLink, textDecoration: "none" }}
+          >
+            苏ICP备2026048624号
+          </a>
+        </span>
         <span style={{ display: "flex", gap: 14, marginLeft: "auto" }}>
           <a style={st.footLink} onClick={togglePet}>
             {petOn ? "隐藏看板娘" : "显示看板娘"}

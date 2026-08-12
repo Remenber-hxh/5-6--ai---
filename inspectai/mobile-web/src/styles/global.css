@@ -1532,6 +1532,17 @@
   color: rgba(234, 247, 255, 0.42);
   text-decoration: none;
 }
+/* 两个备案号并排。窄屏放不下时整体换行,不要把「苏公网安备…号」从中间断开 */
+.beian-sep {
+  margin: 0 6px;
+  opacity: 0.5;
+}
+.beian-gongan {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
 
 /* 登录页:居中卡片 + 钉底 */
 .center-screen .beian-line {

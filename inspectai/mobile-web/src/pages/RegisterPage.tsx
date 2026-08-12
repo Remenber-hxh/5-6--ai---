@@ -70,7 +70,6 @@ export default function RegisterPage() {
         </span>
 
         <h1 className="screen-title">注册账号</h1>
-        <p className="screen-sub">用主管发给你的注册码开通账号</p>
 
         <div className="field">
           <span className="field-label">注册码</span>

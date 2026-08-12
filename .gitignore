@@ -30,6 +30,19 @@ inspectai/.playwright-cli/
 !inspectai/frontend/**/*.jpg
 !inspectai/frontend/**/*.svg
 !test/**/*.png
+
+# 新版两端的 UI 图片。走的路不同,但都【必须进仓】:
+#   · mobile-web/public —— go-backend 的 Docker 镜像里现场 npm run build,
+#     源文件不在仓库里,构建出来的 dist 自然也没有。
+#   · admin-web/public —— 同理,是构建的输入。
+#   · admin-web/dist —— 这份 dist 是 commit 进仓、由 nginx 直接
+#     bind mount 给 /v2/ 的(compose 里 ./admin-web/dist:/usr/share/nginx/admin-web),
+#     不进仓 = 线上 404。
+# 2026-08-11 加公安备案警徽时发现的,顺带查出 admin 登录页的 login-bg.png
+# 【从来没进过仓】—— Login.tsx 里 url('login-bg.png') 引着它,线上一直是空背景。
+!inspectai/mobile-web/public/*.png
+!inspectai/admin-web/public/*.png
+!inspectai/admin-web/dist/*.png
 !test/**/*.jpg
 
 # ---- 老备份 / 归档 ----
