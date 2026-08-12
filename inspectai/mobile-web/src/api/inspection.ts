@@ -117,10 +117,16 @@ export async function listTemplates(
 export async function createRecordFromShots(
   templateId: string,
   shotIds: string[],
+  /** 复检时带上目标点位,保证新记录和原设备落在同一个点位 */
+  pointId?: string,
 ) {
   return api<RecordDTO>("/api/inspection/records", {
     method: "POST",
-    body: JSON.stringify({ templateId, offlineShotIds: shotIds }),
+    body: JSON.stringify({
+      templateId,
+      offlineShotIds: shotIds,
+      ...(pointId ? { pointId } : {}),
+    }),
   });
 }
 
@@ -262,6 +268,11 @@ export async function deleteOfflineShots(shotIds: string[]): Promise<number> {
 export interface AssetDTO {
   id: string;
   assetName: string;
+  /** 复检要用:跳过 AI 分类、强制落到同一个模板 */
+  templateId?: string;
+  pointId?: string;
+  /** 后端认资产身份的那个键,复检时写进表单的 asset_no */
+  assetKey?: string;
   assetType?: string;
   project?: string;
   projectCode?: string;
@@ -363,6 +374,27 @@ export interface ChangeRequestDTO {
   status: string;
   requestedBy?: string;
   requestedAt?: string;
+}
+
+/**
+ * 某台设备相关的修改申请(直接改这台的 + 改它任意一次巡检记录的)。
+ *
+ * 【走后端算,不在前端筛】旧版是把全部申请拉下来自己筛,有两个静默失效:
+ * 列表有 200 条上限,老申请会被截掉;而"这条记录属不属于这台设备"要靠前端
+ * 已加载的那一页历史判断,没翻到的页一律匹配不上。两个都只是"少显示",
+ * 页面看起来一切正常。
+ *
+ * 权限在后端:一线人员只拿到自己发起的,管理角色拿到这台设备的全部。
+ */
+export async function listAssetChangeRequests(
+  assetId: string,
+  signal?: AbortSignal,
+): Promise<ChangeRequestDTO[]> {
+  const body = await api<{ requests: ChangeRequestDTO[] | null }>(
+    `/api/assets/${encodeURIComponent(assetId)}/change-requests`,
+    { signal },
+  );
+  return body.requests || [];
 }
 
 export async function listPendingChangeRequests(

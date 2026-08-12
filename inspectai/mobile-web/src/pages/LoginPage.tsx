@@ -45,10 +45,6 @@ export default function LoginPage() {
         </span>
 
         <h1 className="screen-title">巡检员登录</h1>
-        <p className="screen-sub">
-          请使用主管分配的账号登录,记录会自动归到你名下
-        </p>
-
         <div className="field">
           <span className="field-label">账号</span>
           <Input

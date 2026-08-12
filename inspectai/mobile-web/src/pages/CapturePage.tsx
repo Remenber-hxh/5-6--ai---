@@ -7,6 +7,7 @@ import { IconAlbum } from "@/components/icons";
 import PendingPanel from "@/components/PendingPanel";
 import { useLongPress } from "@/lib/useLongPress";
 import { useAuth } from "@/store/auth";
+import { clearRetakeTarget, getRetakeTarget } from "@/store/retake";
 import { usePending } from "@/store/pending";
 import { clearActiveTask, getActiveTask } from "@/store/activeTask";
 import { listOfflineShots } from "@/api/inspection";
@@ -29,6 +30,9 @@ export default function CapturePage() {
   }, [init]);
 
   // 相册入口:长按快门从右侧滑出。不做成常驻按钮 —— 首页只留"拍照"一件事。
+  // 复检上下文。用 state 兜一层而不是每次渲染读 localStorage ——
+  // 点"取消复检"后横幅要立刻消失,直接读存储不会触发重渲染。
+  const [retake, setRetake] = useState(getRetakeTarget);
   const [albumOpen, setAlbumOpen] = useState(false);
   // 光波是一次性动画。用递增的 key 而不是布尔值:布尔值在动画没播完时
   // 再次长按无法重放(类名没变化,浏览器不会重启动画),key 变了才会重挂。
@@ -80,6 +84,30 @@ export default function CapturePage() {
         </button>
       </div>
 
+      {/* 复检横幅。没有它的话,巡检员根本不知道自己正处在"为某台设备复检"的
+          状态里 —— 而这个状态会强制模板和设备编号,拍出来的记录全挂到那台上。
+          必须能一眼看见、一键取消。 */}
+      {retake && (
+        <NoticeBar
+          leftContent={<span className="nb-ic is-recheck">复检</span>}
+          rightContent={
+            <button
+              className="tb-exit"
+              onClick={() => {
+                clearRetakeTarget();
+                setRetake(null);
+                Toast.show({ content: "已取消复检" });
+              }}
+            >
+              取消
+            </button>
+          }
+        >
+          复检中:{retake.assetName}(编号已带入,重拍后自动更新这台设备)
+        </NoticeBar>
+      )}
+
+
       {/* 当前任务:从「我的任务」进来后常驻,提交时带上任务自动销账。
           任务名可能很长,交给 NoticeBar 的 marquee 处理,不再自己截断。 */}
       {activeTask && (
@@ -126,7 +154,17 @@ export default function CapturePage() {
             这个框从来没框住过任何东西,却一直有扫描线在动,暗示"正在识别"。
             没有实景的情况下它就是个假框子。
 
-            这里刻意【什么都不放】:首页只做拍照一件事,留白就是留白。 */}
+            这里放一张静图(电梯井道线稿,public/home-hero.svg)。曾经试过「今日概览」
+            三个数字 —— 和快门抢视觉
+            重量、也不好看,已撤掉。图片缺失时自己隐藏,不留碎图占位。 */}
+            <img
+              className="home-hero"
+              src="home-hero.svg"
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
           </div>
         </PullRefresh>
       </div>

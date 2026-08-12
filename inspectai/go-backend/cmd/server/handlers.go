@@ -1280,6 +1280,14 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetCoverUpload(w, r, id)
 		return
 	}
+	if id := strings.TrimSuffix(rest, "/change-requests"); id != rest {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetChangeRequests(w, r, id)
+		return
+	}
 	if id := strings.TrimSuffix(rest, "/status-events"); id != rest {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
@@ -4357,4 +4365,63 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 	default:
 		return fmt.Errorf("不支持的 targetType: %s", cr.TargetType)
 	}
+}
+
+// handleAssetChangeRequests — GET /api/assets/{id}/change-requests
+//
+// 某台设备相关的修改申请:直接改这台设备的(targetType=asset),
+// 加上改它任意一次巡检记录的(targetType=record 且那条记录属于这台设备)。
+//
+// 【为什么要后端算】旧版是把全部申请拉到前端再筛。那有两个问题:
+// 一是 ListChangeRequests 有 200 条上限,老申请会被静默截掉 —— 页面显示
+// "没有申请",而它其实存在;二是"这条记录属不属于这台设备"要靠前端已经
+// 加载的那一页历史来判断,翻页之前的记录一律匹配不上。
+// 两个都不报错,只是少显示,最难发现。
+//
+// 权限:一线人员只看自己发起的,管理角色看这台设备的全部 —— 与旧版一致
+// (旧版是 canReview() ? {} : {mine:"1"})。
+func (s *Server) handleAssetChangeRequests(w http.ResponseWriter, r *http.Request, assetID string) {
+	tenant := s.tenantForRequest(r)
+	if _, err := s.store.GetAsset(tenant, assetID); err != nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
+		return
+	}
+
+	filter := ChangeRequestFilter{}
+	if !s.hasSupervisorAccess(r) {
+		filter.RequestedBy = s.currentUserName(r)
+	}
+	all, err := s.store.ListChangeRequests(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+
+	// 这台设备的全部快照 → 记录 ID 集合。用 CountAssetSnapshots 拿总数再全量取,
+	// 不用默认分页 —— 少取一页就会漏掉那一页里的申请。
+	total, _ := s.store.CountAssetSnapshots(assetID)
+	recordIDs := map[string]bool{}
+	if total > 0 {
+		if snaps, err := s.store.ListAssetSnapshots(assetID, total, 0); err == nil {
+			for _, snap := range snaps {
+				recordIDs[snap.RecordID] = true
+			}
+		}
+	}
+
+	out := []*ChangeRequest{}
+	for _, cr := range all {
+		switch cr.TargetType {
+		case "asset":
+			if cr.TargetID == assetID {
+				out = append(out, cr)
+			}
+		case "record":
+			if recordIDs[cr.TargetID] {
+				out = append(out, cr)
+			}
+		}
+	}
+	s.fillChangeRequestTargetNames(r, out)
+	writeJSON(w, http.StatusOK, map[string]any{"requests": out})
 }

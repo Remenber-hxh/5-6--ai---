@@ -2008,14 +2008,37 @@ a {
   background: transparent;
 }
 /* 文字头像做【实心】徽章(翡翠底 + 深字),而不是描边 ——
-   顶栏现在只剩它一个元素,描边会显得空。 */
+   顶栏现在只剩它一个元素,描边会显得空。
+
+   28 → 36px:顶栏就这一个可点的东西,28px 在手机上又小又不像能点。
+   触控区仍是外层 .user-window 的 44px(不因视觉尺寸变化而变)。 */
 .user-window .arco-avatar {
-  width: 28px;
-  height: 28px;
-  font-size: 13px;
+  width: 36px;
+  height: 36px;
+  font-size: 15px;
   font-weight: 700;
   background: var(--tech-jade);
   color: #05121d;
+  /* 细白圈:照片头像贴在深色渐变上没有边界,人脸会糊进背景。
+     用 box-shadow 而不是 border —— border 会占掉 36px 里的 2px,
+     让头像实际更小,还要反过来调尺寸。 */
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.28);
+}
+/* 【照片必须裁切填满】Arco 不保证这一条:非正方形的照片会被拉伸,
+   人脸压扁。相册里随手一张几乎都不是正方形。 */
+.user-window .arco-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* 它是个按钮,按下去要有反馈 —— 顶栏没有别的东西提示"这里能点" */
+.user-window:active .arco-avatar {
+  transform: scale(0.94);
+}
+.user-window .arco-avatar {
+  transition: transform 120ms ease;
 }
 
 /* 首页次要入口的文字链接(旧版 .link-btn)。
@@ -2292,6 +2315,13 @@ a {
   background: rgba(255, 196, 107, 0.1);
   border-color: rgba(255, 196, 107, 0.28);
   color: #ffd79a;
+}
+/* 复检标记用品牌绿,不用离线那支琥珀色。
+   琥珀是"出问题了"的信号(离线);复检是"你正处在某个模式里",
+   两件事共用一个颜色会把警示的分量稀释掉。 */
+.app-notice .nb-ic.is-recheck {
+  background: rgba(126, 255, 210, 0.16);
+  color: var(--tech-jade);
 }
 .app-notice .nb-ic {
   flex: none;
@@ -3622,6 +3652,17 @@ a {
   font-size: 15px;
   font-weight: 600;
 }
+
+/* 复检是这一屏的主动作(设备正挂着异常,来的人就是为了了结它),
+   所以给实心;「申请修改」是次要动作,保持淡底。
+   两个按钮并排时靠填充区分主次,而不是靠大小 —— 大小不同在窄屏上会显乱。 */
+.ad-action.is-primary {
+  background: var(--brand);
+  color: #fff;
+}
+.ad-action:active {
+  opacity: 0.88;
+}
 /* 【className 落在遮罩容器上,不是面板】Arco Popup 把 className 加到最外层
    .arco-masking(全屏、position:static、高度 0),真正的面板是它的子节点
    .arco-popup-content。第一版把圆角/最大高度/flex 全写在了外层 —— 结果面板
@@ -3822,4 +3863,226 @@ a {
   margin: 14px 0 0;
   color: var(--lt-fg-2);
   text-align: left;
+}
+
+/* 首页快门上方的静图。占满可用留白,但不抢快门的视觉重量:
+   max-height 让它在小屏上自动缩,contain 保证不裁切、不变形,
+   pointer-events:none 免得它挡住下拉刷新的手势。 */
+.home-hero {
+  display: block;
+  margin: auto;
+  max-width: 78%;
+  max-height: 100%;
+  object-fit: contain;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* ===== 设备详情 · 巡检历史(折叠式)=====
+ *
+ * 每条是原生 <details>。折叠时只露时间 / 巡检人 / 状态 —— 扫的时候要的就是这三样;
+ * AI 总结是一两百字的一整段,全铺开的话十条历史就是几屏文字墙。
+ */
+
+/* 【必须去掉】Safari/iOS 会给 summary 画一个自己的三角(::-webkit-details-marker),
+   位置和大小都不受控;Firefox 用的是 list-style。两个都关掉,箭头我们自己画。 */
+.hist-item > summary::-webkit-details-marker {
+  display: none;
+}
+.hist-item > summary {
+  list-style: none;
+}
+
+.hist-item > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  /* 折叠的行是可点的,给足触控高度 —— 13px 的字自然高度只有 18px */
+  min-height: 24px;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 巡检人往中间挤,把状态标推到最右;它可省略(有些历史数据没记) */
+.hist-item > summary .hist-who {
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 没有巡检人时,靠这个占位把状态标顶到右边 */
+.hist-item > summary .hist-when {
+  flex: none;
+}
+.hist-item > summary::after {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: 2px;
+  border-right: 1.5px solid var(--lt-fg-3, #9aa4ad);
+  border-bottom: 1.5px solid var(--lt-fg-3, #9aa4ad);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 160ms ease;
+}
+.hist-item[open] > summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+.hist-body.is-empty {
+  color: var(--lt-fg-3, #9aa4ad);
+}
+
+/* 「查看更多 N 次 / 收起」。做成整行的淡底按钮而不是文字链 ——
+   它在卡片列表的末尾,文字链在那个位置太轻,容易被当成说明文字。 */
+.hist-more {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 11px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--lt-fill);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hist-more:active {
+  opacity: 0.8;
+}
+
+/* 历史条目展开后的照片条。横向滚动而不是换行:
+   一次巡检十几张图,换行会把这一条撑成半屏,折叠的意义就没了。 */
+.hist-photos {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-x: auto;
+  /* 让最后一张也能滑到边,不被卡片内边距切掉 */
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.hist-photos::-webkit-scrollbar {
+  display: none;
+}
+.hist-thumb {
+  flex: none;
+  width: 68px;
+  height: 68px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--lt-fill);
+}
+.hist-thumb .arco-image,
+.hist-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 原始字段:两列键值。
+   【左列固定宽】字段名长短不一(“灭火器材有效期” vs “照明”),不固定的话
+   右边的值会参差不齐,扫的时候找不到列。 */
+.hist-kv {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* 【标签占主宽、值靠右】第一版是"标签固定 96px + 值占剩下",结果一半的
+   字段名("机房门窗、警示标识完好")被压成两行,整块拉得极长,而右边全是
+   一个"是"字守着大片空白。巡检字段名长、值极短,宽度就该反过来分。 */
+.hist-kv-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.hist-kv-k {
+  flex: 1;
+  min-width: 0;
+  color: var(--lt-fg-2);
+}
+.hist-kv-v {
+  flex: none;
+  max-width: 45%;
+  text-align: right;
+  color: var(--lt-fg);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+/* 异常项标红。整行都变色(不只是值)—— 只标值的话,十几行里那一个红字
+   在扫的时候几乎看不见,而这一行恰恰是这条记录被判成"异常"的全部原因。
+   判定规则和后端 isOccurrenceLabel 共用一份,见 lib/fieldStatus.ts。 */
+.hist-kv-row.is-bad .hist-kv-k,
+.hist-kv-row.is-bad .hist-kv-v {
+  color: var(--ios-red);
+}
+.hist-kv-row.is-bad .hist-kv-v {
+  font-weight: 700;
+}
+
+/* ===== 设备详情 · 相关申请 =====
+   和巡检历史分开:它是另一条时间线(谁提了什么、批没批),
+   混进历史里会把"这台设备发生过什么"这条线索搅浑。 */
+.ad-reqs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 16px;
+}
+.req-item {
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.req-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.req-status {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+  /* 默认(已撤回等)走中性灰,别让所有状态都抢眼 */
+  background: var(--lt-fill);
+  color: var(--lt-fg-2);
+}
+/* 只有"待审批"用暖色 —— 它是唯一还需要有人动手的状态。
+   已通过/已驳回都是结果,给结果上强调色只会稀释真正要处理的那个。 */
+.req-status.is-pending {
+  background: rgba(255, 149, 0, 0.12);
+  color: #b45309;
+}
+.req-status.is-approved {
+  color: var(--brand);
+}
+.req-who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lt-fg);
+  font-weight: 500;
+}
+.req-when {
+  flex: none;
+  color: var(--lt-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.req-reason {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lt-fg-2);
 }
