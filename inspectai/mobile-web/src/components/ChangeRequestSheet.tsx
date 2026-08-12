@@ -8,6 +8,7 @@ import {
 } from "@/api/inspection";
 
 import type { AssetDTO, AssetSnapshotDTO, FieldValue } from "@/api/inspection";
+import { fieldIsBad } from "@/lib/fieldStatus";
 
 // ===== 申请修改 =====
 //
@@ -32,18 +33,6 @@ const REASONS = ["AI 识别有误", "现场已整改", "补拍补录", "误判,�
 // 审批时报 asset patch 为空"。选项取自后台台账编辑表单,两端保持一致。
 const ASSET_STATUS = ["正常", "异常", "待复核", "待维修"];
 
-/** 判断字段是不是"待复核"。与台账/AI 总结同一套是否语义(旧版 crfFieldIsBad) */
-function fieldIsBad(f: FieldValue): boolean {
-  const v = String(f.value || "").trim();
-  if (!v) return false;
-  if (["异常", "缺失", "破损", "故障"].includes(v)) return true;
-  // "是/否"的好坏取决于问法:"…正常吗"答否是坏,"…有异响吗"答是才是坏。
-  // 这里按标签里是否含"异常/异响/异味/漏/破损"这类词判断。
-  const occurrence = /异响|异味|漏|破损|故障|缺失|超期|过期/.test(f.label);
-  if (v === "否") return !occurrence;
-  if (v === "是" || v === "有") return occurrence;
-  return false;
-}
 
 export interface ChangeRequestSheetProps {
   visible: boolean;
