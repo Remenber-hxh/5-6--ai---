@@ -1544,6 +1544,21 @@
   white-space: nowrap;
 }
 
+/* 【浅色页必须单独压一次】上面 .beian-line a 的颜色是给深色页写的(半透明白)。
+   BeianLine 同时挂在深色的登录/注册/拍照台和【浅色的"我的"页】上 ——
+   浅色页里那个颜色几乎和背景同色,只剩一个警徽图标浮着。
+   备案号是合规要求,看不见等于没放。
+
+   这已经是同一个坑的第三次:改密码页的输入框、那里的标签、这里的备案号,
+   都是把深色皮的样式搬到浅色页上。本文件里凡是写死浅色值的规则,
+   放到 .flow-screen 下都要重新过一遍。 */
+.flow-screen .beian-line {
+  opacity: 1;
+}
+.flow-screen .beian-line a {
+  color: var(--lt-fg-2);
+}
+
 /* 登录页:居中卡片 + 钉底 */
 .center-screen .beian-line {
   position: absolute;
