@@ -55,6 +55,23 @@ func agentToolSpecs() []map[string]any {
 		}
 	}
 	return []map[string]any{
+		// 【这个工具必须放第一个,而且描述要写"先用它"】
+		// 用户说的是"K07""kt-7"这种简写,而其它工具要的是完整 id
+		// (项目::模板::编号)。没有这个工具时,模型只能从看板数据的
+		// topRiskAssets 里找 —— 而那份【只有高风险设备】。正常设备压根不在里面,
+		// 于是模型要么从手上那几台里硬挑一个(答错设备),要么去猜完整 id
+		// (碰巧猜对就答出来、没猜就说"查不到")—— 同一台设备问两次两个结果。
+		// 线上实测踩到的正是这个。
+		tool("find_asset",
+			"按名字或编号找设备,拿到它的完整 id。"+
+				"【问到任何具体设备时都先调这个】用户说的是'K07''kt-7''3号电梯'这种简写,"+
+				"而其它工具需要完整 id。支持模糊匹配,大小写和连字符都能对上。"+
+				"返回多台时,挑名字最接近的那台继续,或者反问用户是哪一台。",
+			map[string]any{
+				"keyword": strProp("设备名或编号的片段,如 K07 / kt-7 / DT01"),
+			},
+			[]string{"keyword"}),
+
 		tool("get_asset_history",
 			"查某一台设备的逐次巡检历史(时间、状态、巡检人、结论)。"+
 				"问'这台设备上个月异常几次''最近几次什么情况''什么时候出的问题'时用。"+
@@ -130,6 +147,13 @@ func (s *Server) execAgentTool(r *http.Request, name, rawArgs string) (any, erro
 	tenant := s.tenantForRequest(r)
 
 	switch name {
+	case "find_asset":
+		kw := str("keyword")
+		if kw == "" {
+			return nil, fmt.Errorf("缺少 keyword")
+		}
+		return s.findAssetsForAgent(tenant, kw)
+
 	case "get_asset_history":
 		id := str("assetId")
 		if id == "" {
@@ -334,8 +358,17 @@ const MANAGEMENT_CHAT_SYSTEM_HINT = `你是「智巡」设施巡检系统管理�
 历史工具给了"某几天异常" —— 除非同一条数据里同时有日期和字段,
 否则不要写成"X 月 X 日因某项异常"。宁可分开说两句。
 
-【设备 id 从哪来】看板数据里 topRiskAssets 的每一项都带完整 id,调工具时原样用它,
-不要自己拼。用户只说"K07"时,先在看板数据里找到对应的完整 id。
+【设备 id 从哪来】用户说的是"K07""kt-7"这种简写。**先调 find_asset 拿到完整 id**,
+再用那个 id 调其它工具。【绝对不要自己拼 id、也不要只在看板数据里找】——
+看板里的 topRiskAssets 只有高风险设备,正常设备不在里面,在那儿找不到不等于设备不存在。
+find_asset 返回空才说明真的没有这台设备。
+
+【回答里不许出现内部字段名和 id】这些是给程序看的,不是给人看的:
+  · 不要写 topRiskAssets / repeatedIssues / numericDrift 这类英文字段名
+  · 不要写 会议中心::elevator_no_room::KT-5 这种完整 id,只说"KT-5"
+  · 不要写 elevator_no_room 这种模板代号,要说"无机房电梯"
+说人话:"看板里没有它的记录" → "这台设备最近没有异常记录";
+"repeatedIssues 为空" → "最近 30 天没有反复出问题的设备"。
 
 【领域知识可以答】"灭火器多久检查""电梯防夹装置的标准"这类通用维保规范问题,
 用专业知识正常回答,可以点明对应国标/规程名称 —— 这不算编造,
@@ -382,4 +415,77 @@ func normalizeHistoryForModel(snaps []*AssetSnapshot) map[string]any {
 		"_note": "日期一律以每条的 date / time 字段为准。" +
 			"summaryText 是历史生成的叙述文字,其中提到的日期可能与实际记录时间不符,不要引用它里面的日期。",
 	}
+}
+
+// findAssetsForAgent 按关键词模糊找设备,返回给模型用的精简结果。
+//
+// 【为什么在 Go 里筛而不是写 SQL LIKE】ListAssets 没有 LIMIT,拿回来的是这个
+// 租户的全部设备(几十台量级),不存在"窗口截断导致漏匹配"的问题 ——
+// 而那正是这个项目里反复出现的 bug 形状。全量在手,匹配规则也能写得宽容些。
+//
+// 匹配做了归一化:去掉连字符/空格、统一大写。用户打"kt-7""KT7""kt 7"
+// 都要能对上"KT-7" —— 现场用手机打字,不该因为一个连字符查不到。
+func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, error) {
+	norm := func(x string) string {
+		return strings.ToUpper(strings.NewReplacer("-", "", "_", "", " ", "", "－", "").Replace(x))
+	}
+	kw := norm(keyword)
+	if kw == "" {
+		return nil, fmt.Errorf("关键词为空")
+	}
+	all, err := s.store.ListAssets(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	type hit struct {
+		item  map[string]any
+		exact bool
+	}
+	hits := []hit{}
+	for _, a := range all {
+		if a == nil {
+			continue
+		}
+		nName, nKey := norm(a.AssetName), norm(a.AssetKey)
+		if nName == "" && nKey == "" {
+			continue
+		}
+		isExact := nName == kw || nKey == kw
+		if !isExact && !strings.Contains(nName, kw) && !strings.Contains(nKey, kw) {
+			continue
+		}
+		hits = append(hits, hit{
+			item: map[string]any{
+				// id 是给后续工具用的,不该出现在回答里(提示词里点明了)
+				"id":            a.ID,
+				"name":          a.AssetName,
+				"type":          a.AssetType, // 中文类型名,不是模板代号
+				"project":       a.Project,
+				"currentStatus": a.LastStatus,
+			},
+			exact: isExact,
+		})
+	}
+	// 精确匹配排在前面:用户打"KT-7"时,"KT-7"要压过"KT-70"
+	out := make([]map[string]any, 0, len(hits))
+	for _, h := range hits {
+		if h.exact {
+			out = append(out, h.item)
+		}
+	}
+	for _, h := range hits {
+		if !h.exact {
+			out = append(out, h.item)
+		}
+	}
+	if len(out) == 0 {
+		return map[string]any{
+			"count": 0,
+			"_note": "没有找到匹配的设备。这说明台账里确实没有这台,可以如实告诉用户。",
+		}, nil
+	}
+	if len(out) > 10 {
+		out = out[:10]
+	}
+	return map[string]any{"count": len(out), "assets": out}, nil
 }
