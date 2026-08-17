@@ -100,10 +100,15 @@ var apiRoutes = []apiRoute{
 	{http.MethodPost, "/api/change-requests/draft-photos", guardNone, "", (*Server).handleUploadDraftPhotos},
 
 	// —— 管理 AI ——
-	{http.MethodGet, "/api/management-ai/snapshot", guardNone, "", (*Server).handleManagementSnapshot},
-	{http.MethodGet, "/api/management-ai/attention", guardNone, "", (*Server).handleManagementAttention},
-	{http.MethodPost, "/api/management-ai/chat", guardNone, "", (*Server).handleManagementChat},
-	{http.MethodGet, "/api/management-ai/report", guardNone, "", (*Server).handleManagementReport},
+	// 【guard 从 guardNone 改成 guardSupervisor】这四个 handler 体内本来就有
+	// requireSupervisorAccess,但表里写的是 guardNone —— 而本文件开头写着
+	// "审计哪个接口谁能调看这一张表即可",照它审计会得出"巡检员能调管理 AI"
+	// 的错误结论。表要么准确,要么不如没有。
+	{http.MethodGet, "/api/management-ai/snapshot", guardSupervisor, "", (*Server).handleManagementSnapshot},
+	{http.MethodGet, "/api/management-ai/attention", guardSupervisor, "", (*Server).handleManagementAttention},
+	{http.MethodPost, "/api/management-ai/chat", guardSupervisor, "", (*Server).handleManagementChat},
+	{http.MethodGet, "/api/management-ai/report", guardSupervisor, "", (*Server).handleManagementReport},
+	{http.MethodGet, "/api/management-ai/today", guardSupervisor, "", (*Server).handleHomeCounts},
 	{http.MethodPost, "/api/management-ai/act", guardNone, "task_dispatch", (*Server).handleManagementAct},
 
 	// —— 提示词模板(读写均在 prompt_manage 能力下,单条读写在前缀路由内检查) ——

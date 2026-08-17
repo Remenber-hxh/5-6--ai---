@@ -1406,7 +1406,8 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request, id st
 		writeError(w, http.StatusNotFound, "asset_not_found", "asset not found")
 		return
 	}
-	tasks, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{})
+	tasks, err := s.store.ListEngineeringTasks(
+		EngineeringTaskFilter{TenantID: s.tenantForRequest(r)})
 	if err == nil {
 		for _, t := range tasks {
 			if t.AssetID == id && t.Status != "已完成" && t.Status != "已取消" {

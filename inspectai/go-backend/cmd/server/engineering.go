@@ -90,6 +90,14 @@ type EngineeringPlanFilter struct {
 }
 
 type EngineeringTaskFilter struct {
+	// TenantID 空 = 回落默认租户。
+	//
+	// 【原来这张表根本不过滤租户】SQL 里没有 tenant_id、engineeringTaskMatches
+	// 里也没有 —— 而记录、资产、离线照片全都过滤。009 迁移明明给
+	// engineering_tasks 加了 tenant_id,只是查询一直没跟上。
+	// 现在单租户看不出来,多客户一铺开就是跨租户串数据。
+	// 空值回落默认租户,与 009 的既定做法一致(漏设的落到默认租户 = 单租户安全行为)。
+	TenantID   string
 	Project    string
 	Category   string
 	Status     string
@@ -401,6 +409,13 @@ func (s *SQLiteStore) UpdateEngineeringPlanLatestTask(planID, taskID string) err
 	return nil
 }
 
+// ListEngineeringTasks 读整张表再在 Go 里筛。
+//
+// 【已知的剩余口子】几个只拿到 project 字符串、拿不到 *http.Request 的调用点
+// (周报/日报/计划重算)会走 filter.TenantID 为空 → 回落默认租户这条路。
+// 单租户下是对的;真要做多客户,那几处得把租户一路传进来。
+// 至少现在 SQL 里【有】tenant_id 这个条件了 —— 之前是完全不过滤,
+// 一开第二个客户就是直接串数据。
 func (s *SQLiteStore) ListEngineeringTasks(filter EngineeringTaskFilter) ([]*EngineeringTask, error) {
 	rows, err := s.db.Query(`
 		SELECT id, plan_item_id, source, task_type, title, project, category,
@@ -409,7 +424,8 @@ func (s *SQLiteStore) ListEngineeringTasks(filter EngineeringTaskFilter) ([]*Eng
 		       record_id, report_id, asset_id, budget_amount, close_result,
 		       close_note, created_at, updated_at
 		FROM engineering_tasks
-		ORDER BY due_at ASC, updated_at DESC`)
+		WHERE tenant_id = ?
+		ORDER BY due_at ASC, updated_at DESC`, tenantOrDefault(filter.TenantID))
 	if err != nil {
 		return nil, err
 	}
@@ -665,9 +681,10 @@ func engineeringPlanFilterFromRequest(r *http.Request) EngineeringPlanFilter {
 	}
 }
 
-func engineeringTaskFilterFromRequest(r *http.Request) EngineeringTaskFilter {
+func (s *Server) engineeringTaskFilterFromRequest(r *http.Request) EngineeringTaskFilter {
 	q := r.URL.Query()
 	return EngineeringTaskFilter{
+		TenantID:   s.tenantForRequest(r),
 		Project:    strings.TrimSpace(q.Get("project")),
 		Category:   strings.TrimSpace(q.Get("category")),
 		Status:     strings.TrimSpace(q.Get("status")),
@@ -717,7 +734,7 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleListEngineeringTasks(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListEngineeringTasks(engineeringTaskFilterFromRequest(r))
+	items, err := s.store.ListEngineeringTasks(s.engineeringTaskFilterFromRequest(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_engineering_tasks_failed", err.Error())
 		return

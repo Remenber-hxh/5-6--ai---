@@ -13,8 +13,10 @@ import "net/http"
 // 【口径必须和列表页一致】
 // 角标数字和用户点进去看到的条数对不上,比不显示更糟 —— 会让人以为丢数据。
 // 所以这里复用与两个列表 handler 完全相同的可见性规则:
-//   照片:主管看全租户,巡检员只看自己(与 handleListOfflineShots 同)
-//   任务:走同一个 filter,再按"在办"三态过滤(与移动端原先的前端过滤同)
+//
+//	照片:主管看全租户,巡检员只看自己(与 handleListOfflineShots 同)
+//	任务:走同一个 filter,再按"在办"三态过滤(与移动端原先的前端过滤同)
+//
 // 改动其中任何一处,这里都要跟着改。
 func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 	userID := ""
@@ -41,7 +43,7 @@ func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 	// 第一版这里是自己数了一遍在办状态 —— 于是角标数全租户 5 条,而页面按
 	// "派给我的"只显示 2 条。同一件事有两个口径,用户看到的就是"任务对不上"。
 	tasks := 0
-	if list, err := s.store.ListEngineeringTasks(engineeringTaskFilterFromRequest(r)); err == nil {
+	if list, err := s.store.ListEngineeringTasks(s.engineeringTaskFilterFromRequest(r)); err == nil {
 		tasks = len(openTasksFor(list, s.taskScopeName(r)))
 	}
 

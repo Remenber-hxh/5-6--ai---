@@ -2,23 +2,24 @@ import { DownloadOutlined, HistoryOutlined, PlusOutlined, SendOutlined } from "@
 import { Button, DatePicker, Drawer, Empty, Input, List, Select, Tag, message as antdMsg } from "antd";
 import dayjs from "dayjs";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
   ActionProposal,
   AssetEntry,
+  AssetSnapshotEntry,
   ChatSource,
-  EngineeringTask,
+  HomeCounts,
   UserEntry,
   act,
   chat,
   dailyReport,
   extractActionProposal,
+  getHomeCounts,
+  getRecord,
+  listAssetSnapshots,
   listAssets,
-  listChangeRequests,
-  listRecords,
-  listTasks,
   listUsers,
   weeklyReport,
 } from "../api/mgmt";
@@ -107,9 +108,6 @@ export default function AgentHome() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [assets, setAssets] = useState<AssetEntry[]>([]);
-  const [records, setRecords] = useState<InspectionRecord[]>([]);
-  const [tasks, setTasks] = useState<EngineeringTask[]>([]);
-  const [pendingCrs, setPendingCrs] = useState(0);
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [histOpen, setHistOpen] = useState(false);
   const [histTick, setHistTick] = useState(0);
@@ -119,28 +117,32 @@ export default function AgentHome() {
 
   const [petOn, setPetOn] = useState(() => localStorage.getItem("inspectai_live2d") !== "off");
 
+  // 【今日快照走 COUNT 接口】原来是把资产/记录/任务/审批四份【全量列表】
+  // 下载下来,在浏览器里 filter().length 出四个整数 —— 其中记录那份实测
+  // 654 KB,而这是登录后第一个加载的页面。
+  //
+  // 更要命的是那四个请求的错误全被 .catch(() => void 0) 吞掉:记录拉失败
+  // 就显示"今日巡检 0 次",不报错不提示。领导看到会去问巡检员为什么没干活,
+  // 而实际上是接口挂了。数字悄悄变错比不显示更糟,所以这里【不吞错】。
+  const [snap, setSnap] = useState<HomeCounts | null>(null);
+  const [snapErr, setSnapErr] = useState(false);
   useEffect(() => {
-    listAssets().then(setAssets).catch(() => void 0);
-    // 加载记录:依据展开卡里「近期巡检历史列表」+ 今日快照用
-    listRecords().then(setRecords).catch(() => void 0);
-    // 今日快照:待整改任务 / 待审批;派发卡:责任人下拉
-    listTasks().then(setTasks).catch(() => void 0);
-    listChangeRequests()
-      .then((rows) => setPendingCrs(rows.filter((r) => r.status === "pending").length))
-      .catch(() => void 0);
-    listUsers().then(setUsers).catch(() => void 0);
+    getHomeCounts()
+      .then((c) => {
+        setSnap(c);
+        setSnapErr(false);
+      })
+      .catch(() => setSnapErr(true));
   }, []);
 
-  // 今日快照:全部同源真实数据(资产/记录/任务/审批),点击直达对应页
-  const snap = useMemo(() => {
-    const todayKey = dayjs().format("YYYY-MM-DD");
-    return {
-      approvals: pendingCrs,
-      abnormalAssets: assets.filter((a) => a.lastStatus === "异常" || a.lastStatus === "待复核").length,
-      todayRecords: records.filter((r) => String(r.createdAt || "").slice(0, 10) === todayKey).length,
-      rectifyTasks: tasks.filter((t) => t.status === "待整改").length,
-    };
-  }, [assets, records, tasks, pendingCrs]);
+  useEffect(() => {
+    // 资产:派发卡要按 id 找设备、溯源卡要显示设备信息
+    listAssets().then(setAssets).catch(() => void 0);
+    // 用户:派发卡的责任人下拉
+    listUsers().then(setUsers).catch(() => void 0);
+    // 【不再拉 listRecords / listTasks】前者只被"今日快照"和溯源卡的
+    // 近期历史用,后者只被快照用 —— 快照改走 COUNT 接口,近期历史改按资产查。
+  }, []);
 
   // 看板娘:开关持久化;关闭时连引擎/模型都不加载(省 1.3MB 包 + 2.7MB 模型)
   useEffect(() => {
@@ -295,16 +297,19 @@ export default function AgentHome() {
             transition={{ delay: 0.25, duration: 0.4 }}
           >
             {[
-              { label: "待审批", value: snap.approvals, path: "/approval", warn: snap.approvals > 0 },
-              { label: "异常设备", value: snap.abnormalAssets, path: "/ledger", warn: snap.abnormalAssets > 0 },
-              { label: "今日巡检", value: snap.todayRecords, path: "/record", warn: false },
-              { label: "待整改", value: snap.rectifyTasks, path: "/plan", warn: snap.rectifyTasks > 0 },
-            ].map((x) => (
+              { label: "待审批", value: snap?.approvals, path: "/approval" },
+              { label: "异常设备", value: snap?.abnormalAssets, path: "/ledger" },
+              { label: "今日巡检", value: snap?.todayRecords, path: "/record", neutral: true },
+              { label: "待整改", value: snap?.rectifyTasks, path: "/plan" },
+            ]
+              .map((x) => ({ ...x, warn: !x.neutral && (x.value ?? 0) > 0 }))
+              .map((x) => (
               <button key={x.label} className="agent-snap-chip" onClick={() => nav(x.path)}>
                 <i className={x.warn ? "warn" : ""} />
                 {x.label}
                 <b className={x.warn ? "warn" : ""}>
-                  <CountUp value={x.value} />
+                  {/* 取不到就显示「—」而不是 0。一个理直气壮的 0 会被当成真实数据。 */}
+                    {snapErr ? "—" : <CountUp value={x.value ?? 0} />}
                 </b>
               </button>
             ))}
@@ -317,7 +322,6 @@ export default function AgentHome() {
             key={m.id}
             m={m}
             assets={assets}
-            records={records}
             users={users}
             onJump={(path) => nav(path)}
             onDispatch={dispatchProposal}
@@ -507,25 +511,64 @@ function renderBold(line: string) {
 }
 
 // 依据展开卡:资产→近期巡检历史列表;记录→状态+总结;规范→说明。尾部融合跳转按钮(复刻旧版 srcAssetHTML/srcRecordHTML)
+// 溯源卡要的两份数据都【按 id 单查】,不再依赖首页预先下载的整份记录列表。
+// 那份列表实测 654 KB,而这里最多用到 5 条快照和 1 条记录。
+function useAssetHistory(assetId?: string) {
+  const [rows, setRows] = useState<AssetSnapshotEntry[]>([]);
+  useEffect(() => {
+    if (!assetId) {
+      setRows([]);
+      return;
+    }
+    let alive = true;
+    listAssetSnapshots(assetId, 5)
+      .then((d) => alive && setRows(d.records))
+      .catch(() => alive && setRows([]));
+    return () => {
+      alive = false;
+    };
+  }, [assetId]);
+  return rows;
+}
+
+function useOneRecord(recordId?: string) {
+  const [rec, setRec] = useState<InspectionRecord | null>(null);
+  useEffect(() => {
+    if (!recordId) {
+      setRec(null);
+      return;
+    }
+    let alive = true;
+    getRecord(recordId)
+      .then((d) => alive && setRec(d))
+      .catch(() => alive && setRec(null));
+    return () => {
+      alive = false;
+    };
+  }, [recordId]);
+  return rec;
+}
+
 function SourceDetail({
   src,
   assets,
-  records,
   onJump,
 }: {
   src: ChatSource;
   assets: AssetEntry[];
-  records: InspectionRecord[];
   onJump: (path: string) => void;
 }) {
+  // 【hooks 必须在任何 return 之前无条件调用】所以两份都在这里取,
+  // 由各分支挑自己要用的那份 —— 不是每个分支各调各的。
+  const hist = useAssetHistory(src.type === "asset" ? src.assetId : undefined);
+  const oneRec = useOneRecord(src.type === "record" ? src.recordId : undefined);
+
   if (src.type === "asset") {
     const a = assets.find((x) => x.id === src.assetId);
-    const hist = a
-      ? records
-          .filter((r) => r.pointId === a.pointId)
-          .sort((x, y) => String(y.createdAt || "").localeCompare(String(x.createdAt || "")))
-          .slice(0, 5)
-      : [];
+    // 【原来是 records.filter(r => r.pointId === a.pointId)】pointId 是
+    // 巡检点位/模板("无机房电梯"),整栋楼的同类设备共用一个 —— 筛出来的
+    // 是"所有同类设备的记录",不是这一台的。台账页刚修过同一个 bug。
+    // asset_snapshots 才是按 assetId 记的,后端 /api/assets/{id}/records 查的就是它。
     return (
       <div style={st.srcDetail}>
         <b>{src.title || "异常史"}</b>
@@ -533,18 +576,15 @@ function SourceDetail({
           {a?.assetName || src.summary || ""}
           {a ? ` · 近期巡检 ${hist.length} 条` : ""}
         </p>
-        {hist.map((r) => {
-          const s = recordBusinessStatus(r);
-          return (
-            <div key={r.id} style={st.srcHistRow}>
-              <span style={{ color: "#8aa3ad", flex: "none" }}>{fmtTime(r.createdAt)}</span>
-              <Tag color={statusTagColor(s)} style={{ margin: 0 }}>
-                {s}
-              </Tag>
-              <span style={st.srcHistSum}>{(r.aiSummary || r.report || "-").slice(0, 26)}</span>
-            </div>
-          );
-        })}
+        {hist.map((h) => (
+          <div key={h.id} style={st.srcHistRow}>
+            <span style={{ color: "#8aa3ad", flex: "none" }}>{fmtTime(h.createdAt)}</span>
+            <Tag color={statusTagColor(h.status)} style={{ margin: 0 }}>
+              {h.status || "—"}
+            </Tag>
+            <span style={st.srcHistSum}>{h.summary || "-"}</span>
+          </div>
+        ))}
         {!hist.length && <p style={st.srcMuted}>暂无历史记录</p>}
         {src.assetId && (
           <button className="agent-cta" onClick={() => onJump(`/ledger?focus=${encodeURIComponent(src.assetId!)}`)}>
@@ -555,7 +595,7 @@ function SourceDetail({
     );
   }
   if (src.type === "record") {
-    const r = records.find((x) => x.id === src.recordId);
+    const r = oneRec;
     const s = r ? recordBusinessStatus(r) : "";
     return (
       <div style={st.srcDetail}>
@@ -592,7 +632,6 @@ function SourceDetail({
 function MsgView({
   m,
   assets,
-  records,
   users,
   onJump,
   onDispatch,
@@ -600,7 +639,6 @@ function MsgView({
 }: {
   m: Msg;
   assets: AssetEntry[];
-  records: InspectionRecord[];
   users: UserEntry[];
   onJump: (path: string) => void;
   onDispatch: (m: Msg, extra: Record<string, string>) => void;
@@ -779,7 +817,7 @@ function MsgView({
           ))}
         </div>
       )}
-      {expanded && <SourceDetail src={expanded} assets={assets} records={records} onJump={onJump} />}
+      {expanded && <SourceDetail src={expanded} assets={assets} onJump={onJump} />}
     </motion.div>
   );
 }

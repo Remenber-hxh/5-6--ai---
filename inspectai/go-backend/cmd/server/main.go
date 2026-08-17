@@ -8,15 +8,20 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Server — HTTP 服务上下文
 type Server struct {
-	store              Store
-	storeKind          string // "sqlite" / "mem"
-	aiClient           *AIClient
-	analyticsClient    *AnalyticsClient
+	store           Store
+	storeKind       string // "sqlite" / "mem"
+	aiClient        *AIClient
+	analyticsClient *AnalyticsClient
+	// 聊天上下文的短期缓存(见 management_ai.go 的 chatContext)。
+	// 七组聚合每条消息重跑一遍太贵,同一话题连问三句就算三遍。
+	chatCtxMu          sync.Mutex
+	chatCtx            map[string]chatCtxEntry
 	wework             *WeWorkClient
 	weworkBot          *WeWorkBotClient
 	publicBaseURL      string

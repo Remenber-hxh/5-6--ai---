@@ -242,9 +242,27 @@ var cnLoc = func() *time.Location {
 
 func nowStamp() string { return time.Now().In(cnLoc).Format(time.RFC3339Nano) }
 
+// dayStamp 取某一刻在【业务时区】下的日期(2006-01-02)。
+//
+// 【必须和 fmtStamp 同一个时区】库里所有时间戳都是 fmtStamp 写的东八区字符串。
+// 拿本地时区的日期去跟它做前缀比,在非东八区的开发机上整体错一天 ——
+// 昨天的记录被算成今天,不报错、不告警,只是数字悄悄不对。
+// (本机开发环境是太平洋时区,团队约定:本地不改时区,服务器走容器 TZ。)
+func dayStamp(t time.Time) string { return t.In(cnLoc).Format("2006-01-02") }
+
 func fmtStamp(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
 	return t.In(cnLoc).Format(time.RFC3339Nano)
+}
+
+// tenantOrDefault 空租户回落默认租户。
+// 与 009 迁移的既定做法一致:过渡期里漏设 tenant_id 的一律落到默认租户,
+// 维持单租户的安全行为 —— 总好过"不过滤 = 看见所有租户"。
+func tenantOrDefault(id string) string {
+	if strings.TrimSpace(id) == "" {
+		return defaultTenantID
+	}
+	return id
 }

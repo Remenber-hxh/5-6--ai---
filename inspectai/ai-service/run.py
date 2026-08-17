@@ -406,8 +406,8 @@ MANAGEMENT_CHAT_SYSTEM = """你是「智巡」管理后台的 AI 助手,服务�
 - 问"重复风险 / 反复异常 / 某类设备(如无机房电梯)" → 用 repeatedIssues 作答
 - 问"字段漂移 / 数值变化 / 趋势" → 用 numericDrift 作答
 - 问宽泛的"重点关注 / 今天优先处理什么" → 以 topRiskAssets 第一名作答
-- 问"巡检计划 / 本周任务 / 排班 / 任务进展" → 用 planTasks 作答:说总数、几条完成/进行中/待执行/逾期,并从 openItems 点名 1-2 条未完成任务(名称+负责人+截止);绝不说"数据暂未提供"
-- 问巡检计划/记录/用户权限/操作日志/系统配置等(上下文未给数据)→ 给简短有帮助的回答,别拒答
+- 问"巡检计划 / 本周任务 / 排班 / 任务进展" → 用 planTasks 作答:说总数、几条完成/进行中/待执行/逾期,并从 openItems 点名 1-2 条未完成任务(名称+负责人+截止)。planTasks 里有数据就直接用,别说"数据暂未提供"
+- 问巡检计划/记录/用户权限/操作日志/系统配置等(上下文未给数据)→ 说清楚该去哪一块看,别拒答、也别编具体数字
 - **绝不要每个问题都把最高风险那台资产复述一遍**;要紧扣问的那件事。
 
 输出格式:
@@ -416,7 +416,16 @@ MANAGEMENT_CHAT_SYSTEM = """你是「智巡」管理后台的 AI 助手,服务�
 3. 全文 50-90 字,简洁;除那一处加粗外不用其它 markdown。
 
 硬性约束:
-- **巡检计划/巡检记录/资产台账/审批/设备/数据看板/用户与权限/操作日志/系统管理/复核质量 等本系统话题,一律视为「相关」,绝对不能回拒答语,哪怕上下文没给该数据。** 没数据时就给一句简短有帮助的回答或方向(例如该看哪一块),严禁在这类回答里出现"请问与…相关的问题"。
+
+- 【最高优先级 · 数字不能编】凡是**具体的数字、次数、日期、人名、设备编号**,只能来自上下文 JSON。
+  上下文里没有的,**一律不许给出具体值**,改为指路(见下面的示例)。
+  这条压过下面所有"不要拒答"的要求 —— 「不拒答」指的是"别把人推开",不是"没有也要给个数"。
+  典型的会踩线的问题:"K07 上个月异常几次""8月3号那次谁巡的""某某这周做了几台" ——
+  这类问句里的**单台设备、单条记录、单个人的明细,上下文都没有**,必须指路而不是估算。
+  正确:"这台设备的逐次记录我这儿看不到,在「设备健康」里点进 K07 就有完整历史。"
+  错误:随口给一个"3 次"。**一个编出来的数字会让主管信任整套系统的所有数字,这是最贵的错误。**
+
+- **巡检计划/巡检记录/资产台账/审批/设备/数据看板/用户与权限/操作日志/系统管理/复核质量 等本系统话题,一律视为「相关」,不要回"请问与…相关的问题"这类拒答语。** 没有数据时按上一条指路 —— 指路不是拒答,它比编一个数有用得多。
 - **设备/检查项的「如何维保、怎么检验、多久保养、检验标准/规范、年限报废、异常如何处理」属于巡检核心业务,必须正经回答,绝不能当成"常识问答"挡回去。** 这类问题给 2-4 条简短专业的维保/检验要点(基于通用设备规范与专业常识即可),可点明对应国标/规程名称;允许用领域专业知识作答(这不算"编造数据",只是不得编造本系统的台账数字/设备名/人员)。
 - 只有**与设施巡检完全无关**的(天气、闲聊、写代码、娱乐八卦等)才回:"请问与巡检管理相关的问题"。判断不准时,默认当作相关去答,不要轻易拒答。
 - 没数据的本系统话题怎么答(照此风格,绝不拒答):
@@ -1043,6 +1052,111 @@ def classify(payload: dict) -> dict:
 # 返回结构必须跟阶段二真打 DeepSeek 时一致,这样前端代码不用改两遍。
 
 
+def call_deepseek_tools(
+    *,
+    model: str,
+    messages: list,
+    tools: list,
+    api_key: str,
+    timeout: int = 30,
+) -> dict:
+    """带工具的一轮对话。返回 {finish, reply?, toolCalls?, model}。
+
+    和 call_deepseek_chat 的区别:那个只发 system+user 两条、只要文本;
+    这个发【完整消息数组】(含工具返回),并且要能拿回 tool_calls。
+    没有合并成一个函数,是因为那条路径正在稳定服役 —— 工具调用按官方文档
+    自己说的还不稳(可能空响应或循环),不该把它的风险带到现有功能上。
+    """
+    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+    url = f"{base_url}/chat/completions"
+    body = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+    }
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    tmp = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
+    try:
+        tmp.write(body_bytes)
+        tmp.close()
+        proc = subprocess.run(
+            [
+                CURL_PATH, "-4", "-s", "-S", "--noproxy", "*",
+                "-m", str(timeout), "-X", "POST", url,
+                "-H", f"Authorization: Bearer {api_key}",
+                "-H", "Content-Type: application/json",
+                "--data-binary", f"@{tmp.name}",
+            ],
+            capture_output=True,
+            timeout=timeout + 5,
+        )
+        if proc.returncode != 0:
+            err = proc.stderr.decode("utf-8", errors="replace")[:200]
+            raise RuntimeError(f"curl exit {proc.returncode}: {err}")
+        raw = proc.stdout.decode("utf-8", errors="replace")
+        data = json.loads(raw)
+        if isinstance(data.get("error"), dict):
+            raise RuntimeError(str(data["error"].get("message"))[:200])
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("deepseek response has no choices")
+        msg = choices[0].get("message") or {}
+        actual_model = data.get("model") or model
+        calls = msg.get("tool_calls") or []
+        if calls:
+            # 【原样回传 id】后面那一轮的 tool 消息要靠它对应回来,
+            # 少了或改了,模型就不知道这条结果是哪次调用的。
+            return {
+                "finish": "tool_calls",
+                "model": actual_model,
+                "assistantMessage": msg,
+                "toolCalls": [
+                    {
+                        "id": c.get("id") or "",
+                        "name": ((c.get("function") or {}).get("name") or ""),
+                        "arguments": ((c.get("function") or {}).get("arguments") or "{}"),
+                    }
+                    for c in calls
+                ],
+            }
+        return {
+            "finish": "stop",
+            "model": actual_model,
+            "reply": (msg.get("content") or "").strip(),
+        }
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
+def management_chat_tools(payload: dict) -> dict:
+    """工具调用的一轮。循环由 Go 侧驱动 —— 工具是 Go 函数,数据和权限都在那边;
+    这里只负责"把消息和工具清单交给模型,把模型的决定原样带回去"。
+    """
+    key = get_deepseek_key()
+    if not key:
+        return {"finish": "error", "message": "DeepSeek 未配置"}
+    model = os.environ.get("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
+    timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "30") or "30")
+    messages = payload.get("messages") or []
+    tools = payload.get("tools") or []
+    if not messages:
+        return {"finish": "error", "message": "messages 不能为空"}
+    try:
+        return call_deepseek_tools(
+            model=model, messages=messages, tools=tools,
+            api_key=key, timeout=timeout,
+        )
+    except Exception as exc:
+        print(f"[management/chat-tools] failed: {exc}", file=sys.stderr)
+        return {"finish": "error", "message": str(exc)[:200]}
+
+
 def management_chat(payload: dict) -> dict:
     """先打真 DeepSeek,失败/没 key 走 rule-based mock 降级。
     后端 risk_score / context 始终可用,即使 AI 挂了主管也能看见东西。
@@ -1245,6 +1359,8 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(self, 200, chat(payload))
             elif self.path == "/management/chat":
                 write_json(self, 200, management_chat(payload))
+            elif self.path == "/management/chat-tools":
+                write_json(self, 200, management_chat_tools(payload))
             elif self.path == "/management/analyze":
                 write_json(self, 200, management_analyze(payload))
             else:

@@ -133,6 +133,13 @@ export function listAssets() {
   return api<{ assets: AssetEntry[] }>("/api/assets").then((d) => d.assets || []);
 }
 
+/** 按 id 取单条巡检记录。溯源卡只要一条,不该为它拉整份列表。 */
+export function getRecord(id: string) {
+  return api<InspectionRecord>(
+    `/api/inspection/records/${encodeURIComponent(id)}`,
+  );
+}
+
 export function listRecords() {
   return api<{ records: InspectionRecord[] }>("/api/inspection/records").then(
     (d) => d.records || [],
@@ -574,4 +581,26 @@ export function listAssetSnapshots(assetId: string, pageSize = 5) {
   return api<{ records: AssetSnapshotEntry[]; total: number }>(
     `/api/assets/${encodeURIComponent(assetId)}/records?page=1&pageSize=${pageSize}`,
   ).then((d) => ({ records: d.records || [], total: d.total || 0 }));
+}
+
+/**
+ * 后台首页「今日快照」的四个数字。
+ *
+ * 【为什么单开一个】原来首页是把资产/记录/任务/审批四份【全量列表】下载下来,
+ * 在浏览器里 filter().length 出四个整数 —— 其中记录那份实测 654 KB。
+ * 而这是登录后第一个加载的页面。
+ *
+ * 而且原来那四个请求的错误全被 .catch(() => void 0) 吞掉:记录拉失败,
+ * 首页就显示"今日巡检 0 次",不报错、不提示。领导看到会去问巡检员为什么
+ * 没干活,而实际上是接口挂了。现在这个接口失败会抛出来,由页面显示"取不到"。
+ */
+export interface HomeCounts {
+  approvals: number;
+  abnormalAssets: number;
+  todayRecords: number;
+  rectifyTasks: number;
+}
+
+export function getHomeCounts() {
+  return api<HomeCounts>("/api/management-ai/today");
 }

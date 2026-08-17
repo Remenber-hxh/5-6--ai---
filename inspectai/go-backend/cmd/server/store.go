@@ -120,6 +120,8 @@ type IdentityStore interface {
 	SetUserPassword(id, password string) error
 	// VerifyUserPassword 只校验,不建会话、不改 last_login_at(自助改密码用)
 	VerifyUserPassword(id, password string) error
+	// HomeCounts 后台首页「今日快照」的四个数字。四条 COUNT(*),不拉列表。
+	HomeCounts(tenantID, dayPrefix string) (HomeCounts, error)
 	SetUserStatus(id, status string) error
 	DeleteSession(token string) error
 	DeleteUserSessions(userID string) error

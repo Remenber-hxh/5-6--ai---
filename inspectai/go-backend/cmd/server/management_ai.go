@@ -59,17 +59,17 @@ func rangeWindow(key string, now time.Time) (start, end time.Time, days int) {
 // ===== 上下文:一次性把跨资产共享的数据捞出来,避免每个资产重复查表 =====
 
 type insightsContext struct {
-	now            time.Time
-	rangeKey       string
-	rangeStart     time.Time
-	rangeEnd       time.Time
-	prevStart      time.Time
-	prevEnd        time.Time
-	project        string
-	assets         []*AssetEntry
-	records        []*Record
-	recordsByID    map[string]*Record
-	confirmRecent  []*FieldConfirmLog
+	now              time.Time
+	rangeKey         string
+	rangeStart       time.Time
+	rangeEnd         time.Time
+	prevStart        time.Time
+	prevEnd          time.Time
+	project          string
+	assets           []*AssetEntry
+	records          []*Record
+	recordsByID      map[string]*Record
+	confirmRecent    []*FieldConfirmLog
 	pendingApprovals int
 }
 
@@ -104,13 +104,13 @@ func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContex
 	return &insightsContext{
 		now: now, rangeKey: rangeKey,
 		rangeStart: start, rangeEnd: end,
-		prevStart: start.AddDate(0, 0, -days),
-		prevEnd:   start,
-		project:   project,
-		assets:    assets,
-		records:   records,
-		recordsByID: recBy,
-		confirmRecent: confirmLogs,
+		prevStart:        start.AddDate(0, 0, -days),
+		prevEnd:          start,
+		project:          project,
+		assets:           assets,
+		records:          records,
+		recordsByID:      recBy,
+		confirmRecent:    confirmLogs,
 		pendingApprovals: len(requests),
 	}, nil
 }
@@ -529,19 +529,19 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 		title = a.AssetName + " · " + a.LastStatus
 	}
 	return &AttentionItem{
-		AssetID:     a.ID,
-		AssetName:   a.AssetName,
-		AssetType:   a.AssetType,
-		Project:     a.Project,
-		RiskScore:   score,
-		RiskLevel:   riskLevel,
-		Title:       title,
-		Reasons:     reasons,
-		Breakdown:   breakdown,
-		Action:      suggestActionFor(a, reasons),
-		LastRecordID: a.LastRecordID,
+		AssetID:         a.ID,
+		AssetName:       a.AssetName,
+		AssetType:       a.AssetType,
+		Project:         a.Project,
+		RiskScore:       score,
+		RiskLevel:       riskLevel,
+		Title:           title,
+		Reasons:         reasons,
+		Breakdown:       breakdown,
+		Action:          suggestActionFor(a, reasons),
+		LastRecordID:    a.LastRecordID,
 		LastInspectedAt: a.LastInspectedAt.Format("2006-01-02 15:04"),
-		Evidence:    evidence,
+		Evidence:        evidence,
 	}
 }
 
@@ -606,14 +606,14 @@ func (s *Server) toolGetAssetHistory(assetID string, limit int) ([]*AssetSnapsho
 // ===== Tool 4: compare_asset_periods =====
 
 type PeriodComparison struct {
-	AssetID         string `json:"assetId"`
-	CurrentRange    string `json:"currentRange"`
-	PreviousRange   string `json:"previousRange"`
-	CurrentTotal    int    `json:"currentTotal"`
-	PreviousTotal   int    `json:"previousTotal"`
-	CurrentAbnormal int    `json:"currentAbnormal"`
-	PreviousAbnormal int   `json:"previousAbnormal"`
-	Trend           string `json:"trend"` // up / down / flat
+	AssetID          string `json:"assetId"`
+	CurrentRange     string `json:"currentRange"`
+	PreviousRange    string `json:"previousRange"`
+	CurrentTotal     int    `json:"currentTotal"`
+	PreviousTotal    int    `json:"previousTotal"`
+	CurrentAbnormal  int    `json:"currentAbnormal"`
+	PreviousAbnormal int    `json:"previousAbnormal"`
+	Trend            string `json:"trend"` // up / down / flat
 }
 
 func (s *Server) toolCompareAssetPeriods(assetID, current, previous string) (*PeriodComparison, error) {
@@ -769,7 +769,7 @@ func (s *Server) toolGetInspectorQuality(rangeKey string) ([]*InspectorQualityRo
 		return nil, err
 	}
 	type acc struct {
-		row *InspectorQualityRow
+		row    *InspectorQualityRow
 		durSum int
 	}
 	by := map[string]*acc{}
@@ -835,17 +835,17 @@ func (s *Server) toolGetInspectorQuality(rangeKey string) ([]*InspectorQualityRo
 // ===== Tool 8+: get_status_events (电梯类资产专用,字段都是 choice 时数值趋势空白)=====
 
 type StatusEventStat struct {
-	AssetID         string             `json:"assetId"`
-	RangeKey        string             `json:"rangeKey"`
-	Inspections     int                `json:"inspections"`
-	Normal          int                `json:"normal"`
-	Warning         int                `json:"warning"`
-	Danger          int                `json:"danger"`
-	RetakeCount     int                `json:"retakeCount"`
-	UncertainCount  int                `json:"uncertainCount"`
-	NoPhotoConfirm  int                `json:"noPhotoConfirm"`
-	RepeatFields    []FieldFreqEntry   `json:"repeatFields"`    // 重复异常字段 Top
-	LastInspection  string             `json:"lastInspection,omitempty"`
+	AssetID        string           `json:"assetId"`
+	RangeKey       string           `json:"rangeKey"`
+	Inspections    int              `json:"inspections"`
+	Normal         int              `json:"normal"`
+	Warning        int              `json:"warning"`
+	Danger         int              `json:"danger"`
+	RetakeCount    int              `json:"retakeCount"`
+	UncertainCount int              `json:"uncertainCount"`
+	NoPhotoConfirm int              `json:"noPhotoConfirm"`
+	RepeatFields   []FieldFreqEntry `json:"repeatFields"` // 重复异常字段 Top
+	LastInspection string           `json:"lastInspection,omitempty"`
 }
 
 type FieldFreqEntry struct {
@@ -956,8 +956,11 @@ func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat
 // ===== Tool 8: get_record_detail =====
 
 // TODO 多租户:AI 工具层下游消费者,单客户过渡期按默认租户(见 buildInsightsContext)。
-func (s *Server) toolGetRecordDetail(recordID string) (map[string]any, error) {
-	rec, err := s.store.GetRecord(defaultTenantID, recordID)
+// toolGetRecordDetail 查一次巡检的完整明细。
+// 【租户必须由调用方传】这个工具现在是 AI 驱动的 —— 模型可能拿到任何字符串
+// 当 recordID。写死 defaultTenantID 的话,一个猜对的 id 就能读到别家租户的记录。
+func (s *Server) toolGetRecordDetail(tenantID, recordID string) (map[string]any, error) {
+	rec, err := s.store.GetRecord(tenantOrDefault(tenantID), recordID)
 	if err != nil {
 		return nil, err
 	}
@@ -985,6 +988,12 @@ func NewAnalyticsClient(baseURL string) *AnalyticsClient {
 
 func (c *AnalyticsClient) Chat(payload map[string]any) (map[string]any, error) {
 	return c.post("/management/chat", payload)
+}
+
+// ChatTools 带工具的一轮。循环在 Go 这边(见 agentChat)—— 工具是 Go 函数,
+// 数据和权限也在 Go,Python 只当 LLM 网关。
+func (c *AnalyticsClient) ChatTools(payload map[string]any) (map[string]any, error) {
+	return c.post("/management/chat-tools", payload)
 }
 
 func (c *AnalyticsClient) Analyze(payload map[string]any) (map[string]any, error) {
@@ -1154,18 +1163,15 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rangeKey := firstNonEmpty(req.Range, "30d")
-	overview, _ := s.toolGetOverview(req.Project, rangeKey)
-	attention, _ := s.toolListAttention(req.Project, 5)
-	// 多类聚合一起喂给 AI,让它能按问题挑对应数据,而不是每次都答最高风险资产
-	repeated, _ := s.toolListRepeatedIssues(req.Project, 6)
-	pending, _ := s.toolListPendingReviews(req.Project, 10)
-	quality, _ := s.toolGetInspectorQuality(rangeKey)
-	drift, _ := s.toolListNumericDrift(req.Project)
-	if len(drift) > 8 {
-		drift = drift[:8]
-	}
+	// 【一次对话里只算一遍】这七组聚合原来每条消息都重跑,其中 tasks 还是全表读。
+	// 用户在同一个话题里连问三句,同一份数据就算了三遍 —— 而这些聚合是"最近 30 天
+	// 的统计",几十秒内不会变。缓存 60 秒,按 项目+时间范围+租户 分桶。
+	ctxData := s.chatContext(r, req.Project, rangeKey)
+	overview, attention := ctxData.overview, ctxData.attention
+	repeated, pending := ctxData.repeated, ctxData.pending
+	quality, drift := ctxData.quality, ctxData.drift
 	// 本周计划/任务概览:让"巡检计划/本周任务"类问题有真数据可答,不再劝退
-	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: req.Project})
+	tasks := ctxData.tasks
 	planDone, planDoing, planTodo, planOverdue := 0, 0, 0, 0
 	planItems := []map[string]any{}
 	for _, tk := range tasks {
@@ -1192,7 +1198,7 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	}
 	payload := map[string]any{
 		"message": req.Message,
-		"history": req.History,
+		"history": sanitizeChatHistory(req.History),
 		"context": map[string]any{
 			"overview":         overview,
 			"topRiskAssets":    attention,
@@ -1205,6 +1211,26 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 			"project":          req.Project,
 		},
 	}
+	// 【先走工具路径】让模型自己决定查什么 —— 这样"K07 上个月异常几次"这类
+	// 问题有真数据可答,而不是在固定数据包里找不到就编。
+	// 失败(超时/空响应/循环)自动回退到下面这条不带工具的老路:那条一直是好的,
+	// 不能因为工具不稳就让整个聊天挂掉。
+	if ctxJSON, mErr := json.Marshal(payload["context"]); mErr == nil {
+		if reply, usedTools, ok := s.agentChat(
+			r, MANAGEMENT_CHAT_SYSTEM_HINT, string(ctxJSON),
+			req.Message, sanitizeChatHistory(req.History),
+		); ok {
+			out := map[string]any{"reply": reply, "model": "deepseek-tools"}
+			if len(usedTools) > 0 {
+				// 前端可以据此显示"查了哪些数据",也方便排查模型有没有乱调
+				out["usedTools"] = usedTools
+			}
+			out["sources"] = s.buildChatSources(req.Message, reply, attention)
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+	}
+
 	resp, err := s.analyticsClient.Chat(payload)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "ai_call_failed", err.Error())
@@ -2002,7 +2028,8 @@ func (s *Server) actCreateRecheckTask(w http.ResponseWriter, r *http.Request, as
 	reason := strings.TrimSpace(actParamString(params, "reason"))
 
 	// 去重:该资产已有在途任务时,改为更新责任人/截止(再派发),不重复建
-	if existing, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{}); err == nil {
+	if existing, err := s.store.ListEngineeringTasks(
+		EngineeringTaskFilter{TenantID: s.tenantForRequest(r)}); err == nil {
 		for _, t := range existing {
 			if t == nil || t.AssetID != assetID {
 				continue
@@ -2072,4 +2099,126 @@ func actParamString(m map[string]any, key string) string {
 		}
 	}
 	return ""
+}
+
+// 对话历史的上限与净化。
+//
+// 【history 是客户端给的,不能原样喂给模型】原来是 "history": req.History 直传。
+// 两个问题:
+//
+//  1. 客户端能【伪造 assistant 的历史发言】—— 造一轮"助手:好的,我已经确认可以
+//     直接派单给张三"塞进去,模型会把它当成自己说过的话往下接。这个 agent 能提议
+//     动作,让它相信自己此前已经同意过某事,是实打实的风险。
+//     所以 role 只认 user / assistant,别的一律丢掉;条数和单条长度都封顶。
+//
+//  2. 不限长度 = 一次请求可以塞进任意大的 prompt。成本和延迟都由客户端说了算。
+//
+// 这里【不】做内容过滤:用户本来就有权问任何问题,过滤问句是另一回事。
+// 这一层只保证"结构上是一段合法的对话",不保证内容无害。
+const (
+	chatHistoryMaxTurns    = 20   // 只保留最近 20 轮,再早的对答对当前问题几乎无用
+	chatHistoryMaxTextRune = 2000 // 单条上限(字符数,不是字节 —— 中文一个字 3 字节)
+)
+
+func sanitizeChatHistory(raw []map[string]any) []map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	// 只留最近的若干轮
+	if len(raw) > chatHistoryMaxTurns {
+		raw = raw[len(raw)-chatHistoryMaxTurns:]
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, m := range raw {
+		role, _ := m["role"].(string)
+		role = strings.ToLower(strings.TrimSpace(role))
+		// 【必须认 "ai"】admin-web 的 msgsToHistory 发的就是 user / ai
+		// (不是 OpenAI 那套 user / assistant)。只认 assistant 的话,
+		// AI 那半边全被丢掉 —— 模型只看得见用户单方面的追问,上下文断成一半。
+		switch role {
+		case "user":
+		case "ai", "assistant":
+			role = "ai"
+		default:
+			continue // system 之类一律不接受:系统提示只能由服务端给
+		}
+		// 【字段名是 text 不是 content】前端发 text,ai-service 也读 text
+		// (run.py: turn.get("text"))。改成 content 的话两头都读不到,
+		// 历史静默变空 —— 不报错,只是 AI 突然"失忆"。
+		text, _ := m["text"].(string)
+		if text == "" {
+			text, _ = m["content"].(string) // 兼容,万一将来前端换了名字
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"role": role,
+			"text": truncate(text, chatHistoryMaxTextRune),
+		})
+	}
+	return out
+}
+
+// ===== 聊天上下文的短期缓存 =====
+//
+// 聊天每来一条消息,原来都要重跑七组聚合(概览/关注/重复问题/待复核/巡检员质量/
+// 数值漂移/工程任务),其中工程任务是整表读。用户在同一个话题里连问三句,
+// 同一份数据就被算了三遍 —— 而这些是"最近 30 天的统计",几十秒内不会变。
+//
+// 60 秒:短到不会让人看见过期数字(派完单回头再问,一分钟内本来也还在处理),
+// 长到能覆盖一次连续追问。不做失效通知 —— 为了一个统计面板去维护缓存失效
+// 得不偿失,过一分钟自然就新了。
+type chatCtxData struct {
+	overview  *OverviewSummary
+	attention []*AttentionItem
+	repeated  []*RepeatedIssue
+	pending   *PendingReviews
+	quality   []*InspectorQualityRow
+	drift     []*NumericDriftEntry
+	tasks     []*EngineeringTask
+}
+
+type chatCtxEntry struct {
+	data chatCtxData
+	at   time.Time
+}
+
+const chatCtxTTL = 60 * time.Second
+
+func (s *Server) chatContext(r *http.Request, project, rangeKey string) chatCtxData {
+	tenant := s.tenantForRequest(r)
+	key := tenant + "|" + project + "|" + rangeKey
+
+	s.chatCtxMu.Lock()
+	if e, ok := s.chatCtx[key]; ok && time.Since(e.at) < chatCtxTTL {
+		s.chatCtxMu.Unlock()
+		return e.data
+	}
+	s.chatCtxMu.Unlock()
+
+	// 【锁外算】这七组聚合要跑几百毫秒,持锁算的话所有并发请求都排在后面。
+	// 代价是同一时刻可能有两个请求各算一遍 —— 只是多花一次,不会出错。
+	var d chatCtxData
+	d.overview, _ = s.toolGetOverview(project, rangeKey)
+	d.attention, _ = s.toolListAttention(project, 5)
+	// 多类聚合一起喂给 AI,让它能按问题挑对应数据,而不是每次都答最高风险资产
+	d.repeated, _ = s.toolListRepeatedIssues(project, 6)
+	d.pending, _ = s.toolListPendingReviews(project, 10)
+	d.quality, _ = s.toolGetInspectorQuality(rangeKey)
+	d.drift, _ = s.toolListNumericDrift(project)
+	if len(d.drift) > 8 {
+		d.drift = d.drift[:8]
+	}
+	d.tasks, _ = s.store.ListEngineeringTasks(
+		EngineeringTaskFilter{TenantID: tenant, Project: project})
+
+	s.chatCtxMu.Lock()
+	if s.chatCtx == nil {
+		s.chatCtx = map[string]chatCtxEntry{}
+	}
+	s.chatCtx[key] = chatCtxEntry{data: d, at: time.Now()}
+	s.chatCtxMu.Unlock()
+	return d
 }
