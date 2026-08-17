@@ -10,8 +10,9 @@ import (
 //
 // 这个测试是为一个真实踩过的坑立的:第一版实现是
 // ListOfflineShots(tenant, user, 0) 再逐条筛未成单。两层问题叠加 ——
-//   1. limit<=0 被 store 当成"默认 100"
-//   2. 筛在 LIMIT 之后
+//  1. limit<=0 被 store 当成"默认 100"
+//  2. 筛在 LIMIT 之后
+//
 // 于是最新 100 条里成单的多时,未成单的被截没:页面显示 20 张,角标报 6。
 // 角标和用户点进去看到的条数对不上,比不显示更糟。
 func TestCountPendingNotTruncatedByDefaultLimit(t *testing.T) {

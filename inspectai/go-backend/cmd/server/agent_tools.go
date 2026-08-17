@@ -362,6 +362,8 @@ const MANAGEMENT_CHAT_SYSTEM_HINT = `你是「智巡」设施巡检系统管理�
 再用那个 id 调其它工具。【绝对不要自己拼 id、也不要只在看板数据里找】——
 看板里的 topRiskAssets 只有高风险设备,正常设备不在里面,在那儿找不到不等于设备不存在。
 find_asset 返回空才说明真的没有这台设备。
+find_asset 有时会返回 nearMatches(编号相近的候选,有猜测成分):只有一台时可以按它
+回答,但【必须写出完整编号】让用户能发现认错;多台时列出来反问是哪一台。
 
 【回答里不许出现内部字段名和 id】这些是给程序看的,不是给人看的:
   · 不要写 topRiskAssets / repeatedIssues / numericDrift 这类英文字段名
@@ -437,11 +439,17 @@ func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	type hit struct {
-		item  map[string]any
-		exact bool
+	item := func(a *AssetEntry) map[string]any {
+		return map[string]any{
+			// id 是给后续工具用的,不该出现在回答里(提示词里点明了)
+			"id":            a.ID,
+			"name":          a.AssetName,
+			"type":          a.AssetType, // 中文类型名,不是模板代号
+			"project":       a.Project,
+			"currentStatus": a.LastStatus,
+		}
 	}
-	hits := []hit{}
+	exact, partial, near := []map[string]any{}, []map[string]any{}, []map[string]any{}
 	for _, a := range all {
 		if a == nil {
 			continue
@@ -450,42 +458,94 @@ func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, e
 		if nName == "" && nKey == "" {
 			continue
 		}
-		isExact := nName == kw || nKey == kw
-		if !isExact && !strings.Contains(nName, kw) && !strings.Contains(nKey, kw) {
-			continue
-		}
-		hits = append(hits, hit{
-			item: map[string]any{
-				// id 是给后续工具用的,不该出现在回答里(提示词里点明了)
-				"id":            a.ID,
-				"name":          a.AssetName,
-				"type":          a.AssetType, // 中文类型名,不是模板代号
-				"project":       a.Project,
-				"currentStatus": a.LastStatus,
-			},
-			exact: isExact,
-		})
-	}
-	// 精确匹配排在前面:用户打"KT-7"时,"KT-7"要压过"KT-70"
-	out := make([]map[string]any, 0, len(hits))
-	for _, h := range hits {
-		if h.exact {
-			out = append(out, h.item)
+		switch {
+		case nName == kw || nKey == kw:
+			exact = append(exact, item(a))
+		case strings.Contains(nName, kw) || strings.Contains(nKey, kw):
+			partial = append(partial, item(a))
+		case looseAssetMatch(kw, nName) || looseAssetMatch(kw, nKey):
+			near = append(near, item(a))
 		}
 	}
-	for _, h := range hits {
-		if !h.exact {
-			out = append(out, h.item)
+	// 精确 > 包含:用户打"KT-7"时,"KT-7"要压过"KT-70"
+	out := append(append([]map[string]any{}, exact...), partial...)
+	if len(out) > 0 {
+		if len(out) > 10 {
+			out = out[:10]
+		}
+		return map[string]any{"count": len(out), "assets": out}, nil
+	}
+	// 【只有在完全没有把握的匹配时才给相近候选】
+	// 这一层是为"用户打 K7、设备实际叫 KT-7"准备的。它有猜的成分,
+	// 所以必须标出来让模型确认,不能当成命中直接用 —— 答错设备比查不到更糟。
+	if len(near) > 0 {
+		note := "没有完全匹配的设备,以下是编号相近的候选(有猜测成分)。" +
+			"只有一台候选时,可以按它回答,但【必须在回答里写出完整编号】," +
+			"让用户能发现认错了;多台候选时列出来反问用户指的是哪一台。"
+		if len(near) > 10 {
+			near = near[:10]
+		}
+		return map[string]any{"count": 0, "nearMatches": near, "_note": note}, nil
+	}
+	return map[string]any{
+		"count": 0,
+		"_note": "没有找到匹配的设备,连编号相近的也没有。台账里确实没有这台,可以如实告诉用户。",
+	}, nil
+}
+
+// looseAssetMatch 判断"用户打的简写"是不是指这台设备。
+//
+// 真实场景:用户打「K7」,设备实际叫「KT-7」。归一化后是 K7 vs KT7 ——
+// K7 不是 KT7 的子串(K 后面是 T 不是 7),所以严格匹配对不上。线上实测踩到的。
+//
+// 【不能简单放松成"字符都出现过"】那样 K7 会把 KT-17、KX-7 全匹上。
+// 用【数字部分完全相同】作锚点:设备编号里的数字是它的身份,字母是分类前缀。
+//
+//	K7  vs KT-7  → 数字 7 == 7、字母 K 是 KT 的子序列  → 相近 ✓
+//	K7  vs KT-17 → 数字 7 != 17                        → 不匹配 ✓
+//	K7  vs KX-7  → 数字相同、字母 K 是 KX 的子序列      → 相近(确实可能是它,交给模型确认)
+func looseAssetMatch(kw, target string) bool {
+	digits := func(x string) string {
+		var b strings.Builder
+		for _, r := range x {
+			if r >= '0' && r <= '9' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	letters := func(x string) string {
+		var b strings.Builder
+		for _, r := range x {
+			if r < '0' || r > '9' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	kd, td := digits(kw), digits(target)
+	// 两边都必须有数字且完全相同 —— 数字才是编号的身份
+	if kd == "" || kd != td {
+		return false
+	}
+	// 字母部分:两个方向都算 —— 用户可能打少了(K7 → KT-7),也可能打多了
+	// (KT-7 → K7)。【单向会漏】第一版只判前者,于是本机那台真名叫 K7 的设备
+	// 在用户打 KT-7 时匹配不上。
+	// KX 对 KT 两个方向都不成立,所以放松成双向不会把不同前缀的设备混起来。
+	kl, tl := letters(kw), letters(target)
+	if kl == "" {
+		return true // 用户只打了数字("7 号电梯"),数字对上就算候选
+	}
+	return isSubsequence(kl, tl) || isSubsequence(tl, kl)
+}
+
+// isSubsequence 判断 short 是否为 long 的子序列(按顺序出现,不必连续)。
+func isSubsequence(short, long string) bool {
+	i := 0
+	for _, r := range long {
+		if i < len(short) && rune(short[i]) == r {
+			i++
 		}
 	}
-	if len(out) == 0 {
-		return map[string]any{
-			"count": 0,
-			"_note": "没有找到匹配的设备。这说明台账里确实没有这台,可以如实告诉用户。",
-		}, nil
-	}
-	if len(out) > 10 {
-		out = out[:10]
-	}
-	return map[string]any{"count": len(out), "assets": out}, nil
+	return i == len(short)
 }

@@ -294,8 +294,8 @@ type AssetEntry struct {
 	// countedInspections 内部标记:列表路径已批量算过巡检次数,
 	// enrichAssetForDisplay 就不必再逐台查一遍。不出现在 JSON 里。
 	countedInspections bool
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 
 	// CoverImage 仅 API 展示时动态填充，不入库。优先取 CoverImagePath，回退到最近一次巡检的第一张图。
 	CoverImage *ImageInfo `json:"coverImage,omitempty"`

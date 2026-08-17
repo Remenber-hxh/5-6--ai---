@@ -84,7 +84,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "screen_reading",
+			AIPrompt:  "screen_reading",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
 				numberField("tank_level", "水箱水位（米）", true, "ai"),
@@ -105,7 +105,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "screen_reading",
+			AIPrompt:  "screen_reading",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
 				assetNoField("UPS 主机编号"),
@@ -136,7 +136,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "substation",
+			AIPrompt:  "substation",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
 				assetNoField("变电所编号"),
@@ -164,7 +164,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "screen_reading",
+			AIPrompt:  "screen_reading",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期+时间", false, "ai"),
 				numberField("tank_level", "水箱水位（米）", true, "ai"),
@@ -184,7 +184,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "escalator",
+			AIPrompt:  "escalator",
 			Fields: []TemplateField{
 				textField("inspection_time", "检查时间", false, "ai"),
 				assetNoField("扶梯编号"),
@@ -213,7 +213,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "elevator_machine_room",
+			AIPrompt:  "elevator_machine_room",
 			Fields: []TemplateField{
 				textField("inspection_time", "检查时间", false, "ai"),
 				assetNoField("电梯编号"),
@@ -244,7 +244,7 @@ func reportTemplates() []ReportTemplate {
 			MaxImages: 20,
 			Featured:  true,
 			HasAI:     true,
-            AIPrompt:  "elevator_no_room",
+			AIPrompt:  "elevator_no_room",
 			Fields: []TemplateField{
 				textField("inspection_time", "日期", false, "ai"),
 				assetNoField("电梯编号"),

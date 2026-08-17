@@ -74,9 +74,9 @@ func TestAssetMarkNormalClosesRectifyTasks(t *testing.T) {
 			t.Fatalf("CreateEngineeringTask(%s): %v", id, err)
 		}
 	}
-	mustCreateTask("t_rectify", "A1", engTaskStatusRectify)  // 应销账
+	mustCreateTask("t_rectify", "A1", engTaskStatusRectify) // 应销账
 	mustCreateTask("t_doing", "A1", "进行中")                  // 不该动
-	mustCreateTask("t_other", "A9", engTaskStatusRectify)    // 别的资产,不该动
+	mustCreateTask("t_other", "A9", engTaskStatusRectify)   // 别的资产,不该动
 
 	got := requestJSON(srv, http.MethodPatch, "/api/assets/A1", tokens["supervisor"], `{"lastStatus":"正常"}`)
 	if got.Code != http.StatusOK {

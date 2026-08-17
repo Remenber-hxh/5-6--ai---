@@ -18,7 +18,9 @@ import (
 // 两种类型、两批实体设备),所以按 assetType 取 == 按 templateId 取。
 //
 // 但提交时资产的主键是 assetIDFor():
-//     project + "::" + templateID + "::" + asset_no
+//
+//	project + "::" + templateID + "::" + asset_no
+//
 // 【带 templateID】。所以一旦将来出现"两个模板共用同一个 assetType",这里就会
 // 把另一个模板的设备编号也列进选项,巡检员选中后提交,算出来的 assetID 与那台
 // 设备不同 —— 台账里会凭空多出一台重复设备,而不是挂到原来那台上。

@@ -57,10 +57,10 @@ func TestElevatorMachineRoomFieldsCovered(t *testing.T) {
 	// 关键规则渲染检查
 	checks := map[string]string{
 		"灭火器用 current_date 比对": "current_date",
-		"灭火器生产日期≠有效期提示":     "生产日期 ≠ 有效期",
-		"防夹从宽":               "判定从宽",
-		"异响异味留人工":            "留人工",
-		"判否写不符合项":            "逐条写明问题",
+		"灭火器生产日期≠有效期提示":        "生产日期 ≠ 有效期",
+		"防夹从宽":    "判定从宽",
+		"异响异味留人工": "留人工",
+		"判否写不符合项": "逐条写明问题",
 	}
 	for name, frag := range checks {
 		if !strings.Contains(out, frag) {

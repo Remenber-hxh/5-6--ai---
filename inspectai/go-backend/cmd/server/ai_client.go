@@ -15,18 +15,18 @@ import (
 
 // AnalyzeResponse — ai-service /analyze 返回
 type AnalyzeResponse struct {
-	SchemaVersion     string                 `json:"schemaVersion"`
-	AnalysisID        string                 `json:"analysisId"`
-	RecordID          string                 `json:"recordId"`
-	Model             map[string]string      `json:"model"`
-	ProcessedAt       string                 `json:"processedAt"`
-	DurationMs        int                    `json:"durationMs"`
-	RecognizedFields  []RecognizedField      `json:"recognizedFields"`
-	RecognitionStatus string                 `json:"recognitionStatus"`
-	RetakeReason      string                 `json:"retakeReason,omitempty"`
-	Observations      []string               `json:"observations"`
-	Warnings          []string               `json:"warnings"`
-	Raw               map[string]any         `json:"-"`
+	SchemaVersion     string            `json:"schemaVersion"`
+	AnalysisID        string            `json:"analysisId"`
+	RecordID          string            `json:"recordId"`
+	Model             map[string]string `json:"model"`
+	ProcessedAt       string            `json:"processedAt"`
+	DurationMs        int               `json:"durationMs"`
+	RecognizedFields  []RecognizedField `json:"recognizedFields"`
+	RecognitionStatus string            `json:"recognitionStatus"`
+	RetakeReason      string            `json:"retakeReason,omitempty"`
+	Observations      []string          `json:"observations"`
+	Warnings          []string          `json:"warnings"`
+	Raw               map[string]any    `json:"-"`
 }
 
 type RecognizedField struct {
