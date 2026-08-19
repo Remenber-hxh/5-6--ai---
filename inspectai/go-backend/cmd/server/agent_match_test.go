@@ -57,7 +57,7 @@ func TestFindAssetsPrefersExactOverPartial(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "KT-7")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "KT-7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestFindAssetsReturnsNearMatchesSeparately(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "K7")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "K7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +98,106 @@ func TestFindAssetsReturnsNearMatchesSeparately(t *testing.T) {
 	}
 }
 
+// 【按项目过滤】各楼的编号各自排,重名很常见。在"会议中心"的对话里问 K01,
+// 不能答出另一栋楼的 K01 —— 而"挑名字最接近的那台"对两台同名设备完全无效。
+func TestFindAssetsScopedByProject(t *testing.T) {
+	store := NewMemStore()
+	srv := &Server{store: store}
+	for _, p := range []string{"会议中心", "紫菡雅集"} {
+		if err := store.CreateAsset(&AssetEntry{
+			ID: p + "::elevator_no_room::K01", TenantID: defaultTenantID,
+			Project: p, AssetType: "无机房电梯",
+			AssetKey: "K01", AssetName: "K01", LastStatus: "正常",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 不限项目:两台都返回(由模型反问是哪一台)
+	all, err := srv.findAssetsForAgent(defaultTenantID, "", "K01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all["count"] != 2 {
+		t.Fatalf("不限项目应返回 2 台,得到 %v", all["count"])
+	}
+	// 限定项目:只返回那一台,且必须是对的那个项目
+	one, err := srv.findAssetsForAgent(defaultTenantID, "会议中心", "K01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one["count"] != 1 {
+		t.Fatalf("限定项目应只返回 1 台,得到 %v —— 跨项目串数据", one["count"])
+	}
+	list, _ := one["assets"].([]map[string]any)
+	if list[0]["project"] != "会议中心" {
+		t.Fatalf("返回的是别的项目: %v", list[0]["project"])
+	}
+}
+
+// 匹配到超过 10 台时,count 必须是【真实总数】而不是截断后的条数 ——
+// 否则模型会理直气壮地说"一共 10 台"。
+func TestFindAssetsCountIsBeforeTruncation(t *testing.T) {
+	store := NewMemStore()
+	srv := &Server{store: store}
+	for i := range 14 {
+		name := "DT" + itoaSafe(i)
+		if err := store.CreateAsset(&AssetEntry{
+			ID: "会议中心::elevator_no_room::" + name, TenantID: defaultTenantID,
+			Project: "会议中心", AssetType: "无机房电梯",
+			AssetKey: name, AssetName: name, LastStatus: "正常",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "DT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["count"] != 14 {
+		t.Fatalf("count 应为真实总数 14,得到 %v", got["count"])
+	}
+	list, _ := got["assets"].([]map[string]any)
+	if len(list) != 10 {
+		t.Fatalf("列表应截到 10 条,得到 %d", len(list))
+	}
+	if got["truncated"] != true {
+		t.Fatal("截断了必须标出来,否则模型不知道手上是残缺的")
+	}
+}
+
+// 补零不该影响识别:K07 和 KT-7 的数字都是 7。
+func TestLooseAssetMatchIgnoresLeadingZeros(t *testing.T) {
+	for _, c := range [][2]string{{"K07", "KT7"}, {"K7", "KT07"}, {"K007", "K7"}} {
+		if !looseAssetMatch(c[0], c[1]) {
+			t.Errorf("looseAssetMatch(%q,%q) 应为 true —— 补零与否全看当初谁录的", c[0], c[1])
+		}
+	}
+	// 但 07 和 70 仍然是两台
+	if looseAssetMatch("K07", "K70") {
+		t.Error("K07 和 K70 是两台设备")
+	}
+}
+
+// 子串命中但数字对不上的,必须降级成候选 —— 问 KT-7 不能确定地答 KT-70。
+func TestFindAssetsDemotesAmbiguousSubstring(t *testing.T) {
+	store := NewMemStore()
+	srv := &Server{store: store}
+	if err := store.CreateAsset(&AssetEntry{
+		ID: "会议中心::elevator_no_room::KT-70", TenantID: defaultTenantID,
+		Project: "会议中心", AssetType: "无机房电梯",
+		AssetKey: "KT-70", AssetName: "KT-70", LastStatus: "正常",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "KT-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := got["assets"]; has {
+		t.Fatalf("KT-70 不是 KT-7 的确定命中,不该进 assets: %+v", got)
+	}
+}
+
 // 真的没有这台设备时,如实返回空,别硬凑一个候选出来。
 func TestFindAssetsEmptyWhenNothingClose(t *testing.T) {
 	store := NewMemStore()
@@ -109,7 +209,7 @@ func TestFindAssetsEmptyWhenNothingClose(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "FT-99")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "FT-99")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -75,7 +76,7 @@ func agentToolSpecs() []map[string]any {
 		tool("get_asset_history",
 			"查某一台设备的逐次巡检历史(时间、状态、巡检人、结论)。"+
 				"问'这台设备上个月异常几次''最近几次什么情况''什么时候出的问题'时用。"+
-				"assetId 用上下文里 topRiskAssets 给出的完整 id,不要自己拼。",
+				"assetId 用 find_asset 返回的完整 id,不要自己拼、也不要从看板数据里猜。",
 			map[string]any{
 				"assetId": strProp("设备的完整 id,形如 项目::模板::编号"),
 				"limit":   map[string]any{"type": "integer", "description": "取最近几条,默认 20"},
@@ -125,7 +126,7 @@ func agentToolSpecs() []map[string]any {
 // 【白名单 switch,不做反射派发】多一个工具就在这里多一行 —— 看得见、审得动。
 // 反射或 map 派发写起来短,但"模型能调到什么"就散在各处了,这是安全边界,
 // 不该为了少写几行把它藏起来。
-func (s *Server) execAgentTool(r *http.Request, name, rawArgs string) (any, error) {
+func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (any, error) {
 	var args map[string]any
 	if strings.TrimSpace(rawArgs) != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -152,7 +153,7 @@ func (s *Server) execAgentTool(r *http.Request, name, rawArgs string) (any, erro
 		if kw == "" {
 			return nil, fmt.Errorf("缺少 keyword")
 		}
-		return s.findAssetsForAgent(tenant, kw)
+		return s.findAssetsForAgent(tenant, project, kw)
 
 	case "get_asset_history":
 		id := str("assetId")
@@ -247,7 +248,7 @@ func agentToolResultJSON(v any, err error) string {
 //
 // 返回 (回复文本, 用过的工具名, 是否成功)。不成功时调用方走老路。
 func (s *Server) agentChat(
-	r *http.Request, systemPrompt, contextJSON, question string,
+	r *http.Request, systemPrompt, contextJSON, question, project string,
 	history []map[string]any,
 ) (string, []string, bool) {
 	if s.analyticsClient == nil {
@@ -308,7 +309,7 @@ func (s *Server) agentChat(
 				name, _ := call["name"].(string)
 				args, _ := call["arguments"].(string)
 				id, _ := call["id"].(string)
-				out, execErr := s.execAgentTool(r, name, args)
+				out, execErr := s.execAgentTool(r, project, name, args)
 				if execErr != nil {
 					log.Printf("INFO: agent 工具 %s 执行失败(将把错误回给模型): %v", name, execErr)
 				} else {
@@ -427,7 +428,13 @@ func normalizeHistoryForModel(snaps []*AssetSnapshot) map[string]any {
 //
 // 匹配做了归一化:去掉连字符/空格、统一大写。用户打"kt-7""KT7""kt 7"
 // 都要能对上"KT-7" —— 现场用手机打字,不该因为一个连字符查不到。
-func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, error) {
+// findAssetsForAgent 按关键词找设备。project 非空时【只在该项目内找】。
+//
+// 【为什么必须按项目过滤】聊天的上下文数据是按项目筛过的,而这个工具原来搜的是
+// 整个租户 —— 于是在"会议中心"的对话里问 K01,可能答出另一栋楼的 K01。
+// 各楼的编号是各自排的,重名很常见(asset_identity.go 里记着这件事),
+// 而"挑名字最接近的那台"这条规则对两台同名设备完全无效。
+func (s *Server) findAssetsForAgent(tenantID, project, keyword string) (map[string]any, error) {
 	norm := func(x string) string {
 		return strings.ToUpper(strings.NewReplacer("-", "", "_", "", " ", "", "－", "").Replace(x))
 	}
@@ -449,9 +456,13 @@ func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, e
 			"currentStatus": a.LastStatus,
 		}
 	}
+	kwHasDigits := onlyDigits(kw) != ""
 	exact, partial, near := []map[string]any{}, []map[string]any{}, []map[string]any{}
 	for _, a := range all {
 		if a == nil {
+			continue
+		}
+		if project != "" && a.Project != project {
 			continue
 		}
 		nName, nKey := norm(a.AssetName), norm(a.AssetKey)
@@ -462,7 +473,18 @@ func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, e
 		case nName == kw || nKey == kw:
 			exact = append(exact, item(a))
 		case strings.Contains(nName, kw) || strings.Contains(nKey, kw):
-			partial = append(partial, item(a))
+			// 【子串命中也可能是别的设备】"KT7" 是 "KT70" 的子串,但那是两台。
+			// 带了数字就要求数字对上,否则降级成候选让模型确认 ——
+			// 原来子串直接进 assets,模型当成确定答案,问 KT-7 答的是 KT-70。
+			//
+			// 但关键词【没有数字】时(搜 "DT" 这种前缀、或按类型搜)是正常的
+			// 宽泛检索,本来就该返回多台,不该降级 —— 第一版漏了这个条件,
+			// 搜 "DT" 一台都进不了确定命中。
+			if !kwHasDigits || digitsEqual(kw, nName) || digitsEqual(kw, nKey) {
+				partial = append(partial, item(a))
+			} else {
+				near = append(near, item(a))
+			}
 		case looseAssetMatch(kw, nName) || looseAssetMatch(kw, nKey):
 			near = append(near, item(a))
 		}
@@ -470,10 +492,19 @@ func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, e
 	// 精确 > 包含:用户打"KT-7"时,"KT-7"要压过"KT-70"
 	out := append(append([]map[string]any{}, exact...), partial...)
 	if len(out) > 0 {
-		if len(out) > 10 {
+		// 【count 要在截断【前】算】否则 40 台里返回 10 台,count 报 10,
+		// 模型就会理直气壮地说"一共 10 台"。截断了必须说出来 ——
+		// agentToolResultJSON 那边就是这么做的,这里当初漏了。
+		total := len(out)
+		res := map[string]any{"count": total}
+		if total > 10 {
 			out = out[:10]
+			res["truncated"] = true
+			res["_note"] = "匹配到 " + strconv.Itoa(total) + " 台,这里只列出前 10 台。" +
+				"回答涉及总数时用 count,不要数下面这个列表的条数。"
 		}
-		return map[string]any{"count": len(out), "assets": out}, nil
+		res["assets"] = out
+		return res, nil
 	}
 	// 【只有在完全没有把握的匹配时才给相近候选】
 	// 这一层是为"用户打 K7、设备实际叫 KT-7"准备的。它有猜的成分,
@@ -482,15 +513,37 @@ func (s *Server) findAssetsForAgent(tenantID, keyword string) (map[string]any, e
 		note := "没有完全匹配的设备,以下是编号相近的候选(有猜测成分)。" +
 			"只有一台候选时,可以按它回答,但【必须在回答里写出完整编号】," +
 			"让用户能发现认错了;多台候选时列出来反问用户指的是哪一台。"
-		if len(near) > 10 {
+		nearTotal := len(near)
+		if nearTotal > 10 {
 			near = near[:10]
+			note += " 共有 " + strconv.Itoa(nearTotal) + " 台相近,这里只列前 10 台。"
 		}
-		return map[string]any{"count": 0, "nearMatches": near, "_note": note}, nil
+		return map[string]any{
+			"count": 0, "nearMatchCount": nearTotal,
+			"nearMatches": near, "_note": note,
+		}, nil
 	}
 	return map[string]any{
 		"count": 0,
 		"_note": "没有找到匹配的设备,连编号相近的也没有。台账里确实没有这台,可以如实告诉用户。",
 	}, nil
+}
+
+// digitsEqual 两个编号的数字部分是否相同(忽略前导零)。
+// 编号里的数字是设备身份 —— KT-7 和 KT-70 是两台设备,不是同一台的两种写法。
+func digitsEqual(a, b string) bool {
+	da, db := trimLeadingZeros(onlyDigits(a)), trimLeadingZeros(onlyDigits(b))
+	return da != "" && da == db
+}
+
+func onlyDigits(x string) string {
+	var sb strings.Builder
+	for _, r := range x {
+		if r >= '0' && r <= '9' {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 // looseAssetMatch 判断"用户打的简写"是不是指这台设备。
@@ -523,8 +576,10 @@ func looseAssetMatch(kw, target string) bool {
 		}
 		return b.String()
 	}
-	kd, td := digits(kw), digits(target)
-	// 两边都必须有数字且完全相同 —— 数字才是编号的身份
+	// 【必须去掉前导零再比】K07 的数字是 "07",KT-7 的是 "7",按字符串比对不上 ——
+	// 而 K07 正是工具描述里举的例子。现场编号补不补零全看当初谁录的。
+	kd, td := trimLeadingZeros(digits(kw)), trimLeadingZeros(digits(target))
+	// 两边都必须有数字且相同 —— 数字才是编号的身份
 	if kd == "" || kd != td {
 		return false
 	}
@@ -540,12 +595,26 @@ func looseAssetMatch(kw, target string) bool {
 }
 
 // isSubsequence 判断 short 是否为 long 的子序列(按顺序出现,不必连续)。
+//
+// 【必须按 rune 比】第一版写的是 rune(short[i]) —— 那取的是【字节】,
+// 和解码出来的 rune 比。ASCII 编号(KT-7)碰巧能过,中文名("3号客梯")一律失败,
+// 相近候选那条路对中文设备名等于不存在。
 func isSubsequence(short, long string) bool {
+	sr, lr := []rune(short), []rune(long)
 	i := 0
-	for _, r := range long {
-		if i < len(short) && rune(short[i]) == r {
+	for _, r := range lr {
+		if i < len(sr) && sr[i] == r {
 			i++
 		}
 	}
-	return i == len(short)
+	return i == len(sr)
+}
+
+// trimLeadingZeros 去掉数字串的前导零,全零则保留一个 "0"。
+func trimLeadingZeros(d string) string {
+	t := strings.TrimLeft(d, "0")
+	if t == "" && d != "" {
+		return "0"
+	}
+	return t
 }

@@ -1218,7 +1218,7 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	if ctxJSON, mErr := json.Marshal(payload["context"]); mErr == nil {
 		if reply, usedTools, ok := s.agentChat(
 			r, MANAGEMENT_CHAT_SYSTEM_HINT, string(ctxJSON),
-			req.Message, sanitizeChatHistory(req.History),
+			req.Message, req.Project, sanitizeChatHistory(req.History),
 		); ok {
 			out := map[string]any{"reply": reply, "model": "deepseek-tools"}
 			if len(usedTools) > 0 {
