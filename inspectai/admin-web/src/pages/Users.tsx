@@ -19,7 +19,12 @@ import {
   setUserStatus,
   updateRole,
   updateUser,
+  listProjects,
+  listUserProjects,
+  setUserProjects,
+  type ProjectEntry,
 } from "../api/mgmt";
+import Projects from "../components/Projects";
 import RegistrationCodes from "../components/RegistrationCodes";
 import { useAuth } from "../store/auth";
 import { fmtTime } from "../lib/status";
@@ -52,6 +57,7 @@ export default function Users() {
   const [pwdUser, setPwdUser] = useState<UserEntry | null>(null);
   const [form] = Form.useForm();
   const [pwdForm] = Form.useForm();
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
 
   async function load() {
     setLoading(true);
@@ -68,6 +74,7 @@ export default function Users() {
       .then((rs) => rs.length && setRoles(rs))
       .catch(() => void 0);
     listDepartments().then(setDepts).catch(() => void 0);
+    listProjects().then(setProjects).catch(() => void 0);
     if (me?.roleCode === "admin") {
       getPermissions()
         .then((d) => {
@@ -140,22 +147,33 @@ export default function Users() {
 
   function openEdit(u: UserEntry | "new") {
     setEditing(u);
-    if (u === "new") form.resetFields();
-    else
-      form.setFieldsValue({
-        username: u.username,
-        displayName: u.displayName,
-        roleCode: u.roleCode,
-        departmentId: u.departmentId || undefined,
-        dataScope: u.dataScope || "",
-      });
+    if (u === "new") {
+      form.resetFields();
+      return;
+    }
+    form.setFieldsValue({
+      username: u.username,
+      displayName: u.displayName,
+      roleCode: u.roleCode,
+      departmentId: u.departmentId || undefined,
+      dataScope: u.dataScope || "",
+      projectIds: [],
+    });
+    // 归属单独取:用户列表接口不返回它(每行都带一串项目 id,列表会变重)。
+    // 先置空再异步填,避免上一次打开的选择残留在这一次的弹窗里。
+    listUserProjects(u.id)
+      .then((ids) => form.setFieldValue("projectIds", ids))
+      .catch(() => void 0);
   }
 
   async function submit() {
     const v = await form.validateFields();
     try {
       if (editing === "new") {
-        await createUser(v);
+        const created = await createUser(v);
+        if (v.projectIds?.length && created?.user?.id) {
+          await setUserProjects(created.user.id, v.projectIds);
+        }
         message.success("用户已创建");
       } else if (editing) {
         await updateUser(editing.id, {
@@ -165,6 +183,7 @@ export default function Users() {
           // 恒传字符串:后端靠"有没有传"判断要不要改,漏传就改不回「按角色」
           dataScope: v.dataScope ?? "",
         });
+        await setUserProjects(editing.id, v.projectIds || []);
         message.success("用户已更新");
       }
       setEditing(null);
@@ -290,6 +309,20 @@ export default function Users() {
                 { value: "all", label: "全部数据" },
                 { value: "self", label: "仅本人提交的" },
               ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="projectIds"
+            label="所属项目"
+            extra="不选 = 不受项目限制。数据范围选「本项目」时必须至少选一个。"
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="不限"
+              options={projects
+                .filter((p) => !p.disabled)
+                .map((p) => ({ value: p.id, label: p.name }))}
             />
           </Form.Item>
           <Form.Item name="departmentId" label="部门">
@@ -449,6 +482,7 @@ export default function Users() {
 
       {/* 注册码放在用户列表下面:它和"新建用户"是同一件事的两条路 ——
           一个一个建 vs 发一张码让人自助注册。挨着放,管理员才会想起还有这条路。 */}
+      {me?.roleCode === "admin" && <Projects />}
       <RegistrationCodes roles={roles} />
       </>
     );

@@ -57,6 +57,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleUserRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/roles/"):
 		s.handleRoleRoutes(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/projects/"):
+		s.handleProjectRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/registration-codes/"):
 		s.handleRegistrationCodeRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/engineering/tasks/"):
@@ -730,6 +732,8 @@ func (s *Server) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleResetUserPassword(w, r, userID)
 	case sub == "status" && r.Method == http.MethodPost:
 		s.handleSetUserStatus(w, r, userID)
+	case sub == "projects":
+		s.handleUserProjects(w, r, userID)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "未匹配的用户路由")
 	}

@@ -187,6 +187,7 @@ type Store interface {
 	SubmissionStore
 	PromptTemplateStore
 	PermissionStore
+	ProjectStore
 
 	Close() error
 }
@@ -236,6 +237,8 @@ type MemStore struct {
 	rolePerms      map[string][]string
 	roles          map[string]*Role
 	regCodes       map[string]*RegistrationCode // key = code 本身
+	projects       map[string]*Project
+	userProjects   map[string][]string // userID -> projectIDs
 }
 
 type memUser struct {
@@ -259,6 +262,8 @@ func NewMemStore() *MemStore {
 		engPlans:       map[string]*EngineeringPlanItem{},
 		engTasks:       map[string]*EngineeringTask{},
 		promptTpls:     map[string]PromptTemplate{},
+		projects:       map[string]*Project{},
+		userProjects:   map[string][]string{},
 		rolePerms:      defaultPermMatrix(),
 	}
 }

@@ -35,6 +35,7 @@ var migrationList = []migration{
 	{11, "offline_shots", (*SQLiteStore).migOfflineShots},
 	{12, "registration_codes", (*SQLiteStore).migRegistrationCodes},
 	{13, "user_data_scope", (*SQLiteStore).migUserDataScope},
+	{14, "projects", (*SQLiteStore).migProjects},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -383,6 +384,124 @@ func (s *SQLiteStore) migUserDataScope() error {
 	}
 	if _, err := s.db.Exec(stmt); err != nil {
 		return fmt.Errorf("add users.data_scope: %w", err)
+	}
+	return nil
+}
+
+// migProjects — 014:项目实体化 + 人和项目的对应关系。
+//
+// 在这之前,"项目"只是 assets.project / records.project 里的一串中文名。
+// 名字当键有两个后果:改个名全断,而且【没有地方挂人】—— 要让张三只看
+// 会议中心,系统里根本没有"张三属于会议中心"这件事可以记。
+//
+// 表建了,但这一步【不改任何查询】:
+//   - projects 只是把已有的项目名登记成实体,给成员关系当锚点
+//   - user_projects 空着 = 没人被限定到项目 = 行为不变
+// 过滤等第 2b 步接上,而且只对显式配了 project 范围的人生效。
+// 和第 1 步同一个套路:先铺地基,不动行为。
+//
+// 【为什么仍然用项目名做关联键】assets / records / change_requests /
+// engineering_tasks 全都用中文项目名互相认,一次性改成 project_id 要动
+// 四张表和几十处查询,风险远大于收益。projects.name 在租户内唯一,
+// 改名必须连带更新业务表 —— 所以这一步【不提供改名】,只提供登记和停用。
+func (s *SQLiteStore) migProjects() error {
+	stmt := `CREATE TABLE IF NOT EXISTS projects (
+		id         TEXT PRIMARY KEY,
+		tenant_id  TEXT NOT NULL DEFAULT '` + defaultTenantID + `',
+		name       TEXT NOT NULL,
+		code       TEXT NOT NULL DEFAULT '',
+		note       TEXT NOT NULL DEFAULT '',
+		disabled   INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '')`
+	memberStmt := `CREATE TABLE IF NOT EXISTS user_projects (
+		user_id    TEXT NOT NULL,
+		project_id TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (user_id, project_id))`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS projects (
+			id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+			tenant_id  VARCHAR(64)  NOT NULL DEFAULT '` + defaultTenantID + `',
+			name       VARCHAR(191) NOT NULL,
+			code       VARCHAR(64)  NOT NULL DEFAULT '',
+			note       VARCHAR(255) NOT NULL DEFAULT '',
+			disabled   TINYINT      NOT NULL DEFAULT 0,
+			created_at VARCHAR(40)  NOT NULL DEFAULT '',
+			updated_at VARCHAR(40)  NOT NULL DEFAULT '',
+			UNIQUE KEY uniq_projects_tenant_name (tenant_id, name)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+		memberStmt = `CREATE TABLE IF NOT EXISTS user_projects (
+			user_id    VARCHAR(64) NOT NULL,
+			project_id VARCHAR(64) NOT NULL,
+			created_at VARCHAR(40) NOT NULL DEFAULT '',
+			PRIMARY KEY (user_id, project_id),
+			INDEX idx_user_projects_project (project_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("create projects: %w", err)
+	}
+	if _, err := s.db.Exec(memberStmt); err != nil {
+		return fmt.Errorf("create user_projects: %w", err)
+	}
+	if s.dialect == "sqlite" {
+		if _, err := s.db.Exec(
+			`CREATE UNIQUE INDEX IF NOT EXISTS uniq_projects_tenant_name ON projects(tenant_id, name)`); err != nil {
+			return fmt.Errorf("index projects: %w", err)
+		}
+		_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_projects_project ON user_projects(project_id)`)
+	}
+	return s.backfillProjectsFromAssets()
+}
+
+// backfillProjectsFromAssets 把台账和巡检记录里已经出现过的项目名登记成项目。
+//
+// 【必须回填】否则升级后后台项目列表是空的,管理员会以为项目丢了,
+// 然后手动新建一个同名的 —— 名字要是差一个字,和台账就对不上了。
+//
+// 只登记不存在的;已登记的一律不动(管理员可能已经改过备注、停用过)。
+func (s *SQLiteStore) backfillProjectsFromAssets() error {
+	rows, err := s.db.Query(`
+		SELECT DISTINCT project FROM assets WHERE project <> ''
+		UNION
+		SELECT DISTINCT project FROM records WHERE project <> ''`)
+	if err != nil {
+		return fmt.Errorf("scan existing projects: %w", err)
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	now := nowStamp()
+	for _, name := range names {
+		// 租户:存量数据早于多租户,一律归默认租户 —— 和 assets/records 的
+		// 兜底一致。真多租户之后新项目由接口带租户创建。
+		var exists int
+		if err := s.db.QueryRow(
+			`SELECT COUNT(1) FROM projects WHERE tenant_id=? AND name=?`,
+			defaultTenantID, name).Scan(&exists); err != nil {
+			return err
+		}
+		if exists > 0 {
+			continue
+		}
+		if _, err := s.db.Exec(
+			`INSERT INTO projects (id, tenant_id, name, code, note, disabled, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, '', 0, ?, ?)`,
+			newID("proj"), defaultTenantID, name, businessProjectCode(name), now, now); err != nil {
+			return fmt.Errorf("backfill project %q: %w", name, err)
+		}
 	}
 	return nil
 }

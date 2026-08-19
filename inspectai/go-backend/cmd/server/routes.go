@@ -48,6 +48,11 @@ var apiRoutes = []apiRoute{
 	{http.MethodGet, "/api/users", guardSupervisor, "", (*Server).handleListUsers},
 	{http.MethodPost, "/api/users", guardAdmin, "", (*Server).handleCreateUser},
 
+	// —— 项目(读口给管理角色:选项目、看台账都要;写口仅管理员:
+	//     项目归属直接决定谁能看到哪些数据,是权限动作) ——
+	{http.MethodGet, "/api/projects", guardSupervisor, "", (*Server).handleListProjects},
+	{http.MethodPost, "/api/projects", guardAdmin, "", (*Server).handleCreateProject},
+
 	// —— 注册码(仅管理员:一张能自助注册的码流出去就是一道敞开的门)
 	{http.MethodGet, "/api/registration-codes", guardAdmin, "", (*Server).handleListRegistrationCodes},
 	{http.MethodPost, "/api/registration-codes", guardAdmin, "", (*Server).handleCreateRegistrationCode},

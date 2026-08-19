@@ -361,7 +361,7 @@ export function deleteRole(id: string) {
 }
 
 export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string; departmentId?: string; dataScope?: string }) {
-  return api("/api/users", { method: "POST", body: JSON.stringify(payload) });
+  return api<{ user: UserEntry }>("/api/users", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function updateUser(id: string, payload: { username?: string; displayName: string; roleCode: string; departmentId?: string; dataScope?: string }) {
@@ -605,4 +605,48 @@ export interface HomeCounts {
 
 export function getHomeCounts() {
   return api<HomeCounts>("/api/management-ai/today");
+}
+
+// ===== 项目 =====
+//
+// 项目 = 一个现场。一个人可以同时属于多个项目;总部(数据范围「全部数据」)
+// 不受项目限制,能看到所有项目的台账 —— 这是领导明确要的。
+//
+// 【项目名不能改】后端 assets / records 等业务表按中文项目名互相关联,
+// 所以接口只给登记和停用,没有改名。
+
+export interface ProjectEntry {
+  id: string;
+  name: string;
+  code?: string;
+  note?: string;
+  disabled?: boolean;
+  assetCount: number;
+  memberCount: number;
+  createdAt?: string;
+}
+
+export function listProjects() {
+  return api<{ projects: ProjectEntry[] }>("/api/projects").then((d) => d.projects || []);
+}
+
+export function createProject(payload: { name: string; note?: string }) {
+  return api("/api/projects", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateProject(id: string, payload: { note?: string; disabled: boolean }) {
+  return api(`/api/projects/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function listUserProjects(userId: string) {
+  return api<{ projectIds: string[] }>(`/api/users/${encodeURIComponent(userId)}/projects`).then(
+    (d) => d.projectIds || [],
+  );
+}
+
+export function setUserProjects(userId: string, projectIds: string[]) {
+  return api(`/api/users/${encodeURIComponent(userId)}/projects`, {
+    method: "PUT",
+    body: JSON.stringify({ projectIds }),
+  });
 }
