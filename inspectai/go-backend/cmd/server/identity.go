@@ -663,11 +663,12 @@ func (s *SQLiteStore) CreateUser(user *User, password string) error {
 	_, err = s.db.Exec(`
 		INSERT INTO users (
 			id, username, display_name, phone, avatar, role_id, department_id,
-			wework_user_id, password_hash, status, created_at, updated_at, tenant_id, is_platform_admin
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			wework_user_id, password_hash, status, created_at, updated_at, tenant_id, is_platform_admin,
+			data_scope
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		user.ID, user.Username, user.DisplayName, user.Phone, user.Avatar,
 		user.RoleID, user.DepartmentID, user.WeworkUserID, hash, user.Status, now, now, user.TenantID,
-		boolToInt(user.IsPlatformAdmin),
+		boolToInt(user.IsPlatformAdmin), user.DataScope,
 	)
 	if err != nil {
 		return err
@@ -692,10 +693,10 @@ func (s *SQLiteStore) UpdateUserProfile(id string, mutate func(*User)) error {
 	res, err := s.db.Exec(`
 		UPDATE users SET
 			display_name=?, phone=?, avatar=?, role_id=?, department_id=?,
-			wework_user_id=?, updated_at=?
+			wework_user_id=?, data_scope=?, updated_at=?
 		WHERE id=?`,
 		u.DisplayName, u.Phone, u.Avatar, u.RoleID,
-		nullableString(u.DepartmentID), u.WeworkUserID, now, id,
+		nullableString(u.DepartmentID), u.WeworkUserID, u.DataScope, now, id,
 	)
 	if err != nil {
 		return err
@@ -927,7 +928,8 @@ func userSelectSQL() string {
 			COALESCE(r.code, ''), COALESCE(r.name, ''),
 			COALESCE(u.department_id, ''), COALESCE(d.name, ''),
 			u.wework_user_id, u.status, u.last_login_at, u.created_at, u.updated_at,
-			COALESCE(u.tenant_id, ''), COALESCE(u.is_platform_admin, 0), u.password_hash
+			COALESCE(u.tenant_id, ''), COALESCE(u.is_platform_admin, 0),
+			COALESCE(u.data_scope, ''), u.password_hash
 		FROM users u
 		LEFT JOIN roles r ON r.id=u.role_id
 		LEFT JOIN departments d ON d.id=u.department_id`
@@ -942,10 +944,12 @@ func scanUserWithHash(row userScanner) (*User, string, error) {
 	var phone, avatar, deptID, deptName, wework, lastLogin sql.NullString
 	var created, updated, passwordHash string
 	var platformAdminInt int
+	var dataScope sql.NullString
 	err := row.Scan(
 		&u.ID, &u.Username, &u.DisplayName, &phone, &avatar, &u.RoleID,
 		&u.RoleCode, &u.RoleName, &deptID, &deptName, &wework, &u.Status,
-		&lastLogin, &created, &updated, &u.TenantID, &platformAdminInt, &passwordHash,
+		&lastLogin, &created, &updated, &u.TenantID, &platformAdminInt,
+		&dataScope, &passwordHash,
 	)
 	if err != nil {
 		return nil, "", err
@@ -970,6 +974,7 @@ func scanUserWithHash(row userScanner) (*User, string, error) {
 		u.LastLoginAt = &t
 	}
 	u.IsPlatformAdmin = platformAdminInt != 0
+	u.DataScope = dataScope.String
 	u.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	u.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return u, passwordHash, nil

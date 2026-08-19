@@ -419,7 +419,8 @@ func shotIsPending(s *OfflineShot) bool {
 
 func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) {
 	userID := ""
-	if !s.hasSupervisorAccess(r) {
+	// 数据范围:看不了全部的人只列自己的照片
+	if !s.canSeeAllData(r) {
 		if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 			userID = user.ID // 巡检员只看自己的
 		}

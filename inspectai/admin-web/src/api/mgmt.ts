@@ -296,6 +296,8 @@ export interface UserEntry {
   departmentName?: string;
   status?: string;
   createdAt?: string;
+  /** 数据范围。空 = 按角色推导(默认)。与角色正交:角色管"能做什么",这里管"能看多少"。 */
+  dataScope?: string;
 }
 
 export interface Department {
@@ -358,11 +360,11 @@ export function deleteRole(id: string) {
   return api<{ deleted: boolean }>(`/api/roles/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string; departmentId?: string }) {
+export function createUser(payload: { username: string; displayName: string; roleCode: string; password: string; departmentId?: string; dataScope?: string }) {
   return api("/api/users", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function updateUser(id: string, payload: { username?: string; displayName: string; roleCode: string; departmentId?: string }) {
+export function updateUser(id: string, payload: { username?: string; displayName: string; roleCode: string; departmentId?: string; dataScope?: string }) {
   return api(`/api/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
 }
 

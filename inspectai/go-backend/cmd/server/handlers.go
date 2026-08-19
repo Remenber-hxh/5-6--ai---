@@ -641,6 +641,10 @@ type userUpsertRequest struct {
 	DepartmentID string `json:"departmentId"`
 	WeworkUserID string `json:"weworkUserId"`
 	Password     string `json:"password"`
+	// DataScope 用指针:nil = 这次不改这一项,"" = 显式恢复成"按角色推导"。
+	// 用普通 string 就没法表达"清空" —— 本文件其余字段都是 `!= "" 才改`,
+	// 那套写法对 data_scope 会导致配错之后【永远改不回默认】。
+	DataScope *string `json:"dataScope"`
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -676,6 +680,14 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		DepartmentID: strings.TrimSpace(req.DepartmentID),
 		WeworkUserID: strings.TrimSpace(req.WeworkUserID),
 		Status:       "active",
+	}
+	if req.DataScope != nil {
+		scope := strings.TrimSpace(*req.DataScope)
+		if scope != "" && !validDataScopes[scope] {
+			writeError(w, http.StatusBadRequest, "bad_request", "数据范围无效")
+			return
+		}
+		user.DataScope = scope
 	}
 	if err := s.store.CreateUser(user, req.Password); err != nil {
 		status := http.StatusInternalServerError
@@ -734,6 +746,14 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID
 		writeError(w, http.StatusBadRequest, "bad_request", "角色无效")
 		return
 	}
+	// 【在进 mutate 之前校验】UpdateUserProfile 的回调没法返回错误,
+	// 在里面发现非法值只能默默跳过 —— 那样管理员会以为自己配好了。
+	if req.DataScope != nil {
+		if scope := strings.TrimSpace(*req.DataScope); scope != "" && !validDataScopes[scope] {
+			writeError(w, http.StatusBadRequest, "bad_request", "数据范围无效")
+			return
+		}
+	}
 	err := s.store.UpdateUserProfile(userID, func(u *User) {
 		if v := strings.TrimSpace(req.DisplayName); v != "" {
 			u.DisplayName = v
@@ -756,6 +776,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID
 		if req.WeworkUserID != "" {
 			u.WeworkUserID = strings.TrimSpace(req.WeworkUserID)
 		}
+		if req.DataScope != nil {
+			u.DataScope = strings.TrimSpace(*req.DataScope)
+		}
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -766,9 +789,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID
 		return
 	}
 	user, _ := s.store.GetUser(userID)
-	s.recordOperation(r, "user.update", "user", userID, map[string]any{
-		"role": req.RoleCode,
-	})
+	detail := map[string]any{"role": req.RoleCode}
+	if req.DataScope != nil {
+		detail["dataScope"] = strings.TrimSpace(*req.DataScope)
+	}
+	s.recordOperation(r, "user.update", "user", userID, detail)
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 
@@ -1505,7 +1530,8 @@ func (s *Server) handleAssetRecords(w http.ResponseWriter, r *http.Request, id s
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	if !s.hasSupervisorAccess(r) {
+	// 数据范围:看不了全部的人,只保留他自己那些记录对应的快照
+	if !s.canSeeAllData(r) {
 		all, listErr := s.store.ListAssetSnapshots(id, total, 0)
 		if listErr != nil {
 			writeError(w, http.StatusInternalServerError, "list_failed", listErr.Error())
@@ -1814,7 +1840,8 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 
 	var records []*Record
 	var err error
-	if s.hasSupervisorAccess(r) {
+	// 数据范围:能看全部的人取整个租户,其余只取自己提交的
+	if s.canSeeAllData(r) {
 		records, err = s.store.ListRecords(s.tenantForRequest(r), limit)
 	} else if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, limit)
@@ -3834,7 +3861,8 @@ func (s *Server) handleListChangeRequests(w http.ResponseWriter, r *http.Request
 		Status:     q.Get("status"),
 		TargetType: q.Get("targetType"),
 	}
-	if !s.hasSupervisorAccess(r) || q.Get("mine") == "1" {
+	// 数据范围:看不了全部的人只看自己提的(或显式要求只看我的)
+	if !s.canSeeAllData(r) || q.Get("mine") == "1" {
 		filter.RequestedBy = s.currentUserName(r)
 	}
 	list, err := s.store.ListChangeRequests(filter)
@@ -4389,7 +4417,8 @@ func (s *Server) handleAssetChangeRequests(w http.ResponseWriter, r *http.Reques
 	}
 
 	filter := ChangeRequestFilter{}
-	if !s.hasSupervisorAccess(r) {
+	// 数据范围:看不了全部的人只看自己提的
+	if !s.canSeeAllData(r) {
 		filter.RequestedBy = s.currentUserName(r)
 	}
 	all, err := s.store.ListChangeRequests(filter)

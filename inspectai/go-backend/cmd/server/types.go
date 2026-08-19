@@ -374,21 +374,25 @@ type User struct {
 	TenantID string `json:"tenantId"`
 	// IsPlatformAdmin 平台超管:唯一能跨租户(建/停客户、跨租户运维)。
 	// 与租户归属正交 —— 超管自身的业务数据仍归其所属租户。
-	IsPlatformAdmin bool       `json:"isPlatformAdmin,omitempty"`
-	Username        string     `json:"username"`
-	DisplayName     string     `json:"displayName"`
-	Phone           string     `json:"phone,omitempty"`
-	Avatar          string     `json:"avatar,omitempty"`
-	RoleID          string     `json:"roleId"`
-	RoleCode        string     `json:"roleCode"`
-	RoleName        string     `json:"roleName"`
-	DepartmentID    string     `json:"departmentId,omitempty"`
-	DepartmentName  string     `json:"departmentName,omitempty"`
-	WeworkUserID    string     `json:"weworkUserId,omitempty"`
-	Status          string     `json:"status"`
-	LastLoginAt     *time.Time `json:"lastLoginAt,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	IsPlatformAdmin bool   `json:"isPlatformAdmin,omitempty"`
+	Username        string `json:"username"`
+	DisplayName     string `json:"displayName"`
+	Phone           string `json:"phone,omitempty"`
+	Avatar          string `json:"avatar,omitempty"`
+	RoleID          string `json:"roleId"`
+	RoleCode        string `json:"roleCode"`
+	RoleName        string `json:"roleName"`
+	// DataScope 数据范围:这个人能看到多少数据(与 RoleCode "能做什么"正交)。
+	// 空 = 按角色推导(管理角色看全部、其余看自己的),即现有行为。
+	// 取值见 dataScopeXxx 常量。
+	DataScope      string     `json:"dataScope,omitempty"`
+	DepartmentID   string     `json:"departmentId,omitempty"`
+	DepartmentName string     `json:"departmentName,omitempty"`
+	WeworkUserID   string     `json:"weworkUserId,omitempty"`
+	Status         string     `json:"status"`
+	LastLoginAt    *time.Time `json:"lastLoginAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 type Role struct {

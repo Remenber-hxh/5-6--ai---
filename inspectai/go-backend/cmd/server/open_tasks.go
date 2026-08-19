@@ -55,7 +55,8 @@ func openTasksFor(all []*EngineeringTask, displayName string) []*EngineeringTask
 // 用显示名而不是用户 ID,是因为任务表里存的就是 AssigneeName ——
 // 这是历史结构,改成 ID 要迁数据,先按现状对齐口径。
 func (s *Server) taskScopeName(r *http.Request) string {
-	if s.hasSupervisorAccess(r) {
+	// 数据范围:能看全部的人不限归属;其余只看派给自己的
+	if s.canSeeAllData(r) {
 		return ""
 	}
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {

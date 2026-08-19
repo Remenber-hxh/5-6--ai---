@@ -20,7 +20,8 @@ import "net/http"
 // 改动其中任何一处,这里都要跟着改。
 func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 	userID := ""
-	if !s.hasSupervisorAccess(r) {
+	// 数据范围:看不了全部的人,角标只数自己的
+	if !s.canSeeAllData(r) {
 		if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 			userID = user.ID
 		}

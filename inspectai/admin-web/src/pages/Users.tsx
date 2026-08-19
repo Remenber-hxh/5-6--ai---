@@ -147,6 +147,7 @@ export default function Users() {
         displayName: u.displayName,
         roleCode: u.roleCode,
         departmentId: u.departmentId || undefined,
+        dataScope: u.dataScope || "",
       });
   }
 
@@ -157,7 +158,13 @@ export default function Users() {
         await createUser(v);
         message.success("用户已创建");
       } else if (editing) {
-        await updateUser(editing.id, { displayName: v.displayName, roleCode: v.roleCode, departmentId: v.departmentId });
+        await updateUser(editing.id, {
+          displayName: v.displayName,
+          roleCode: v.roleCode,
+          departmentId: v.departmentId,
+          // 恒传字符串:后端靠"有没有传"判断要不要改,漏传就改不回「按角色」
+          dataScope: v.dataScope ?? "",
+        });
         message.success("用户已更新");
       }
       setEditing(null);
@@ -221,6 +228,18 @@ export default function Users() {
           { title: "角色", width: 130, render: (_, u) => roleTag(u.roleCode, u.roleName) },
           { title: "部门", width: 130, render: (_, u) => u.departmentName || "—" },
           {
+            title: "数据范围",
+            width: 110,
+            render: (_, u) =>
+              u.dataScope === "all" ? (
+                <Tag color="blue">全部数据</Tag>
+              ) : u.dataScope === "self" ? (
+                <Tag>仅本人</Tag>
+              ) : (
+                <span style={{ color: "#999" }}>按角色</span>
+              ),
+          },
+          {
             title: "状态",
             width: 90,
             render: (_, u) =>
@@ -263,6 +282,15 @@ export default function Users() {
           </Form.Item>
           <Form.Item name="roleCode" label="角色" rules={[{ required: true, message: "请选择角色" }]}>
             <Select options={roles.map((r) => ({ value: r.code, label: r.name }))} />
+          </Form.Item>
+          <Form.Item name="dataScope" label="数据范围" initialValue="">
+            <Select
+              options={[
+                { value: "", label: "按角色（默认）" },
+                { value: "all", label: "全部数据" },
+                { value: "self", label: "仅本人提交的" },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="departmentId" label="部门">
             <Select

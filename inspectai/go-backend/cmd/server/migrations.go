@@ -34,6 +34,7 @@ var migrationList = []migration{
 	{10, "platform_admin_flag", (*SQLiteStore).migPlatformAdminFlag},
 	{11, "offline_shots", (*SQLiteStore).migOfflineShots},
 	{12, "registration_codes", (*SQLiteStore).migRegistrationCodes},
+	{13, "user_data_scope", (*SQLiteStore).migUserDataScope},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -355,6 +356,33 @@ func (s *SQLiteStore) migRegistrationCodes() error {
 		_, _ = s.db.Exec(
 			`CREATE INDEX IF NOT EXISTS idx_registration_codes_tenant
 			 ON registration_codes(tenant_id, disabled)`)
+	}
+	return nil
+}
+
+// migUserDataScope — 013:users 加 data_scope(数据范围)。
+//
+// 在这之前,"能看到多少数据"是【写死在代码里】的两档:管理角色看全部、
+// 巡检员看自己的。要接入多个项目组,就需要中间那一层("看本项目组的"),
+// 而写死的判断没有地方挂。
+//
+// 【空值 = 按角色推导】这一步只把开关做出来,不改变任何现有行为:
+// 存量用户这一列全是空,一律走原来的角色判断。要改某个人的范围时才填值。
+// 分两步走的意义就在这里 —— 地基先铺好,行为一点不动,风险接近零。
+func (s *SQLiteStore) migUserDataScope() error {
+	exists, err := s.hasColumn("users", "data_scope")
+	if err != nil {
+		return fmt.Errorf("inspect users.data_scope: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	stmt := `ALTER TABLE users ADD COLUMN data_scope TEXT NOT NULL DEFAULT ''`
+	if s.dialect == "mysql" {
+		stmt = `ALTER TABLE users ADD COLUMN data_scope VARCHAR(24) NOT NULL DEFAULT ''`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("add users.data_scope: %w", err)
 	}
 	return nil
 }
