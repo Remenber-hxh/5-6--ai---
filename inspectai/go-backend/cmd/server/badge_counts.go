@@ -45,6 +45,9 @@ func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 	// "派给我的"只显示 2 条。同一件事有两个口径,用户看到的就是"任务对不上"。
 	tasks := 0
 	if list, err := s.store.ListEngineeringTasks(s.engineeringTaskFilterFromRequest(r)); err == nil {
+		// 项目范围也要跟上:派给他但属于别的项目的任务,列表里看不到,
+		// 角标却数进去了 —— 又是一处"数字和页面对不上"。
+		list = filterTasksByScope(list, s.projectScopeFor(r, ""))
 		tasks = len(openTasksFor(list, s.taskScopeName(r)))
 	}
 

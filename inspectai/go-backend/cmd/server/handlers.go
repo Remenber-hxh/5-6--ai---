@@ -3909,14 +3909,23 @@ func (s *Server) handleListChangeRequests(w http.ResponseWriter, r *http.Request
 		Status:     q.Get("status"),
 		TargetType: q.Get("targetType"),
 	}
-	// 数据范围:看不了全部的人只看自己提的(或显式要求只看我的)
-	if !s.canSeeAllData(r) || q.Get("mine") == "1" {
+	// 数据范围。三种情形:
+	//   能看全部        → 不加条件
+	//   限定项目        → 查回来按项目筛(表里没有项目字段,只能顺着目标反查)
+	//   只看自己 / ?mine=1 → 按提交人筛
+	vis := s.visibilityFor(r)
+	byProject := len(vis.Projects) > 0 || vis.Blocked
+	if (!vis.AllData && !byProject) || q.Get("mine") == "1" {
 		filter.RequestedBy = s.currentUserName(r)
 	}
 	list, err := s.store.ListChangeRequests(filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
+	}
+	if q.Get("mine") != "1" {
+		// ?mine=1 已经按人筛过,再按项目筛一遍没有意义(自己提的必在自己项目里)
+		list = s.filterChangeRequestsByProject(r, vis, list)
 	}
 	s.fillChangeRequestTargetNames(r, list)
 	writeJSON(w, http.StatusOK, map[string]any{"requests": list})
@@ -3973,6 +3982,16 @@ func (s *Server) handleChangeRequestRoutes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	id := parts[0]
+	// 【项目范围收口】详情、批准、驳回、撤回四条路径都从这里过,只判一次。
+	// 尤其是"批准"—— 能看不能改还不够,批别的项目的申请比看到更严重。
+	//
+	// 越界给 404 而不是 403:403 等于确认这条申请存在。
+	if cr, err := s.store.GetChangeRequest(id); err == nil && cr != nil {
+		if !s.changeRequestInScope(r, cr) {
+			writeError(w, http.StatusNotFound, "not_found", "申请不存在")
+			return
+		}
+	}
 	switch {
 	case len(parts) == 1 && r.Method == http.MethodGet:
 		cr, err := s.store.GetChangeRequest(id)
@@ -4465,8 +4484,9 @@ func (s *Server) handleAssetChangeRequests(w http.ResponseWriter, r *http.Reques
 	}
 
 	filter := ChangeRequestFilter{}
-	// 数据范围:看不了全部的人只看自己提的
-	if !s.canSeeAllData(r) {
+	// 数据范围:走到这里说明这台设备【已经通过了项目检查】(见 handleAssetRoutes),
+	// 所以只有"只看自己的"这一档才按人筛 —— 否则项目主管看不到组员提的申请。
+	if s.visibilityFor(r).OwnOnly {
 		filter.RequestedBy = s.currentUserName(r)
 	}
 	all, err := s.store.ListChangeRequests(filter)

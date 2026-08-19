@@ -264,3 +264,72 @@ func TestPlansAndTasksRespectProjectScope(t *testing.T) {
 		t.Fatalf("任务应只剩紫菡雅集的一条,得到 %+v", taskResp.Tasks)
 	}
 }
+
+// 修改申请:表里没有项目字段,项目要顺着目标(设备/记录)反查。
+func TestChangeRequestsRespectProjectScope(t *testing.T) {
+	srv, r, store := newScopedServer(t) // 只分到「紫菡雅集」
+	// 记录型申请的目标
+	if err := store.CreateRecord(&Record{
+		ID: "rec_huiyi", TenantID: defaultTenantID, Project: "会议中心",
+		Inspector: "别人", InspectorUserID: "u_other", TemplateID: "zihan_energy",
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reqs := []*ChangeRequest{
+		// 自己项目的设备 —— 【别人提的】,项目主管应该看得到
+		{ID: "cr_mine", TargetType: "asset", TargetID: "紫菡雅集::elevator_no_room::K01",
+			Patch: map[string]any{"assetName": "K01改"}, Reason: "改名", Status: "pending", RequestedBy: "别人"},
+		// 别的项目的设备
+		{ID: "cr_other", TargetType: "asset", TargetID: "会议中心::elevator_no_room::KT-7",
+			Patch: map[string]any{"assetName": "KT7改"}, Reason: "改名", Status: "pending", RequestedBy: "别人"},
+		// 别的项目的记录
+		{ID: "cr_rec", TargetType: "record", TargetID: "rec_huiyi",
+			Patch: map[string]any{"report": "x"}, Reason: "改", Status: "pending", RequestedBy: "别人"},
+	}
+	for _, cr := range reqs {
+		cr.RequestedAt = time.Now()
+		if err := store.CreateChangeRequest(cr); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/change-requests", nil)
+	req.Header = r.Header
+	w := httptest.NewRecorder()
+	srv.handleListChangeRequests(w, req)
+	var resp struct {
+		Requests []struct {
+			ID string `json:"id"`
+		} `json:"requests"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if len(resp.Requests) != 1 || resp.Requests[0].ID != "cr_mine" {
+		t.Fatalf("应只剩本项目那条(哪怕是别人提的),得到 %+v", resp.Requests)
+	}
+
+	// 【批准比查看更严重】直接拿别的项目那条的 id 去批,必须 404
+	for _, action := range []string{"", "/approve", "/reject", "/withdraw"} {
+		method := http.MethodGet
+		if action != "" {
+			method = http.MethodPost
+		}
+		ar := httptest.NewRequest(method, "/api/change-requests/cr_other"+action, nil)
+		ar.Header = r.Header
+		aw := httptest.NewRecorder()
+		srv.handleChangeRequestRoutes(aw, ar)
+		if aw.Code != http.StatusNotFound {
+			t.Errorf("/api/change-requests/cr_other%s 返回 %d,应为 404", action, aw.Code)
+		}
+	}
+	// 自己项目那条要打得开
+	or := httptest.NewRequest(http.MethodGet, "/api/change-requests/cr_mine", nil)
+	or.Header = r.Header
+	ow := httptest.NewRecorder()
+	srv.handleChangeRequestRoutes(ow, or)
+	if ow.Code != http.StatusOK {
+		t.Fatalf("本项目的申请打不开:%d %s", ow.Code, ow.Body.String())
+	}
+}
