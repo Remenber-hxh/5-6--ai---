@@ -46,6 +46,19 @@ func newScopeRequest(t *testing.T, role, scope string) (*Server, *http.Request) 
 	return srv, r
 }
 
+// newScopeRequestWithStore 同上,但把 store 和用户 ID 也交出来 ——
+// 项目归属要在建好用户之后才能设。
+func newScopeRequestWithStore(t *testing.T, role, scope string) (*Server, *http.Request, *MemStore, string) {
+	t.Helper()
+	srv, r := newScopeRequest(t, role, scope)
+	store := srv.store.(*MemStore)
+	users, err := store.ListUsers()
+	if err != nil || len(users) != 1 {
+		t.Fatalf("夹具应该只建了一个用户:%v %d", err, len(users))
+	}
+	return srv, r, store, users[0].ID
+}
+
 // 【最重要的一条】没配过 data_scope 时,行为必须和加这个字段之前完全一致。
 func TestDataScopeEmptyKeepsRoleBehaviour(t *testing.T) {
 	cases := []struct {
@@ -103,15 +116,104 @@ func TestDataScopeUnknownValueFallsBackToRole(t *testing.T) {
 	}
 }
 
-// 项目维度两档现在还没有项目实体可挂,暂按 all 处理。
-// 写成测试是为了钉住这个【临时】决定:等第 2 步做完,这条会被改掉,
-// 改的时候能一眼看到当初为什么这么定(宁可暂时宽,不要先把管理者挡在外面)。
-func TestDataScopeProjectTiersPendingStep2(t *testing.T) {
+// 【fail closed】配了「本项目」却一个项目都没分到,必须什么都看不到。
+//
+// 放行的话这个配置就成了一句空话:管理员以为限住了,实际他看得见全部,
+// 而且没有任何迹象。宁可他打开是空页面来问。
+func TestProjectScopeWithoutProjectsSeesNothing(t *testing.T) {
 	for _, scope := range []string{dataScopeProject, dataScopeProjectSelf} {
 		srv, r := newScopeRequest(t, roleSupervisor, scope)
-		if got := srv.effectiveDataScope(r); got != dataScopeAll {
-			t.Errorf("data_scope=%s 当前应按 all 处理,得到 %s", scope, got)
+		vis := srv.visibilityFor(r)
+		if !vis.Blocked {
+			t.Errorf("data_scope=%s 且未分配项目时应 Blocked", scope)
 		}
+		if vis.AllData {
+			t.Errorf("data_scope=%s 未分配项目却能看全部 —— 配置静默失效了", scope)
+		}
+		if vis.allowsProject("会议中心") {
+			t.Errorf("data_scope=%s Blocked 状态下不该放行任何项目", scope)
+		}
+	}
+}
+
+// 分到项目之后:只看得到这些项目。
+func TestProjectScopeLimitsToAssignedProjects(t *testing.T) {
+	srv, r, store, userID := newScopeRequestWithStore(t, roleSupervisor, dataScopeProject)
+	mine := &Project{TenantID: defaultTenantID, Name: "会议中心"}
+	other := &Project{TenantID: defaultTenantID, Name: "紫菡雅集"}
+	for _, p := range []*Project{mine, other} {
+		if err := store.CreateProject(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.SetUserProjects(defaultTenantID, userID, []string{mine.ID}); err != nil {
+		t.Fatal(err)
+	}
+	vis := srv.visibilityFor(r)
+	if vis.Blocked || vis.AllData {
+		t.Fatalf("分到项目后应按项目限,得到 %+v", vis)
+	}
+	if !vis.allowsProject("会议中心") {
+		t.Error("自己项目的数据看不到")
+	}
+	if vis.allowsProject("紫菡雅集") {
+		t.Error("看到了没分给他的项目 —— 越权")
+	}
+	if vis.OwnOnly {
+		t.Error("project(非 project_self)应能看到组内其他人的数据")
+	}
+
+	// project_self:项目一样,但记录只看自己的
+	srv2, r2, store2, uid2 := newScopeRequestWithStore(t, roleSupervisor, dataScopeProjectSelf)
+	p2 := &Project{TenantID: defaultTenantID, Name: "会议中心"}
+	if err := store2.CreateProject(p2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store2.SetUserProjects(defaultTenantID, uid2, []string{p2.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if vis2 := srv2.visibilityFor(r2); !vis2.OwnOnly || !vis2.allowsProject("会议中心") {
+		t.Fatalf("project_self 应为「本项目 + 只看自己的」,得到 %+v", vis2)
+	}
+}
+
+// 台账列表按项目裁剪。这条守的是"汇总数也不能泄" ——
+// 列表筛掉了但顶部还写着"共 35 台",一样等于告诉他别的项目有多少设备。
+func TestLimitAssetsToVisibleProjects(t *testing.T) {
+	srv, r, store, userID := newScopeRequestWithStore(t, roleSupervisor, dataScopeProject)
+	mine := &Project{TenantID: defaultTenantID, Name: "会议中心"}
+	if err := store.CreateProject(mine); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetUserProjects(defaultTenantID, userID, []string{mine.ID}); err != nil {
+		t.Fatal(err)
+	}
+	assets := []*AssetEntry{
+		{ID: "a1", Project: "会议中心", AssetName: "KT-1"},
+		{ID: "a2", Project: "紫菡雅集", AssetName: "K01"},
+		{ID: "a3", Project: "会议中心", AssetName: "KT-2"},
+	}
+	got := srv.limitAssetsToVisibleProjects(r, assets)
+	if len(got) != 2 {
+		t.Fatalf("应只剩会议中心的 2 台,得到 %d 台", len(got))
+	}
+	for _, a := range got {
+		if a.Project != "会议中心" {
+			t.Fatalf("混进了别的项目:%s", a.Project)
+		}
+	}
+}
+
+// 子路由取 id:漏掉一个后缀 = 那条路径绕过项目检查。
+func TestAssetIDFromRoutePath(t *testing.T) {
+	id := "会议中心::elevator_no_room::KT-7"
+	for _, suffix := range []string{"", "/records", "/report", "/cover", "/change-requests", "/status-events"} {
+		if got := assetIDFromRoutePath(id + suffix); got != id {
+			t.Errorf("%q 取到的 id 是 %q,应为 %q —— 这条路径会绕过项目检查", id+suffix, got, id)
+		}
+	}
+	if got := assetIDFromRoutePath("a/b/c"); got != "" {
+		t.Errorf("认不出的多段路径应返回空,得到 %q", got)
 	}
 }
 

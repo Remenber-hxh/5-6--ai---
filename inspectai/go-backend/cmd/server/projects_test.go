@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // 项目实体化。这一步和第 1 步一样,**建表不改行为** ——
@@ -163,5 +164,113 @@ func TestMemStoreProjectsMatchSQLiteBehaviour(t *testing.T) {
 	ids, _ := store.ListUserProjectIDs(defaultTenantID, "u1")
 	if len(ids) != 1 {
 		t.Fatalf("不存在的项目 id 应被忽略,得到 %v", ids)
+	}
+}
+
+// 【这个项目反复踩的坑】"先取一个窗口再在内存里筛"。
+//
+// 记录列表默认只取最新 100 条。如果按项目过滤是在拿到这 100 条之后做的,
+// 那么一个安静的项目(最近没人巡)会被前面 100 条热闹项目的记录挤掉,
+// 结果是【一条都查不出来】,而且页面不会报错,只会显示"暂无数据"。
+// 所以过滤必须发生在 SQL 里。
+func TestListRecordsInProjectsFiltersInSQLNotInWindow(t *testing.T) {
+	store := newProjectStore(t)
+	base := time.Now()
+	// 会议中心:120 条最近的
+	for i := range 120 {
+		if err := store.CreateRecord(&Record{
+			ID: "hot_" + itoaSafe(i), TenantID: defaultTenantID,
+			Project: "会议中心", Inspector: "甲", InspectorUserID: "u_a",
+			TemplateID: "zihan_energy", CreatedAt: base.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 紫菡雅集:5 条更早的 —— 全部落在最新 100 条之外
+	for i := range 5 {
+		if err := store.CreateRecord(&Record{
+			ID: "cold_" + itoaSafe(i), TenantID: defaultTenantID,
+			Project: "紫菡雅集", Inspector: "乙", InspectorUserID: "u_b",
+			TemplateID: "zihan_energy", CreatedAt: base.Add(-time.Duration(i+1) * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := store.ListRecordsInProjects(defaultTenantID, []string{"紫菡雅集"}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("紫菡雅集应有 5 条,得到 %d 条 —— 多半是先取窗口再筛,冷项目被挤没了", len(got))
+	}
+	for _, rec := range got {
+		if rec.Project != "紫菡雅集" {
+			t.Fatalf("混进了别的项目:%s", rec.Project)
+		}
+	}
+
+	// 多个项目一起取
+	both, err := store.ListRecordsInProjects(defaultTenantID, []string{"会议中心", "紫菡雅集"}, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(both) != 125 {
+		t.Fatalf("两个项目共 125 条,得到 %d", len(both))
+	}
+
+	// 【空项目列表返回空,不是返回全部】空的语义是"没有可见项目"。
+	// 返回全部的话,一个没分到项目的人就看到了整个租户。
+	none, err := store.ListRecordsInProjects(defaultTenantID, nil, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("没有可见项目时应返回空,得到 %d 条 —— 这是越权", len(none))
+	}
+}
+
+// 【后门】页面上过滤掉了,但问一句 AI 就说出来。
+//
+// find_asset 的 project 参数是"模型说要在哪个项目找",不是权限判断 ——
+// 模型不传或传错,结果里就会混进别的项目。所以出口必须再筛一道。
+func TestAgentResultsRespectProjectScope(t *testing.T) {
+	vis := dataVisibility{Projects: []string{"会议中心"}}
+	found := map[string]any{
+		"count": 3,
+		"assets": []map[string]any{
+			{"name": "KT-7", "project": "会议中心"},
+			{"name": "K01", "project": "紫菡雅集"},
+			{"name": "KT-8", "project": "会议中心"},
+		},
+		"nearMatches": []map[string]any{
+			{"name": "K02", "project": "紫菡雅集"},
+		},
+	}
+	got := limitAgentAssetsToProjects(found, vis)
+	list, _ := got["assets"].([]map[string]any)
+	if len(list) != 2 {
+		t.Fatalf("应只剩会议中心的 2 台,得到 %d", len(list))
+	}
+	for _, a := range list {
+		if a["project"] != "会议中心" {
+			t.Fatalf("别的项目的设备漏给了 AI:%v", a)
+		}
+	}
+	// count 必须跟着改,否则模型会说"一共 3 台"而列表里只有 2 台
+	if got["count"] != 2 {
+		t.Fatalf("count 应随裁剪改成 2,得到 %v —— 模型会照旧数字回答", got["count"])
+	}
+	// 候选里全是别的项目 → 整个键去掉,别给模型一个空列表去猜
+	if _, has := got["nearMatches"]; has {
+		t.Fatalf("越界的候选没被清掉:%v", got["nearMatches"])
+	}
+
+	// 能看全部的人不受影响
+	all := limitAgentAssetsToProjects(map[string]any{
+		"count":  1,
+		"assets": []map[string]any{{"name": "K01", "project": "紫菡雅集"}},
+	}, dataVisibility{AllData: true})
+	if len(all["assets"].([]map[string]any)) != 1 {
+		t.Fatal("能看全部的人被误伤了")
 	}
 }

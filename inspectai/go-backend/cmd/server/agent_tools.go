@@ -146,6 +146,26 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 		return def
 	}
 	tenant := s.tenantForRequest(r)
+	vis := s.visibilityFor(r)
+
+	// 【项目范围对 AI 同样生效】页面上过滤掉了但一问 AI 就说出来,
+	// 等于开了一扇后门,而且是最容易被发现、最难解释的那种。
+	if vis.Blocked {
+		return nil, fmt.Errorf("当前账号未分配项目,查不到数据")
+	}
+	// 单台设备的三个工具:先确认这台设备在他能看的项目里。
+	assetInScope := func(id string) error {
+		asset, err := s.store.GetAsset(tenant, id)
+		if err != nil || asset == nil {
+			return fmt.Errorf("设备不存在: %s", id)
+		}
+		if !vis.allowsProject(asset.Project) {
+			// 【和"不存在"给同样的话】说"没权限"就等于确认了这台设备存在,
+			// 模型会把这句转述给用户,反而把别的项目有什么透出去。
+			return fmt.Errorf("设备不存在: %s", id)
+		}
+		return nil
+	}
 
 	switch name {
 	case "find_asset":
@@ -153,17 +173,28 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 		if kw == "" {
 			return nil, fmt.Errorf("缺少 keyword")
 		}
-		return s.findAssetsForAgent(tenant, project, kw)
+		if len(vis.Projects) == 1 && project == "" {
+			// 只属于一个项目:直接锁定,他问"K7"就只在这个项目里找
+			project = vis.Projects[0]
+		}
+		if project != "" && !vis.allowsProject(project) {
+			return nil, fmt.Errorf("查不到项目: %s", project)
+		}
+		found, err := s.findAssetsForAgent(tenant, project, kw)
+		if err != nil {
+			return nil, err
+		}
+		return limitAgentAssetsToProjects(found, vis), nil
 
 	case "get_asset_history":
 		id := str("assetId")
 		if id == "" {
 			return nil, fmt.Errorf("缺少 assetId")
 		}
-		// 先确认这台设备属于当前租户 —— 工具是模型驱动的,它可能拿到
-		// 任何字符串。不校验的话,一个猜对的 id 就能读到别家的数据。
-		if _, err := s.store.GetAsset(tenant, id); err != nil {
-			return nil, fmt.Errorf("设备不存在: %s", id)
+		// 先确认这台设备属于当前租户【且在他的项目范围内】—— 工具是模型驱动的,
+		// 它可能拿到任何字符串。不校验的话,一个猜对的 id 就能读到别家的数据。
+		if err := assetInScope(id); err != nil {
+			return nil, err
 		}
 		snaps, hErr := s.toolGetAssetHistory(id, num("limit", 20))
 		if hErr != nil {
@@ -176,6 +207,12 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 		if id == "" {
 			return nil, fmt.Errorf("缺少 recordId")
 		}
+		if len(vis.Projects) > 0 {
+			rec, err := s.store.GetRecord(tenant, id)
+			if err != nil || rec == nil || !vis.allowsProject(rec.Project) {
+				return nil, fmt.Errorf("记录不存在: %s", id)
+			}
+		}
 		return s.toolGetRecordDetail(tenant, id)
 
 	case "compare_asset_periods":
@@ -183,8 +220,8 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 		if id == "" {
 			return nil, fmt.Errorf("缺少 assetId")
 		}
-		if _, err := s.store.GetAsset(tenant, id); err != nil {
-			return nil, fmt.Errorf("设备不存在: %s", id)
+		if err := assetInScope(id); err != nil {
+			return nil, err
 		}
 		cur := str("current")
 		if cur == "" {
@@ -201,8 +238,8 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 		if id == "" {
 			return nil, fmt.Errorf("缺少 assetId")
 		}
-		if _, err := s.store.GetAsset(tenant, id); err != nil {
-			return nil, fmt.Errorf("设备不存在: %s", id)
+		if err := assetInScope(id); err != nil {
+			return nil, err
 		}
 		rk := str("rangeKey")
 		if rk == "" {
@@ -617,4 +654,42 @@ func trimLeadingZeros(d string) string {
 		return "0"
 	}
 	return t
+}
+
+// limitAgentAssetsToProjects 把 find_asset 的结果裁到可见项目内。
+//
+// findAssetsForAgent 的 project 参数是"模型说要在哪个项目找",不是权限 ——
+// 模型不传或传错,结果里就会混进别的项目。所以出口再筛一道。
+func limitAgentAssetsToProjects(found map[string]any, vis dataVisibility) map[string]any {
+	if found == nil || vis.AllData || len(vis.Projects) == 0 {
+		return found
+	}
+	keep := func(key string) {
+		list, ok := found[key].([]map[string]any)
+		if !ok {
+			return
+		}
+		out := make([]map[string]any, 0, len(list))
+		for _, item := range list {
+			name, _ := item["project"].(string)
+			if vis.allowsProject(name) {
+				out = append(out, item)
+			}
+		}
+		if len(out) == 0 {
+			delete(found, key)
+			return
+		}
+		found[key] = out
+	}
+	keep("assets")
+	keep("nearMatches")
+	// count 是"确定命中多少台"。裁剪之后必须跟着改,否则模型会照着
+	// 旧数字说"一共 12 台",而列表里只有 3 台 —— 用户一眼就看出对不上。
+	if list, ok := found["assets"].([]map[string]any); ok {
+		found["count"] = len(list)
+	} else {
+		found["count"] = 0
+	}
+	return found
 }

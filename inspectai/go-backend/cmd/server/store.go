@@ -33,6 +33,11 @@ type RecordStore interface {
 	UpdateRecord(rec *Record) error
 	ListRecords(tenantID string, limit int) ([]*Record, error)
 	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+	// ListRecordsInProjects 限定到若干项目的记录(项目范围用)。
+	// 【必须在 SQL 里限】先取一个 limit 窗口再在内存里筛,等于"从最新 N 条里
+	// 挑本项目的",冷清一点的项目会直接筛空。projects 为空返回空结果,
+	// 不返回全部 —— 空的语义是"没有可见项目",放行就成了越权。
+	ListRecordsInProjects(tenantID string, projects []string, limit int) ([]*Record, error)
 	// CountSnapshotsByAsset 每台设备有多少条巡检快照,一次查全租户。
 	//
 	// 【为什么要"现算"而不是读 assets.inspection_count】那一列是个计数器:
@@ -409,6 +414,33 @@ func (s *MemStore) DeleteDraftRecord(tenantID, id string) error {
 		}
 	}
 	return nil
+}
+
+func (s *MemStore) ListRecordsInProjects(tenantID string, projects []string, limit int) ([]*Record, error) {
+	if len(projects) == 0 {
+		return nil, nil
+	}
+	allowed := map[string]bool{}
+	for _, p := range projects {
+		allowed[p] = true
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []*Record{}
+	for _, rec := range s.records {
+		if rec.TenantID != tenantOrDefault(tenantID) || !allowed[rec.Project] {
+			continue
+		}
+		out = append(out, rec)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (s *MemStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
@@ -1430,6 +1462,39 @@ func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *SQLiteStore) ListRecordsInProjects(tenantID string, projects []string, limit int) ([]*Record, error) {
+	if len(projects) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	args := []any{tenantID}
+	holders := make([]string, len(projects))
+	for i, p := range projects {
+		holders[i] = "?"
+		args = append(args, p)
+	}
+	args = append(args, limit)
+	rows, err := s.db.Query(
+		`SELECT `+recordSelectCols+` FROM records
+		WHERE tenant_id = ? AND project IN (`+strings.Join(holders, ",")+`)
+		ORDER BY created_at DESC LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLiteStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {

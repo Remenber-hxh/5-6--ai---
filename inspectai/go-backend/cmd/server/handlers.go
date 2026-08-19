@@ -945,6 +945,9 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_assets_failed", err.Error())
 		return
 	}
+	// 项目范围要在【所有】统计之前先砍掉,包括下面的 totalSummary ——
+	// 否则页面上的"全部 35 台"会把别的项目也数进去,等于隔着汇总数泄露。
+	assets = s.limitAssetsToVisibleProjects(r, assets)
 	filtered := filterAssetsForDisplay(assets, r.URL.Query())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"assets":       s.sanitizeAssetsForRequest(r, filtered),
@@ -959,6 +962,7 @@ func (s *Server) handleAssetSummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "asset_summary_failed", err.Error())
 		return
 	}
+	assets = s.limitAssetsToVisibleProjects(r, assets)
 	filtered := filterAssetsForDisplay(assets, r.URL.Query())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"summary": buildAssetListSummary(filtered),
@@ -1283,6 +1287,15 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "")
 		return
 	}
+	// 【项目范围收口】单台设备的读写有七八个 handler,逐个加检查必然漏一个,
+	// 而漏掉的那个就是一条不报错的越权通道。所有子路由都从这里过,只判一次。
+	//
+	// 越界返回 404 而不是 403:403 等于告诉对方"这台设备存在,只是不给你看",
+	// 拿编号一台台试就能把别的项目的台账摸出来。
+	if id := assetIDFromRoutePath(rest); id != "" && !s.assetVisibleToRequest(r, id) {
+		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
+		return
+	}
 	// 子资源：/api/assets/{id}/records、/api/assets/{id}/report（按已知后缀匹配，
 	// 避免资产 id 里的分隔符干扰；assetID 形如 项目::模板::key，不含 /）
 	if id := strings.TrimSuffix(rest, "/records"); id != rest {
@@ -1534,8 +1547,12 @@ func (s *Server) handleAssetRecords(w http.ResponseWriter, r *http.Request, id s
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	// 数据范围:看不了全部的人,只保留他自己那些记录对应的快照
-	if !s.canSeeAllData(r) {
+	// 数据范围:只有"只看自己的"这一档才按人筛快照。
+	//
+	// 项目范围的人走到这里说明这台设备【已经通过了项目检查】(见 handleAssetRoutes),
+	// 那这台设备的历史就该完整给他 —— 只给他自己巡的那几条,等于让项目主管
+	// 看不见组员的巡检历史,设备详情页会缺一大截。
+	if s.visibilityFor(r).OwnOnly {
 		all, listErr := s.store.ListAssetSnapshots(id, total, 0)
 		if listErr != nil {
 			writeError(w, http.StatusInternalServerError, "list_failed", listErr.Error())
@@ -1844,16 +1861,24 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 
 	var records []*Record
 	var err error
-	// 数据范围:能看全部的人取整个租户,其余只取自己提交的
-	if s.canSeeAllData(r) {
+	vis := s.visibilityFor(r)
+	switch {
+	// 数据范围:能看全部的人取整个租户
+	case vis.AllData:
 		records, err = s.store.ListRecords(s.tenantForRequest(r), limit)
-	} else if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, limit)
-	} else if s.localNoAuthAllowed(r) {
-		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), "", userName(r), "", limit)
-	} else {
-		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
-		return
+	// 配了项目范围却一个项目都没分到 —— 给空,不给全部(见 dataVisibility.Blocked)
+	case vis.Blocked:
+		records = nil
+	// 限定项目且能看组内其他人的:【必须在 SQL 里按项目过滤】。
+	// 先取 limit 条再在内存里筛,会变成"从最新 100 条里挑出本项目的",
+	// 本项目稍微冷清一点就一条都不剩 —— 这个坑这个项目已经踩过好几次了。
+	case len(vis.Projects) > 0 && !vis.OwnOnly:
+		records, err = s.store.ListRecordsInProjects(s.tenantForRequest(r), vis.Projects, limit)
+	default:
+		records, err = s.listOwnRecords(w, r, limit)
+		if records == nil && err == nil {
+			return // listOwnRecords 已经写过响应
+		}
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_records_failed", err.Error())
@@ -1866,6 +1891,25 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		"limit":     limit,
 		"truncated": len(out) >= limit,
 	})
+}
+
+// listOwnRecords 只取自己提交的。返回 (nil, nil) 表示已经写过错误响应。
+func (s *Server) listOwnRecords(w http.ResponseWriter, r *http.Request, limit int) ([]*Record, error) {
+	var records []*Record
+	var err error
+	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
+		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, limit)
+	} else if s.localNoAuthAllowed(r) {
+		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), "", userName(r), "", limit)
+	} else {
+		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
+		return nil, nil
+	}
+	if records == nil && err == nil {
+		// 一条都没有和"已写响应"要区分得开,否则外层会以为响应写过了
+		records = []*Record{}
+	}
+	return records, err
 }
 
 func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {

@@ -302,11 +302,18 @@ export default function Users() {
           <Form.Item name="roleCode" label="角色" rules={[{ required: true, message: "请选择角色" }]}>
             <Select options={roles.map((r) => ({ value: r.code, label: r.name }))} />
           </Form.Item>
-          <Form.Item name="dataScope" label="数据范围" initialValue="">
+          <Form.Item
+            name="dataScope"
+            label="数据范围"
+            initialValue=""
+            extra="决定这个人能看到多少条数据，和他能做什么（角色）无关。"
+          >
             <Select
               options={[
                 { value: "", label: "按角色（默认）" },
                 { value: "all", label: "全部数据" },
+                { value: "project", label: "本项目（含组内其他人）" },
+                { value: "project_self", label: "本项目台账 + 仅本人记录" },
                 { value: "self", label: "仅本人提交的" },
               ]}
             />
@@ -314,7 +321,22 @@ export default function Users() {
           <Form.Item
             name="projectIds"
             label="所属项目"
-            extra="不选 = 不受项目限制。数据范围选「本项目」时必须至少选一个。"
+            extra="不选 = 不受项目限制。"
+            dependencies={["dataScope"]}
+            rules={[
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  const scope = getFieldValue("dataScope");
+                  // 选了「本项目」却一个项目都不选，后端会判定成"什么都看不到"
+                  // （不能放行，否则限制形同虚设）。在这里拦住，别让管理员
+                  // 保存完才发现这个人打开是空白页。
+                  if ((scope === "project" || scope === "project_self") && !value?.length) {
+                    return Promise.reject(new Error("数据范围选了本项目，必须至少指定一个项目"));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
           >
             <Select
               mode="multiple"
