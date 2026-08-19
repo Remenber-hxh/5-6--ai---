@@ -397,6 +397,7 @@ func (s *SQLiteStore) migUserDataScope() error {
 // 表建了,但这一步【不改任何查询】:
 //   - projects 只是把已有的项目名登记成实体,给成员关系当锚点
 //   - user_projects 空着 = 没人被限定到项目 = 行为不变
+//
 // 过滤等第 2b 步接上,而且只对显式配了 project 范围的人生效。
 // 和第 1 步同一个套路:先铺地基,不动行为。
 //
