@@ -73,7 +73,7 @@ type insightsContext struct {
 	pendingApprovals int
 }
 
-func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContext, error) {
+func (s *Server) buildInsightsContext(scope projectScope, rangeKey string) (*insightsContext, error) {
 	now := time.Now()
 	start, end, days := rangeWindow(rangeKey, now)
 	// TODO 多租户:管理 AI 洞察层是下游消费者,随 management_ai 域租户化时
@@ -86,10 +86,10 @@ func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContex
 	if err != nil {
 		return nil, err
 	}
-	if project != "" {
-		assets = filterAssetsByProject(assets, project)
-		records = filterRecordsByProject(records, project)
-	}
+	// 【两层都要过】Requested 是用户选的,Allowed 是他有权看的。
+	// 只按 Requested 过滤 = 他不选项目就看全部,这正是 AI 泄露的原因。
+	assets = filterAssetsByScope(assets, scope)
+	records = filterRecordsByScope(records, scope)
 	recBy := make(map[string]*Record, len(records))
 	for _, r := range records {
 		if r != nil {
@@ -97,7 +97,8 @@ func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContex
 		}
 	}
 	confirmLogs, _ := s.store.ListRecentFieldConfirmLogs(2000)
-	if project != "" {
+	if scope.Requested != "" || len(scope.Allowed) > 0 || scope.Blocked {
+		// 只留下上面那批记录对应的确认日志 —— recBy 已经是过滤后的
 		confirmLogs = filterConfirmLogsByRecords(confirmLogs, recBy)
 	}
 	requests, _ := s.store.ListChangeRequests(ChangeRequestFilter{Status: "pending", Limit: 500})
@@ -106,7 +107,7 @@ func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContex
 		rangeStart: start, rangeEnd: end,
 		prevStart:        start.AddDate(0, 0, -days),
 		prevEnd:          start,
-		project:          project,
+		project:          scope.Requested,
 		assets:           assets,
 		records:          records,
 		recordsByID:      recBy,
@@ -115,20 +116,43 @@ func (s *Server) buildInsightsContext(project, rangeKey string) (*insightsContex
 	}, nil
 }
 
-func filterAssetsByProject(in []*AssetEntry, project string) []*AssetEntry {
+func filterAssetsByScope(in []*AssetEntry, scope projectScope) []*AssetEntry {
+	if scope.Requested == "" && len(scope.Allowed) == 0 && !scope.Blocked {
+		return in
+	}
 	out := make([]*AssetEntry, 0, len(in))
 	for _, a := range in {
-		if a != nil && a.Project == project {
+		if a != nil && scope.allows(a.Project) {
 			out = append(out, a)
 		}
 	}
 	return out
 }
 
-func filterRecordsByProject(in []*Record, project string) []*Record {
+// filterTasksByScope 工程任务按项目范围裁。
+//
+// EngineeringTaskFilter.Project 只能填一个名字,表达不了"这几个项目",
+// 所以查询照旧、出口再筛一道。任务量不大,不值得为此改 SQL。
+func filterTasksByScope(in []*EngineeringTask, scope projectScope) []*EngineeringTask {
+	if scope.Requested == "" && len(scope.Allowed) == 0 && !scope.Blocked {
+		return in
+	}
+	out := make([]*EngineeringTask, 0, len(in))
+	for _, t := range in {
+		if t != nil && scope.allows(t.Project) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func filterRecordsByScope(in []*Record, scope projectScope) []*Record {
+	if scope.Requested == "" && len(scope.Allowed) == 0 && !scope.Blocked {
+		return in
+	}
 	out := make([]*Record, 0, len(in))
 	for _, r := range in {
-		if r != nil && r.Project == project {
+		if r != nil && scope.allows(r.Project) {
 			out = append(out, r)
 		}
 	}
@@ -147,7 +171,7 @@ func filterConfirmLogsByRecords(in []*FieldConfirmLog, recBy map[string]*Record)
 
 // ===== Tool 1: get_overview =====
 
-func (s *Server) toolGetOverview(project, rangeKey string) (*OverviewSummary, error) {
+func (s *Server) toolGetOverview(project projectScope, rangeKey string) (*OverviewSummary, error) {
 	ctx, err := s.buildInsightsContext(project, rangeKey)
 	if err != nil {
 		return nil, err
@@ -330,7 +354,7 @@ type NumericDriftEntry struct {
 	OverThreshold bool    `json:"overThreshold"`
 }
 
-func (s *Server) toolListNumericDrift(project string) ([]*NumericDriftEntry, error) {
+func (s *Server) toolListNumericDrift(project projectScope) ([]*NumericDriftEntry, error) {
 	ctx, err := s.buildInsightsContext(project, "30d")
 	if err != nil {
 		return nil, err
@@ -406,7 +430,7 @@ const (
 	riskCapMissed   = 10 // 超7天未巡检
 )
 
-func (s *Server) toolListAttention(project string, limit int) ([]*AttentionItem, error) {
+func (s *Server) toolListAttention(project projectScope, limit int) ([]*AttentionItem, error) {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -657,7 +681,7 @@ func (s *Server) toolCompareAssetPeriods(assetID, current, previous string) (*Pe
 
 // ===== Tool 5: list_repeated_issues =====
 
-func (s *Server) toolListRepeatedIssues(project string, limit int) ([]*RepeatedIssue, error) {
+func (s *Server) toolListRepeatedIssues(project projectScope, limit int) ([]*RepeatedIssue, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -721,7 +745,7 @@ type PendingReviews struct {
 	PendingApprovals []map[string]any `json:"pendingApprovals"`
 }
 
-func (s *Server) toolListPendingReviews(project string, limit int) (*PendingReviews, error) {
+func (s *Server) toolListPendingReviews(project projectScope, limit int) (*PendingReviews, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -763,8 +787,11 @@ func (s *Server) toolListPendingReviews(project string, limit int) (*PendingRevi
 
 // ===== Tool 7: get_inspector_quality =====
 
-func (s *Server) toolGetInspectorQuality(rangeKey string) ([]*InspectorQualityRow, error) {
-	ctx, err := s.buildInsightsContext("", rangeKey)
+func (s *Server) toolGetInspectorQuality(scope projectScope, rangeKey string) ([]*InspectorQualityRow, error) {
+	// 巡检员质量看的是"人",页面上不按项目切 —— 但【权限范围仍然要带上】。
+	// 之前这里传的是空范围,等于不受限:一个限定在某项目的经理,
+	// 能从这张表里看到别的项目所有巡检员的名字和数据。
+	ctx, err := s.buildInsightsContext(projectScope{Allowed: scope.Allowed, Blocked: scope.Blocked}, rangeKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1031,7 +1058,7 @@ func (s *Server) handleManagementSnapshot(w http.ResponseWriter, r *http.Request
 	if !s.requireSupervisorAccess(w, r) {
 		return
 	}
-	project := r.URL.Query().Get("project")
+	project := s.projectScopeFor(r, r.URL.Query().Get("project"))
 	rangeKey := firstNonEmpty(r.URL.Query().Get("range"), "30d")
 	overview, err := s.toolGetOverview(project, rangeKey)
 	if err != nil {
@@ -1039,7 +1066,7 @@ func (s *Server) handleManagementSnapshot(w http.ResponseWriter, r *http.Request
 		return
 	}
 	repeated, _ := s.toolListRepeatedIssues(project, 10)
-	quality, _ := s.toolGetInspectorQuality(rangeKey)
+	quality, _ := s.toolGetInspectorQuality(project, rangeKey)
 	pending, _ := s.toolListPendingReviews(project, 20)
 	numericDrifts, _ := s.toolListNumericDrift(project)
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1058,7 +1085,7 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 	if !s.requireSupervisorAccess(w, r) {
 		return
 	}
-	project := r.URL.Query().Get("project")
+	project := s.projectScopeFor(r, r.URL.Query().Get("project"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 20 {
 		limit = 5
@@ -1077,7 +1104,7 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 	var isMock bool
 	var generatedAt time.Time
 	if !refresh {
-		if cached, err := s.store.GetLatestManagementAIReport("attention", project, rangeKey); err == nil {
+		if cached, err := s.store.GetLatestManagementAIReport("attention", project.cacheKey(), rangeKey); err == nil {
 			if time.Now().Before(cached.ExpiresAt) {
 				summary = cached.Summary
 				model = cached.Model
@@ -1116,7 +1143,7 @@ func (s *Server) handleManagementAttention(w http.ResponseWriter, r *http.Reques
 				}
 				generatedAt = time.Now()
 				_ = s.store.SaveManagementAIReport(&ManagementAIReport{
-					ReportType: "attention", Project: project, RangeKey: rangeKey,
+					ReportType: "attention", Project: project.cacheKey(), RangeKey: rangeKey,
 					Summary: summary, Attention: items, Model: model,
 					PromptVersion: promptVersion,
 					GeneratedAt:   generatedAt,
@@ -1166,7 +1193,7 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	// 【一次对话里只算一遍】这七组聚合原来每条消息都重跑,其中 tasks 还是全表读。
 	// 用户在同一个话题里连问三句,同一份数据就算了三遍 —— 而这些聚合是"最近 30 天
 	// 的统计",几十秒内不会变。缓存 60 秒,按 项目+时间范围+租户 分桶。
-	ctxData := s.chatContext(r, req.Project, rangeKey)
+	ctxData := s.chatContext(r, s.projectScopeFor(r, req.Project), rangeKey)
 	overview, attention := ctxData.overview, ctxData.attention
 	repeated, pending := ctxData.repeated, ctxData.pending
 	quality, drift := ctxData.quality, ctxData.drift
@@ -1249,7 +1276,7 @@ func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	reportType := firstNonEmpty(r.URL.Query().Get("type"), "weekly")
-	project := r.URL.Query().Get("project")
+	project := s.projectScopeFor(r, r.URL.Query().Get("project"))
 
 	if reportType == "daily" {
 		s.handleDailyReport(w, project)
@@ -1261,7 +1288,7 @@ func (s *Server) handleManagementReport(w http.ResponseWriter, r *http.Request) 
 
 // 周报:7 模块管理型(结论/指标/重点资产/异常闭环/质量协同/下周安排/溯源)
 // 复用日报的记录-状态-任务聚合,搬到「近 7 天 vs 上 7 天」口径。
-func (s *Server) handleWeeklyReport(w http.ResponseWriter, project string) {
+func (s *Server) handleWeeklyReport(w http.ResponseWriter, project projectScope) {
 	rangeKey := "7d"
 	ctx, err := s.buildInsightsContext(project, rangeKey)
 	if err != nil {
@@ -1271,7 +1298,7 @@ func (s *Server) handleWeeklyReport(w http.ResponseWriter, project string) {
 	overview, _ := s.toolGetOverview(project, rangeKey)
 	attention, _ := s.toolListAttention(project, 8)
 	repeated, _ := s.toolListRepeatedIssues(project, 8)
-	quality, _ := s.toolGetInspectorQuality(rangeKey)
+	quality, _ := s.toolGetInspectorQuality(project, rangeKey)
 	pending, _ := s.toolListPendingReviews(project, 15)
 	drift, _ := s.toolListNumericDrift(project)
 
@@ -1362,7 +1389,8 @@ func (s *Server) handleWeeklyReport(w http.ResponseWriter, project string) {
 
 	// 闭环:复查任务完成数(本周 vs 上周)
 	closedRecent, closedPrev := 0, 0
-	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: project})
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: project.Requested})
+	tasks = filterTasksByScope(tasks, project)
 	for _, tk := range tasks {
 		if tk.Status != engTaskStatusDone || tk.CompletedAt == "" {
 			continue
@@ -1630,7 +1658,7 @@ func dailySummaryFallback(o *OverviewSummary, abnormal, done, plan int) string {
 }
 
 // GET /api/management-ai/report?type=daily —— 管理日报:今日 00:00~现在,业务状态口径,管理摘要 + 巡检明细两层。
-func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
+func (s *Server) handleDailyReport(w http.ResponseWriter, project projectScope) {
 	ctx, err := s.buildInsightsContext(project, "today")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "daily_failed", err.Error())
@@ -1710,7 +1738,8 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project string) {
 		}
 	}
 
-	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: project})
+	tasks, _ := s.store.ListEngineeringTasks(EngineeringTaskFilter{Project: project.Requested})
+	tasks = filterTasksByScope(tasks, project)
 	planN, doneN, procN, todoN, overdueN, closedToday := len(tasks), 0, 0, 0, 0, 0
 	todayStr := ctx.rangeStart.Format("2006-01-02")
 	for _, tk := range tasks {
@@ -2017,6 +2046,12 @@ func (s *Server) actCreateRecheckTask(w http.ResponseWriter, r *http.Request, as
 		writeError(w, http.StatusNotFound, "asset_not_found", "目标资产不存在")
 		return
 	}
+	// 【执行也要看项目范围】读接口挡住了、执行接口没挡,等于可以对别的项目的
+	// 设备派任务 —— 那比看到更严重。和读一样给 404,不确认这台设备存在。
+	if !s.visibilityFor(r).allowsProject(asset.Project) {
+		writeError(w, http.StatusNotFound, "asset_not_found", "目标资产不存在")
+		return
+	}
 	assignee := strings.TrimSpace(actParamString(params, "assignee"))
 	if assignee == "" {
 		assignee = asset.LastInspector
@@ -2187,9 +2222,11 @@ type chatCtxEntry struct {
 
 const chatCtxTTL = 60 * time.Second
 
-func (s *Server) chatContext(r *http.Request, project, rangeKey string) chatCtxData {
+func (s *Server) chatContext(r *http.Request, project projectScope, rangeKey string) chatCtxData {
 	tenant := s.tenantForRequest(r)
-	key := tenant + "|" + project + "|" + rangeKey
+	// 【键必须带上可见项目】否则受限的人会读到管理员刚算好的那份,
+	// 一分钟内问什么都能问出来,过一分钟又好了 —— 最难复现的那种。
+	key := tenant + "|" + project.cacheKey() + "|" + rangeKey
 
 	s.chatCtxMu.Lock()
 	if e, ok := s.chatCtx[key]; ok && time.Since(e.at) < chatCtxTTL {
@@ -2206,13 +2243,14 @@ func (s *Server) chatContext(r *http.Request, project, rangeKey string) chatCtxD
 	// 多类聚合一起喂给 AI,让它能按问题挑对应数据,而不是每次都答最高风险资产
 	d.repeated, _ = s.toolListRepeatedIssues(project, 6)
 	d.pending, _ = s.toolListPendingReviews(project, 10)
-	d.quality, _ = s.toolGetInspectorQuality(rangeKey)
+	d.quality, _ = s.toolGetInspectorQuality(project, rangeKey)
 	d.drift, _ = s.toolListNumericDrift(project)
 	if len(d.drift) > 8 {
 		d.drift = d.drift[:8]
 	}
 	d.tasks, _ = s.store.ListEngineeringTasks(
-		EngineeringTaskFilter{TenantID: tenant, Project: project})
+		EngineeringTaskFilter{TenantID: tenant, Project: project.Requested})
+	d.tasks = filterTasksByScope(d.tasks, project)
 
 	s.chatCtxMu.Lock()
 	if s.chatCtx == nil {

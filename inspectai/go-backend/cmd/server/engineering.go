@@ -700,6 +700,9 @@ func (s *Server) handleListEngineeringPlans(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "list_engineering_plans_failed", err.Error())
 		return
 	}
+	// 【计划和任务都带项目名,按项目筛】汇总数一起筛掉 ——
+	// 列表干净了但顶上还写着总数,一样把别的项目有多少条透出去。
+	items = filterPlansByScope(items, s.projectScopeFor(r, ""))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"plans":   items,
 		"summary": engineeringPlanSummary(items),
@@ -739,8 +742,9 @@ func (s *Server) handleListEngineeringTasks(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "list_engineering_tasks_failed", err.Error())
 		return
 	}
+	items = filterTasksByScope(items, s.projectScopeFor(r, ""))
 	// ?scope=open-mine:只要"我的在办任务",与底栏角标共用同一套规则
-	// (见 open_tasks.go)。不传时保持原样 —— admin-web 要看全量。
+	// (见 open_tasks.go)。不传时保持项目范围内的全量 —— admin-web 要看全量。
 	if r.URL.Query().Get("scope") == "open-mine" {
 		items = openTasksFor(items, s.taskScopeName(r))
 	}
@@ -1180,4 +1184,21 @@ func (s *Server) maybeRolloverPlanTask(plan *EngineeringPlanItem, done *Engineer
 func parseFloatOrZero(raw string) float64 {
 	v, _ := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	return v
+}
+
+// filterPlansByScope 巡检计划按项目范围裁。
+//
+// 计划条目自带 Project,所以这里能做真正的项目过滤,不用像修改申请那样
+// 退回"只看自己的"。
+func filterPlansByScope(in []*EngineeringPlanItem, scope projectScope) []*EngineeringPlanItem {
+	if scope.Requested == "" && len(scope.Allowed) == 0 && !scope.Blocked {
+		return in
+	}
+	out := make([]*EngineeringPlanItem, 0, len(in))
+	for _, p := range in {
+		if p != nil && scope.allows(p.Project) {
+			out = append(out, p)
+		}
+	}
+	return out
 }

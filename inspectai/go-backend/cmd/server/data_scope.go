@@ -100,9 +100,9 @@ func (v dataVisibility) allowsProject(name string) bool {
 // visibilityFor 解析这次请求的可见范围。
 //
 // 【项目范围的语义,以及为什么不是所有页面都一样】
-// 设备台账和巡检记录带项目名,按项目精确过滤。
-// 修改申请、工程待办、角标计数、离线照片【过滤不到项目这一层】——
-// 修改申请表里没有项目字段;工程待办按责任人姓名归属。这些一律退回"只看自己的"。
+// 设备台账、巡检记录、巡检计划、工程任务都带项目名,按项目精确过滤;
+// 管理 AI 的全部聚合也走同一套(见 projectScope)。
+// 修改申请、角标计数、离线照片【表里没有项目字段】,一律退回"只看自己的"。
 //
 // 退回更严的一档而不是放行,是因为这两种错的代价不对称:
 // 严了他会立刻发现并来问;松了没人会发现,而数据已经泄给了别的项目组。
@@ -184,4 +184,75 @@ func (s *Server) limitAssetsToVisibleProjects(r *http.Request, assets []*AssetEn
 		}
 	}
 	return out
+}
+
+// ===== 管理 AI 那一侧的项目范围 =====
+//
+// 管理 AI 的所有聚合(看板、洞察、日/周报、聊天上下文)都从
+// buildInsightsContext 出来,而它原来只认一个 project 字符串 ——
+// 那是【用户在页面上选了哪个项目】,不是【他能看哪些项目】。
+// 两者混用的后果:页面上的台账筛掉了,一问 AI 全说出来。
+//
+// 把它换成一个类型而不是继续传字符串,是为了让编译器把二十多个调用点
+// 全部指出来 —— 这种"漏一个就是一条不报错的泄露通道"的改动,不能靠人眼找。
+
+type projectScope struct {
+	// Requested 用户主动选的项目("" = 不限)
+	Requested string
+	// Allowed 他有权看的项目(空 = 不受项目限制)
+	Allowed []string
+	// Blocked 配了项目范围却没分到项目 —— 什么都不给
+	Blocked bool
+}
+
+// allows 这个项目的数据能不能进聚合。
+func (p projectScope) allows(name string) bool {
+	if p.Blocked {
+		return false
+	}
+	name = strings.TrimSpace(name)
+	if p.Requested != "" && name != p.Requested {
+		return false
+	}
+	if len(p.Allowed) == 0 {
+		return true
+	}
+	for _, a := range p.Allowed {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// empty 这个范围下一条数据都不该有(选的项目不在权限内,或者压根没分项目)。
+func (p projectScope) empty() bool {
+	return p.Blocked || (p.Requested != "" && len(p.Allowed) > 0 && !p.allows(p.Requested))
+}
+
+// cacheKey 各种聚合缓存的键。
+//
+// 【必须带上 Allowed】否则受限的人会读到管理员刚算好的那份缓存,
+// 一分钟内问什么都能问出来 —— 而且过一分钟又好了,最难复现的那种。
+//
+// 不受项目限制时【原样返回选中的项目名】,和加这个字段之前的键完全一致 ——
+// 否则升级瞬间所有存量缓存全部作废,看板要重算一遍。
+func (p projectScope) cacheKey() string {
+	if p.Blocked {
+		return "|blocked|"
+	}
+	if len(p.Allowed) == 0 {
+		return p.Requested
+	}
+	return p.Requested + "|" + strings.Join(p.Allowed, ",")
+}
+
+// projectScopeFor 把"用户选的"和"他能看的"合成一个范围。
+func (s *Server) projectScopeFor(r *http.Request, requested string) projectScope {
+	vis := s.visibilityFor(r)
+	return projectScope{
+		Requested: strings.TrimSpace(requested),
+		Allowed:   vis.Projects,
+		Blocked:   vis.Blocked,
+	}
 }
