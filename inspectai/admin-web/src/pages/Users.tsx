@@ -19,11 +19,13 @@ import {
   setUserStatus,
   updateRole,
   updateUser,
+  deleteUser,
   listProjects,
   listUserProjects,
   setUserProjects,
   type ProjectEntry,
 } from "../api/mgmt";
+import Departments from "../components/Departments";
 import Projects from "../components/Projects";
 import RegistrationCodes from "../components/RegistrationCodes";
 import { useAuth } from "../store/auth";
@@ -206,6 +208,18 @@ export default function Users() {
     }
   }
 
+  async function remove(u: UserEntry) {
+    try {
+      await deleteUser(u.id);
+      message.success(`已删除 ${u.displayName}`);
+      await load();
+    } catch (e) {
+      // 【原样显示后端的话】被拒绝时那句话里带着原因和替代做法
+      //（"已提交过巡检记录…请改用停用"），换成"删除失败"就把它丢了。
+      message.error(e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
   async function toggle(u: UserEntry) {
     const next = u.status === "active" || !u.status ? "disabled" : "active";
     try {
@@ -267,19 +281,34 @@ export default function Users() {
           { title: "创建时间", width: 150, render: (_, u) => fmtTime(u.createdAt, true) },
           {
             title: "操作",
-            width: 220,
+            width: 260,
             render: (_, u) => (
-              <Space>
+              <Space size={4} split={<span style={{ color: "#e8e8e8" }}>|</span>}>
                 <a onClick={() => openEdit(u)}>编辑</a>
                 <a onClick={() => setPwdUser(u)}>重置密码</a>
                 <Popconfirm
                   title={`确认${u.status === "disabled" ? "启用" : "停用"}「${u.displayName}」?`}
                   onConfirm={() => toggle(u)}
                 >
-                  <a style={{ color: u.status === "disabled" ? undefined : "#d4380d" }}>
-                    {u.status === "disabled" ? "启用" : "停用"}
-                  </a>
+                  <a>{u.status === "disabled" ? "启用" : "停用"}</a>
                 </Popconfirm>
+                {/* 【停用是常规做法,删除是例外】所以删除放在最后、只有它是红的。
+                    自己的账号不给删 —— 后端也挡着,这里置灰是为了不让人白点一次。 */}
+                {u.id === me?.id ? (
+                  <Tooltip title="不能删除自己的账号">
+                    <span style={{ color: "#bbb" }}>删除</span>
+                  </Tooltip>
+                ) : (
+                  <Popconfirm
+                    title={`删除「${u.displayName}」?`}
+                    description="账号将被永久移除。若只是不再使用，请用「停用」。"
+                    okText="删除"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => remove(u)}
+                  >
+                    <a style={{ color: "#d4380d" }}>删除</a>
+                  </Popconfirm>
+                )}
               </Space>
             ),
           },
@@ -504,6 +533,7 @@ export default function Users() {
 
       {/* 注册码放在用户列表下面:它和"新建用户"是同一件事的两条路 ——
           一个一个建 vs 发一张码让人自助注册。挨着放,管理员才会想起还有这条路。 */}
+      {me?.roleCode === "admin" && <Departments users={users} onChanged={load} />}
       {me?.roleCode === "admin" && <Projects />}
       <RegistrationCodes roles={roles} />
       </>

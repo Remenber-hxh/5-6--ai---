@@ -650,3 +650,44 @@ export function setUserProjects(userId: string, projectIds: string[]) {
     body: JSON.stringify({ projectIds }),
   });
 }
+
+// ===== 部门 =====
+//
+// 【项目一直只有一条种子「默认部门」】没有写接口,后台的部门下拉永远只有一项。
+// 部门名在租户内唯一 —— 两个同名部门在下拉里根本分不出来。
+
+export function createDepartment(payload: { name: string; parentId?: string }) {
+  return api<{ department: Department }>("/api/departments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateDepartment(id: string, name: string) {
+  return api(`/api/departments/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteDepartment(id: string) {
+  return api(`/api/departments/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// ===== 删除 =====
+//
+// 后端的规矩是【有东西引用就拒绝,并说清该怎么办】,不连带删除。
+// 所以这些调用失败时要把后端的话原样显示出来 —— 那句话里有下一步动作
+// (例如"请改用停用"),自己编一句"删除失败"等于把它丢掉了。
+
+export function deleteUser(id: string) {
+  return api(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function deleteProject(id: string) {
+  return api(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function deleteRegistrationCode(code: string) {
+  return api(`/api/registration-codes/${encodeURIComponent(code)}`, { method: "DELETE" });
+}

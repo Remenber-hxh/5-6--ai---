@@ -1,8 +1,8 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 
-import { ProjectEntry, createProject, listProjects, updateProject } from "../api/mgmt";
+import { ProjectEntry, createProject, deleteProject, listProjects, updateProject } from "../api/mgmt";
 
 /**
  * 项目管理。
@@ -64,6 +64,17 @@ export default function Projects() {
     }
   }
 
+  async function remove(p: ProjectEntry) {
+    try {
+      await deleteProject(p.id);
+      message.success(`已删除「${p.name}」`);
+      await load();
+    } catch (e) {
+      // 原样显示后端的话:被拒时那句里有"请改用停用"
+      message.error(e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
   return (
     <Card
       title="项目"
@@ -105,11 +116,30 @@ export default function Projects() {
           },
           {
             title: "操作",
-            width: 90,
+            width: 150,
             render: (_, p) => (
-              <Popconfirm title={`确认${p.disabled ? "启用" : "停用"}「${p.name}」?`} onConfirm={() => toggle(p)}>
-                <a style={{ color: p.disabled ? undefined : "#d4380d" }}>{p.disabled ? "启用" : "停用"}</a>
-              </Popconfirm>
+              <Space size={4} split={<span style={{ color: "#e8e8e8" }}>|</span>}>
+                <Popconfirm title={`确认${p.disabled ? "启用" : "停用"}「${p.name}」?`} onConfirm={() => toggle(p)}>
+                  <a>{p.disabled ? "启用" : "停用"}</a>
+                </Popconfirm>
+                {/* 【有设备就不给删】后端会拒绝,这里直接置灰 ——
+                    让人点一次才知道被拒,不如一眼看出来。 */}
+                {p.assetCount > 0 ? (
+                  <Tooltip title="项目下还有设备台账，请改用「停用」">
+                    <span style={{ color: "#bbb" }}>删除</span>
+                  </Tooltip>
+                ) : (
+                  <Popconfirm
+                    title={`删除「${p.name}」?`}
+                    description="项目将被永久移除，成员归属一并清除。"
+                    okText="删除"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => remove(p)}
+                  >
+                    <a style={{ color: "#d4380d" }}>删除</a>
+                  </Popconfirm>
+                )}
+              </Space>
             ),
           },
         ]}

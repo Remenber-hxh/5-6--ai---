@@ -8,6 +8,7 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Space,
   Table,
   Tag,
   Tooltip,
@@ -20,6 +21,7 @@ import {
   RegistrationCodeEntry,
   RoleEntry,
   createRegistrationCode,
+  deleteRegistrationCode,
   listRegistrationCodes,
   setRegistrationCodeDisabled,
 } from "../api/mgmt";
@@ -87,6 +89,16 @@ export default function RegistrationCodes({ roles }: { roles: RoleEntry[] }) {
       message.error(e instanceof Error ? e.message : "生成失败");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function remove(rc: RegistrationCodeEntry) {
+    try {
+      await deleteRegistrationCode(rc.code);
+      message.success("注册码已删除");
+      await reload();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "删除失败");
     }
   }
 
@@ -190,25 +202,42 @@ export default function RegistrationCodes({ roles }: { roles: RoleEntry[] }) {
           { title: "创建时间", width: 150, render: (_, rc) => fmtTime(rc.createdAt, true) },
           {
             title: "操作",
-            width: 90,
-            render: (_, rc) =>
-              rc.disabled ? (
-                <Button type="link" size="small" onClick={() => void toggle(rc)}>
-                  启用
-                </Button>
-              ) : (
+            width: 150,
+            render: (_, rc) => (
+              <Space size={0}>
+                {rc.disabled ? (
+                  <Button type="link" size="small" onClick={() => void toggle(rc)}>
+                    启用
+                  </Button>
+                ) : (
+                  <Popconfirm
+                    title="停用这个注册码?"
+                    description="停用后立即失效,已经注册的账号不受影响。"
+                    okText="停用"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => void toggle(rc)}
+                  >
+                    <Button type="link" size="small">
+                      停用
+                    </Button>
+                  </Popconfirm>
+                )}
+                {/* 停用够用了,删除是给"发错了/不想再看见"准备的。
+                    已经注册出来的账号不受影响 —— 这句必须写出来,
+                    否则管理员会担心删码会不会把人一起删了。 */}
                 <Popconfirm
-                  title="停用这个注册码?"
-                  description="停用后立即失效,已经注册的账号不受影响。"
-                  okText="停用"
+                  title="删除这个注册码?"
+                  description="记录将被永久移除。已经用它注册的账号不受影响。"
+                  okText="删除"
                   okButtonProps={{ danger: true }}
-                  onConfirm={() => void toggle(rc)}
+                  onConfirm={() => void remove(rc)}
                 >
                   <Button type="link" size="small" danger>
-                    停用
+                    删除
                   </Button>
                 </Popconfirm>
-              ),
+              </Space>
+            ),
           },
         ]}
       />
