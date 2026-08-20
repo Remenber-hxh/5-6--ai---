@@ -25,8 +25,13 @@ var permCatalog = []permDef{
 	{"approval_review", "审批处理", "修改申请通过/驳回", false},
 	{"task_dispatch", "任务派发", "AI 派单确认,工程执行任务下发", false},
 	{"wework_send", "企业微信通知", "手动触发企微消息/群机器人", false},
-	{"audit_view", "操作日志查看", "全量操作审计日志", false},
-	{"prompt_manage", "提示词模板管理", "识别模板查看/编辑/渲染预览", false},
+	// 【这两项锁定给管理员】
+	// 操作日志是审计证据,里面有谁改了什么、谁批了什么 —— 能看审计的人
+	// 和被审计的人不该是同一批,否则审计就没有意义了。
+	// 提示词模板是 AI 的行为本身,改一句话就能让所有识别结果变样,
+	// 而且没有任何报错 —— 这不是"业务操作",是改产品。
+	{"audit_view", "操作日志查看", "全量操作审计日志", true},
+	{"prompt_manage", "提示词模板管理", "识别模板查看/编辑/渲染预览", true},
 }
 
 // defaultPermMatrix — 默认矩阵 = 引入本体系前的固化行为:
@@ -100,6 +105,19 @@ func (s *Server) loadPermissions() error {
 	for k, v := range defaults {
 		if _, ok := matrix[k]; !ok {
 			matrix[k] = v
+		}
+	}
+	// 【锁定项一律以代码为准,覆盖库里的值】
+	//
+	// 少了这一段,"加锁"只对新库生效:老库里早就存着
+	// 「audit_view → 经理、主管」这几行,读取时原样用,加锁等于没加 ——
+	// 代码看着对、线上照旧,而且不报错。
+	//
+	// 顺带也堵住了另一条路:有人直接改库插一行,同样不生效。
+	// 锁定的意思就是"只有代码说了算"。
+	for _, p := range permCatalog {
+		if p.Locked {
+			matrix[p.Key] = defaults[p.Key]
 		}
 	}
 	s.permCache.set(matrix)
