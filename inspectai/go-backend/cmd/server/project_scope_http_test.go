@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -331,5 +332,51 @@ func TestChangeRequestsRespectProjectScope(t *testing.T) {
 	srv.handleChangeRequestRoutes(ow, or)
 	if ow.Code != http.StatusOK {
 		t.Fatalf("本项目的申请打不开:%d %s", ow.Code, ow.Body.String())
+	}
+}
+
+// failingAssetStore 一个"查设备就报错"的库,用来模拟数据库超时/连接断开。
+//
+// 只覆盖 GetAsset 一个方法,其余全部原样转给真正的 MemStore
+// (Go 里把接口嵌进结构体就能做到这一点)。
+type failingAssetStore struct {
+	Store
+	err error
+}
+
+func (f *failingAssetStore) GetAsset(tenantID, id string) (*AssetEntry, error) {
+	return nil, f.err
+}
+
+// 【库出错时必须拦住,不能放行】
+//
+// 这一处第一版把"设备不存在"和"数据库出错"合成了一个分支,统统放行。
+// 后果:库一抖就有一个瞬间人人都能过这道检查,而下游重查一次要是成功了,
+// 别的项目的设备就给出去了 —— 全程不报错,事后也查不出来。
+//
+// 两种错的代价不对称:拦错了他看到一次"打不开"会来问;放错了没人会发现。
+func TestAssetVisibilityFailsClosedOnStoreError(t *testing.T) {
+	srv, r, _ := newScopedServer(t) // 只分到「紫菡雅集」
+	outside := "会议中心::elevator_no_room::KT-7"
+
+	// 正常情况:别的项目的设备 → 拦住
+	if srv.assetVisibleToRequest(r, outside) {
+		t.Fatal("别的项目的设备本来就该拦住")
+	}
+
+	// 【真的不存在】→ 放行,交给下游报 404。
+	// 在这里把"不存在"说成"没权限",反而暴露了"这个编号是空的"。
+	if !srv.assetVisibleToRequest(r, "紫菡雅集::elevator_no_room::根本没有这台") {
+		t.Error("确实不存在的设备应放行,让下游报 404")
+	}
+
+	// 【数据库坏了】→ 拦住。
+	// 直接把 srv 的 store 换掉再换回来 —— 不复制整个 Server:
+	// 它内部有锁,复制会把锁一起拷走(go vet 会直接报出来)。
+	original := srv.store
+	srv.store = &failingAssetStore{Store: original, err: errors.New("dial tcp: connection refused")}
+	defer func() { srv.store = original }()
+	if srv.assetVisibleToRequest(r, outside) {
+		t.Fatal("数据库出错时放行了 —— 库一抖就是一个越权窗口,而且不报错")
 	}
 }

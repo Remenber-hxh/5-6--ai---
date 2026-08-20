@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -164,9 +166,19 @@ func (s *Server) assetVisibleToRequest(r *http.Request, assetID string) bool {
 		return true
 	}
 	asset, err := s.store.GetAsset(s.tenantForRequest(r), assetID)
-	if err != nil || asset == nil {
-		// 查不到:交给下游 handler 去报 404,别在这里把"不存在"说成"没权限"
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && asset == nil) {
+		// 【确实不存在】交给下游 handler 去报 404,别在这里把"不存在"说成"没权限"
 		return true
+	}
+	if err != nil {
+		// 【其他错误一律拦住】数据库超时、连接断开也是 err != nil。
+		//
+		// 第一版这里和"不存在"合成了一个分支,统统放行 —— 那意味着库一抖
+		// 就有一个瞬间人人都能过这道检查,而下游重查一次要是成功了,
+		// 别的项目的设备就给出去了,全程不报错、事后查不出来。
+		//
+		// 宁可他看到一次"打不开"来问,也不能在库抖的时候漏数据。
+		return false
 	}
 	return vis.allowsProject(asset.Project)
 }
