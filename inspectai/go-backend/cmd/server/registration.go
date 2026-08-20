@@ -71,6 +71,9 @@ type RegistrationStore interface {
 	// 靠"大概率不会同时"来保证是不行的。
 	ConsumeRegistrationCode(id string) error
 	SetRegistrationCodeDisabled(tenantID, id string, disabled bool) error
+	// DeleteRegistrationCode 直接删:没有别的东西引用它,
+	// 用它注册出来的账号是独立的,删码不影响已有账号。
+	DeleteRegistrationCode(tenantID, code string) error
 }
 
 // newRegistrationCode 生成人能念、能抄的码。

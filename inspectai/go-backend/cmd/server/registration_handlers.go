@@ -319,6 +319,8 @@ func (s *Server) handleRegistrationCodeRoutes(w http.ResponseWriter, r *http.Req
 	switch {
 	case sub == "disable" && r.Method == http.MethodPost:
 		s.handleDisableRegistrationCode(w, r, id)
+	case sub == "" && r.Method == http.MethodDelete:
+		s.handleDeleteRegistrationCode(w, r, id)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "接口不存在")
 	}

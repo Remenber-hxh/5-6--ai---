@@ -138,6 +138,14 @@ type IdentityStore interface {
 	UpdateRole(id, name, description string) (*Role, error)
 	DeleteRole(id string) error
 	ListDepartments() ([]*Department, error)
+	// 部门增删改。DeleteDepartment 在还有用户挂着时报 errInUse ——
+	// 【不连带把人置空】那会让一批用户悄悄失去部门归属,没人会发现。
+	CreateDepartment(name, parentID string) (*Department, error)
+	UpdateDepartment(id, name string) error
+	DeleteDepartment(id string) error
+	// DeleteUser 硬删除。有巡检记录 / 是最后一个管理员 / 删的是自己 → 拒绝。
+	// operatorID 是当前操作人,用来挡住"把自己删了"。
+	DeleteUser(id, operatorID string) error
 	CreateOperationLog(log *OperationLog) error
 	ListOperationLogs(limit int) ([]*OperationLog, error)
 }
@@ -243,6 +251,7 @@ type MemStore struct {
 	roles          map[string]*Role
 	regCodes       map[string]*RegistrationCode // key = code 本身
 	projects       map[string]*Project
+	departments    map[string]*Department
 	userProjects   map[string][]string // userID -> projectIDs
 }
 
@@ -268,8 +277,12 @@ func NewMemStore() *MemStore {
 		engTasks:       map[string]*EngineeringTask{},
 		promptTpls:     map[string]PromptTemplate{},
 		projects:       map[string]*Project{},
-		userProjects:   map[string][]string{},
-		rolePerms:      defaultPermMatrix(),
+		// 默认部门:和 SQLiteStore 的种子对齐 —— 新建用户没指定部门时落在这里
+		departments: map[string]*Department{
+			"dept_default": {ID: "dept_default", Name: "默认部门"},
+		},
+		userProjects: map[string][]string{},
+		rolePerms:    defaultPermMatrix(),
 	}
 }
 

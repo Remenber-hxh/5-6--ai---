@@ -46,6 +46,9 @@ type ProjectStore interface {
 	SetUserProjects(tenantID, userID string, projectIDs []string) error
 	// ListUserProjectIDs 后台回显用。
 	ListUserProjectIDs(tenantID, userID string) ([]string, error)
+	// DeleteProject 硬删除。台账里还有设备时报 errInUse ——
+	// 项目名是业务表的关联键,删了那些设备就成了指向不存在项目的孤儿。
+	DeleteProject(tenantID, id string) error
 }
 
 var errProjectNameRequired = errors.New("project name required")

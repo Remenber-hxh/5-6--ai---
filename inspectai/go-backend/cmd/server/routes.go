@@ -59,6 +59,8 @@ var apiRoutes = []apiRoute{
 	{http.MethodGet, "/api/roles", guardSupervisor, "", (*Server).handleListRoles},
 	{http.MethodPost, "/api/roles", guardAdmin, "", (*Server).handleCreateRole},
 	{http.MethodGet, "/api/departments", guardSupervisor, "", (*Server).handleListDepartments},
+	// 部门写口仅管理员:部门是组织归属,不是业务操作
+	{http.MethodPost, "/api/departments", guardAdmin, "", (*Server).handleCreateDepartment},
 	{http.MethodGet, "/api/operation-logs", guardNone, "audit_view", (*Server).handleListOperationLogs},
 	{http.MethodGet, "/api/permissions", guardAdmin, "", (*Server).handleGetPermissions},
 	{http.MethodPut, "/api/permissions", guardAdmin, "", (*Server).handleSavePermissions},

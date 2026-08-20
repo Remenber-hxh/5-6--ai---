@@ -75,8 +75,12 @@ func (s *Server) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "未匹配的项目路由")
 		return
 	}
+	if r.Method == http.MethodDelete {
+		s.handleDeleteProject(w, r, id)
+		return
+	}
 	if r.Method != http.MethodPut {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 PUT")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 PUT / DELETE")
 		return
 	}
 	var req projectUpsertRequest

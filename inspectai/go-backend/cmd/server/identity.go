@@ -407,9 +407,15 @@ func (s *MemStore) DeleteRole(id string) error {
 }
 
 func (s *MemStore) ListDepartments() ([]*Department, error) {
-	return []*Department{
-		{ID: "dept_default", Name: "默认部门", CreatedAt: time.Now()},
-	}, nil
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Department, 0, len(s.departments))
+	for _, d := range s.departments {
+		cp := *d
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 func roleNameByCode(code string) string {
