@@ -5,7 +5,7 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Avatar, Badge, Button, Dropdown, Layout, Menu, Tooltip } from "antd";
+import { Alert, Avatar, Badge, Button, Dropdown, Layout, Menu, Tooltip } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -205,6 +205,13 @@ export default function MainLayout() {
             flexDirection: "column",
           }}
         >
+          {/* 【数据范围提示】看不到数据时必须说清为什么。
+              只给空列表,用户会以为数据丢了,反复刷新、报"系统坏了",
+              而管理员那边一切正常 —— 这类问题最难定位,因为没人报对症状。
+              挂在这里一处,覆盖所有页面。 */}
+          {user?.dataScopeNotice && (
+            <Alert type="warning" showIcon banner message={user.dataScopeNotice} style={{ marginBottom: 12 }} />
+          )}
           {/* 页面切换轻过渡:淡入+8px 上浮,0.25s,不打扰操作 */}
           <motion.div
             key={loc.pathname}

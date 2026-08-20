@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -273,5 +274,56 @@ func TestDataScopePersistsThroughSQLite(t *testing.T) {
 	// 会话取到的用户也要带着这个字段(判定走的是这条路)
 	if _, _, err := store.AuthenticateUser("scope_user", "pw-for-test-only"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// 【空页面必须能说出为什么】只给一个空列表是最糟的失败方式:
+// 用户以为数据丢了,反复刷新、报"系统坏了",而管理员那边一切正常。
+//
+// 两种"看不到"要分得开,因为下一步动作不一样:
+//
+//	没分配过   → 去找管理员分配
+//	项目停用了 → 去问管理员为什么停用
+func TestBlockedReasonTellsUserWhatHappened(t *testing.T) {
+	// 情况一:配了「本项目」但从没分配过
+	srv, r, store, userID := newScopeRequestWithStore(t, roleSupervisor, dataScopeProject)
+	vis := srv.visibilityFor(r)
+	if vis.BlockedReason != blockReasonNoProjects {
+		t.Fatalf("没分配过项目应报 %q,得到 %q", blockReasonNoProjects, vis.BlockedReason)
+	}
+	if !strings.Contains(dataScopeNotice(vis.BlockedReason), "分配") {
+		t.Errorf("提示里要说清下一步该干嘛,得到:%s", dataScopeNotice(vis.BlockedReason))
+	}
+
+	// 情况二:分配过,但项目被停用了 —— 这就是老王那个场景
+	p := &Project{TenantID: defaultTenantID, Name: "会议中心"}
+	if err := store.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetUserProjects(defaultTenantID, userID, []string{p.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.visibilityFor(r); got.Blocked {
+		t.Fatalf("分配之后不该再被挡:%+v", got)
+	}
+	if err := store.UpdateProjectMeta(defaultTenantID, p.ID, "", true); err != nil {
+		t.Fatal(err)
+	}
+	vis = srv.visibilityFor(r)
+	if !vis.Blocked {
+		t.Fatal("项目停用后应看不到数据")
+	}
+	if vis.BlockedReason != blockReasonProjectsOff {
+		t.Fatalf("项目被停用应报 %q,得到 %q —— 会被当成'没分配过',提示就指错了方向",
+			blockReasonProjectsOff, vis.BlockedReason)
+	}
+	if !strings.Contains(dataScopeNotice(vis.BlockedReason), "停用") {
+		t.Errorf("提示里要说出是项目被停用,得到:%s", dataScopeNotice(vis.BlockedReason))
+	}
+
+	// 正常的人不该被打扰
+	ok, okReq := newScopeRequest(t, roleSupervisor, "")
+	if n := dataScopeNotice(ok.visibilityFor(okReq).BlockedReason); n != "" {
+		t.Errorf("没被限制的人不该看到任何提示,得到:%s", n)
 	}
 }

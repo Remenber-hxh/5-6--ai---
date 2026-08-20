@@ -22,6 +22,7 @@ import ReviewPage from "@/pages/ReviewPage";
 export default function App() {
   const loggedIn = useAuth((s) => s.loggedIn);
   const revalidate = useAuth((s) => s.revalidate);
+  const notice = useAuth((s) => s.user?.dataScopeNotice);
 
   // 开机问一次后端"这个 token 还认不认"。
   //
@@ -40,6 +41,9 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {/* 【数据范围提示】同 admin-web:空页面是最糟的失败方式。
+          放在 PageTransition 外面 —— 它是账号级状态,不该跟着翻页闪。 */}
+      {loggedIn && notice && <div className="scope-notice">{notice}</div>}
       {/* 转场包在 Routes 外层:它按当前路径判断层级(平级淡入 / 下钻推入 / 返回退出)。
           底栏在外面,不参与转场 —— 它是常驻的,跟着页面一起淡会显得整个 app 在闪。 */}
       <PageTransition>

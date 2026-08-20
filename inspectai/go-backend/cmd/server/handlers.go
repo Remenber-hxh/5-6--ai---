@@ -417,7 +417,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-		writeJSON(w, http.StatusOK, map[string]any{"user": user, "perms": s.permsForRole(user.RoleCode)})
+		out := map[string]any{"user": user, "perms": s.permsForRole(user.RoleCode)}
+		// 【看不到数据时要说清为什么】挂在 /me 上,前端一进来就拿到,
+		// 一处提示覆盖所有页面 —— 否则得在每个列表页各写一遍"为什么是空的"。
+		if notice := dataScopeNotice(s.visibilityFor(r).BlockedReason); notice != "" {
+			out["dataScopeNotice"] = notice
+		}
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	role := s.userRole(r)

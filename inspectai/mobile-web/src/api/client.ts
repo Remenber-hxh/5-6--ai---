@@ -18,6 +18,13 @@ export interface CurrentUser {
   avatar?: string;
   isPlatformAdmin?: boolean;
   perms?: string[];
+  /**
+   * 数据范围导致看不到数据时的说明。空 = 一切正常,不要显示任何东西。
+   *
+   * 【为什么要有】只给空列表是最糟的失败:用户以为数据丢了,反复刷新、
+   * 报"系统坏了",而管理员那边一切正常。这句话让他知道该去找谁。
+   */
+  dataScopeNotice?: string;
 }
 
 export function getToken(): string {
@@ -184,7 +191,7 @@ export async function login(
  * 机房里本来就常没信号,把人踢回登录页反而毁掉离线可用性。
  */
 export async function fetchMe(): Promise<CurrentUser | null> {
-  const body = await api<{ user: CurrentUser; perms?: string[] }>(
+  const body = await api<{ user: CurrentUser; perms?: string[]; dataScopeNotice?: string }>(
     "/api/auth/me",
   );
   const user = body.user;
@@ -192,7 +199,7 @@ export async function fetchMe(): Promise<CurrentUser | null> {
   // 后端在"本地免鉴权"模式下会回一个 status=local 的占位身份。
   // 那不是真会话,拿它覆盖本地用户会把显示名和角色改错。
   if (user.status === "local") return null;
-  return { ...user, perms: body.perms };
+  return { ...user, perms: body.perms, dataScopeNotice: body.dataScopeNotice };
 }
 
 export function logout() {

@@ -74,6 +74,10 @@ type dataVisibility struct {
 	OwnOnly bool
 	// Projects 限定到这些项目(按项目名)。空 = 不按项目限。
 	Projects []string
+	// BlockedReason 为什么什么都看不到。【必须能说出原因】——
+	// 只给空页面是最糟的失败方式:用户以为数据丢了,不知道是配置问题,
+	// 于是反复刷新、报"系统坏了",而管理员那边一切正常。
+	BlockedReason string
 	// Blocked 配了项目范围却一个项目都没分到 —— 【什么都看不到】。
 	//
 	// 这里必须 fail closed。放行的话,"限定到项目"就成了一句空话:
@@ -117,11 +121,22 @@ func (s *Server) visibilityFor(r *http.Request) dataVisibility {
 		user, ok := s.userFromSessionToken(s.tokenFromRequest(r))
 		if !ok {
 			// 配了项目范围却拿不到用户 = 判断不了他属于哪个项目 → 不给看
-			return dataVisibility{Blocked: true, OwnOnly: true}
+			return dataVisibility{Blocked: true, OwnOnly: true, BlockedReason: blockReasonNoUser}
 		}
-		names, err := s.store.ListUserProjectNames(s.tenantForRequest(r), user.ID)
-		if err != nil || len(names) == 0 {
-			return dataVisibility{Blocked: true, OwnOnly: true}
+		tenant := s.tenantForRequest(r)
+		// 【注意】这里只返回【启用中】的项目 —— 停用的项目不参与过滤。
+		names, err := s.store.ListUserProjectNames(tenant, user.ID)
+		if err != nil {
+			return dataVisibility{Blocked: true, OwnOnly: true, BlockedReason: blockReasonLookupFailed}
+		}
+		if len(names) == 0 {
+			// 一个可见项目都没有。分两种情况说清楚,别都甩一个空页面:
+			//   压根没分过    → 让他去找管理员分配
+			//   分了但全停用了 → 让他知道是项目被停用,不是数据没了
+			return dataVisibility{
+				Blocked: true, OwnOnly: true,
+				BlockedReason: s.blockedReasonForEmptyProjects(tenant, user.ID),
+			}
 		}
 		return dataVisibility{Projects: names, OwnOnly: scope == dataScopeProjectSelf}
 	default:
@@ -267,4 +282,47 @@ func (s *Server) projectScopeFor(r *http.Request, requested string) projectScope
 		Allowed:   vis.Projects,
 		Blocked:   vis.Blocked,
 	}
+}
+
+// 为什么什么都看不到。给前端挂提示用 —— 前端按这几个值给出人话,
+// 而不是让用户对着一个空列表猜。
+const (
+	blockReasonNoUser       = "no_user"           // 会话查不到人
+	blockReasonLookupFailed = "lookup_failed"     // 查项目归属出错(库的问题)
+	blockReasonNoProjects   = "no_projects"       // 从没被分配过项目
+	blockReasonProjectsOff  = "projects_disabled" // 分过,但那些项目都被停用了
+)
+
+// blockedReasonForEmptyProjects 一个可见项目都没有时,区分"没分过"和"分了但停用了"。
+//
+// 【只在已经确定看不到数据时才走这条】多一次查库,但这条路本身很罕见,
+// 而且它换来的是一句能让人自己解决问题的提示。
+func (s *Server) blockedReasonForEmptyProjects(tenantID, userID string) string {
+	ids, err := s.store.ListUserProjectIDs(tenantID, userID)
+	if err != nil {
+		return blockReasonLookupFailed
+	}
+	if len(ids) > 0 {
+		// 有归属记录,但一个启用中的都查不到 → 项目被停用了
+		return blockReasonProjectsOff
+	}
+	return blockReasonNoProjects
+}
+
+// dataScopeNotice 给用户看的一句话。空串 = 没什么要提示的。
+//
+// 【说清楚"该找谁"】"无权访问"这种话没有任何用 —— 用户不知道下一步做什么,
+// 只能来问你。每一句都带上下一步动作。
+func dataScopeNotice(reason string) string {
+	switch reason {
+	case blockReasonProjectsOff:
+		return "你所在的项目已被停用，暂时看不到数据。请联系管理员确认项目状态。"
+	case blockReasonNoProjects:
+		return "你的账号限定按项目查看，但还没有分配项目。请联系管理员分配。"
+	case blockReasonLookupFailed:
+		return "读取项目归属失败，暂时无法显示数据。请稍后重试或联系管理员。"
+	case blockReasonNoUser:
+		return "登录状态已失效，请重新登录。"
+	}
+	return ""
 }

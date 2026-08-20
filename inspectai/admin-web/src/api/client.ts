@@ -11,6 +11,13 @@ export interface CurrentUser {
   /** active / disabled / local("本地免鉴权"下的占位身份,不是真会话) */
   status?: string;
   perms?: string[]; // 登录时下发的能力键列表(权限矩阵)
+  /**
+   * 数据范围导致看不到数据时的说明。空 = 一切正常,不要显示任何东西。
+   *
+   * 【为什么要有】只给空列表是最糟的失败:用户以为数据丢了,反复刷新、
+   * 报"系统坏了",而管理员那边一切正常。这句话让他知道该去找谁。
+   */
+  dataScopeNotice?: string;
 }
 
 // 能力检查:admin 全通过,其余看登录时下发的列表
@@ -105,10 +112,12 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
  * 返回 null 表示"不是真会话"(本地免鉴权模式),此时不要覆盖本地用户。
  */
 export async function fetchMe(): Promise<CurrentUser | null> {
-  const body = await api<{ user: CurrentUser; perms?: string[] }>("/api/auth/me");
+  const body = await api<{ user: CurrentUser; perms?: string[]; dataScopeNotice?: string }>(
+    "/api/auth/me",
+  );
   const user = body.user;
   if (!user || user.status === "local") return null;
-  return { ...user, perms: body.perms };
+  return { ...user, perms: body.perms, dataScopeNotice: body.dataScopeNotice };
 }
 
 export interface LoginResult {
