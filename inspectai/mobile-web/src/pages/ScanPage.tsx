@@ -161,6 +161,19 @@ export default function ScanPage() {
     rafRef.current = requestAnimationFrame(tick);
   }
 
+  // 【进来就开摄像头】扫码页只有一件事可做,还要先点一下"打开摄像头"
+  // 等于凭空多一步 —— 巡检员举着手机站在设备前,每一下多余的点击都很烦。
+  //
+  // 被二维码带着 ?a= 进来的不开:那条路已经知道是哪台设备了,
+  // 开摄像头纯属白费电,还会弹一次没必要的权限询问。
+  useEffect(() => {
+    if (params.get(SCAN_PARAM)) return;
+    if (phase !== "idle") return;
+    void startCamera();
+    // 只在首次进入时自动开;用户手动点了"停止"之后不该又被自动打开
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => stopCamera, [stopCamera]);
 
   function startInspect() {
@@ -210,17 +223,21 @@ export default function ScanPage() {
             )}
           </div>
           <div className="scan-actions">
-            <Button block type="primary" onClick={startInspect}>
+            <Button className="btn-primary" block type="primary" onClick={startInspect}>
               开始巡检
             </Button>
             <Button
+              className="btn-ghost"
               block
+              type="ghost"
               onClick={() => nav(`/asset/${encodeURIComponent(target.assetId)}`)}
             >
               查看设备详情
             </Button>
             <Button
+              className="btn-ghost"
               block
+              type="ghost"
               onClick={() => {
                 setTarget(null);
                 setAsset(null);
@@ -245,11 +262,11 @@ export default function ScanPage() {
           </div>
           <div className="scan-actions">
             {phase === "scanning" ? (
-              <Button block onClick={() => { stopCamera(); setPhase("idle"); }}>
+              <Button className="btn-ghost" block type="ghost" onClick={() => { stopCamera(); setPhase("idle"); }}>
                 停止
               </Button>
             ) : (
-              <Button block type="primary" onClick={() => void startCamera()}>
+              <Button className="btn-primary" block type="primary" onClick={() => void startCamera()}>
                 打开摄像头
               </Button>
             )}

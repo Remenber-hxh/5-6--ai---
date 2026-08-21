@@ -133,6 +133,21 @@
 .arco-avatar .arco-avatar-text {
   font-size: inherit;
 }
+
+/* 【兜底字号】上面把按钮内层改成继承外层,而 Arco 的 .arco-button 根元素是
+   font-size: 0 —— 两条加起来的后果是:凡是没有显式写字号的按钮,文字都以
+   0 号字渲染。按钮框在、能点、不报错,就是看不见字。
+
+   这个坑踩过两次了:2026-08-10「去拍照」是个空框,2026-08-20 扫码页三个按钮
+   全是空的蓝条。前一次是在那个按钮上补字号,于是下一次照样踩。
+   这一条给所有按钮一个兜底值,业务样式(.btn-primary / .btn-ghost 等)
+   写在本文件更后面,权重相同、后来居上,照旧覆盖它。 */
+.arco-button.arco-button-size-mini,
+.arco-button.arco-button-size-small,
+.arco-button.arco-button-size-medium,
+.arco-button.arco-button-size-large {
+  font-size: 15px;
+}
 /* 同样的原因,这几处也得显式给整数字号(它们默认 0.28rem = 14.56px):
    分组标题按全站"次要说明"的 12px,右侧值和正文一致 14px。 */
 .arco-cell-group .cell-group-header,
@@ -4157,6 +4172,23 @@ a {
 }
 
 .scan-actions { display: flex; flex-direction: column; gap: 10px; }
+
+/* 【扫码页是浅色底,次要按钮必须压回浅色口径】
+ * .btn-ghost 那一套(白色描边 + color: var(--ink))是给深色皮写的 ——
+ * 登录页、拍照页那种。原样用在浅色页上,按钮框在、字是浅的,看不见。
+ *
+ * 这个坑在本项目踩过三次(表单、卡片、备案号),每次都是把深色皮的规则
+ * 搬到浅色页上。所以这里【不复用】,单独压一层。 */
+.scan-actions .btn-ghost.arco-button {
+  height: 46px;
+  border-radius: 12px;
+  background: var(--lt-card);
+  border: 1px solid var(--lt-border);
+  color: var(--lt-fg);
+  font-size: 15px;
+  font-weight: 600;
+}
+.scan-actions .btn-ghost.arco-button:active { background: var(--lt-fill); }
 .scan-hint { color: #8a99a5; font-size: 12px; text-align: center; line-height: 1.6; }
 
 /* 首页顶栏的扫码入口。
