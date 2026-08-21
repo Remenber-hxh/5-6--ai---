@@ -31,7 +31,8 @@ function fmtTime(iso: string): string {
   ).padStart(2, "0")}`;
 }
 
-// 已上传照片 → 选中 → AI 识别场景 → 确认模板 → 成单
+// 已上传照片 → 选中 → 识别 → 确认模板 → 成单
+// (扫码/复检进来的会跳过"确认模板"那一步,见 ClassifyPage)
 export default function ReviewPage() {
   const nav = useNavigate();
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -206,8 +207,11 @@ export default function ReviewPage() {
         >
           删除{picked.size ? ` (${picked.size})` : ""}
         </button>
+        {/* 【只写"识别"】原来是"AI 识别场景"。扫码进来时场景早就定了,
+            这一步只做字段识别 —— 按钮却还说要识别场景,和实际做的事对不上。
+            两条路都写"识别"都准确:普通流程它含场景+字段,扫码流程它就是字段。 */}
         <Button className="btn-primary foot-main" onClick={toClassify}>
-          AI 识别场景
+          识别
         </Button>
       </div>
     </div>
