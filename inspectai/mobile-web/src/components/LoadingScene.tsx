@@ -10,6 +10,11 @@ const SCRIPTS = {
     { t: 0, msg: "AI 正在识别场景…", step: -1 },
     { t: 4, msg: "正在匹配日报模板…", step: -1 },
   ],
+  // 扫码/复检:模板和设备都已确定,这一屏只是在建记录,没有任何 AI 在跑。
+  // 复用 classify 的文案会变成骗人 —— 用户以为在识别,其实早就跳过了。
+  known: [
+    { t: 0, msg: "设备已确认,正在建立记录…", step: -1 },
+  ],
   analyze: [
     { t: 0, msg: "正在逐张查看照片…", step: 0 },
     { t: 7, msg: "正在核对模板判定规则…", step: 1 },
@@ -20,6 +25,7 @@ const SCRIPTS = {
 
 const STEPS = {
   classify: ["识别巡检场景", "提取设备状态 / 表计读数", "匹配日报模板"],
+  known: ["设备已由二维码确认", "跳过场景识别", "建立巡检记录"],
   analyze: ["逐张查看照片", "核对模板判定规则", "生成巡检结论"],
 };
 
@@ -28,7 +34,7 @@ const TAGS = ["设备状态", "仪表读数", "异常风险", "日报模板"];
 export default function LoadingScene({
   kind,
 }: {
-  kind: "classify" | "analyze";
+  kind: "classify" | "analyze" | "known";
 }) {
   const [elapsed, setElapsed] = useState(0);
 

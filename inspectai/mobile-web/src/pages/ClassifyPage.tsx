@@ -23,6 +23,8 @@ export default function ClassifyPage() {
   const shotIds = (params.get("shots") || "").split(",").filter(Boolean);
 
   const [result, setResult] = useState<ClassifyResult | null>(null);
+  // 走"已知设备"那条快路时,等待屏要说实话(没有 AI 在跑)
+  const [skipping, setSkipping] = useState(false);
   const [templates, setTemplates] = useState<TemplateDTO[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -30,6 +32,29 @@ export default function ClassifyPage() {
     if (!shotIds.length) {
       nav("/review", { replace: true });
       return;
+    }
+    // 【已知模板就别再让 AI 猜一次】扫码和复检都已经确定了是哪台设备、用哪个模板。
+    //
+    // 原来这里【无条件】跑一次场景分类,拿到结果之后在 go() 里被 retake.templateId
+    // 覆盖掉 —— 等于花了一次 AI 调用、让人在"识别中"那屏干等十几秒,然后把结果扔了。
+    //
+    // 直接建记录跳过去:少一次调用、少一屏等待、少一个能猜错的环节。
+    const known = getRetakeTarget();
+    if (known?.templateId) {
+      setSkipping(true);
+      try {
+        const rec = await createRecordFromShots(
+          known.templateId,
+          shotIds,
+          known.pointId || undefined,
+        );
+        nav(`/record/${rec.id}`, { replace: true });
+        return;
+      } catch {
+        // 建记录失败(多半是网络)不该把人卡死在这一屏 —— 退回正常的分类流程,
+        // 照片还在服务器上,手动选模板照样走得下去。
+        setSkipping(false);
+      }
     }
     try {
       const [res, tpls] = await Promise.all([
@@ -77,6 +102,7 @@ export default function ClassifyPage() {
   }
 
   // 识别中:整屏场景,与旧版一致
+  if (skipping) return <LoadingScene kind="known" />;
   if (!result) return <LoadingScene kind="classify" />;
 
   const uncertain = result.needsManualPick || result.templateId === "unknown";
