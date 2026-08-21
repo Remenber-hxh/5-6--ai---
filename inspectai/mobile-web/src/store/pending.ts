@@ -46,6 +46,8 @@ interface PendingState {
   addFiles: (
     files: File[],
     userId: string,
+    /** 扫码锁定的设备 —— 让每张照片自己记住拍的是哪台 */
+    assetId?: string,
   ) => Promise<{ added: number; error?: string }>;
   remove: (id: string) => Promise<void>;
   /** 批量删除选中的照片 */
@@ -93,7 +95,7 @@ export const usePending = create<PendingState>((set, get) => ({
     });
   },
 
-  async addFiles(files, userId) {
+  async addFiles(files, userId, assetId) {
     if (!files.length) return { added: 0 };
     set({ saving: true });
     try {
@@ -113,6 +115,7 @@ export const usePending = create<PendingState>((set, get) => ({
             fileName: compressed.name,
             geo: null,
             userId,
+            assetId,
             capturedAt: new Date().toISOString(),
           });
           savedIds.push(shot.id);

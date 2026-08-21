@@ -183,6 +183,7 @@ export default function ScanPage() {
     setRetakeTarget({
       // 扫码是"确认是哪台设备",不是复检 —— 记录在数据上就是一次正常巡检
       mode: "scan",
+      assetId: target.assetId,
       templateId: asset?.templateId || target.templateId,
       pointId: asset?.pointId || "",
       assetNo: asset?.assetKey || target.assetNo,

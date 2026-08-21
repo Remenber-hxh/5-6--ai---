@@ -36,6 +36,14 @@ export interface PendingShot {
   geo: { lat: number; lng: number; accuracy: number } | null;
   /** 归属巡检员,便于多账号共用一台设备时区分 */
   userId: string;
+  /**
+   * 这张拍的是哪台设备(扫码时锁定的那台)。空 = 手动路径拍的,没指定。
+   *
+   * 【必须在拍的时候记】原来照片是"无主"的,归属由成单那一刻的扫码上下文决定,
+   * 于是一次巡多台会串:扫 A 拍几张、走到 B 扫 B 再拍几张,进"选照片"时
+   * 全混在一起,而上下文是 B —— 全选就全落到 B 上,A 等于没巡。
+   */
+  assetId?: string;
   status: ShotStatus;
   /** 失败次数,用于指数退避 */
   retries: number;
@@ -153,6 +161,8 @@ export async function addShot(input: {
   capturedAt?: string;
   geo?: PendingShot["geo"];
   userId: string;
+  /** 扫码锁定的设备。手动路径不传 */
+  assetId?: string;
 }): Promise<PendingShot> {
   // 预留 20% 余量:配额用满会直接写失败,提前拦住给用户可行动的提示
   const info = await getStorageInfo();
@@ -169,6 +179,7 @@ export async function addShot(input: {
     capturedAt: input.capturedAt || new Date().toISOString(),
     geo: input.geo ?? null,
     userId: input.userId,
+    assetId: input.assetId,
     status: "pending",
     retries: 0,
     nextRetryAt: 0,

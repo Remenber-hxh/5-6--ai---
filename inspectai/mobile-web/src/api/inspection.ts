@@ -13,6 +13,8 @@ export interface OfflineShotDTO {
   lat?: number;
   lng?: number;
   recordId?: string;
+  /** 这张拍的是哪台设备(扫码时带上)。空 = 手动路径拍的 */
+  assetId?: string;
   status: string;
 }
 

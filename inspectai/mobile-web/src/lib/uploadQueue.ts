@@ -39,6 +39,9 @@ async function uploadOne(shot: PendingShot): Promise<UploadOutcome> {
     }),
   );
   fd.append("capturedAt", shot.capturedAt);
+  // 带上这张拍的是哪台设备 —— 后端存进 offline_shots.asset_id,
+  // 到"选照片"那一步才分得出组,不用再靠"当前上下文"猜
+  if (shot.assetId) fd.append("assetId", shot.assetId);
   if (shot.geo) {
     fd.append("lat", String(shot.geo.lat));
     fd.append("lng", String(shot.geo.lng));

@@ -34,6 +34,12 @@ type OfflineShot struct {
 	Lat        *float64 `json:"lat,omitempty"`
 	Lng        *float64 `json:"lng,omitempty"`
 	Accuracy   *float64 `json:"accuracy,omitempty"`
+	// AssetID 这张照片拍的是哪台设备(扫码时带上)。空 = 手动路径拍的,没指定。
+	//
+	// 【为什么记在照片上而不是成单时再定】照片原来是"无主"的,归属由成单那一刻的
+	// 扫码上下文决定 —— 一次巡多台就会串:扫 A 拍几张、走到 B 扫 B 再拍几张,
+	// 进"选照片"时全混在一起,而上下文是 B,全选就全落到 B 上,A 等于没巡。
+	AssetID string `json:"assetId,omitempty"`
 	// RecordID 归档到某条巡检记录后回填;空 = 尚未成单
 	RecordID string `json:"recordId,omitempty"`
 	Status   string `json:"status"`
@@ -71,7 +77,7 @@ type OfflineShotStore interface {
 
 const offlineShotCols = `id, tenant_id, user_id, inspector, idempotency_key,
 	image_path, file_name, size_bytes, captured_at, received_at,
-	lat, lng, accuracy, record_id, status`
+	lat, lng, accuracy, record_id, status, asset_id`
 
 func scanOfflineShot(row scanner) (*OfflineShot, error) {
 	s := &OfflineShot{}
@@ -79,7 +85,7 @@ func scanOfflineShot(row scanner) (*OfflineShot, error) {
 	if err := row.Scan(
 		&s.ID, &s.TenantID, &s.UserID, &s.Inspector, &s.IdempotencyKey,
 		&s.ImagePath, &s.FileName, &s.SizeBytes, &s.CapturedAt, &s.ReceivedAt,
-		&lat, &lng, &acc, &s.RecordID, &s.Status,
+		&lat, &lng, &acc, &s.RecordID, &s.Status, &s.AssetID,
 	); err != nil {
 		return nil, err
 	}
@@ -109,10 +115,10 @@ func (s *SQLiteStore) CreateOfflineShot(shot *OfflineShot) (*OfflineShot, bool, 
 
 	_, err := s.db.Exec(
 		`INSERT INTO offline_shots (`+offlineShotCols+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		shot.ID, shot.TenantID, shot.UserID, shot.Inspector, shot.IdempotencyKey,
 		shot.ImagePath, shot.FileName, shot.SizeBytes, shot.CapturedAt, shot.ReceivedAt,
-		shot.Lat, shot.Lng, shot.Accuracy, shot.RecordID, shot.Status,
+		shot.Lat, shot.Lng, shot.Accuracy, shot.RecordID, shot.Status, shot.AssetID,
 	)
 	if err != nil {
 		// 幂等命中:唯一键冲突说明这张已经传过,返回既有行让客户端安心删本地副本
@@ -388,6 +394,9 @@ func (s *Server) handleUploadOfflineShot(w http.ResponseWriter, r *http.Request)
 		Lat:            parseFloatPtr(r.FormValue("lat")),
 		Lng:            parseFloatPtr(r.FormValue("lng")),
 		Accuracy:       parseFloatPtr(r.FormValue("accuracy")),
+		// 扫码拍的会带上设备 id —— 让照片自己记住拍的是哪台,
+		// 而不是到成单那一步再靠"当前上下文"猜(一次巡多台会串)。
+		AssetID: strings.TrimSpace(r.FormValue("assetId")),
 	}
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 		shot.UserID = user.ID

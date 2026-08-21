@@ -36,6 +36,7 @@ var migrationList = []migration{
 	{12, "registration_codes", (*SQLiteStore).migRegistrationCodes},
 	{13, "user_data_scope", (*SQLiteStore).migUserDataScope},
 	{14, "projects", (*SQLiteStore).migProjects},
+	{15, "offline_shot_asset", (*SQLiteStore).migOfflineShotAsset},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -503,6 +504,36 @@ func (s *SQLiteStore) backfillProjectsFromAssets() error {
 			newID("proj"), defaultTenantID, name, businessProjectCode(name), now, now); err != nil {
 			return fmt.Errorf("backfill project %q: %w", name, err)
 		}
+	}
+	return nil
+}
+
+// migOfflineShotAsset — 015:offline_shots 加 asset_id,记住这张照片拍的是哪台设备。
+//
+// 【为什么需要】在这之前照片是"无主"的:拍完丢进队列,到成单那一步才由
+// 当前的扫码上下文决定归属。于是一次巡多台会串 ——
+//
+//	扫 FT-6 → 拍 3 张 → 走到隔壁扫 FT-7 → 拍 3 张 → 进"选照片"
+//	6 张混在一起,而上下文是 FT-7,全选就是 6 张全落到 FT-7 上,FT-6 等于没巡
+//
+// 扫码之前这个问题被 AI 场景分类挡了一半(它至少会发现照片不是同一个场景),
+// 而扫码流程跳过了分类 —— 安全网没了。所以照片必须在【拍的时候】就记住是哪台。
+//
+// 空值 = 没扫码拍的(手动路径),行为和以前一样。
+func (s *SQLiteStore) migOfflineShotAsset() error {
+	exists, err := s.hasColumn("offline_shots", "asset_id")
+	if err != nil {
+		return fmt.Errorf("inspect offline_shots.asset_id: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	stmt := `ALTER TABLE offline_shots ADD COLUMN asset_id TEXT NOT NULL DEFAULT ''`
+	if s.dialect == "mysql" {
+		stmt = `ALTER TABLE offline_shots ADD COLUMN asset_id VARCHAR(191) NOT NULL DEFAULT ''`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("add offline_shots.asset_id: %w", err)
 	}
 	return nil
 }

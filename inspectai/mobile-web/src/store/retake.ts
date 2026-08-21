@@ -36,6 +36,13 @@ export interface RetakeTarget {
   pointId: string;
   /** 设备编号,提交时写进 asset_no —— 后端按它认归属 */
   assetNo: string;
+  /**
+   * 完整资产 ID(项目::模板::编号)。扫码时有,台账复检时也有。
+   *
+   * 【为什么除了编号还要存它】照片按设备分组要用完整 ID —— 编号在不同项目里
+   * 可能重复(各楼的编号各自排),只按编号分组会把两个项目的照片并到一起。
+   */
+  assetId?: string;
   /** 只用于界面提示 */
   assetName: string;
 }

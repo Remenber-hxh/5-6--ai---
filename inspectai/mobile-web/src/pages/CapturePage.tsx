@@ -55,7 +55,13 @@ export default function CapturePage() {
     const files = Array.from(e.target.files || []);
     e.target.value = ""; // 允许同一文件重选
     if (!files.length) return;
-    const { added, error } = await addFiles(files, user?.id || "");
+    // 扫码锁定了设备就带上 —— 让每张照片记住拍的是哪台,
+    // 不用等到成单那一步再靠"当前上下文"猜(一次巡多台会串)
+    const { added, error } = await addFiles(
+      files,
+      user?.id || "",
+      retake?.mode === "scan" ? retake.assetId : undefined,
+    );
     if (error) {
       Toast.show({ content: error, duration: 3000 });
     } else {

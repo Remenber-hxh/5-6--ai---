@@ -104,6 +104,20 @@ export default function ReviewPage() {
       Toast.show({ content: "请先选择照片" });
       return;
     }
+    // 【一次只能提交一台设备的照片】扫码拍的照片自己记着是哪台(assetId)。
+    // 不拦的话:扫 A 拍几张、走到 B 扫 B 再拍几张,这里一全选,六张全落到
+    // 一条记录上 —— 而扫码流程跳过了 AI 场景分类,连"这些照片不像同一个场景"
+    // 的兜底提示都没有,错得悄无声息。
+    const devices = new Set(
+      pickedIds.map((id) => shots.find((x) => x.id === id)?.assetId || ""),
+    );
+    if (devices.size > 1) {
+      Toast.show({
+      content: "选中的照片来自不同设备,请一次只提交一台",
+      duration: 3000,
+      });
+      return;
+    }
     // 识别与模板确认是独立一屏(旧版 sceneClassify),不塞在选图页里。
     // 选中项走 URL 参数而非 router state —— state 在刷新后会丢,用户一刷新
     // 就得重选一遍。

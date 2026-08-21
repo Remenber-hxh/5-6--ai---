@@ -208,6 +208,7 @@ export default function AssetDetailPage() {
             onClick={() => {
               setRetakeTarget({
                 mode: "recheck",
+                assetId: asset.id,
                 templateId: asset.templateId || "",
                 pointId: asset.pointId || "",
                 assetNo: asset.assetKey || asset.assetName || "",
