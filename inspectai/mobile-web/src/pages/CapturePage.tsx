@@ -122,14 +122,19 @@ export default function CapturePage() {
               onClick={() => {
                 clearRetakeTarget();
                 setRetake(null);
-                Toast.show({ content: "已取消复检" });
+                Toast.show({
+                  // 扫码只是"锁定了哪台设备",取消它不该说成"取消复检"
+                  content: retake.mode === "scan" ? "已取消锁定" : "已取消复检",
+                });
               }}
             >
               取消
             </button>
           }
         >
-          复检中:{retake.assetName}(编号已带入,重拍后自动更新这台设备)
+          {retake.mode === "scan"
+            ? `已锁定:${retake.assetName}(直接拍照即可,记录会挂到这台上)`
+            : `复检中:${retake.assetName}(编号已带入,重拍后自动更新这台设备)`}
         </NoticeBar>
       )}
 
