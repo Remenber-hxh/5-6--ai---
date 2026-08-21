@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:qr": "esbuild scripts/qr-check.ts --bundle --platform=node --outfile=node_modules/.cache/qr-check.cjs --log-level=warning && node node_modules/.cache/qr-check.cjs"
   },
   "dependencies": {
     "@arco-design/mobile-react": "^2.39.1",
+    "jsqr": "^1.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",

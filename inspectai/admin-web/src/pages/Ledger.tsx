@@ -1,10 +1,11 @@
-import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, PlusOutlined, UploadOutlined } from "@ant-design/icons";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, PlusOutlined, QrcodeOutlined, UploadOutlined } from "@ant-design/icons";
 import { AutoComplete, Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { AssetEntry, AssetSnapshotEntry, EngineeringTask, createAsset, deleteAsset, listAssetSnapshots, listAssets, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
+import AssetQRSheet from "../components/AssetQRSheet";
 import { exportCsv } from "../lib/csv";
 import { useUi } from "../store/ui";
 import { fmtTime, mediaUrl, statusTagColor } from "../lib/status";
@@ -32,6 +33,7 @@ export default function Ledger() {
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const { project } = useUi();
   const [loading, setLoading] = useState(true);
+  const [qrOpen, setQrOpen] = useState(false);
   const [params] = useSearchParams();
 
   async function reload() {
@@ -160,6 +162,11 @@ export default function Ledger() {
           <Input.Search allowClear placeholder="搜设备名 / 编号 / 项目" style={{ width: 240 }} onSearch={setKw} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { createForm.resetFields(); setCreating(true); }}>
             新增资产
+          </Button>
+          {/* 打印范围跟随当前筛选(rows 而不是 assets)——
+              想只印某个项目,先在上面筛好再点这里 */}
+          <Button icon={<QrcodeOutlined />} onClick={() => setQrOpen(true)}>
+            二维码
           </Button>
           <Button
             icon={<DownloadOutlined />}
@@ -489,6 +496,7 @@ export default function Ledger() {
           </Card>
         )}
       </div>
+      <AssetQRSheet assets={rows} open={qrOpen} onClose={() => setQrOpen(false)} />
       <Modal
         title="新增资产"
         open={creating}
