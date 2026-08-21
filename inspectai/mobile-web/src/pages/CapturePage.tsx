@@ -80,13 +80,21 @@ export default function CapturePage() {
           onClick={() => nav("/scan")}
           aria-label="扫码识别设备"
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8" />
-              <path d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8" />
-              <path d="M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16" />
-              <path d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
-              <path d="M4 12h16" />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <g
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {/* 四角取景框 */}
+              <path d="M4.5 8.5V6.2A1.7 1.7 0 0 1 6.2 4.5H8.5" />
+              <path d="M15.5 4.5h2.3A1.7 1.7 0 0 1 19.5 6.2V8.5" />
+              <path d="M19.5 15.5v2.3a1.7 1.7 0 0 1-1.7 1.7H15.5" />
+              <path d="M8.5 19.5H6.2a1.7 1.7 0 0 1-1.7-1.7V15.5" />
+              {/* 扫描线收在框内 —— 原来从 4 拉到 20,横穿四个角,看着像被划了一刀 */}
+              <path d="M7.6 12h8.8" opacity=".95" />
             </g>
           </svg>
         </button>

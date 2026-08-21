@@ -4192,17 +4192,37 @@ a {
 .scan-hint { color: #8a99a5; font-size: 12px; text-align: center; line-height: 1.6; }
 
 /* 首页顶栏的扫码入口。
- * 首页是深色皮,所以用浅色描边;不做实心按钮 —— 顶栏应该安静,
- * 中心动作只有快门一个。 */
+ *
+ * 【和头像成套】头像是 36px 的圆、外面套 44px 触控区。扫码钮原来是个 34px
+ * 的圆角方框带描边 —— 比头像小一圈、形状也不同,两个并排就是"没对齐"。
+ * 现在同样是 36px 圆 + 44px 触控区,只是填充更淡:顶栏该安静,
+ * 中心动作只有快门那一个。
+ *
+ * 描边换成淡填充:深色皮上一圈白描边很跳,反而比头像还抢眼。 */
 .scan-entry {
   margin-left: auto;
-  margin-right: 10px;
-  width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid rgba(255, 255, 255, .28);
-  border-radius: 10px;
-  background: transparent;
-  color: rgba(255, 255, 255, .88);
+  /* 两个 36px 的圆各自居中在 44px 触控区里,天然只剩 8px 间距 —— 挤。
+     再开 4px,视觉间距到 12px,和两圆直径的比例才舒服。 */
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .92);
 }
-.scan-entry:active { background: rgba(255, 255, 255, .12); }
+/* 视觉尺寸给内层,和头像的 36px 对齐 —— 并排的两个控件靠视觉直径找齐,
+   不是靠触控区。触控区仍是外层 44px,不因视觉变化而缩水。 */
+.scan-entry svg {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .09);
+  transition: background .15s ease;
+}
+.scan-entry:active svg { background: rgba(255, 255, 255, .2); }
