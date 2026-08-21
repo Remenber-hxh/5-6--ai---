@@ -18,6 +18,20 @@
 const KEY = "inspectai_mobile_retake";
 
 export interface RetakeTarget {
+  /**
+   * 这个上下文是【为什么】设上的。机制一样,但对用户来说是两件事:
+   *
+   *   recheck 台账里某台是异常/待整改,现场复查后重拍销账 —— 这才是"复检"
+   *   scan    扫了设备上的二维码,只是把设备锁定,是【一次正常巡检】
+   *
+   * 【必须分开】不分的话,扫码巡检会在首页挂一条写着"复检"的横幅、
+   * 提交后弹"复检已提交"—— 数据上明明是正常巡检,界面却说是复检。
+   * 巡检员会以为自己刚才做的是复查,主管看记录时也会被这句话误导。
+   *
+   * 缺省当 recheck:老数据(升级前存在 localStorage 里的)没有这个字段,
+   * 而在加扫码之前,这个上下文只有复检一种来源。
+   */
+  mode?: "recheck" | "scan";
   templateId: string;
   pointId: string;
   /** 设备编号,提交时写进 asset_no —— 后端按它认归属 */

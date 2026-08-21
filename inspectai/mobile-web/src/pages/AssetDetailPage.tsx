@@ -207,6 +207,7 @@ export default function AssetDetailPage() {
             className="ad-action is-primary"
             onClick={() => {
               setRetakeTarget({
+                mode: "recheck",
                 templateId: asset.templateId || "",
                 pointId: asset.pointId || "",
                 assetNo: asset.assetKey || asset.assetName || "",

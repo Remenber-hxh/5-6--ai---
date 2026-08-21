@@ -98,9 +98,12 @@ export default function PreviewPage() {
       if (wasRetake) clearRetakeTarget();
 
       Toast.show({
-        content: wasRetake
-          ? `复检已提交,「${wasRetake.assetName}」健康档案已更新`
-          : "已提交",
+        content: !wasRetake
+          ? "已提交"
+          : wasRetake.mode === "scan"
+            // 扫码只是锁定了设备,这就是一次正常巡检 —— 不能说成"复检已提交"
+            ? `已提交,「${wasRetake.assetName}」健康档案已更新`
+            : `复检已提交,「${wasRetake.assetName}」健康档案已更新`,
         position: "bottom",
       });
 

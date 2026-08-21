@@ -102,12 +102,20 @@ export default function CapturePage() {
         </button>
       </div>
 
-      {/* 复检横幅。没有它的话,巡检员根本不知道自己正处在"为某台设备复检"的
+      {/* 锁定设备的横幅。没有它的话,巡检员根本不知道自己正处在"锁定某台设备"的
           状态里 —— 而这个状态会强制模板和设备编号,拍出来的记录全挂到那台上。
-          必须能一眼看见、一键取消。 */}
+          必须能一眼看见、一键取消。
+
+          【两种来源要分开说】复检是"这台有问题,去复查销账";扫码只是
+          "已经确认是哪台了",拍出来算一次正常巡检。文案说错会让巡检员
+          以为自己在做复查。 */}
       {retake && (
         <NoticeBar
-          leftContent={<span className="nb-ic is-recheck">复检</span>}
+          leftContent={
+            <span className="nb-ic is-recheck">
+              {retake.mode === "scan" ? "扫码" : "复检"}
+            </span>
+          }
           rightContent={
             <button
               className="tb-exit"

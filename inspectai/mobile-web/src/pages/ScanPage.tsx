@@ -181,6 +181,8 @@ export default function ScanPage() {
     // 复用「复检」那套直达机制:带上模板跳过 AI 分类、带上编号让后端认归属。
     // 扫码本质上就是它的另一个入口,没必要另造一条链路。
     setRetakeTarget({
+      // 扫码是"确认是哪台设备",不是复检 —— 记录在数据上就是一次正常巡检
+      mode: "scan",
       templateId: asset?.templateId || target.templateId,
       pointId: asset?.pointId || "",
       assetNo: asset?.assetKey || target.assetNo,
