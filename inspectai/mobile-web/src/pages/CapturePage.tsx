@@ -72,6 +72,24 @@ export default function CapturePage() {
           品牌徽章也删了:顶栏已经有「智巡」,中间再放一次是重复。 */}
       <div className="capture-top">
         <span className="capture-wordmark">智巡</span>
+        {/* 扫码放顶栏右侧、头像左边。
+            【不放快门旁边】首页的中心动作只有"拍照"一件事,快门周围加东西
+            会让人误触;而扫码是"开始之前"的动作,和身份钮同属工具区。 */}
+        <button
+          className="scan-entry"
+          onClick={() => nav("/scan")}
+          aria-label="扫码识别设备"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8" />
+              <path d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8" />
+              <path d="M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16" />
+              <path d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+              <path d="M4 12h16" />
+            </g>
+          </svg>
+        </button>
         <button
           className="user-window"
           onClick={() => nav("/me")}

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import AppTabs from "@/components/AppTabs";
+import ScanPage from "@/pages/ScanPage";
 import PageTransition from "@/components/PageTransition";
 import { useAuth } from "@/store/auth";
 import ApprovalsPage from "@/pages/ApprovalsPage";
@@ -72,6 +73,9 @@ export default function App() {
           <Route path="/classify" element={guard(<ClassifyPage />)} />
           <Route path="/record/:id" element={guard(<RecordPage />)} />
           <Route path="/preview/:id" element={guard(<PreviewPage />)} />
+          {/* 扫码。两种进法都走这一页:app 内点扫码(开摄像头),
+              或微信/相机扫贴纸直接带 ?a= 进来(不用摄像头)。 */}
+          <Route path="/scan" element={guard(<ScanPage />)} />
           <Route path="/tasks" element={guard(<TasksPage />)} />
           <Route path="/ledger" element={guard(<LedgerPage />)} />
           <Route path="/approvals" element={guard(<ApprovalsPage />)} />

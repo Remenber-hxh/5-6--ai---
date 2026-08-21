@@ -4106,3 +4106,71 @@ a {
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ===== 扫码页 =====
+ *
+ * 深色底:取景框周围亮着会影响看画面,而且这一页和拍照页是同一类场景。
+ */
+.scan-screen { display: flex; flex-direction: column; }
+.scan-body { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 12px 16px 20px; }
+
+.scan-view {
+  position: relative;
+  flex: 1;
+  min-height: 300px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0b0f12;
+  display: flex; align-items: center; justify-content: center;
+}
+.scan-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-placeholder {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 28px; text-align: center;
+  color: #9fb0bb; font-size: 14px; line-height: 1.7;
+}
+/* 取景框:只解码中间 70%,框要和解码区域对齐,否则用户把码放在框里却扫不出来 */
+.scan-frame {
+  position: absolute;
+  width: 70%; aspect-ratio: 1;
+  border: 2px solid rgba(255, 255, 255, .85);
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35);
+}
+
+.scan-card {
+  background: #fff;
+  border: 1px solid #e6eaee;
+  border-radius: 14px;
+  padding: 18px 16px;
+}
+.scan-card-no { font-size: 22px; font-weight: 700; color: #14202a; }
+.scan-card-rows { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.scan-card-rows > div { display: flex; justify-content: space-between; font-size: 14px; }
+.scan-card-rows span { color: #7b8b98; }
+.scan-card-rows b { color: #14202a; font-weight: 600; }
+.scan-card-tip {
+  margin-top: 12px; padding: 10px 12px;
+  background: #fff4e5; color: #7a4a00;
+  border-radius: 8px; font-size: 13px; line-height: 1.6;
+}
+
+.scan-actions { display: flex; flex-direction: column; gap: 10px; }
+.scan-hint { color: #8a99a5; font-size: 12px; text-align: center; line-height: 1.6; }
+
+/* 首页顶栏的扫码入口。
+ * 首页是深色皮,所以用浅色描边;不做实心按钮 —— 顶栏应该安静,
+ * 中心动作只有快门一个。 */
+.scan-entry {
+  margin-left: auto;
+  margin-right: 10px;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, .88);
+  padding: 0;
+}
+.scan-entry:active { background: rgba(255, 255, 255, .12); }
