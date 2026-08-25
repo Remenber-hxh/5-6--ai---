@@ -201,6 +201,7 @@ type Store interface {
 	PromptTemplateStore
 	PermissionStore
 	ProjectStore
+	TemplateRuleStore
 
 	Close() error
 }
@@ -252,7 +253,8 @@ type MemStore struct {
 	regCodes       map[string]*RegistrationCode // key = code 本身
 	projects       map[string]*Project
 	departments    map[string]*Department
-	userProjects   map[string][]string // userID -> projectIDs
+	userProjects   map[string][]string                      // userID -> projectIDs
+	templateRules  map[string]map[string]*TemplateFieldRule // templateID -> fieldCode -> 规则
 }
 
 type memUser struct {
@@ -281,8 +283,9 @@ func NewMemStore() *MemStore {
 		departments: map[string]*Department{
 			"dept_default": {ID: "dept_default", Name: "默认部门"},
 		},
-		userProjects: map[string][]string{},
-		rolePerms:    defaultPermMatrix(),
+		userProjects:  map[string][]string{},
+		templateRules: map[string]map[string]*TemplateFieldRule{},
+		rolePerms:     defaultPermMatrix(),
 	}
 }
 

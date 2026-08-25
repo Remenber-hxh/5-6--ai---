@@ -37,6 +37,7 @@ var migrationList = []migration{
 	{13, "user_data_scope", (*SQLiteStore).migUserDataScope},
 	{14, "projects", (*SQLiteStore).migProjects},
 	{15, "offline_shot_asset", (*SQLiteStore).migOfflineShotAsset},
+	{16, "template_field_rules", (*SQLiteStore).migTemplateFieldRules},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -534,6 +535,37 @@ func (s *SQLiteStore) migOfflineShotAsset() error {
 	}
 	if _, err := s.db.Exec(stmt); err != nil {
 		return fmt.Errorf("add offline_shots.asset_id: %w", err)
+	}
+	return nil
+}
+
+// migTemplateFieldRules — 016:模板字段的必填/选填配置。
+//
+// 模板本身写死在 templates.go 里。调整某个字段填不填原来只能改代码重新部署,
+// 而这是业务规则,不该每次都排一次上线。这张表只覆盖 required 这一项 ——
+// 字段类型、选项、AI 提示词仍然来自代码,不做全量搬库(那是大改,风险不划算)。
+//
+// 表为空 = 全部按代码里的默认值,行为和加这个功能之前一样。
+func (s *SQLiteStore) migTemplateFieldRules() error {
+	stmt := `CREATE TABLE IF NOT EXISTS template_field_rules (
+		template_id TEXT NOT NULL,
+		field_code  TEXT NOT NULL,
+		required    INTEGER NOT NULL DEFAULT 0,
+		updated_at  TEXT NOT NULL DEFAULT '',
+		updated_by  TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (template_id, field_code))`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS template_field_rules (
+			template_id VARCHAR(64) NOT NULL,
+			field_code  VARCHAR(64) NOT NULL,
+			required    TINYINT     NOT NULL DEFAULT 0,
+			updated_at  VARCHAR(40) NOT NULL DEFAULT '',
+			updated_by  VARCHAR(64) NOT NULL DEFAULT '',
+			PRIMARY KEY (template_id, field_code)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("create template_field_rules: %w", err)
 	}
 	return nil
 }

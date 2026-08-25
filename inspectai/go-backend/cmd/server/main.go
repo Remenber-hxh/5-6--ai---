@@ -154,6 +154,10 @@ func main() {
 	if authToken == "" && supervisorToken == "" {
 		log.Printf("WARN: INSPECTAI_AUTH_TOKEN / INSPECTAI_SUPERVISOR_TOKEN 均未配置,本地回环免鉴权已生效 —— 仅限开发环境,生产环境严禁此状态")
 	}
+	// 模板字段的必填配置:启动时加载进缓存(reportTemplates 每次都读它)
+	if err := server.loadTemplateRules(); err != nil {
+		log.Printf("加载模板字段规则失败,先按代码默认值跑: %v", err)
+	}
 	if err := server.loadPermissions(); err != nil {
 		log.Printf("WARN: 权限矩阵加载失败,使用默认值: %v", err)
 		server.permCache.set(defaultPermMatrix())

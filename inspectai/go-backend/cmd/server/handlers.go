@@ -57,6 +57,8 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleUserRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/roles/"):
 		s.handleRoleRoutes(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/report/templates/"):
+		s.handleTemplateRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/departments/"):
 		s.handleDepartmentRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/projects/"):

@@ -691,3 +691,44 @@ export function deleteProject(id: string) {
 export function deleteRegistrationCode(code: string) {
   return api(`/api/registration-codes/${encodeURIComponent(code)}`, { method: "DELETE" });
 }
+
+// ===== 巡检模板的字段规则 =====
+//
+// 模板本身写死在后端代码里(字段、类型、选项、AI 提示词)。这里只配一件事:
+// 每个字段【必填还是选填】。改这一项原来要改代码重新部署,而它是业务规则。
+//
+// asset_no 是台账认归属的字段,后端锁死不可改成选填 —— 放开之后记录会挂不到
+// 任何设备上,而这种错要过很久对账时才发现。界面上它显示为锁定。
+
+export interface TemplateFieldDTO {
+  code: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  source: string;
+  options?: string[];
+  manualOnly?: boolean;
+}
+
+export interface ReportTemplateDTO {
+  id: string;
+  name: string;
+  project?: string;
+  assetType?: string;
+  maxImages?: number;
+  fields: TemplateFieldDTO[];
+}
+
+export function listReportTemplates() {
+  return api<{ templates: ReportTemplateDTO[] }>("/api/report/templates").then(
+    (d) => d.templates || [],
+  );
+}
+
+/** 覆盖某个模板的必填配置。只传要改的字段;传空对象 = 全部改回代码默认值。 */
+export function saveTemplateFields(id: string, required: Record<string, boolean>) {
+  return api(`/api/report/templates/${encodeURIComponent(id)}/fields`, {
+    method: "PUT",
+    body: JSON.stringify({ required }),
+  });
+}

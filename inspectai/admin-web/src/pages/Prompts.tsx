@@ -1,6 +1,7 @@
 import { Button, Card, Col, Input, Modal, Row, Select, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useState } from "react";
 
+import TemplateFieldRules from "../components/TemplateFieldRules";
 import {
   PromptField,
   PromptTemplate,
@@ -87,6 +88,7 @@ export default function Prompts() {
   }
 
   return (
+    <>
     <Card
       size="small"
       title={
@@ -220,6 +222,12 @@ export default function Prompts() {
         <pre style={{ whiteSpace: "pre-wrap", fontSize: 12.5, maxHeight: "60vh", overflow: "auto" }}>{preview}</pre>
       </Modal>
     </Card>
+    {/* 字段必填规则和提示词同属「模板配置」,放同一页少一个菜单项。
+        提示词管 AI 怎么判断,这里管表单要不要填 —— 一起看才完整。 */}
+    <div style={{ marginTop: 16 }}>
+      <TemplateFieldRules />
+    </div>
+    </>
   );
 }
 

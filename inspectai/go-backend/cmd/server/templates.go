@@ -8,7 +8,18 @@ import (
 // 当前恢复完整业务入口：紫菡雅集 + 会议中心相关模板均可选。
 // 只有已沉淀 prompt 的模板接 AI；其他模板保留人工填写路径，避免生成假识别结果。
 
+// reportTemplates 对外的唯一取模板入口 —— 代码里的定义 + 后台配置的必填覆盖。
+//
+// 【全仓只有这里和 templateByID 取模板,而后者也走这里】所以覆盖做在这一层
+// 就全局生效:表单渲染、建记录、提交校验、AI 提示词……十几处调用一处不用改,
+// 也就不会漏。散着改必然漏,而漏掉的那处不报错 —— 权限那一轮的教训。
 func reportTemplates() []ReportTemplate {
+	return applyTemplateRules(baseReportTemplates())
+}
+
+// baseReportTemplates 写死在代码里的模板定义。【不要直接调用】—— 它不带
+// 后台配置的必填覆盖,直接用会绕过配置。要模板请用 reportTemplates()。
+func baseReportTemplates() []ReportTemplate {
 	return []ReportTemplate{
 		// === 3 主场景 ===
 		{
