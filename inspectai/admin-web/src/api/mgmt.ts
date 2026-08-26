@@ -176,6 +176,15 @@ export interface EngineeringPlan {
   budgetAmount?: number;
   latestTaskId?: string;
   source?: string;
+  // 【下面这些以前没写进类型里,但接口一直在返回】保存是整行覆盖的,
+  // 编辑时没带上的字段会被清空。类型里没有 → 编辑表单拿不到 → 存回去就丢了。
+  // 表现是"我只改了个负责人,预算和备注就没了",而且不报错。
+  remark?: string;
+  sequenceNo?: string;
+  businessType?: string;
+  subType?: string;
+  budgetText?: string;
+  riskLevel?: string;
   /** yearly / monthly / weekly / daily / adhoc(临时,对外部项目组) */
   planType?: string;
   /** 每日计划专用:一周哪几天执行,"1,2,3,4,5"(1=周一 … 7=周日)。空=每天 */
@@ -203,22 +212,14 @@ export function listPlans() {
 }
 
 // 新建/编辑计划(旧版同为 POST upsert;字段口径一致)
-export function savePlan(p: {
-  id?: string;
-  workContent: string;
-  project?: string;
-  category?: string;
-  ownerName?: string;
-  cycleText?: string;
-  planEnd?: string;
-  scopeDesc?: string;
-  remark?: string;
-  planType?: string;
-  weekdays?: string;
-  assetIds?: string[];
-}) {
+// 保存计划。后端是整行覆盖(upsert 把每一列都写成传来的值),
+// 所以【编辑时必须把这条计划原有的字段一起传回去】—— 少传一个就等于清空它。
+export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) {
   return api("/api/engineering/plans", {
     method: "POST",
+    // 【status / source 只是新建时的兜底】写在展开前面,p 里带了就以 p 为准。
+    // 反过来写死的话,改一次负责人就会把「已完成」打回「待执行」,
+    // 于是「派发执行任务」按钮又冒出来,同一条计划能派发第二次。
     body: JSON.stringify({ status: "待执行", source: "manual", ...p }),
   });
 }

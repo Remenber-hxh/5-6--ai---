@@ -1,4 +1,5 @@
-import { Button, Card, Checkbox, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
+import { AutoComplete, Button, Card, Checkbox, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
+import dayjs, { Dayjs } from "dayjs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -8,11 +9,15 @@ import {
   EngineeringPlan,
   EngineeringTask,
   PLAN_TYPES,
+  ProjectEntry,
+  UserEntry,
   WEEKDAY_OPTIONS,
   dispatchPlan,
   listAssets,
   listPlans,
+  listProjects,
   listTasks,
+  listUsers,
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
@@ -64,6 +69,25 @@ const taskTag = (s?: string) => {
 const EASE = "220ms cubic-bezier(0.22, 0.61, 0.36, 1)";
 const PANEL_MOTION = { duration: 0.22, ease: [0.22, 0.61, 0.36, 1] as const };
 
+const DATE_FMT = "YYYY-MM-DD";
+type PlanRange = [Dayjs | null, Dayjs | null] | undefined;
+
+// 库里存的是日期字符串,RangePicker 要 dayjs 对象。
+//
+// 【解析不出来当没填,不要硬转】历史数据里有手打进来的 "2026年3月"、"3/1" 这种,
+// dayjs 会给出 Invalid Date —— RangePicker 拿到它渲染成空白,而且这条计划
+// 从此再也保存不了(校验永远不过),现象是"这一条编辑不了",查不到原因。
+function toRange(start?: string, end?: string): PlanRange {
+  const parse = (v?: string) => {
+    if (!v) return null;
+    const d = dayjs(v);
+    return d.isValid() ? d : null;
+  };
+  const s = parse(start);
+  const e = parse(end);
+  return s || e ? [s, e] : undefined;
+}
+
 // 详情面板字段行(旧版 label/value 样式)
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -79,6 +103,11 @@ export default function Plan() {
   const [plans, setPlans] = useState<EngineeringPlan[]>([]);
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
   const [assets, setAssets] = useState<AssetEntry[]>([]);
+  // 项目和人员用于表单的下拉。【项目必须是选的不是打的】——
+  // 权限、数据范围、看板都按项目名精确匹配,手打多一个空格就成了
+  // 一个谁都看不见的孤儿项目,而且不报错。
+  const [projectList, setProjectList] = useState<ProjectEntry[]>([]);
+  const [users, setUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [bucket, setBucket] = useState<"" | Bucket>("");
   const [proj, setProj] = useState("");
@@ -113,14 +142,18 @@ export default function Plan() {
     try {
       // 台账用于每日计划的设备多选。【取不到不该拖垮整页】——
       // 计划页的主体是计划和任务,设备清单只在建每日计划时用得上。
-      const [ps, ts, as] = await Promise.all([
+      const [ps, ts, as, prj, us] = await Promise.all([
         listPlans(),
         listTasks(),
         listAssets().catch(() => [] as AssetEntry[]),
+        listProjects().catch(() => [] as ProjectEntry[]),
+        listUsers().catch(() => [] as UserEntry[]),
       ]);
       setPlans(ps);
       setTasks(ts);
       setAssets(as);
+      setProjectList(prj);
+      setUsers(us);
     } finally {
       setLoading(false);
     }
@@ -149,6 +182,46 @@ export default function Plan() {
   const projects = useMemo(
     () => Array.from(new Set(realPlans.map((p) => p.project).filter(Boolean))) as string[],
     [realPlans],
+  );
+
+  // ===== 表单下拉的候选项 =====
+
+  // 项目:只给在册且未停用的。
+  //
+  // 【正在编辑的那条要单独并进来】它的项目可能已经停用、或是早年手打进来的,
+  // 不在候选里的话 Select 会显示成空白 —— 用户不改这一项、只改负责人,
+  // 一保存项目就没了,而且界面上看不出发生过什么。
+  const projectOptions = useMemo(() => {
+    const opts = projectList
+      .filter((p) => !p.disabled)
+      .map((p) => ({ value: p.name, label: p.name }));
+    const cur = editing && editing !== "new" ? editing.project : "";
+    if (cur && !opts.some((o) => o.value === cur)) {
+      opts.unshift({ value: cur, label: `${cur}(已停用 / 不在项目册)` });
+    }
+    return opts;
+  }, [projectList, editing]);
+
+  // 负责人:人员表做候选,但不锁死 —— 外委班组的人不一定有账号。
+  const ownerOptions = useMemo(
+    () =>
+      users
+        .filter((u) => u.status !== "停用")
+        .map((u) => {
+          const name = u.displayName || u.username || "";
+          return { value: name, label: u.departmentName ? `${name} · ${u.departmentName}` : name };
+        })
+        .filter((o) => o.value),
+    [users],
+  );
+
+  // 类型 / 点位:没有主数据表,拿历史填过的值做候选,避免同一类点位写出五种叫法。
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(new Set(plans.map((p) => p.category).filter(Boolean)))
+        .sort()
+        .map((c) => ({ value: c as string })),
+    [plans],
   );
 
   const rows = useMemo(
@@ -352,11 +425,14 @@ export default function Plan() {
                 type="primary"
                 onClick={() => {
                   setEditing("new");
-                  // 【类型跟随当前视图】在「周计划」里点新建,类型就该是周计划。
-                  // 不带的话每次都要手动改回来,改漏了这条计划会跑到别的视图去,
-                  // 而且不报错 —— 人只会觉得"我刚建的计划不见了"。
-                  form.setFieldsValue({ planType: view === "today" ? "adhoc" : view });
+                  // 【顺序不能反】resetFields 会把表单退回 initialValue(adhoc)。
+                  // 原来写成先 set 后 reset —— 于是在「月度计划」里点新建,
+                  // 类型永远显示「临时计划」,人得每次手动改回来。
                   form.resetFields();
+                  // 【类型跟随当前视图】在「周计划」里点新建,类型就该是周计划。
+                  // 改漏了这条计划会跑到别的视图去,而且不报错 ——
+                  // 人只会觉得"我刚建的计划不见了"。
+                  form.setFieldsValue({ planType: view === "today" ? "adhoc" : view });
                 }}
               >
                 新建计划
@@ -577,6 +653,9 @@ export default function Plan() {
                 <FieldRow label="预算">
                   {selPlan.budgetAmount ? `${Number(selPlan.budgetAmount).toLocaleString()} 元` : "—"}
                 </FieldRow>
+                {/* 【备注以前是只写不读的】表单里能填,但任何地方都不显示 ——
+                    填过的人以为记下来了,实际上再也看不到。有才显示,没有不占行。 */}
+                {selPlan.remark && <FieldRow label="备注">{selPlan.remark}</FieldRow>}
               </div>
               <Space
                 direction="vertical"
@@ -598,13 +677,18 @@ export default function Plan() {
                   block
                   onClick={() => {
                     setEditing(selPlan);
+                    // 【先 reset 再回填】上一次打开留在表单里的值不清掉的话,
+                    // 会串到这条计划上 —— 比如上次编辑的设备清单原样跟过来。
+                    form.resetFields();
                     form.setFieldsValue({
                       workContent: selPlan.workContent,
                       project: selPlan.project,
                       category: selPlan.category,
                       ownerName: selPlan.ownerName,
                       cycleText: selPlan.cycleText,
-                      planEnd: selPlan.planEnd,
+                      remark: selPlan.remark,
+                      budgetAmount: selPlan.budgetAmount || undefined,
+                      planRange: toRange(selPlan.planStart, selPlan.planEnd),
                       // 【这三项必须回填】不回填的话:一编辑保存,类型退回默认、
                       // 执行日和设备清单全被清空 —— 而且没有任何提示,
                       // 表现是"我只改了个负责人,第二天提醒就不来了"。
@@ -640,13 +724,22 @@ export default function Plan() {
             // Checkbox.Group 给的是数组,后端要 "1,2,3" 的串。
             // 【必须排序】不排的话勾选顺序会被原样存下来("3,1,2"),
             // 虽然判定不受影响,但下次打开看到的顺序是乱的,像坏了。
-            const { weekdayList, ...rest } = v;
+            const { weekdayList, planRange, ...rest } = v;
+            const [start, end] = (planRange as PlanRange) || [];
+            // 【编辑时以原记录打底】后端保存是整行覆盖(upsert 把每一列都写成
+            // 传来的值),表单没管到的列会被写成空。原来只传了表单里那几项,
+            // 于是改一次负责人,就把序号、业务类型、风险等级、已派发任务的关联
+            // 一并清空,状态还被打回「待执行」——「派发执行任务」按钮重新出现,
+            // 同一条计划能派发第二次。整条链路一个错都不报。
+            const base = editing !== "new" && editing ? editing : null;
             const payload = {
-              ...(editing !== "new" && editing ? { id: editing.id } : {}),
+              ...(base || {}),
               ...rest,
               weekdays: Array.isArray(weekdayList)
                 ? [...weekdayList].sort().join(",")
                 : undefined,
+              planStart: start ? start.format(DATE_FMT) : "",
+              planEnd: end ? end.format(DATE_FMT) : "",
             };
             await savePlan(payload);
             message.success("计划已保存");
@@ -661,15 +754,6 @@ export default function Plan() {
           <Form.Item name="workContent" label="计划内容" rules={[{ required: true, message: "请输入计划内容" }]}>
             <Input placeholder="如:会议中心电梯月度巡检" />
           </Form.Item>
-          <Form.Item name="project" label="项目">
-            <Input placeholder="如:会议中心" />
-          </Form.Item>
-          <Form.Item name="category" label="类型 / 点位">
-            <Input placeholder="如:有机房电梯" />
-          </Form.Item>
-          <Form.Item name="ownerName" label="负责人">
-            <Input />
-          </Form.Item>
           {/* 【类型放在最前面】它决定下面还要填什么 —— 选了「每日巡检」才需要
               执行日和设备清单。放在后面的话人会先填一堆再发现要重来。 */}
           <Form.Item
@@ -679,6 +763,43 @@ export default function Plan() {
             rules={[{ required: true, message: "请选择计划类型" }]}
           >
             <Select options={PLAN_TYPES.map((t) => ({ value: t.value, label: t.label }))} />
+          </Form.Item>
+          {/* 【项目只能选,不能打】权限、数据范围、今日看板都按项目名精确匹配。
+              手打的话多一个空格就匹配不上,这条计划对被限定项目的人直接不可见,
+              而且两边都不报错 —— 建的人以为发出去了,该看的人一直没看到。
+              留空也一样:后端会补成「默认项目」,而项目册里没有这个项目,
+              结果还是只有看得到全部数据的人才见得着。 */}
+          <Form.Item
+            name="project"
+            label="项目"
+            rules={[{ required: true, message: "必须选项目 —— 留空会归到「默认项目」,被限定项目的人看不到" }]}
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="从项目册里选"
+              options={projectOptions}
+              notFoundContent="项目册里还没有项目,先去「项目管理」登记"
+            />
+          </Form.Item>
+          {/* 【这两个用 AutoComplete 不用 Select】点位叫法和外委班组的人名
+              都没有主数据表,锁死会让人填不进去;但给候选能防住
+              同一个东西写出五种叫法(「有机房电梯」/「有机房 电梯」/「电梯-有机房」)。 */}
+          <Form.Item name="category" label="类型 / 点位">
+            <AutoComplete
+              allowClear
+              options={categoryOptions}
+              placeholder="如:有机房电梯"
+              filterOption={(input, option) => String(option?.value ?? "").includes(input)}
+            />
+          </Form.Item>
+          <Form.Item name="ownerName" label="负责人">
+            <AutoComplete
+              allowClear
+              options={ownerOptions}
+              placeholder="从人员里选,外委人员可直接填"
+              filterOption={(input, option) => String(option?.label ?? "").includes(input)}
+            />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(a, b) => a.planType !== b.planType}>
             {({ getFieldValue }) =>
@@ -714,16 +835,41 @@ export default function Plan() {
                     />
                   </Form.Item>
                 </>
-              ) : null
+              ) : (
+                // 预算只对工程类计划有意义,每日巡检不该问这个。
+                // 详情面板一直在显示「预算」,但表单以前根本没有这一项 ——
+                // 也就是说那个数字只能靠导入,后台永远填不进去。
+                <Form.Item name="budgetAmount" label="预算">
+                  {/* 【显式给泛型】不写的话 TS 会从 min={0} 把值类型推成字面量 0,
+                      parser 返回任何别的数字都编译不过。 */}
+                  <InputNumber<number>
+                    min={0}
+                    precision={2}
+                    style={{ width: "100%" }}
+                    addonAfter="元"
+                    placeholder="可不填"
+                    formatter={(v) => (v == null ? "" : `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ","))}
+                    parser={(v) => (v ? Number(v.replace(/,/g, "")) : 0)}
+                  />
+                </Form.Item>
+              )
             }
+          </Form.Item>
+          {/* 【日期用选的】原来是手打 "YYYY-MM-DD" 的文本框:打错格式不报错,
+              存进去之后排序、筛选、看板全部按字符串比,一条 "2026/3/1" 会永远排在最前面。
+              而且起始日期以前根本没有入口 —— 列表的「计划节点」列只能显示单边。 */}
+          <Form.Item name="planRange" label="计划区间" extra="留空 = 长期有效">
+            <DatePicker.RangePicker
+              style={{ width: "100%" }}
+              format={DATE_FMT}
+              allowEmpty={[true, true]}
+              placeholder={["开始日期", "截止日期"]}
+            />
           </Form.Item>
           {/* 【原来叫「周期」】有了计划类型和执行日之后它不参与任何逻辑了,
               还叫周期会和上面的类型打架 —— 人不知道该信哪个。改成纯说明。 */}
           <Form.Item name="cycleText" label="说明">
             <Input placeholder="补充说明,不参与排期" />
-          </Form.Item>
-          <Form.Item name="planEnd" label="截止日期">
-            <Input placeholder="YYYY-MM-DD" />
           </Form.Item>
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={2} />
