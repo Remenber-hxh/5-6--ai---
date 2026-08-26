@@ -38,6 +38,9 @@ var migrationList = []migration{
 	{14, "projects", (*SQLiteStore).migProjects},
 	{15, "offline_shot_asset", (*SQLiteStore).migOfflineShotAsset},
 	{16, "template_field_rules", (*SQLiteStore).migTemplateFieldRules},
+	{17, "template_settings", (*SQLiteStore).migTemplateSettings},
+	{18, "plan_type", (*SQLiteStore).migPlanType},
+	{19, "app_settings", (*SQLiteStore).migAppSettings},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -566,6 +569,99 @@ func (s *SQLiteStore) migTemplateFieldRules() error {
 	}
 	if _, err := s.db.Exec(stmt); err != nil {
 		return fmt.Errorf("create template_field_rules: %w", err)
+	}
+	return nil
+}
+
+// migTemplateSettings — 017:模板级的设置(目前只有"每单最少几张照片")。
+//
+// 【为什么不塞进 016 那张表】那张是 (template_id, field_code) 两列主键的
+// 字段级配置。硬塞的话得编一个假的 field_code(比如 "__min_images"),
+// 之后每个读那张表的地方都要记得把它排除掉 —— 迟早有人忘掉一处,
+// 那个假字段就会跑到界面上、跑进校验里。多一张表比多一个特例便宜。
+//
+// 表为空 = 全按模板代码里的默认值(现在是 5),行为不变。
+func (s *SQLiteStore) migTemplateSettings() error {
+	stmt := `CREATE TABLE IF NOT EXISTS template_settings (
+		template_id TEXT PRIMARY KEY,
+		min_images  INTEGER NOT NULL DEFAULT 0,
+		updated_at  TEXT NOT NULL DEFAULT '',
+		updated_by  TEXT NOT NULL DEFAULT '')`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS template_settings (
+			template_id VARCHAR(64) NOT NULL PRIMARY KEY,
+			min_images  INT         NOT NULL DEFAULT 0,
+			updated_at  VARCHAR(40) NOT NULL DEFAULT '',
+			updated_by  VARCHAR(64) NOT NULL DEFAULT ''
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("create template_settings: %w", err)
+	}
+	return nil
+}
+
+// migPlanType — 018:计划分类型 + 每日计划的执行日。
+//
+// 原来只有一个自由文本的「周期」字段(CycleText),人写什么都行 ——
+// "每周一次""每月""季度" 各种写法混在一起,程序没法据此算出"今天该巡什么"。
+//
+// 现在分成五类:年度 / 月度 / 周 / 每日 / 临时(对外部项目组的对接计划)。
+// 【刻意不做逐级分解】年度拆月度、月度拆周那一套要父子关系和分解界面,
+// 而实际需要的只是"这条属于哪一档"。等真的要看分解关系时再说。
+//
+// weekdays 只对每日计划有意义:一周哪几天执行。存 "1,2,3,4,5" 这样的串
+// (1=周一 … 7=周日)。空 = 每天。
+//
+// 空的 plan_type 一律当「临时」处理 —— 存量数据没有这个字段,
+// 而它们本来就是零散录进来的。
+func (s *SQLiteStore) migPlanType() error {
+	for _, c := range []struct{ name, sqlite, mysql string }{
+		{"plan_type", `TEXT NOT NULL DEFAULT ''`, `VARCHAR(24) NOT NULL DEFAULT ''`},
+		{"weekdays", `TEXT NOT NULL DEFAULT ''`, `VARCHAR(32) NOT NULL DEFAULT ''`},
+	} {
+		exists, err := s.hasColumn("engineering_plan_items", c.name)
+		if err != nil {
+			return fmt.Errorf("inspect engineering_plan_items.%s: %w", c.name, err)
+		}
+		if exists {
+			continue
+		}
+		def := c.sqlite
+		if s.dialect == "mysql" {
+			def = c.mysql
+		}
+		if _, err := s.db.Exec(
+			`ALTER TABLE engineering_plan_items ADD COLUMN ` + c.name + ` ` + def); err != nil {
+			return fmt.Errorf("add engineering_plan_items.%s: %w", c.name, err)
+		}
+	}
+	return nil
+}
+
+// migAppSettings — 019:通用设置表(键值对)。
+//
+// 目前只放两样:每日提醒的推送时间、开关。做成键值对而不是给每个设置加一列,
+// 是因为这类"运营参数"会一直长 —— 每加一个就改一次表结构,
+// 而它们之间没有任何关系,不值得各占一列。
+//
+// 【不放密钥】密钥走 secrets 文件,不进这张表 —— 这张表管理员在后台看得到。
+func (s *SQLiteStore) migAppSettings() error {
+	stmt := `CREATE TABLE IF NOT EXISTS app_settings (
+		k          TEXT PRIMARY KEY,
+		v          TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		updated_by TEXT NOT NULL DEFAULT '')`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS app_settings (
+			k          VARCHAR(64)  NOT NULL PRIMARY KEY,
+			v          VARCHAR(255) NOT NULL DEFAULT '',
+			updated_at VARCHAR(40)  NOT NULL DEFAULT '',
+			updated_by VARCHAR(64)  NOT NULL DEFAULT ''
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("create app_settings: %w", err)
 	}
 	return nil
 }

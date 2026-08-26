@@ -716,6 +716,8 @@ export interface ReportTemplateDTO {
   project?: string;
   assetType?: string;
   maxImages?: number;
+  /** 每单最少几张照片。0 = 不限 */
+  minImages?: number;
   fields: TemplateFieldDTO[];
 }
 
@@ -726,9 +728,14 @@ export function listReportTemplates() {
 }
 
 /** 覆盖某个模板的必填配置。只传要改的字段;传空对象 = 全部改回代码默认值。 */
-export function saveTemplateFields(id: string, required: Record<string, boolean>) {
+export function saveTemplateFields(
+  id: string,
+  required: Record<string, boolean>,
+  /** 每单最少几张照片。不传 = 不改这一项 */
+  minImages?: number,
+) {
   return api(`/api/report/templates/${encodeURIComponent(id)}/fields`, {
     method: "PUT",
-    body: JSON.stringify({ required }),
+    body: JSON.stringify(minImages === undefined ? { required } : { required, minImages }),
   });
 }

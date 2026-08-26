@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -40,12 +41,15 @@ var templateRuleCache = struct {
 	mu sync.RWMutex
 	// templateID -> fieldCode -> required
 	required map[string]map[string]bool
+	// templateID -> 每单最少几张照片(0 或没配 = 用模板代码里的默认值)
+	minImages map[string]int
 }{}
 
 // setTemplateRules 覆盖整份缓存(启动加载 / 保存后刷新)。
-func setTemplateRules(rules map[string]map[string]bool) {
+func setTemplateRules(rules map[string]map[string]bool, minImages map[string]int) {
 	templateRuleCache.mu.Lock()
 	templateRuleCache.required = rules
+	templateRuleCache.minImages = minImages
 	templateRuleCache.mu.Unlock()
 }
 
@@ -55,11 +59,17 @@ func setTemplateRules(rules map[string]map[string]bool) {
 func applyTemplateRules(tpls []ReportTemplate) []ReportTemplate {
 	templateRuleCache.mu.RLock()
 	rules := templateRuleCache.required
+	minImages := templateRuleCache.minImages
 	templateRuleCache.mu.RUnlock()
-	if len(rules) == 0 {
+	if len(rules) == 0 && len(minImages) == 0 {
 		return tpls
 	}
 	for i := range tpls {
+		// 【0 表示"没配过",不是"不限"】后台不允许存 0(见 handleSaveTemplateSettings),
+		// 所以这里看到 0 一律当没配,保持模板代码里的默认值。
+		if n, ok := minImages[tpls[i].ID]; ok && n > 0 {
+			tpls[i].MinImages = n
+		}
 		byField := rules[tpls[i].ID]
 		if len(byField) == 0 {
 			continue
@@ -94,6 +104,9 @@ type TemplateFieldRule struct {
 // TemplateRuleStore — 模板字段规则的读写
 type TemplateRuleStore interface {
 	ListTemplateFieldRules() ([]*TemplateFieldRule, error)
+	// ListTemplateSettings 模板级设置:templateID -> 每单最少几张照片。
+	ListTemplateSettings() (map[string]int, error)
+	SetTemplateMinImages(templateID string, minImages int, operator string) error
 	// ReplaceTemplateFieldRules 覆盖某个模板的全部字段规则(一次保存一个模板)。
 	ReplaceTemplateFieldRules(templateID string, rules []*TemplateFieldRule) error
 }
@@ -118,7 +131,17 @@ func (s *Server) loadTemplateRules() error {
 		}
 		next[r.TemplateID][r.FieldCode] = r.Required
 	}
-	setTemplateRules(next)
+	settings, err := s.store.ListTemplateSettings()
+	if err != nil {
+		return err
+	}
+	mins := map[string]int{}
+	for id, n := range settings {
+		if n > 0 {
+			mins[id] = n
+		}
+	}
+	setTemplateRules(next, mins)
 	return nil
 }
 
@@ -225,6 +248,8 @@ func (s *Server) handleSaveTemplateFields(w http.ResponseWriter, r *http.Request
 	var req struct {
 		// Required: 字段编码 -> 是否必填。只传要覆盖的字段;没传的走代码默认值。
 		Required map[string]bool `json:"required"`
+		// MinImages: 每单最少几张照片。nil = 不改;0 = 改回模板默认值。
+		MinImages *int `json:"minImages"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -252,6 +277,20 @@ func (s *Server) handleSaveTemplateFields(w http.ResponseWriter, r *http.Request
 		rules = append(rules, &TemplateFieldRule{
 			TemplateID: templateID, FieldCode: code, Required: required, UpdatedBy: operator,
 		})
+	}
+	if req.MinImages != nil {
+		n := *req.MinImages
+		// 上限挡一下手滑:模板本身有单次上传上限(MaxImages),最少张数超过它
+		// 就永远提交不了 —— 而巡检员在现场只会看到"还差 N 张",拍到死也够不着。
+		if n < 0 || (tpl.MaxImages > 0 && n > tpl.MaxImages) {
+			writeError(w, http.StatusBadRequest, "bad_min_images",
+				fmt.Sprintf("最少张数要在 0 到 %d 之间(0 表示不限)", tpl.MaxImages))
+			return
+		}
+		if err := s.store.SetTemplateMinImages(templateID, n, operator); err != nil {
+			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
 	}
 	if err := s.store.ReplaceTemplateFieldRules(templateID, rules); err != nil {
 		writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
@@ -282,4 +321,67 @@ func (s *Server) handleTemplateRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handleSaveTemplateFields(w, r, id)
+}
+
+// ===== 模板级设置(最少照片数) =====
+
+func (s *SQLiteStore) ListTemplateSettings() (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT template_id, min_images FROM template_settings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) SetTemplateMinImages(templateID string, minImages int, operator string) error {
+	now := nowStamp()
+	// 先删后插:省掉两种方言的 upsert 差异,而且"改回默认"就是传 0 → 删掉这一行,
+	// 不会留下一条 min_images=0 的幽灵配置。
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM template_settings WHERE template_id = ?`, templateID); err != nil {
+		return err
+	}
+	if minImages > 0 {
+		if _, err := tx.Exec(
+			`INSERT INTO template_settings (template_id, min_images, updated_at, updated_by)
+			 VALUES (?, ?, ?, ?)`, templateID, minImages, now, operator); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *MemStore) ListTemplateSettings() (map[string]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]int{}
+	for k, v := range s.templateMinImages {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (s *MemStore) SetTemplateMinImages(templateID string, minImages int, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if minImages > 0 {
+		s.templateMinImages[templateID] = minImages
+	} else {
+		delete(s.templateMinImages, templateID)
+	}
+	return nil
 }

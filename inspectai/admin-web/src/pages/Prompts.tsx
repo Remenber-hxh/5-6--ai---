@@ -1,5 +1,6 @@
-import { Button, Card, Col, Input, Modal, Row, Select, Skeleton, Space, Table, Tag, message } from "antd";
+import { Button, Card, Col, Input, Modal, Row, Select, Skeleton, Space, Table, Tabs, Tag, message } from "antd";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import TemplateFieldRules from "../components/TemplateFieldRules";
 import {
@@ -19,6 +20,20 @@ export default function Prompts() {
   const [preview, setPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // 【Tab 状态写进地址栏】不写的话:刷新回到第一个 Tab、想把「提交规则」
+  // 发给同事只能说"你点进去往右切一下"。
+  //
+  // 用 replace 不用 push:切 Tab 不该往浏览器历史里堆 —— 否则连切五下,
+  // 想退出这个页面要按五次返回。刷新保持和链接可分享这两个好处不受影响。
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "rules" ? "rules" : "prompt";
+  const setTab = (k: string) => {
+    const next = new URLSearchParams(params);
+    if (k === "prompt") next.delete("tab");
+    else next.set("tab", k);
+    setParams(next, { replace: true });
+  };
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -79,15 +94,13 @@ export default function Prompts() {
     setPreview(await renderPromptTemplate(current.id));
   }
 
-  if (loading && !current) {
-    return (
+  // 提示词那一屏的内容(加载中先摆骨架,否则 Tab 会闪一下不见)
+  const promptPane =
+    loading && !current ? (
       <Card title="提示词模板">
         <Skeleton active paragraph={{ rows: 8 }} />
       </Card>
-    );
-  }
-
-  return (
+    ) : (
     <>
     <Card
       size="small"
@@ -222,13 +235,23 @@ export default function Prompts() {
         <pre style={{ whiteSpace: "pre-wrap", fontSize: 12.5, maxHeight: "60vh", overflow: "auto" }}>{preview}</pre>
       </Modal>
     </Card>
-    {/* 字段必填规则和提示词同属「模板配置」,放同一页少一个菜单项。
-        提示词管 AI 怎么判断,这里管表单要不要填 —— 一起看才完整。 */}
-    <div style={{ marginTop: 16 }}>
-      <TemplateFieldRules />
-    </div>
     </>
   );
+
+  // 【一个侧栏入口,页内分板块】提示词和提交规则是两件事:一个管 AI 怎么判断,
+  // 一个管表单要交什么才算数。堆在同一页要一直往下滚;拆成两个菜单项又让
+  // 侧栏更长。Tab 两头都不占。
+  return (
+    <Tabs
+      activeKey={tab}
+      onChange={setTab}
+      items={[
+        { key: "prompt", label: "提示词", children: promptPane },
+        { key: "rules", label: "提交规则", children: <TemplateFieldRules /> },
+      ]}
+    />
+  );
 }
+
 
 const lbl: React.CSSProperties = { fontSize: 12, color: "#8aa0b0", marginBottom: 4 };

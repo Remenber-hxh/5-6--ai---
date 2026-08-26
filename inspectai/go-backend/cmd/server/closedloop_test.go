@@ -118,6 +118,9 @@ func TestSubmitIdempotency(t *testing.T) {
 				Code: "reading", Label: "读数", Required: true,
 				Value: "123", Source: "human-confirmed", Confidence: 0.97,
 			}},
+			// 【模板要求每单至少 5 张照片】这条用例验的是提交幂等,不是照片数,
+			// 但记录本身必须是能提交的 —— 否则第一步就被 400 挡住,后面全测不到。
+			Images: fixtureImages(5),
 		})
 		if err != nil {
 			t.Fatalf("CreateRecord(%s): %v", id, err)
@@ -235,3 +238,15 @@ func TestApproveChangeRequestSyncsAssetAndClosesLoop(t *testing.T) {
 }
 
 var _ = json.Marshal // 保留 import 以备扩展断言
+
+// fixtureImages 造 n 张占位照片,让记录满足模板的最少张数要求。
+func fixtureImages(n int) []ImageInfo {
+	out := make([]ImageInfo, 0, n)
+	for i := range n {
+		out = append(out, ImageInfo{
+			ID: "img_" + itoaSafe(i), FileName: "p" + itoaSafe(i) + ".jpg",
+			Path: "/tmp/p" + itoaSafe(i) + ".jpg", Size: 1024, CreatedAt: time.Now(),
+		})
+	}
+	return out
+}

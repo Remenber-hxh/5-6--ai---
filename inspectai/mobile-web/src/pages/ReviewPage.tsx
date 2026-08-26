@@ -10,8 +10,10 @@ import {
   OfflineShotDTO,
   deleteOfflineShots,
   listOfflineShots,
+  listTemplates,
 } from "@/api/inspection";
 import { useResource } from "@/hooks/useResource";
+import { getRetakeTarget } from "@/store/retake";
 
 /** 拍摄与上传的时间差:离线越久差越大。公开展示,不隐藏 */
 function offlineGap(shot: OfflineShotDTO): string {
@@ -49,6 +51,22 @@ export default function ReviewPage() {
     errorText: "加载失败,请下拉重试",
   });
   const shots = data ?? [];
+
+  // 扫码或复检进来时模板是【已知】的,可以在这一步就说清还差几张 ——
+  // 而不是等填完一整张表、点提交才被后端打回来。普通流程要等 AI 分完场景
+  // 才知道用哪个模板,那条路只能靠提交时的复核兜底。
+  const [minImages, setMinImages] = useState(0);
+  useEffect(() => {
+    const known = getRetakeTarget();
+    if (!known?.templateId) return;
+    listTemplates()
+      .then((tpls) => {
+        const hit = tpls.find((t) => t.id === known.templateId);
+        setMinImages(hit?.minImages || 0);
+      })
+      .catch(() => void 0);
+  }, []);
+  const shortOf = minImages > 0 ? Math.max(0, minImages - picked.size) : 0;
 
   // 默认全选:绝大多数情况就是把刚传的这批一起成单
   useEffect(() => {
@@ -104,6 +122,13 @@ export default function ReviewPage() {
       Toast.show({ content: "请先选择照片" });
       return;
     }
+    if (shortOf > 0) {
+      Toast.show({
+        content: `这类巡检至少要 ${minImages} 张照片,还差 ${shortOf} 张`,
+        duration: 3000,
+      });
+      return;
+    }
     // 【一次只能提交一台设备的照片】扫码拍的照片自己记着是哪台(assetId)。
     // 不拦的话:扫 A 拍几张、走到 B 扫 B 再拍几张,这里一全选,六张全落到
     // 一条记录上 —— 而扫码流程跳过了 AI 场景分类,连"这些照片不像同一个场景"
@@ -152,6 +177,11 @@ export default function ReviewPage() {
         <div className="flow-sub-row flow-caption">
           <span>
             已上传 {shots.length} 张 · 选中 {picked.size} 张
+            {minImages > 0 && (
+              <span className={shortOf > 0 ? "rv-short" : "rv-ok"}>
+                {shortOf > 0 ? ` · 还差 ${shortOf} 张` : " · 张数已够"}
+              </span>
+            )}
           </span>
           <button
             className="sel-btn"

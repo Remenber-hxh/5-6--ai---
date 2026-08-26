@@ -1,11 +1,11 @@
 import { SaveOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Segmented, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Card, InputNumber, Segmented, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { ReportTemplateDTO, listReportTemplates, saveTemplateFields } from "../api/mgmt";
 
 /**
- * 巡检模板 · 字段必填规则。
+ * 巡检模板 · 提交规则(字段必填 + 每单最少照片数)。
  *
  * 模板本身（字段、类型、选项、AI 提示词）写死在后端代码里。这一屏只配一件事：
  * 每个字段**必填还是选填**——这是业务规则，不该每次调整都排一次上线。
@@ -18,6 +18,7 @@ export default function TemplateFieldRules() {
   const [templates, setTemplates] = useState<ReportTemplateDTO[]>([]);
   const [current, setCurrent] = useState<string>("");
   const [draft, setDraft] = useState<Record<string, boolean>>({});
+  const [minImages, setMinImages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -48,12 +49,14 @@ export default function TemplateFieldRules() {
     const next: Record<string, boolean> = {};
     for (const f of tpl.fields) next[f.code] = f.required;
     setDraft(next);
+    setMinImages(tpl.minImages ?? 0);
   }, [tpl]);
 
   const dirty = useMemo(() => {
     if (!tpl) return false;
+    if (minImages !== (tpl.minImages ?? 0)) return true;
     return tpl.fields.some((f) => draft[f.code] !== undefined && draft[f.code] !== f.required);
-  }, [tpl, draft]);
+  }, [tpl, draft, minImages]);
 
   const requiredCount = useMemo(
     () => (tpl ? tpl.fields.filter((f) => draft[f.code] ?? f.required).length : 0),
@@ -70,7 +73,7 @@ export default function TemplateFieldRules() {
         if (f.code === "asset_no") continue;
         payload[f.code] = draft[f.code] ?? f.required;
       }
-      await saveTemplateFields(tpl.id, payload);
+      await saveTemplateFields(tpl.id, payload, minImages);
       message.success("已保存，巡检端立即生效");
       await load();
     } catch (e) {
@@ -82,7 +85,7 @@ export default function TemplateFieldRules() {
 
   return (
     <Card
-      title="巡检模板 · 字段必填规则"
+      title="巡检模板 · 提交规则"
       loading={loading}
       extra={
         <Button
@@ -98,7 +101,7 @@ export default function TemplateFieldRules() {
     >
       <Space direction="vertical" size={14} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginTop: -8, marginBottom: 0 }}>
-          调整每个字段填不填。保存后巡检端立即生效，不需要重新部署。
+          配置这一单要交什么才算数：每个字段填不填、最少几张照片。保存后巡检端立即生效，不需要重新部署。
           字段名称、类型和选项仍由系统定义，这里不改。
         </Typography.Paragraph>
 
@@ -122,9 +125,27 @@ export default function TemplateFieldRules() {
                   : undefined
               }
             />
+            {/* 【照片数量和字段必填放在一起】它们是同一件事:这一单要交什么才算数。
+                分到两个地方配,改的时候会漏掉一半。 */}
+            <Space>
+              <span style={{ color: "#666" }}>每单最少照片</span>
+              <InputNumber
+                min={0}
+                max={tpl.maxImages || 20}
+                value={minImages}
+                onChange={(v) => setMinImages(v ?? 0)}
+                style={{ width: 110 }}
+                addonAfter="张"
+              />
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                0 = 不限；上限 {tpl.maxImages || 20} 张（超过上限就永远提交不了）
+              </Typography.Text>
+            </Space>
             <Table<ReportTemplateDTO["fields"][number]>
               rowKey="code"
               size="middle"
+              // 放不下就横向滚,不要压缩列宽 —— 压缩的结果是中文逐字换行
+              scroll={{ x: "max-content" }}
               pagination={false}
               dataSource={tpl.fields}
               columns={[

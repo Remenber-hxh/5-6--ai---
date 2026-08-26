@@ -141,6 +141,8 @@ export default function RegistrationCodes({ roles }: { roles: RoleEntry[] }) {
         size="middle"
         loading={loading}
         dataSource={codes}
+        // 放不下就横向滚,不要压缩列宽 —— 压缩的结果是中文逐字换行
+        scroll={{ x: "max-content" }}
         pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个` }}
         columns={[
           {

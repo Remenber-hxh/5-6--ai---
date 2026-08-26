@@ -1,6 +1,7 @@
 import { PlusOutlined, SaveOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Table, Tag, Tooltip, message } from "antd";
-import { useEffect, useState } from "react";
+import { Button, Card, Checkbox, Col, Form, Input, Menu, Modal, Popconfirm, Row, Select, Skeleton, Space, Table, Tag, Tooltip, message } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import {
   Department,
@@ -60,6 +61,47 @@ export default function Users() {
   const [form] = Form.useForm();
   const [pwdForm] = Form.useForm();
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
+
+  // ===== 页内左侧导航 =====
+  //
+  // 这一页原来是六张卡片从上到下堆一屏:用户、角色、权限矩阵、部门、项目、注册码。
+  // 想找注册码要一路滚到最底,而且滚下去之后完全不知道自己在哪一块。
+  //
+  // 拆成六个菜单项挂到侧栏又会让侧栏更长 —— 那才是真正该保持精简的地方。
+  // 所以用页内导航:侧栏条目数不变,这一页内部却分得清清楚楚(GitHub Settings 就是这样)。
+  const isAdmin = me?.roleCode === "admin";
+  const paneNav = useMemo(
+    () =>
+      [
+        { key: "users", label: "用户" },
+        // 【非管理员看不到的块,菜单项也不能留】留着的话点进去是一片空白,
+        // 看起来像页面坏了 —— 而不是"你没这个权限"。
+        ...(isAdmin
+          ? [
+              { key: "roles", label: "角色管理" },
+              { key: "matrix", label: "权限矩阵" },
+              { key: "dept", label: "部门" },
+              { key: "project", label: "项目" },
+              { key: "invite", label: "注册码" },
+            ]
+          : []),
+      ],
+    [isAdmin],
+  );
+
+  // 标签状态写进地址栏:刷新留在原处,也能把「注册码」的链接直接发给同事。
+  // 用 replace 不用 push —— 切来切去不该往浏览器历史里堆。
+  const [params, setParams] = useSearchParams();
+  const raw = params.get("tab") || "users";
+  // 【地址栏里的值可能是他看不了的那一块】比如经理点开别人发来的 ?tab=matrix。
+  // 不兜底的话右边一片空白,左边也没有对应的选中项。
+  const tab = paneNav.some((n) => n.key === raw) ? raw : "users";
+  const setTab = (k: string) => {
+    const next = new URLSearchParams(params);
+    if (k === "users") next.delete("tab");
+    else next.set("tab", k);
+    setParams(next, { replace: true });
+  };
 
   async function load() {
     setLoading(true);
@@ -240,8 +282,26 @@ export default function Users() {
   }
 
   return (
-    <>
-    <Card
+    // 【必须 wrap={false}】antd 的 Row 默认允许换行:右边内容一宽(表格列多、
+    // 权限矩阵横向能到十几列),整个内容区就被挤到左侧菜单【下面】去,
+    // 看起来像布局塌了。左右分栏这种场景永远不该换行。
+    <Row gutter={16} wrap={false}>
+      <Col flex="168px" style={{ flex: "0 0 168px" }}>
+        {/* 【跟着滚】用户表能有几十行,滚下去之后菜单跟着划走,想切到别的块
+            得先滚回顶部。sticky 让它一直贴在视口上沿。 */}
+        <div className="pane-nav">
+          <Menu
+            mode="inline"
+            selectedKeys={[tab]}
+            items={paneNav}
+            onClick={({ key }) => setTab(key)}
+          />
+        </div>
+      </Col>
+      {/* minWidth: 0 让宽表格在这一列内部横向滚动,而不是把整列撑开 */}
+      <Col flex="auto" style={{ minWidth: 0, overflowX: "auto" }}>
+      {tab === "users" && (
+      <Card
       title="用户与权限"
       extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit("new")}>
@@ -254,9 +314,13 @@ export default function Users() {
         size="middle"
         loading={loading}
         dataSource={users}
+        // 放不下就横向滚,不要压缩列宽 —— 压缩的结果是中文逐字换行
+        scroll={{ x: "max-content" }}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 人` }}
         columns={[
-          { title: "姓名", dataIndex: "displayName" },
+          // 【必须给宽度】不给的话这一列会被压到最窄,"临时工程主管"变成
+          // 一列竖排的单字。列宽在窄屏下是靠横向滚动解决的,不是靠压缩。
+          { title: "姓名", dataIndex: "displayName", width: 120 },
           { title: "账号", dataIndex: "username", width: 150 },
           { title: "角色", width: 130, render: (_, u) => roleTag(u.roleCode, u.roleName) },
           { title: "部门", width: 130, render: (_, u) => u.departmentName || "—" },
@@ -407,8 +471,9 @@ export default function Users() {
           </Form.Item>
         </Form>
       </Modal>
-    </Card>
-    {me?.roleCode === "admin" && (
+      </Card>
+      )}
+      {tab === "roles" && me?.roleCode === "admin" && (
       <Card
         title="角色管理"
         style={{ marginTop: 16 }}
@@ -475,8 +540,8 @@ export default function Users() {
           </Form>
         </Modal>
       </Card>
-    )}
-    {me?.roleCode === "admin" && permCatalog.length > 0 && (
+      )}
+      {tab === "matrix" && me?.roleCode === "admin" && permCatalog.length > 0 && (
       <Card
         title="角色权限矩阵"
         style={{ marginTop: 16 }}
@@ -531,11 +596,10 @@ export default function Users() {
       </Card>
       )}
 
-      {/* 注册码放在用户列表下面:它和"新建用户"是同一件事的两条路 ——
-          一个一个建 vs 发一张码让人自助注册。挨着放,管理员才会想起还有这条路。 */}
-      {me?.roleCode === "admin" && <Departments users={users} onChanged={load} />}
-      {me?.roleCode === "admin" && <Projects />}
-      <RegistrationCodes roles={roles} />
-      </>
+      {tab === "dept" && <Departments users={users} onChanged={load} />}
+      {tab === "project" && <Projects />}
+      {tab === "invite" && <RegistrationCodes roles={roles} />}
+        </Col>
+      </Row>
     );
 }

@@ -93,6 +93,8 @@ export default function Projects() {
         size="middle"
         loading={loading}
         dataSource={list}
+        // 放不下就横向滚,不要压缩列宽 —— 压缩的结果是中文逐字换行
+        scroll={{ x: "max-content" }}
         pagination={false}
         columns={[
           { title: "项目名称", dataIndex: "name" },

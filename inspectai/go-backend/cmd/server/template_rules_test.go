@@ -28,13 +28,13 @@ func findField(tplID, code string) (TemplateField, bool) {
 // 【asset_no 必须锁死】它是台账认归属的字段。放开成选填之后,提交时不填,
 // 这条记录就挂不到任何设备上 —— 台账里既看不到这次巡检,也不知道少了谁。
 func TestAssetNoCannotBeMadeOptional(t *testing.T) {
-	setTemplateRules(nil)
-	t.Cleanup(func() { setTemplateRules(nil) })
+	setTemplateRules(nil, nil)
+	t.Cleanup(func() { setTemplateRules(nil, nil) })
 
 	// 就算配置里硬塞一条,也不能生效
 	setTemplateRules(map[string]map[string]bool{
 		"escalator": {"asset_no": false},
-	})
+	}, nil)
 	f, ok := findField("escalator", "asset_no")
 	if !ok {
 		t.Fatal("扶梯模板里应该有 asset_no")
@@ -63,8 +63,8 @@ func TestAssetNoCannotBeMadeOptional(t *testing.T) {
 
 // 覆盖要真的生效:改了之后 templateByID 拿到的就是新值。
 func TestTemplateRuleOverridesRequired(t *testing.T) {
-	setTemplateRules(nil)
-	t.Cleanup(func() { setTemplateRules(nil) })
+	setTemplateRules(nil, nil)
+	t.Cleanup(func() { setTemplateRules(nil, nil) })
 
 	before, ok := findField("zihan_energy", "z1_reading")
 	if !ok {
@@ -76,7 +76,7 @@ func TestTemplateRuleOverridesRequired(t *testing.T) {
 
 	setTemplateRules(map[string]map[string]bool{
 		"zihan_energy": {"z1_reading": true},
-	})
+	}, nil)
 	after, _ := findField("zihan_energy", "z1_reading")
 	if !after.Required {
 		t.Fatal("配置了必填却没生效 —— 用户会以为改了,而线上照旧")
@@ -90,7 +90,7 @@ func TestTemplateRuleOverridesRequired(t *testing.T) {
 	}
 
 	// 清掉配置就回到代码默认值 —— "改回默认"必须真的能改回去
-	setTemplateRules(nil)
+	setTemplateRules(nil, nil)
 	back, _ := findField("zihan_energy", "z1_reading")
 	if back.Required {
 		t.Fatal("清掉配置后没回到默认值 —— 改错了就回不去")
@@ -99,8 +99,8 @@ func TestTemplateRuleOverridesRequired(t *testing.T) {
 
 // 保存之后必须【立刻】生效,不能等重启。
 func TestSaveTemplateFieldsTakesEffectImmediately(t *testing.T) {
-	setTemplateRules(nil)
-	t.Cleanup(func() { setTemplateRules(nil) })
+	setTemplateRules(nil, nil)
+	t.Cleanup(func() { setTemplateRules(nil, nil) })
 	srv, auth := newScopeRequest(t, roleAdmin, "")
 
 	body := `{"required":{"z1_reading":true,"note":true}}`
@@ -134,8 +134,8 @@ func TestSaveTemplateFieldsTakesEffectImmediately(t *testing.T) {
 
 // 模板里没有的字段要当场拒绝。存下去也永远不生效,而后台会显示"已保存"。
 func TestSaveTemplateFieldsRejectsUnknownField(t *testing.T) {
-	setTemplateRules(nil)
-	t.Cleanup(func() { setTemplateRules(nil) })
+	setTemplateRules(nil, nil)
+	t.Cleanup(func() { setTemplateRules(nil, nil) })
 	srv, auth := newScopeRequest(t, roleAdmin, "")
 	r := httptest.NewRequest(http.MethodPut, "/api/report/templates/zihan_energy/fields",
 		strings.NewReader(`{"required":{"根本没有这个字段":true}}`))
@@ -145,5 +145,57 @@ func TestSaveTemplateFieldsRejectsUnknownField(t *testing.T) {
 	srv.handleSaveTemplateFields(w, r, "zihan_energy")
 	if w.Code == http.StatusOK {
 		t.Fatal("接受了模板里不存在的字段 —— 会存下一份永远不生效的配置")
+	}
+}
+
+// 每单最少几张照片。
+//
+// 【这条规则会影响线上正在填的草稿】上线那一刻,已经存在但不足张数的草稿
+// 会突然提交不了。所以移动端必须在【拍照那一步】就说清还差几张,
+// 而不是让人填完一整张表、点提交才被打回来。
+func TestMinImagesEnforcedOnSubmit(t *testing.T) {
+	setTemplateRules(nil, nil)
+	t.Cleanup(func() { setTemplateRules(nil, nil) })
+
+	tpl, ok := templateByID("zihan_energy")
+	if !ok {
+		t.Fatal("能耗抄表模板不见了")
+	}
+	if tpl.MinImages != 5 {
+		t.Fatalf("默认应为 5 张,得到 %d —— 周计划的要求是每单不少于五张", tpl.MinImages)
+	}
+
+	// 后台调成 2 张之后,模板立刻跟着变
+	setTemplateRules(nil, map[string]int{"zihan_energy": 2})
+	if got, _ := templateByID("zihan_energy"); got.MinImages != 2 {
+		t.Fatalf("配置没生效,仍是 %d", got.MinImages)
+	}
+
+	// 【0 表示没配过,不是"不限"】库里留下一行 0 不该把要求整个抹掉
+	setTemplateRules(nil, map[string]int{"zihan_energy": 0})
+	if got, _ := templateByID("zihan_energy"); got.MinImages != 5 {
+		t.Fatalf("配置里的 0 被当成了「不限」,得到 %d —— 应回落模板默认值", got.MinImages)
+	}
+}
+
+// 最少张数不能超过单次上传上限 —— 超过就永远提交不了,
+// 而巡检员在现场只看到「还差 N 张」,拍到死也够不着。
+func TestMinImagesCannotExceedMax(t *testing.T) {
+	setTemplateRules(nil, nil)
+	t.Cleanup(func() { setTemplateRules(nil, nil) })
+	srv, auth := newScopeRequest(t, roleAdmin, "")
+
+	tpl, _ := templateByID("zihan_energy")
+	tooMany := tpl.MaxImages + 1
+	body := `{"required":{},"minImages":` + itoaSafe(tooMany) + `}`
+	r := httptest.NewRequest(http.MethodPut, "/api/report/templates/zihan_energy/fields",
+		strings.NewReader(body))
+	r.Header = auth.Header
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.handleSaveTemplateFields(w, r, "zihan_energy")
+	if w.Code == http.StatusOK {
+		t.Fatalf("允许把最少张数设成 %d,而上限只有 %d —— 这个模板会永远提交不了",
+			tooMany, tpl.MaxImages)
 	}
 }

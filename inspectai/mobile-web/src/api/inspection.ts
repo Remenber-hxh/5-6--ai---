@@ -82,6 +82,10 @@ export interface TemplateDTO {
   name: string;
   project: string;
   assetType: string;
+  /** 每单最少几张照片。0 = 不限。后端提交时也会复核 */
+  minImages?: number;
+  /** 单次上传上限 */
+  maxImages?: number;
 }
 
 /** 服务器上尚未成单的离线照片 */

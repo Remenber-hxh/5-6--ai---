@@ -30,24 +30,30 @@ const (
 // EngineeringPlanItem 是工程年度计划事项，不等同于每日巡检点位。
 // 它承接真实 Excel 里的「强制检测 / 重点外委 / 零星工程 / CAPEX」等计划。
 type EngineeringPlanItem struct {
-	ID           string    `json:"id"`
-	Source       string    `json:"source"`
-	SequenceNo   string    `json:"sequenceNo"`
-	BusinessType string    `json:"businessType"`
-	Project      string    `json:"project"`
-	Category     string    `json:"category"`
-	SubType      string    `json:"subType"`
-	WorkContent  string    `json:"workContent"`
-	ScopeDesc    string    `json:"scopeDesc"`
-	BudgetAmount float64   `json:"budgetAmount"`
-	BudgetText   string    `json:"budgetText"`
-	PlanStart    string    `json:"planStart"`
-	PlanEnd      string    `json:"planEnd"`
-	OwnerName    string    `json:"ownerName"`
-	CycleText    string    `json:"cycleText"`
-	Remark       string    `json:"remark"`
-	Status       string    `json:"status"`
-	RiskLevel    string    `json:"riskLevel"`
+	ID           string  `json:"id"`
+	Source       string  `json:"source"`
+	SequenceNo   string  `json:"sequenceNo"`
+	BusinessType string  `json:"businessType"`
+	Project      string  `json:"project"`
+	Category     string  `json:"category"`
+	SubType      string  `json:"subType"`
+	WorkContent  string  `json:"workContent"`
+	ScopeDesc    string  `json:"scopeDesc"`
+	BudgetAmount float64 `json:"budgetAmount"`
+	BudgetText   string  `json:"budgetText"`
+	PlanStart    string  `json:"planStart"`
+	PlanEnd      string  `json:"planEnd"`
+	OwnerName    string  `json:"ownerName"`
+	CycleText    string  `json:"cycleText"`
+	Remark       string  `json:"remark"`
+	Status       string  `json:"status"`
+	RiskLevel    string  `json:"riskLevel"`
+	// PlanType 计划类型:yearly / monthly / weekly / daily / adhoc(临时,对外部项目组)。
+	// 空 = 临时 —— 存量数据没有这个字段,而它们本来就是零散录进来的。
+	PlanType string `json:"planType"`
+	// Weekdays 每日计划专用:一周哪几天执行,形如 "1,2,3,4,5"(1=周一 … 7=周日)。
+	// 空 = 每天。其他类型的计划忽略这个字段。
+	Weekdays     string    `json:"weekdays"`
 	LatestTaskID string    `json:"latestTaskId"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
@@ -319,7 +325,7 @@ func (s *SQLiteStore) ListEngineeringPlans(filter EngineeringPlanFilter) ([]*Eng
 		SELECT id, source, sequence_no, business_type, project, category, sub_type,
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
-		       latest_task_id, created_at, updated_at
+		       latest_task_id, created_at, updated_at, plan_type, weekdays
 		FROM engineering_plan_items
 		ORDER BY plan_end ASC, updated_at DESC`)
 	if err != nil {
@@ -345,7 +351,7 @@ func (s *SQLiteStore) GetEngineeringPlan(id string) (*EngineeringPlanItem, error
 		SELECT id, source, sequence_no, business_type, project, category, sub_type,
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
-		       latest_task_id, created_at, updated_at
+		       latest_task_id, created_at, updated_at, plan_type, weekdays
 		FROM engineering_plan_items WHERE id=?`, id)
 	return scanEngineeringPlan(row)
 }
@@ -361,8 +367,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				id, source, sequence_no, business_type, project, category, sub_type,
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
-				latest_task_id, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				latest_task_id, created_at, updated_at, plan_type, weekdays
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE
 				source=VALUES(source), sequence_no=VALUES(sequence_no), business_type=VALUES(business_type),
 				project=VALUES(project), category=VALUES(category), sub_type=VALUES(sub_type),
@@ -370,15 +376,15 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				budget_text=VALUES(budget_text), plan_start=VALUES(plan_start), plan_end=VALUES(plan_end),
 				owner_name=VALUES(owner_name), cycle_text=VALUES(cycle_text), remark=VALUES(remark),
 				status=VALUES(status), risk_level=VALUES(risk_level), latest_task_id=VALUES(latest_task_id),
-				updated_at=VALUES(updated_at)`
+				updated_at=VALUES(updated_at), plan_type=VALUES(plan_type), weekdays=VALUES(weekdays)`
 	} else {
 		query = `
 			INSERT INTO engineering_plan_items (
 				id, source, sequence_no, business_type, project, category, sub_type,
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
-				latest_task_id, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				latest_task_id, created_at, updated_at, plan_type, weekdays
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				source=excluded.source, sequence_no=excluded.sequence_no, business_type=excluded.business_type,
 				project=excluded.project, category=excluded.category, sub_type=excluded.sub_type,
@@ -386,13 +392,13 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				budget_text=excluded.budget_text, plan_start=excluded.plan_start, plan_end=excluded.plan_end,
 				owner_name=excluded.owner_name, cycle_text=excluded.cycle_text, remark=excluded.remark,
 				status=excluded.status, risk_level=excluded.risk_level, latest_task_id=excluded.latest_task_id,
-				updated_at=excluded.updated_at`
+				updated_at=excluded.updated_at, plan_type=excluded.plan_type, weekdays=excluded.weekdays`
 	}
 	_, err := s.db.Exec(query,
 		item.ID, item.Source, item.SequenceNo, item.BusinessType, item.Project, item.Category, item.SubType,
 		item.WorkContent, item.ScopeDesc, item.BudgetAmount, item.BudgetText, item.PlanStart,
 		item.PlanEnd, item.OwnerName, item.CycleText, item.Remark, item.Status, item.RiskLevel,
-		item.LatestTaskID, created, updated,
+		item.LatestTaskID, created, updated, item.PlanType, item.Weekdays,
 	)
 	return err
 }
@@ -514,13 +520,18 @@ func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 		&item.ID, &item.Source, &item.SequenceNo, &item.BusinessType, &item.Project, &item.Category, &item.SubType,
 		&item.WorkContent, &item.ScopeDesc, &item.BudgetAmount, &item.BudgetText, &item.PlanStart,
 		&item.PlanEnd, &item.OwnerName, &item.CycleText, &item.Remark, &item.Status, &item.RiskLevel,
-		&item.LatestTaskID, &created, &updated,
+		&item.LatestTaskID, &created, &updated, &item.PlanType, &item.Weekdays,
 	)
 	if err != nil {
 		return nil, err
 	}
 	item.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	item.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	// 【空类型一律当临时】存量计划没有这个字段,而它们本来就是零散录进来的。
+	// 在这里补齐,前端就不用到处判空 —— 判空散在各处必然漏一处。
+	if item.PlanType == "" {
+		item.PlanType = planTypeAdhoc
+	}
 	return item, nil
 }
 

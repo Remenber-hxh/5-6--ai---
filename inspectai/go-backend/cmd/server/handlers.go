@@ -2509,6 +2509,15 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		writeError(w, http.StatusBadRequest, "needs_retake", "请先重拍或转人工填写后再提交")
 		return
 	}
+	// 照片数量复核。前端也拦,但那一层挡不住重放的请求和改过的客户端 ——
+	// 而且"够不够张数"是台账的证据要求,只有入库前这一道是算数的。
+	if tpl, ok := templateByID(rec.TemplateID); ok && tpl.MinImages > 0 {
+		if n := len(rec.Images); n < tpl.MinImages {
+			writeError(w, http.StatusBadRequest, "not_enough_photos",
+				fmt.Sprintf("这类巡检至少要 %d 张照片,当前只有 %d 张", tpl.MinImages, n))
+			return
+		}
+	}
 	var missing []string
 	var pending []string
 	for _, f := range rec.Fields {

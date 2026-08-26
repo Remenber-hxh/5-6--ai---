@@ -15,11 +15,18 @@ type Point struct {
 
 // ReportTemplate — 日报模板定义
 type ReportTemplate struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Project   string          `json:"project"`
-	AssetType string          `json:"assetType"`
-	MaxImages int             `json:"maxImages"` // 单次上传图片上限（能耗抄表 6，其他 3）
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Project   string `json:"project"`
+	AssetType string `json:"assetType"`
+	MaxImages int    `json:"maxImages"` // 单次上传图片上限（能耗抄表 6，其他 3）
+	// MinImages 每单最少几张照片。0 = 不限。
+	//
+	// 【为什么做成模板级而不是全局写死 5】不同设备该拍几张差别很大:一台小水泵
+	// 两张就说明问题,变电所可能要拍十几个柜。全局硬性 5 张会逼人凑数 ——
+	// 而凑出来的照片是台账污染:以后翻历史看到的是几张糊的地面和天花板。
+	// 默认给 5(周计划的要求),需要时逐个模板调。
+	MinImages int             `json:"minImages"`
 	Featured  bool            `json:"featured"`
 	Fields    []TemplateField `json:"fields"`
 	HasAI     bool            `json:"hasAI"`              // 是否接入了 AI prompt（决定是否调 ai-service）

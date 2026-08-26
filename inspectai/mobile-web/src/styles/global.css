@@ -4226,3 +4226,9 @@ a {
   transition: background .15s ease;
 }
 .scan-entry:active svg { background: rgba(255, 255, 255, .2); }
+
+/* 选照片页的张数提示。
+ * 【差几张要显眼,够了要安静】不够时是要人立刻行动的信息;够了只需要
+ * 一个不打扰的确认,做成同样醒目反而分散注意力。 */
+.rv-short { color: #d4713a; font-weight: 600; }
+.rv-ok { color: #3f9e79; }

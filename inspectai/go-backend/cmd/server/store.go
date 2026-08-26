@@ -230,31 +230,32 @@ type submissionState struct {
 }
 
 type MemStore struct {
-	mu             sync.RWMutex
-	tenants        map[string]*Tenant
-	offlineShots   map[string]*OfflineShot
-	records        map[string]*Record
-	tasks          map[string]*AITask
-	assets         map[string]*AssetEntry
-	changeRequests map[string]*ChangeRequest
-	submissions    map[string]submissionState
-	users          map[string]*memUser
-	sessions       map[string]*LoginSession
-	operationLogs  map[string]*OperationLog
-	assetSnapshots []*AssetSnapshot
-	fieldObs       []*FieldObservation
-	confirmLogs    []*FieldConfirmLog
-	mgmtReports    []*ManagementAIReport
-	engPlans       map[string]*EngineeringPlanItem
-	engTasks       map[string]*EngineeringTask
-	promptTpls     map[string]PromptTemplate
-	rolePerms      map[string][]string
-	roles          map[string]*Role
-	regCodes       map[string]*RegistrationCode // key = code 本身
-	projects       map[string]*Project
-	departments    map[string]*Department
-	userProjects   map[string][]string                      // userID -> projectIDs
-	templateRules  map[string]map[string]*TemplateFieldRule // templateID -> fieldCode -> 规则
+	mu                sync.RWMutex
+	tenants           map[string]*Tenant
+	offlineShots      map[string]*OfflineShot
+	records           map[string]*Record
+	tasks             map[string]*AITask
+	assets            map[string]*AssetEntry
+	changeRequests    map[string]*ChangeRequest
+	submissions       map[string]submissionState
+	users             map[string]*memUser
+	sessions          map[string]*LoginSession
+	operationLogs     map[string]*OperationLog
+	assetSnapshots    []*AssetSnapshot
+	fieldObs          []*FieldObservation
+	confirmLogs       []*FieldConfirmLog
+	mgmtReports       []*ManagementAIReport
+	engPlans          map[string]*EngineeringPlanItem
+	engTasks          map[string]*EngineeringTask
+	promptTpls        map[string]PromptTemplate
+	rolePerms         map[string][]string
+	roles             map[string]*Role
+	regCodes          map[string]*RegistrationCode // key = code 本身
+	projects          map[string]*Project
+	departments       map[string]*Department
+	userProjects      map[string][]string                      // userID -> projectIDs
+	templateRules     map[string]map[string]*TemplateFieldRule // templateID -> fieldCode -> 规则
+	templateMinImages map[string]int                           // templateID -> 每单最少几张照片
 }
 
 type memUser struct {
@@ -283,9 +284,10 @@ func NewMemStore() *MemStore {
 		departments: map[string]*Department{
 			"dept_default": {ID: "dept_default", Name: "默认部门"},
 		},
-		userProjects:  map[string][]string{},
-		templateRules: map[string]map[string]*TemplateFieldRule{},
-		rolePerms:     defaultPermMatrix(),
+		userProjects:      map[string][]string{},
+		templateRules:     map[string]map[string]*TemplateFieldRule{},
+		templateMinImages: map[string]int{},
+		rolePerms:         defaultPermMatrix(),
 	}
 }
 
