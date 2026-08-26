@@ -1,4 +1,5 @@
 import { Button, Card, Checkbox, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -56,6 +57,13 @@ const taskTag = (s?: string) => {
   return <Tag color="orange">需跟进</Tag>;
 };
 
+// 面板开合的时长与缓动。
+//
+// 【标准缓动:快出慢入】起步快、收尾慢,人眼看着像"被放到位"而不是"匀速滑过去"。
+// 220ms 是有意的:再短就成了闪一下,再长(>300ms)每点一行都要等它,反而拖沓。
+const EASE = "220ms cubic-bezier(0.22, 0.61, 0.36, 1)";
+const PANEL_MOTION = { duration: 0.22, ease: [0.22, 0.61, 0.36, 1] as const };
+
 // 详情面板字段行(旧版 label/value 样式)
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -97,6 +105,8 @@ export default function Plan() {
   const [form] = Form.useForm();
 
   const focusTask = params.get("task") || "";
+  // 系统里关了动效的人(前庭功能敏感 / 远程桌面)照样要能用,只是不动
+  const reduce = useReducedMotion();
 
   async function load() {
     setLoading(true);
@@ -164,16 +174,27 @@ export default function Plan() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, focusTask]);
 
-  // 默认选中首行(旧版行为:右侧面板不留白)
+  // 默认选中首行(旧版行为:右侧面板不留白)。
+  //
+  // 【今日执行视图不做这件事】那一屏根本没有计划表,自动选中会让右侧凭空
+  // 冒出一条「计划详情」—— 而它指向的计划在当前页面上一处都看不到,
+  // 用户不知道它从哪来、也不知道自己在改什么。
   useEffect(() => {
+    if (view === "today") {
+      setSelPlanId("");
+      return;
+    }
     if (!selTaskId && (!selPlanId || !rows.some((r) => r.id === selPlanId))) {
       setSelPlanId(rows[0]?.id || "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [rows, view]);
 
-  const selPlan = rows.find((p) => p.id === selPlanId) || null;
+  // 【今日执行只认任务】那一屏有复查任务表,点它是合理的;
+  // 计划则一律不显示 —— 页面上没有它的入口。
+  const selPlan = view === "today" ? null : rows.find((p) => p.id === selPlanId) || null;
   const selTask = tasks.find((t) => t.id === selTaskId) || null;
+  const hasPanel = Boolean(selTask || selPlan);
 
   const planTaskOf = (p: EngineeringPlan) =>
     tasks.find((t) => t.id === p.latestTaskId) || tasks.find((t) => t.planItemId === p.id) || null;
@@ -206,7 +227,7 @@ export default function Plan() {
   // 首次加载:骨架屏(结构先行,不闪转圈)
   if (loading && plans.length === 0) {
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 396px", gap: 16, alignItems: "start" }}>
         <div>
           <Card size="small" style={{ marginBottom: 16 }}>
             <Skeleton active paragraph={{ rows: 1 }} />
@@ -233,12 +254,20 @@ export default function Plan() {
     <>
       {/* 【右侧面板按需占位】没选中任何行时它是空的,却一直占着 396px。
           1366 宽的笔记本上主区只剩 900px,七列的表格会被挤到逐字换行
-          (今天在用户页刚踩过)。选中了才让出空间。 */}
+          (今天在用户页刚踩过)。选中了才让出空间。
+
+          【收起是宽度归零,不是撤掉这一列】写成单列的话,正在退场的面板
+          会瞬间掉到表格下面再淡出 —— 看着像"弹了一下"。留着这一列、
+          把它压到 0 并由父级 overflow 裁掉,退场就是干净地被抹掉。 */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: selTask || selPlan ? "1fr 396px" : "1fr",
-          gap: 16,
+          // 【左列必须 minmax(0, 1fr)】写成 1fr 的话,内容列会按里面最宽的
+          // 元素(七列表格)撑开,把右侧 396px 面板挤出视口 —— 截图里
+          // 「派发执行任务」按钮右半边就是这么没的。
+          gridTemplateColumns: hasPanel ? "minmax(0, 1fr) 396px" : "minmax(0, 1fr) 0px",
+          gap: hasPanel ? 16 : 0,
+          transition: reduce ? undefined : `grid-template-columns ${EASE}, gap ${EASE}`,
           alignItems: "start",
         }}
       >
@@ -426,9 +455,27 @@ export default function Plan() {
           )}
         </div>
 
-        {/* 右侧常驻详情面板(旧版 aside) */}
-        <div style={{ position: "sticky", top: 0 }}>
-          {selTask ? (
+        {/* 右侧详情面板 —— 点了才有。
+            【不放"点击左侧查看详情"的空态】那句话既没有信息也不需要人做什么:
+            表格行本来就有 hover 和手型,点一下就出来了。一个常驻的空卡片
+            只是在页面底部多一块灰,让人以为下面还有内容。 */}
+        <div style={{ position: "sticky", top: 0, overflow: "hidden" }}>
+          <AnimatePresence mode="wait" initial={false}>
+            {hasPanel && (
+              <motion.div
+                // 【key 只分"任务/计划"两种,不用 id】用 id 的话,在计划表里
+                // 换一行会整块重放一次进出动画 —— 内容明明只换了几个字,
+                // 却闪一下,看着像页面刷新了。切换的是同一类详情就直接换内容。
+                key={selTask ? "task" : "plan"}
+                initial={reduce ? false : { opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={reduce ? { opacity: 0 } : { opacity: 0, x: 20 }}
+                transition={reduce ? { duration: 0 } : PANEL_MOTION}
+                // 【宽度写死】外层那一列正在从 396 收到 0,不定宽的话面板会
+                // 跟着被压扁,文字在退场过程中重排 —— 那正是"卡顿感"的来源。
+                style={{ width: 396 }}
+              >
+                {selTask ? (
             <Card
               size="small"
               title={
@@ -523,7 +570,7 @@ export default function Plan() {
                 <FieldRow label="项目">{selPlan.project || "—"}</FieldRow>
                 <FieldRow label="类别">{selPlan.category || "—"}</FieldRow>
                 <FieldRow label="责任人">{selPlan.ownerName || "—"}</FieldRow>
-                <FieldRow label="周期">{selPlan.cycleText || "—"}</FieldRow>
+                <FieldRow label="说明">{selPlan.cycleText || "—"}</FieldRow>
                 <FieldRow label="计划节点">
                   {[selPlan.planStart, selPlan.planEnd].filter(Boolean).join(" 至 ") || "—"}
                 </FieldRow>
@@ -574,11 +621,10 @@ export default function Plan() {
                 </Button>
               </Space>
             </Card>
-          ) : (
-            <Card size="small">
-              <Empty description="点击左侧计划或任务查看详情" />
-            </Card>
-          )}
+                ) : null}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -671,8 +717,10 @@ export default function Plan() {
               ) : null
             }
           </Form.Item>
-          <Form.Item name="cycleText" label="周期说明">
-            <Input placeholder="如:每日 09:00 / 每周一(仅作文字说明)" />
+          {/* 【原来叫「周期」】有了计划类型和执行日之后它不参与任何逻辑了,
+              还叫周期会和上面的类型打架 —— 人不知道该信哪个。改成纯说明。 */}
+          <Form.Item name="cycleText" label="说明">
+            <Input placeholder="补充说明,不参与排期" />
           </Form.Item>
           <Form.Item name="planEnd" label="截止日期">
             <Input placeholder="YYYY-MM-DD" />

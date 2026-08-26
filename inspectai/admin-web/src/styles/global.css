@@ -74,6 +74,25 @@ body {
   box-shadow: inset 3px 0 0 #12a968;
 }
 
+/* 选中态渐变过去,不要"啪"地跳一下。
+   点一行的时候有三件事同时发生:底色变绿、左边竖条出现、右侧面板滑出。
+   前两件如果是瞬时的,和 220ms 的面板不同步,整体就显得毛躁。
+   150ms 略快于面板——先亮起来再滑出,视线跟得上。
+
+   【只写 background-color,不写 background】background 是简写属性,
+   过渡它会连 image / position 一起插值,某些内核上直接不生效。 */
+.ant-table-tbody > tr > td {
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ant-table-tbody > tr > td {
+    transition: none;
+  }
+}
+
 /* 卡片标题:旧版 panel-head 字重 */
 .ant-card-head-title {
   font-weight: 700 !important;
