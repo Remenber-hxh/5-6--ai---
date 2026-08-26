@@ -751,6 +751,41 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 	if req.ID == "" {
 		req.ID = newID("eng_plan")
 	}
+	// 【类型必须是认识的】存进去一个拼错的类型,这条计划会在所有按类型分区的
+	// 地方消失 —— 界面上显示"已保存",然后它再也不出现,没人知道去哪了。
+	req.PlanType = strings.TrimSpace(req.PlanType)
+	if req.PlanType == "" {
+		req.PlanType = planTypeAdhoc
+	}
+	if !validPlanType(req.PlanType) {
+		writeError(w, http.StatusBadRequest, "bad_plan_type", "计划类型无效")
+		return
+	}
+	if req.PlanType == planTypeDaily {
+		// 每日计划的"完成"是自动判定的(这些设备今天有没有巡检快照)。
+		// 没有设备清单就永远算不出完成率,而看板上它会显示成一条空计划 ——
+		// 建的时候拦住,比事后在看板上标一个"未指定设备"有用得多。
+		if len(req.AssetIDs) == 0 {
+			writeError(w, http.StatusBadRequest, "missing_assets",
+				"每日巡检计划必须指定要巡的设备 —— 完成情况是按设备自动判定的")
+			return
+		}
+		// 执行日只认 1..7(1=周一 … 7=周日)。脏值会让这条计划要么天天触发、
+		// 要么永远不触发,而两种都不报错。
+		if wd := strings.TrimSpace(req.Weekdays); wd != "" {
+			for _, part := range strings.Split(wd, ",") {
+				n, convErr := strconv.Atoi(strings.TrimSpace(part))
+				if convErr != nil || n < 1 || n > 7 {
+					writeError(w, http.StatusBadRequest, "bad_weekdays",
+						"执行日只能是 1-7(1=周一,7=周日)")
+					return
+				}
+			}
+		}
+	} else {
+		// 其他类型不带这两项 —— 留着会让人以为它们生效了
+		req.Weekdays = ""
+	}
 	req.Source = firstNonEmpty(req.Source, "manual")
 	if err := s.store.UpsertEngineeringPlan(&req); err != nil {
 		writeError(w, http.StatusInternalServerError, "save_engineering_plan_failed", err.Error())

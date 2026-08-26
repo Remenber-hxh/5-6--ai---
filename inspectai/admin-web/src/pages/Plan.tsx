@@ -1,17 +1,21 @@
-import { Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
+import { Button, Card, Checkbox, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
+  AssetEntry,
   EngineeringPlan,
   EngineeringTask,
+  PLAN_TYPES,
+  WEEKDAY_OPTIONS,
   dispatchPlan,
+  listAssets,
   listPlans,
   listTasks,
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
-import CountUp from "../components/CountUp";
+import TodayInspection from "../components/TodayInspection";
 import { useUi } from "../store/ui";
 
 // ===== 旧版口径:计划状态 → 四桶 =====
@@ -66,25 +70,47 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 export default function Plan() {
   const [plans, setPlans] = useState<EngineeringPlan[]>([]);
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
+  const [assets, setAssets] = useState<AssetEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [bucket, setBucket] = useState<"" | Bucket>("");
-  const [freq, setFreq] = useState("");
   const [proj, setProj] = useState("");
   const [kw, setKw] = useState("");
   const [selPlanId, setSelPlanId] = useState("");
   const [selTaskId, setSelTaskId] = useState("");
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
   const { project } = useUi();
+  const [params, setParams] = useSearchParams();
+  // 顶层视图。默认「今日执行」—— 打开这一页最想知道的就是今天还差什么,
+  // 而不是"年度计划有几条"。
+  //
+  // 写进地址栏:刷新留在原处,也能把某一个视图的链接直接发人
+  // (和用户页、提示词页同一套做法)。
+  const view = params.get("view") || "today";
+  const setView = (v: string) => {
+    const next = new URLSearchParams(params);
+    if (v === "today") next.delete("view");
+    else next.set("view", v);
+    setParams(next, { replace: true });
+  };
+  // 计划表按当前视图筛类型 —— 视图本身就是类型,不用再来一个筛选器
+  const planType = view === "today" ? "" : view;
   const [form] = Form.useForm();
-  const [params] = useSearchParams();
+
   const focusTask = params.get("task") || "";
 
   async function load() {
     setLoading(true);
     try {
-      const [ps, ts] = await Promise.all([listPlans(), listTasks()]);
+      // 台账用于每日计划的设备多选。【取不到不该拖垮整页】——
+      // 计划页的主体是计划和任务,设备清单只在建每日计划时用得上。
+      const [ps, ts, as] = await Promise.all([
+        listPlans(),
+        listTasks(),
+        listAssets().catch(() => [] as AssetEntry[]),
+      ]);
       setPlans(ps);
       setTasks(ts);
+      setAssets(as);
     } finally {
       setLoading(false);
     }
@@ -109,23 +135,9 @@ export default function Plan() {
     [tasks, project],
   );
 
-  const counts = useMemo(() => {
-    const c: Record<Bucket, number> = { pending: 0, processing: 0, overdue: 0, done: 0 };
-    realPlans.forEach((p) => {
-      c[planStatusBucket(p.status)] += 1;
-    });
-    c.overdue += recheckTasks.length; // 需跟进并入复查任务
-    return c;
-  }, [realPlans, recheckTasks]);
-
-  const total = Math.max(counts.pending + counts.processing + counts.overdue + counts.done, 1);
 
   const projects = useMemo(
     () => Array.from(new Set(realPlans.map((p) => p.project).filter(Boolean))) as string[],
-    [realPlans],
-  );
-  const freqs = useMemo(
-    () => Array.from(new Set(realPlans.map((p) => p.cycleText).filter(Boolean))) as string[],
     [realPlans],
   );
 
@@ -135,10 +147,12 @@ export default function Plan() {
         (p) =>
           (!bucket || planStatusBucket(p.status) === bucket) &&
           (!proj || p.project === proj) &&
-          (!freq || p.cycleText === freq) &&
+          // 【空 planType 当临时】存量计划没有这个字段,后端读出来会补成 adhoc,
+          // 但前端也兜一层 —— 万一有别的入口写进来没走后端那条路
+          (!planType || (p.planType || "adhoc") === planType) &&
           (!kw || (p.workContent || "").includes(kw) || (p.category || "").includes(kw)),
       ),
-    [realPlans, bucket, proj, freq, kw],
+    [realPlans, bucket, proj, planType, kw],
   );
 
   // Agent 派发后深链 /plan?task=xxx:切「全部」并选中该复查任务(右侧详情面板直出)
@@ -208,86 +222,51 @@ export default function Plan() {
     );
   }
 
-  const hasFilter = Boolean(bucket || proj || freq || kw);
+  const hasFilter = Boolean(bucket || proj || planType || kw);
   const clearFilters = () => {
     setBucket("");
     setProj("");
-    setFreq("");
     setKw("");
   };
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
+      {/* 【右侧面板按需占位】没选中任何行时它是空的,却一直占着 396px。
+          1366 宽的笔记本上主区只剩 900px,七列的表格会被挤到逐字换行
+          (今天在用户页刚踩过)。选中了才让出空间。 */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: selTask || selPlan ? "1fr 396px" : "1fr",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
         <div>
-          {/* 状态卡:白底连排,角标色块 + 大数字 + 底部占比条(旧版样式) */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              background: "#fff",
-              borderRadius: 10,
-              overflow: "hidden",
-              marginBottom: 16,
-              boxShadow: "0 1px 2px rgba(15, 35, 55, 0.04)",
-            }}
-          >
-            {BUCKETS.map((b, i) => {
-              const n = counts[b.key];
-              const active = bucket === b.key;
-              // 红色纪律:需跟进为 0 时不亮红,红色只在真有事时出现
-              const color = b.key === "overdue" && n === 0 ? "#9db0be" : b.color;
-              return (
-                <div
-                  key={b.key}
-                  onClick={() => setBucket(active ? "" : b.key)}
-                  className="plan-bucket-cell"
-                  style={{
-                    position: "relative",
-                    padding: "18px 18px 16px",
-                    cursor: "pointer",
-                    borderLeft: i ? "1px solid #eef1f5" : "none",
-                    background: active ? `${color}0d` : "#fff",
-                    outline: active ? `1px solid ${color}55` : "none",
-                    outlineOffset: -1,
-                  }}
-                >
-                  {/* 左上角色块角标 */}
-                  <span
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 14,
-                      width: 4,
-                      height: 18,
-                      background: color,
-                      borderRadius: "0 2px 2px 0",
-                    }}
-                  />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ color: "#334759", fontSize: 14, fontWeight: 600 }}>{b.label}</span>
-                    <b style={{ fontSize: 30, fontWeight: 800, color: "#101d2c" }}>
-                      <CountUp value={n} />
-                    </b>
-                  </div>
-                  {/* 底部占比条 */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      bottom: 0,
-                      height: 4,
-                      width: `${Math.max(Math.round((n / total) * 100), n > 0 ? 8 : 0)}%`,
-                      background: color,
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </div>
+          {/* ===== 顶层六个视图 =====
 
-          {/* 复查任务 */}
-          {showRecheck && (
+              【这不是筛选,是切换视图】筛选是"在同一张表里缩小范围",而
+              「今日执行」和「年度计划」根本不是同一种东西:一个回答"现在去干什么",
+              一个回答"长期怎么排的"。放同一屏,人要不停切换视角 ——
+              那正是客户说"混乱"的来源。每个视图只回答一个问题。 */}
+          <Segmented
+            value={view}
+            onChange={(v) => setView(v as string)}
+            style={{ marginBottom: 16 }}
+            options={[
+              { value: "today", label: "今日执行" },
+              ...PLAN_TYPES.map((t) => ({ value: t.value, label: t.label })),
+            ]}
+          />
+
+          {view === "today" && (
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <TodayInspection />
+            </Card>
+          )}
+          {/* 【待跟进归到执行视图】异常复查是"今天要处理的事",
+              和长期计划台账不是一回事 —— 混在一起人要不停切换视角。 */}
+          {view === "today" && showRecheck && (
             <Card title="复查任务" size="small" style={{ marginBottom: 16 }}>
               <Table<EngineeringTask>
                 rowKey="id"
@@ -312,8 +291,12 @@ export default function Plan() {
             </Card>
           )}
 
-          {/* 巡检任务:工具栏(项目/频次/状态/搜索/新建) + 七列表 */}
-          <Card title="巡检任务" size="small">
+          {/* 【这张表装的是计划,不是任务】原来标题写「巡检任务」,而
+              dataSource 是 plans —— 同一页里另有一张真的任务表(复查任务)。
+              用户点开一行,右侧详情展示的是计划的字段,却被告知这是任务。
+              这是命名 bug,不是审美问题:人分不清自己在改什么。 */}
+          {view !== "today" && (
+          <Card title="巡检计划" size="small">
             <Space style={{ marginBottom: 14 }} wrap>
               <Select
                 allowClear
@@ -321,13 +304,6 @@ export default function Plan() {
                 style={{ width: 130 }}
                 options={projects.map((p) => ({ value: p, label: p }))}
                 onChange={(v) => setProj(v || "")}
-              />
-              <Select
-                allowClear
-                placeholder="全部频次"
-                style={{ width: 150 }}
-                options={freqs.map((f) => ({ value: f, label: f }))}
-                onChange={(v) => setFreq(v || "")}
               />
               <Select
                 allowClear
@@ -347,6 +323,10 @@ export default function Plan() {
                 type="primary"
                 onClick={() => {
                   setEditing("new");
+                  // 【类型跟随当前视图】在「周计划」里点新建,类型就该是周计划。
+                  // 不带的话每次都要手动改回来,改漏了这条计划会跑到别的视图去,
+                  // 而且不报错 —— 人只会觉得"我刚建的计划不见了"。
+                  form.setFieldsValue({ planType: view === "today" ? "adhoc" : view });
                   form.resetFields();
                 }}
               >
@@ -359,8 +339,27 @@ export default function Plan() {
               loading={loading}
               locale={{
                 emptyText: (
-                  <Empty description={hasFilter ? "没有匹配的计划" : "暂无巡检计划"}>
-                    {hasFilter && <Button onClick={clearFilters}>清除筛选</Button>}
+                  <Empty
+                    description={
+                      hasFilter
+                        ? "没有匹配的计划"
+                        : `还没有${PLAN_TYPES.find((t) => t.value === view)?.label || "计划"}`
+                    }
+                  >
+                    {hasFilter ? (
+                      <Button onClick={clearFilters}>清除筛选</Button>
+                    ) : (
+                      <Button
+                        type="primary"
+                        onClick={() => {
+                          setEditing("new");
+                          form.resetFields();
+                          form.setFieldsValue({ planType: view });
+                        }}
+                      >
+                        新建{PLAN_TYPES.find((t) => t.value === view)?.label}
+                      </Button>
+                    )}
                   </Empty>
                 ),
               }}
@@ -374,22 +373,57 @@ export default function Plan() {
                 },
                 style: { cursor: "pointer" },
               })}
+              // 【列要跟着视图变】每日计划的关键信息是"哪几天执行、管几台设备";
+              // 而「周期」和「计划节点」对它没意义 —— 现在那两列全是横杠,
+              // 占着宽度不说事。年度/月度正相反,起止日期才是重点。
               columns={[
                 { title: "计划名称", dataIndex: "workContent" },
                 { title: "项目", dataIndex: "project", width: 100 },
-                { title: "类型 / 点位", dataIndex: "category", width: 120, render: (v) => v || "—" },
-                { title: "周期", dataIndex: "cycleText", width: 130, ellipsis: true, render: (v) => v || "—" },
+                ...(view === "daily"
+                  ? [
+                      {
+                        title: "执行日",
+                        width: 150,
+                        render: (_: unknown, p: EngineeringPlan) => {
+                          const wd = (p.weekdays || "").split(",").filter(Boolean);
+                          // 空 = 每天。说"每天"而不是留空 —— 留空会被当成"没配好"
+                          if (!wd.length) return <Tag color="blue">每天</Tag>;
+                          if (wd.length === 7) return <Tag color="blue">每天</Tag>;
+                          return (
+                            <span>
+                              {wd
+                                .map((d) => WEEKDAY_OPTIONS.find((w) => w.value === d)?.label || d)
+                                .join(" ")}
+                            </span>
+                          );
+                        },
+                      },
+                      {
+                        title: "设备",
+                        width: 90,
+                        render: (_: unknown, p: EngineeringPlan) => {
+                          const n = p.assetIds?.length || 0;
+                          // 0 台要标出来 —— 那条计划的完成率永远算不出来
+                          return n > 0 ? `${n} 台` : <Tag color="orange">未指定</Tag>;
+                        },
+                      },
+                    ]
+                  : [
+                      { title: "类型 / 点位", dataIndex: "category", width: 120, render: (v: string) => v || "—" },
+                      {
+                        title: "计划节点",
+                        width: 160,
+                        ellipsis: true,
+                        render: (_: unknown, p: EngineeringPlan) =>
+                          [p.planStart, p.planEnd].filter(Boolean).join(" 至 ") || p.planEnd || "—",
+                      },
+                    ]),
                 { title: "责任人", dataIndex: "ownerName", width: 90 },
-                {
-                  title: "计划节点",
-                  width: 160,
-                  ellipsis: true,
-                  render: (_, p) => [p.planStart, p.planEnd].filter(Boolean).join(" 至 ") || p.planEnd || "—",
-                },
                 { title: "状态", width: 88, render: (_, p) => bucketTag(p.status) },
               ]}
             />
           </Card>
+          )}
         </div>
 
         {/* 右侧常驻详情面板(旧版 aside) */}
@@ -524,6 +558,15 @@ export default function Plan() {
                       ownerName: selPlan.ownerName,
                       cycleText: selPlan.cycleText,
                       planEnd: selPlan.planEnd,
+                      // 【这三项必须回填】不回填的话:一编辑保存,类型退回默认、
+                      // 执行日和设备清单全被清空 —— 而且没有任何提示,
+                      // 表现是"我只改了个负责人,第二天提醒就不来了"。
+                      planType: selPlan.planType || "adhoc",
+                      weekdayList: (selPlan.weekdays || "")
+                        .split(",")
+                        .map((x) => x.trim())
+                        .filter(Boolean),
+                      assetIds: selPlan.assetIds || [],
                     });
                   }}
                 >
@@ -548,7 +591,18 @@ export default function Plan() {
         onOk={async () => {
           const v = await form.validateFields();
           try {
-            await savePlan({ ...(editing !== "new" && editing ? { id: editing.id } : {}), ...v });
+            // Checkbox.Group 给的是数组,后端要 "1,2,3" 的串。
+            // 【必须排序】不排的话勾选顺序会被原样存下来("3,1,2"),
+            // 虽然判定不受影响,但下次打开看到的顺序是乱的,像坏了。
+            const { weekdayList, ...rest } = v;
+            const payload = {
+              ...(editing !== "new" && editing ? { id: editing.id } : {}),
+              ...rest,
+              weekdays: Array.isArray(weekdayList)
+                ? [...weekdayList].sort().join(",")
+                : undefined,
+            };
+            await savePlan(payload);
             message.success("计划已保存");
             setEditing(null);
             await load();
@@ -570,8 +624,55 @@ export default function Plan() {
           <Form.Item name="ownerName" label="负责人">
             <Input />
           </Form.Item>
-          <Form.Item name="cycleText" label="周期">
-            <Input placeholder="如:每日 09:00 / 每周一" />
+          {/* 【类型放在最前面】它决定下面还要填什么 —— 选了「每日巡检」才需要
+              执行日和设备清单。放在后面的话人会先填一堆再发现要重来。 */}
+          <Form.Item
+            name="planType"
+            label="计划类型"
+            initialValue="adhoc"
+            rules={[{ required: true, message: "请选择计划类型" }]}
+          >
+            <Select options={PLAN_TYPES.map((t) => ({ value: t.value, label: t.label }))} />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(a, b) => a.planType !== b.planType}>
+            {({ getFieldValue }) =>
+              getFieldValue("planType") === "daily" ? (
+                <>
+                  <Form.Item
+                    name="weekdayList"
+                    label="执行日"
+                    extra="不选 = 每天执行"
+                  >
+                    <Checkbox.Group
+                      options={WEEKDAY_OPTIONS.map((w) => ({ value: w.value, label: w.label }))}
+                    />
+                  </Form.Item>
+                  {/* 【每日计划必须指定设备】完成情况是按设备自动判定的
+                      (这些设备今天有没有巡检记录)。没有清单就永远算不出完成率,
+                      而看板上它只会显示成一条空计划。后端也会拒绝。 */}
+                  <Form.Item
+                    name="assetIds"
+                    label="要巡的设备"
+                    extra="完成情况按这些设备自动判定 —— 巡检员正常拍照提交即可,不用另外打勾"
+                    rules={[{ required: true, message: "每日巡检计划必须指定设备" }]}
+                  >
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      placeholder="从台账里选"
+                      optionFilterProp="label"
+                      options={assets.map((a) => ({
+                        value: a.id,
+                        label: `${a.assetName || a.assetKey}${a.project ? " · " + a.project : ""}`,
+                      }))}
+                    />
+                  </Form.Item>
+                </>
+              ) : null
+            }
+          </Form.Item>
+          <Form.Item name="cycleText" label="周期说明">
+            <Input placeholder="如:每日 09:00 / 每周一(仅作文字说明)" />
           </Form.Item>
           <Form.Item name="planEnd" label="截止日期">
             <Input placeholder="YYYY-MM-DD" />

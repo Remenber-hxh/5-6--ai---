@@ -176,6 +176,12 @@ export interface EngineeringPlan {
   budgetAmount?: number;
   latestTaskId?: string;
   source?: string;
+  /** yearly / monthly / weekly / daily / adhoc(临时,对外部项目组) */
+  planType?: string;
+  /** 每日计划专用:一周哪几天执行,"1,2,3,4,5"(1=周一 … 7=周日)。空=每天 */
+  weekdays?: string;
+  /** 每日计划要巡的设备。完成情况按它自动判定,所以每日计划必填 */
+  assetIds?: string[];
 }
 
 export interface EngineeringTask {
@@ -207,6 +213,9 @@ export function savePlan(p: {
   planEnd?: string;
   scopeDesc?: string;
   remark?: string;
+  planType?: string;
+  weekdays?: string;
+  assetIds?: string[];
 }) {
   return api("/api/engineering/plans", {
     method: "POST",
@@ -739,3 +748,60 @@ export function saveTemplateFields(
     body: JSON.stringify(minImages === undefined ? { required } : { required, minImages }),
   });
 }
+
+// ===== 今日应巡 =====
+//
+// 「完成」是自动判定的:这些设备今天有没有巡检快照 —— 不给现场加打勾的动作。
+
+export interface DailyAssetStatus {
+  assetId: string;
+  assetName: string;
+  project?: string;
+  done: boolean;
+  doneAt?: string;
+  /** 台账里已经查不到这台设备(计划录入后被删) */
+  missing?: boolean;
+}
+
+export interface DailyPlanStatus {
+  planId: string;
+  title: string;
+  project?: string;
+  ownerName?: string;
+  total: number;
+  done: number;
+  assets: DailyAssetStatus[];
+  /** 这条计划没指定设备,算不出完成率 */
+  noAssets?: boolean;
+}
+
+export interface TodayBoard {
+  date: string;
+  weekday: number; // 1=周一 … 7=周日
+  total: number;
+  done: number;
+  plans: DailyPlanStatus[];
+}
+
+export function getTodayBoard() {
+  return api<TodayBoard>("/api/engineering/plans/today");
+}
+
+/** 计划类型的中文名。和后端 planTypeNames 一一对应 */
+export const PLAN_TYPES = [
+  { value: "daily", label: "每日巡检" },
+  { value: "weekly", label: "周计划" },
+  { value: "monthly", label: "月度计划" },
+  { value: "yearly", label: "年度计划" },
+  { value: "adhoc", label: "临时计划" },
+] as const;
+
+export const WEEKDAY_OPTIONS = [
+  { value: "1", label: "一" },
+  { value: "2", label: "二" },
+  { value: "3", label: "三" },
+  { value: "4", label: "四" },
+  { value: "5", label: "五" },
+  { value: "6", label: "六" },
+  { value: "7", label: "日" },
+] as const;

@@ -153,3 +153,8 @@ body {
 .pane-nav .ant-menu-item:not(.ant-menu-item-selected):hover {
   background: rgba(0, 0, 0, 0.035);
 }
+
+/* 今日执行的待巡行:可点。hover 给一层极淡的底,不做描边或位移 ——
+ * 这是个列表不是按钮,反馈到"能点"为止就够了。 */
+.today-row:hover { background: rgba(0, 0, 0, 0.02); }
+.today-row:active { background: rgba(0, 0, 0, 0.04); }
