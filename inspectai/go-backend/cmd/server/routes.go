@@ -76,6 +76,8 @@ var apiRoutes = []apiRoute{
 	// —— 工程巡检计划/任务(任务状态更新在前缀路由,巡检员完成任务要用,保持开放) ——
 	{http.MethodGet, "/api/engineering/plans", guardNone, "", (*Server).handleListEngineeringPlans},
 	{http.MethodPost, "/api/engineering/plans", guardNone, "task_dispatch", (*Server).handleCreateEngineeringPlan},
+	// 今日应巡看板:每日计划 + 自动判定的完成情况(读口,管理角色都能看)
+	{http.MethodGet, "/api/engineering/plans/today", guardSupervisor, "", (*Server).handleTodayBoard},
 	{http.MethodGet, "/api/engineering/tasks", guardNone, "", (*Server).handleListEngineeringTasks},
 	{http.MethodPost, "/api/engineering/tasks", guardNone, "task_dispatch", (*Server).handleCreateEngineeringTask},
 

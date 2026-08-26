@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -53,7 +54,10 @@ type EngineeringPlanItem struct {
 	PlanType string `json:"planType"`
 	// Weekdays 每日计划专用:一周哪几天执行,形如 "1,2,3,4,5"(1=周一 … 7=周日)。
 	// 空 = 每天。其他类型的计划忽略这个字段。
-	Weekdays     string    `json:"weekdays"`
+	Weekdays string `json:"weekdays"`
+	// AssetIDs 这条计划要巡哪些设备。【每日计划必须有】——
+	// "完成"是自动判定的(这些设备今天有没有巡检快照),没有清单就无从判起。
+	AssetIDs     []string  `json:"assetIds,omitempty"`
 	LatestTaskID string    `json:"latestTaskId"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
@@ -325,7 +329,8 @@ func (s *SQLiteStore) ListEngineeringPlans(filter EngineeringPlanFilter) ([]*Eng
 		SELECT id, source, sequence_no, business_type, project, category, sub_type,
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
-		       latest_task_id, created_at, updated_at, plan_type, weekdays
+		       latest_task_id, created_at, updated_at, plan_type, weekdays,
+		       COALESCE(asset_ids_json, '[]')
 		FROM engineering_plan_items
 		ORDER BY plan_end ASC, updated_at DESC`)
 	if err != nil {
@@ -351,7 +356,8 @@ func (s *SQLiteStore) GetEngineeringPlan(id string) (*EngineeringPlanItem, error
 		SELECT id, source, sequence_no, business_type, project, category, sub_type,
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
-		       latest_task_id, created_at, updated_at, plan_type, weekdays
+		       latest_task_id, created_at, updated_at, plan_type, weekdays,
+		       COALESCE(asset_ids_json, '[]')
 		FROM engineering_plan_items WHERE id=?`, id)
 	return scanEngineeringPlan(row)
 }
@@ -367,8 +373,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				id, source, sequence_no, business_type, project, category, sub_type,
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
-				latest_task_id, created_at, updated_at, plan_type, weekdays
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE
 				source=VALUES(source), sequence_no=VALUES(sequence_no), business_type=VALUES(business_type),
 				project=VALUES(project), category=VALUES(category), sub_type=VALUES(sub_type),
@@ -376,15 +382,16 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				budget_text=VALUES(budget_text), plan_start=VALUES(plan_start), plan_end=VALUES(plan_end),
 				owner_name=VALUES(owner_name), cycle_text=VALUES(cycle_text), remark=VALUES(remark),
 				status=VALUES(status), risk_level=VALUES(risk_level), latest_task_id=VALUES(latest_task_id),
-				updated_at=VALUES(updated_at), plan_type=VALUES(plan_type), weekdays=VALUES(weekdays)`
+				updated_at=VALUES(updated_at), plan_type=VALUES(plan_type), weekdays=VALUES(weekdays),
+				asset_ids_json=VALUES(asset_ids_json)`
 	} else {
 		query = `
 			INSERT INTO engineering_plan_items (
 				id, source, sequence_no, business_type, project, category, sub_type,
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
-				latest_task_id, created_at, updated_at, plan_type, weekdays
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				source=excluded.source, sequence_no=excluded.sequence_no, business_type=excluded.business_type,
 				project=excluded.project, category=excluded.category, sub_type=excluded.sub_type,
@@ -392,13 +399,20 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				budget_text=excluded.budget_text, plan_start=excluded.plan_start, plan_end=excluded.plan_end,
 				owner_name=excluded.owner_name, cycle_text=excluded.cycle_text, remark=excluded.remark,
 				status=excluded.status, risk_level=excluded.risk_level, latest_task_id=excluded.latest_task_id,
-				updated_at=excluded.updated_at, plan_type=excluded.plan_type, weekdays=excluded.weekdays`
+				updated_at=excluded.updated_at, plan_type=excluded.plan_type, weekdays=excluded.weekdays,
+				asset_ids_json=excluded.asset_ids_json`
+	}
+	// 设备清单存 JSON。序列化失败也要给个合法的空数组 —— 存进 NULL 或空串
+	// 会让下次读取时解析报错,而那时候已经查不出是哪一条写坏的了。
+	assetIDsJSON := "[]"
+	if raw, mErr := json.Marshal(item.AssetIDs); mErr == nil && item.AssetIDs != nil {
+		assetIDsJSON = string(raw)
 	}
 	_, err := s.db.Exec(query,
 		item.ID, item.Source, item.SequenceNo, item.BusinessType, item.Project, item.Category, item.SubType,
 		item.WorkContent, item.ScopeDesc, item.BudgetAmount, item.BudgetText, item.PlanStart,
 		item.PlanEnd, item.OwnerName, item.CycleText, item.Remark, item.Status, item.RiskLevel,
-		item.LatestTaskID, created, updated, item.PlanType, item.Weekdays,
+		item.LatestTaskID, created, updated, item.PlanType, item.Weekdays, assetIDsJSON,
 	)
 	return err
 }
@@ -515,12 +529,12 @@ func (s *SQLiteStore) UpdateEngineeringTask(id string, mutate func(*EngineeringT
 
 func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 	item := &EngineeringPlanItem{}
-	var created, updated string
+	var created, updated, assetIDsJSON string
 	err := row.Scan(
 		&item.ID, &item.Source, &item.SequenceNo, &item.BusinessType, &item.Project, &item.Category, &item.SubType,
 		&item.WorkContent, &item.ScopeDesc, &item.BudgetAmount, &item.BudgetText, &item.PlanStart,
 		&item.PlanEnd, &item.OwnerName, &item.CycleText, &item.Remark, &item.Status, &item.RiskLevel,
-		&item.LatestTaskID, &created, &updated, &item.PlanType, &item.Weekdays,
+		&item.LatestTaskID, &created, &updated, &item.PlanType, &item.Weekdays, &assetIDsJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -532,6 +546,8 @@ func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 	if item.PlanType == "" {
 		item.PlanType = planTypeAdhoc
 	}
+	// 解析失败就当空清单:一条计划的设备清单坏了,不该让整页计划打不开
+	_ = json.Unmarshal([]byte(assetIDsJSON), &item.AssetIDs)
 	return item, nil
 }
 

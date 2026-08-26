@@ -41,6 +41,7 @@ var migrationList = []migration{
 	{17, "template_settings", (*SQLiteStore).migTemplateSettings},
 	{18, "plan_type", (*SQLiteStore).migPlanType},
 	{19, "app_settings", (*SQLiteStore).migAppSettings},
+	{20, "plan_assets", (*SQLiteStore).migPlanAssets},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -662,6 +663,33 @@ func (s *SQLiteStore) migAppSettings() error {
 	}
 	if _, err := s.db.Exec(stmt); err != nil {
 		return fmt.Errorf("create app_settings: %w", err)
+	}
+	return nil
+}
+
+// migPlanAssets — 020:每日计划要巡哪些设备。
+//
+// 【没有这一列就算不出完成率】"完成"的判定是自动的:这些设备今天有没有巡检
+// 快照。前提是计划得说清"这些"是哪些 —— 只写一句"巡查配电房"程序没法判。
+//
+// 存 JSON 数组而不是逗号分隔:资产 ID 形如「会议中心::elevator_no_room::KT-7」,
+// 项目名里出现逗号虽然少见但不是不可能,一旦出现整份清单就被切错,
+// 而且错得很安静(少几台设备,完成率反而更好看)。
+func (s *SQLiteStore) migPlanAssets() error {
+	exists, err := s.hasColumn("engineering_plan_items", "asset_ids_json")
+	if err != nil {
+		return fmt.Errorf("inspect engineering_plan_items.asset_ids_json: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	def := `TEXT NOT NULL DEFAULT '[]'`
+	if s.dialect == "mysql" {
+		def = `TEXT`
+	}
+	if _, err := s.db.Exec(
+		`ALTER TABLE engineering_plan_items ADD COLUMN asset_ids_json ` + def); err != nil {
+		return fmt.Errorf("add engineering_plan_items.asset_ids_json: %w", err)
 	}
 	return nil
 }
