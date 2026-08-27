@@ -278,6 +278,37 @@ export default function Plan() {
     );
   }, [editing]);
 
+  // 要巡的设备:只列当前项目的。
+  //
+  // 【原来是全量,这是个真漏洞】一条「会议中心」的每日计划里混进紫菡雅集的
+  // 设备,那些设备名就会出现在会议中心巡检员的今日待巡清单里 ——
+  // 数据是按计划的项目授权的,设备却来自另一个项目,权限在这里被绕过去了。
+  //
+  // 没选项目时给空列表并禁用,不是给全量:让人先选项目,比让他选完
+  // 一堆设备再发现选错了项目要好。
+  const assetOptions = useMemo(() => {
+    if (!formProject) return [];
+    return assets
+      .filter((a) => (a.project || "") === formProject)
+      .map((a) => ({
+        value: a.id,
+        label: `${a.assetName || a.assetKey}${a.assetType ? " · " + a.assetType : ""}`,
+      }));
+  }, [assets, formProject]);
+
+  // 改项目后,已选的设备可能不属于新项目了。和负责人同一个道理:
+  // 不清掉的话表单看着正常,提交后这条计划就横跨两个项目,而且不报错。
+  useEffect(() => {
+    if (!editing || !formProject) return;
+    const cur: string[] = form.getFieldValue("assetIds") || [];
+    if (!cur.length) return;
+    const ok = cur.filter((id) => assetOptions.some((o) => o.value === id));
+    if (ok.length === cur.length) return;
+    form.setFieldsValue({ assetIds: ok });
+    message.warning(`已移除 ${cur.length - ok.length} 台不属于「${formProject}」的设备`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formProject, assetOptions]);
+
   // 类型 / 点位:没有主数据表,拿历史填过的值做候选,避免同一类点位写出五种叫法。
   const categoryOptions = useMemo(
     () =>
@@ -974,12 +1005,10 @@ export default function Plan() {
                     <Select
                       mode="multiple"
                       allowClear
-                      placeholder="从台账里选"
+                      placeholder={formProject ? "从台账里选" : "先选上面的项目"}
+                      disabled={!formProject}
                       optionFilterProp="label"
-                      options={assets.map((a) => ({
-                        value: a.id,
-                        label: `${a.assetName || a.assetKey}${a.project ? " · " + a.project : ""}`,
-                      }))}
+                      options={assetOptions}
                     />
                   </Form.Item>
                 </>

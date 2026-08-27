@@ -426,3 +426,91 @@ func TestOwnerBindingRespectsProjectScope(t *testing.T) {
 		t.Errorf("越权的绑定不该落库,实际 OwnerID=%q", got.OwnerID)
 	}
 }
+
+// ===== 设备必须属于计划的项目 =====
+
+// 混进别的项目的设备,那些设备名会出现在本项目巡检员的今日待巡里 ——
+// 数据按计划的项目授权,设备却来自另一个项目,隔离在这里被绕过去。
+func TestSavePlanRejectsAssetsFromAnotherProject(t *testing.T) {
+	srv, store, _ := bindStore(t)
+	mk := func(id, project string) {
+		if err := store.CreateAsset(&AssetEntry{
+			ID: id, TenantID: defaultTenantID, Project: project,
+			AssetType: "电梯", AssetKey: id, AssetName: id,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("A-1", "会议中心")
+	mk("B-1", "紫菡雅集")
+
+	w := savePlanDirect(t, srv, &EngineeringPlanItem{
+		ID: "p1", Project: "会议中心", WorkContent: "每日例检",
+		PlanType: planTypeDaily, AssetIDs: []string{"A-1", "B-1"},
+	})
+	if w.Code != 400 {
+		t.Fatalf("跨项目的设备应被拒,实际 %d:%s", w.Code, w.Body.String())
+	}
+
+	// 全是本项目的设备 → 放行
+	w = savePlanDirect(t, srv, &EngineeringPlanItem{
+		ID: "p2", Project: "会议中心", WorkContent: "每日例检",
+		PlanType: planTypeDaily, AssetIDs: []string{"A-1"},
+	})
+	if w.Code != 201 {
+		t.Fatalf("本项目的设备应放行,实际 %d:%s", w.Code, w.Body.String())
+	}
+}
+
+// 台账里查不到的设备 ID 也要拒:存进去之后这条计划的完成率永远算不出来
+// (那台不会有巡检快照),而看板上它只会一直显示"未完成"。
+func TestSavePlanRejectsUnknownAsset(t *testing.T) {
+	srv, _, _ := bindStore(t)
+	w := savePlanDirect(t, srv, &EngineeringPlanItem{
+		ID: "p1", Project: "会议中心", WorkContent: "每日例检",
+		PlanType: planTypeDaily, AssetIDs: []string{"不存在的设备"},
+	})
+	if w.Code != 400 {
+		t.Fatalf("台账里没有的设备应被拒,实际 %d:%s", w.Code, w.Body.String())
+	}
+}
+
+// ===== /api/users 要把每人的项目范围一起给出来 =====
+//
+// 前端按它筛负责人候选。没给的话前端会退回"不筛"(宁可让后端拦,
+// 也别静默少人),表现就是"选了项目也没区别"—— 而这正是被问到的那个现象。
+func TestListUsersReturnsProjectScopes(t *testing.T) {
+	srv, req, store, _ := newScopeRequestWithStore(t, roleAdmin, "")
+	limited := addOwnerUser(t, store, "huxf", "胡晓悱")
+	scopeUserToProject(t, store, limited.ID, "紫菡雅集")
+	plain := addOwnerUser(t, store, "demo9", "普通巡检员") // 没配范围
+
+	w := httptest.NewRecorder()
+	srv.handleListUsers(w, req)
+	if w.Code != 200 {
+		t.Fatalf("应 200,实际 %d:%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		ProjectScopes map[string]struct {
+			SeesAll  bool     `json:"seesAll"`
+			Projects []string `json:"projects"`
+			Blocked  bool     `json:"blocked"`
+		} `json:"projectScopes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ProjectScopes == nil {
+		t.Fatal("没有返回 projectScopes —— 前端会退回不筛,选项目就没有任何区别")
+	}
+	got := body.ProjectScopes[limited.ID]
+	if got.SeesAll || len(got.Projects) != 1 || got.Projects[0] != "紫菡雅集" {
+		t.Errorf("被限定的人应只有紫菡雅集,实际 %+v", got)
+	}
+	// 【这一条防止把两种"没有项目清单"搞混】没配范围 = 只看自己的,
+	// 不按项目限制 —— 不是"一个项目都看不到"。搞混会把大多数人
+	// 从所有候选里筛掉。
+	if !body.ProjectScopes[plain.ID].SeesAll {
+		t.Errorf("没配数据范围的人不该被按项目筛掉,实际 %+v", body.ProjectScopes[plain.ID])
+	}
+}

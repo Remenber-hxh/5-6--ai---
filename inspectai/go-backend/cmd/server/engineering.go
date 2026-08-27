@@ -853,6 +853,18 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 				"每日巡检计划必须指定要巡的设备 —— 完成情况是按设备自动判定的")
 			return
 		}
+		// 【设备必须属于这条计划的项目】混进别的项目的设备,那些设备名就会
+		// 出现在本项目巡检员的今日待巡里 —— 数据是按计划的项目授权的,
+		// 设备却来自另一个项目,项目隔离在这里被绕过去了。
+		// 前端筛过一道,但筛选不是强制:接口是可以直接调的。
+		if bad, aErr := s.assetsOutsideProject(r, req.AssetIDs, req.Project); aErr != nil {
+			writeError(w, http.StatusInternalServerError, "check_assets_failed", aErr.Error())
+			return
+		} else if len(bad) > 0 {
+			writeError(w, http.StatusBadRequest, "assets_outside_project",
+				"这些设备不属于「"+req.Project+"」:"+strings.Join(bad, "、"))
+			return
+		}
 		// 执行日只认 1..7(1=周一 … 7=周日)。脏值会让这条计划要么天天触发、
 		// 要么永远不触发,而两种都不报错。
 		if wd := strings.TrimSpace(req.Weekdays); wd != "" {
@@ -1018,6 +1030,47 @@ func (s *Server) handleDeleteEngineeringTask(w http.ResponseWriter, r *http.Requ
 		"title": task.Title, "project": task.Project, "status": task.Status,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// assetsOutsideProject 挑出不属于这个项目的设备,返回它们的显示名。
+//
+// 【返回名字不是 ID】ID 形如「会议中心::elevator_no_room::KT-7」,
+// 报错里贴一串这个,人得自己去台账里翻才知道是哪台。
+//
+// 【查不到的设备也算不合格】台账里没有的 ID 存进去,这条计划的完成率
+// 永远算不出来(那台设备不会有巡检快照),而看板上它只会一直显示"未完成"。
+func (s *Server) assetsOutsideProject(r *http.Request, assetIDs []string, project string) ([]string, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	assets, err := s.store.ListAssets(s.tenantForRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]*AssetEntry, len(assets))
+	for _, a := range assets {
+		if a != nil {
+			byID[a.ID] = a
+		}
+	}
+	project = strings.TrimSpace(project)
+	var bad []string
+	for _, id := range assetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		a := byID[id]
+		if a == nil {
+			bad = append(bad, id+"(台账里没有)")
+			continue
+		}
+		if strings.TrimSpace(a.Project) != project {
+			bad = append(bad, firstNonEmpty(a.AssetName, a.AssetKey, id)+
+				"(属于"+firstNonEmpty(a.Project, "未指定项目")+")")
+		}
+	}
+	return bad, nil
 }
 
 // handleEngineeringPlanRoutes 处理 /api/engineering/plans/<id>。
