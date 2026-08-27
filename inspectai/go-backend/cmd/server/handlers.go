@@ -503,19 +503,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	// 看全部数据的人直接标 seesAllProjects。
 	// 【按 userId 索引,不要把 user 再复制一份】并排返回两份用户对象的话,
 	// 前端总有一天会去读错的那一份,而两份不同步时没人会发现。
-	tenant := s.tenantForRequest(r)
-	scopes := make(map[string]projectScopeDTO, len(users))
-	for _, u := range users {
-		if u == nil {
-			continue
-		}
-		vis := s.visibilityForUser(tenant, u)
-		scopes[u.ID] = projectScopeDTO{
-			// 看全部数据、或者压根不按项目过滤(只看自己的)—— 两种都不受项目限制
-			SeesAll:  vis.AllData || (!vis.Blocked && len(vis.Projects) == 0),
-			Projects: vis.Projects,
-			Blocked:  vis.Blocked,
-		}
+	//
+	// 【一次查全】见 projectScopesForUsers ——
+	// 逐个查的话,人数上百之后这个页面每打开一次就是上百次数据库往返。
+	scopes, err := s.projectScopesForUsers(s.tenantForRequest(r), users)
+	if err != nil {
+		// 范围算不出来不该让整页打不开:前端拿不到就退回"不按项目筛",
+		// 而真正的拦截在保存那一步(owner_cannot_see_project)。
+		log.Printf("WARN: 算用户项目范围失败: %v", err)
+		scopes = map[string]projectScopeDTO{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users, "projectScopes": scopes})
 }

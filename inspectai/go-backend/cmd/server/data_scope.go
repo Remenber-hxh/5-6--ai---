@@ -157,16 +157,7 @@ func (s *Server) visibilityForUser(tenant string, u *User) dataVisibility {
 	if u == nil {
 		return dataVisibility{Blocked: true, OwnOnly: true, BlockedReason: blockReasonNoUser}
 	}
-	scope := strings.TrimSpace(u.DataScope)
-	if scope == "" || !validDataScopes[scope] {
-		// 没配过(或配了个不认识的值)→ 按角色推导,和请求那条路同一个规则
-		if s.roleHasSupervisorAccess(u.RoleCode) {
-			scope = dataScopeAll
-		} else {
-			scope = dataScopeSelf
-		}
-	}
-	switch scope {
+	switch scope := s.dataScopeOfUser(u); scope {
 	case dataScopeAll:
 		return dataVisibility{AllData: true}
 	case dataScopeProject, dataScopeProjectSelf:
@@ -187,6 +178,63 @@ func (s *Server) visibilityForUser(tenant string, u *User) dataVisibility {
 		// 这个问题,答案是能 —— 见 allowsProject。
 		return dataVisibility{OwnOnly: true}
 	}
+}
+
+// dataScopeOfUser 这个人属于哪一档数据范围。
+//
+// 【单个查和批量查共用这一个函数】visibilityForUser 和 projectScopesForUsers
+// 各写一份的话,哪天加了个新的管理角色,两边只会改一处 ——
+// 而不一致的表现是"用户列表里显示他能看全部,实际却看不到",没人会去比对。
+func (s *Server) dataScopeOfUser(u *User) string {
+	if u == nil {
+		return dataScopeSelf
+	}
+	scope := strings.TrimSpace(u.DataScope)
+	if scope == "" || !validDataScopes[scope] {
+		// 没配过(或配了个不认识的值)→ 按角色推导,和请求那条路同一个规则
+		if s.roleHasSupervisorAccess(u.RoleCode) {
+			return dataScopeAll
+		}
+		return dataScopeSelf
+	}
+	return scope
+}
+
+// projectScopesForUsers 一次算出所有人的项目可见范围,给用户列表用。
+//
+// 【一次查全,不逐个问】原来是每个受限用户查一次名单:10 个人无感,
+// 300 个人就是打开一次用户页问 300 次数据库。这类慢不报错,
+// 只表现成"这个页面越来越卡",而且很难想到是这里。
+//
+// 【不算 BlockedReason】那个要再查一次(分辨"没分过"和"分了但全停用")。
+// 列表只需要知道"是不是被挡住",具体原因在用户详情里再说。
+func (s *Server) projectScopesForUsers(tenantID string, users []*User) (map[string]projectScopeDTO, error) {
+	byUser, err := s.store.AllUserProjectNames(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]projectScopeDTO, len(users))
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		switch s.dataScopeOfUser(u) {
+		case dataScopeAll:
+			out[u.ID] = projectScopeDTO{SeesAll: true}
+		case dataScopeProject, dataScopeProjectSelf:
+			names := byUser[u.ID]
+			if len(names) == 0 {
+				out[u.ID] = projectScopeDTO{Blocked: true}
+				continue
+			}
+			out[u.ID] = projectScopeDTO{Projects: names}
+		default:
+			// 只看自己的:不按项目过滤 —— 【不是"一个项目都看不到"】。
+			// 混了的话大多数人会从所有候选里消失。
+			out[u.ID] = projectScopeDTO{SeesAll: true}
+		}
+	}
+	return out, nil
 }
 
 // userCanSeeProject 这个人能不能看到这个项目。派活之前问这一句。

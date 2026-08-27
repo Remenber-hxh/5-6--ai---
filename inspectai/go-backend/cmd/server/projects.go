@@ -42,6 +42,9 @@ type ProjectStore interface {
 	// ListUserProjectNames 这个人被分到了哪些项目(返回项目名,直接用于过滤)。
 	// 返回空切片 = 没被分配过 = 不受项目限制。
 	ListUserProjectNames(tenantID, userID string) ([]string, error)
+	// AllUserProjectNames 批量版:一次取全租户的 用户 → 可见项目名。
+	// 用户列表要显示每个人的范围,逐个查在人数上百之后会明显拖慢页面。
+	AllUserProjectNames(tenantID string) (map[string][]string, error)
 	// SetUserProjects 覆盖式设置某人的项目归属。传空切片 = 清空归属。
 	SetUserProjects(tenantID, userID string, projectIDs []string) error
 	// ListUserProjectIDs 后台回显用。
@@ -177,6 +180,56 @@ func (s *SQLiteStore) ListUserProjectNames(tenantID, userID string) ([]string, e
 		names = append(names, n)
 	}
 	return names, rows.Err()
+}
+
+// AllUserProjectNames 一次取全租户的 用户 → 可见项目名 映射。
+//
+// 【为什么要有批量版】用户列表页要显示每个人能看到哪些项目。逐个查的话,
+// 10 个人无感,300 个人就是打开一次页面问 300 次数据库 ——
+// 这类慢不报错,只表现成"这个页面越来越卡",而且很难想到是这里。
+//
+// 和 ListUserProjectNames 用同一个 WHERE(启用中的项目、按名字排序),
+// 只是去掉了 user_id 的限定 —— 两者口径必须一致,否则单个查和批量查
+// 会给出不同的答案,而这种不一致没人会去比对。
+func (s *SQLiteStore) AllUserProjectNames(tenantID string) (map[string][]string, error) {
+	rows, err := s.db.Query(`
+		SELECT up.user_id, p.name FROM user_projects up
+		JOIN projects p ON p.id = up.project_id
+		WHERE p.tenant_id = ? AND p.disabled = 0
+		ORDER BY up.user_id ASC, p.name ASC`, tenantOrDefault(tenantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var uid, name string
+		if err := rows.Scan(&uid, &name); err != nil {
+			return nil, err
+		}
+		out[uid] = append(out[uid], name)
+	}
+	return out, rows.Err()
+}
+
+func (s *MemStore) AllUserProjectNames(tenantID string) (map[string][]string, error) {
+	tenantID = tenantOrDefault(tenantID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string][]string{}
+	for uid, pids := range s.userProjects {
+		names := []string{}
+		for _, pid := range pids {
+			if p, ok := s.projects[pid]; ok && p.TenantID == tenantID && !p.Disabled {
+				names = append(names, p.Name)
+			}
+		}
+		if len(names) > 0 {
+			sort.Strings(names)
+			out[uid] = names
+		}
+	}
+	return out, nil
 }
 
 func (s *SQLiteStore) ListUserProjectIDs(tenantID, userID string) ([]string, error) {

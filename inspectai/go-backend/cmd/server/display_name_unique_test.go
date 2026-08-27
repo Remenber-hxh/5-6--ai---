@@ -83,3 +83,71 @@ func TestCreateUserRejectsDuplicateDisplayName(t *testing.T) {
 		t.Fatalf("重名应 409,实际 %d:%s", w.Code, w.Body.String())
 	}
 }
+
+// ===== 批量算范围要和逐个算的结果一致 =====
+//
+// 【这是这次改动唯一的风险】为了不让用户页在人数上百时变卡,范围改成一次查全。
+// 两条路给出不同答案的话,表现是"用户列表里显示他能看全部,实际却看不到" ——
+// 没人会去比对这两处,所以只能靠测试钉住。
+func TestBatchProjectScopesMatchPerUser(t *testing.T) {
+	srv, req, store, _ := newScopeRequestWithStore(t, roleAdmin, "")
+	_ = req
+
+	limited := addOwnerUser(t, store, "huxf", "胡晓悱")
+	scopeUserToProject(t, store, limited.ID, "紫菡雅集")
+
+	plain := addOwnerUser(t, store, "demo9", "普通巡检员") // 没配范围 = 只看自己的
+
+	boss := addOwnerUser(t, store, "boss", "管理员甲")
+	if err := store.UpdateUserProfile(boss.ID, func(u *User) { u.DataScope = dataScopeAll }); err != nil {
+		t.Fatal(err)
+	}
+
+	// 配了项目范围、但一个项目都没分到 —— 应该是 Blocked
+	orphan := addOwnerUser(t, store, "orphan", "没分项目的人")
+	if err := store.UpdateUserProfile(orphan.ID, func(u *User) { u.DataScope = dataScopeProject }); err != nil {
+		t.Fatal(err)
+	}
+
+	users, err := store.ListUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := srv.projectScopesForUsers(defaultTenantID, users)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range users {
+		vis := srv.visibilityForUser(defaultTenantID, u)
+		want := projectScopeDTO{
+			SeesAll:  vis.AllData || (!vis.Blocked && len(vis.Projects) == 0),
+			Projects: vis.Projects,
+			Blocked:  vis.Blocked,
+		}
+		got := batch[u.ID]
+		if got.SeesAll != want.SeesAll || got.Blocked != want.Blocked ||
+			len(got.Projects) != len(want.Projects) {
+			t.Errorf("%s(%s):批量 %+v ≠ 逐个 %+v", u.Username, u.DisplayName, got, want)
+			continue
+		}
+		for i := range want.Projects {
+			if got.Projects[i] != want.Projects[i] {
+				t.Errorf("%s 的项目清单不一致:批量 %v ≠ 逐个 %v", u.Username, got.Projects, want.Projects)
+				break
+			}
+		}
+	}
+	// 顺带钉住几个关键档位,防止两条路【一起】错
+	if !batch[plain.ID].SeesAll {
+		t.Error("没配范围的人应不受项目限制")
+	}
+	if !batch[boss.ID].SeesAll {
+		t.Error("看全部数据的人应不受项目限制")
+	}
+	if !batch[orphan.ID].Blocked {
+		t.Error("配了项目范围却一个项目都没分到,应是 Blocked")
+	}
+	if batch[limited.ID].SeesAll || len(batch[limited.ID].Projects) != 1 {
+		t.Errorf("被限定的人应只有一个项目,实际 %+v", batch[limited.ID])
+	}
+}
