@@ -236,6 +236,44 @@ export async function getBadgeCounts(
   return { shots: body.shots || 0, tasks: body.tasks || 0 };
 }
 
+// ===== 今日待巡 =====
+//
+// 「这台设备今天还没有巡检快照」—— 是算出来的状态,不是一条记录。
+// 所以它和工程任务不是一回事:没有 ID、没有状态流转,拍照提交就自动销账。
+
+export interface TodayAssetDTO {
+  assetId: string;
+  assetName: string;
+  project?: string;
+  done?: boolean;
+  doneAt?: string;
+  /** 台账里已经查不到了(计划录入后被删)。点不了,但要显示出来 */
+  missing?: boolean;
+  /** 下面三样用于"点一下直接去巡这台",和扫码锁定设备是同一套上下文 */
+  templateId?: string;
+  assetKey?: string;
+  pointId?: string;
+}
+
+export interface TodayBoardDTO {
+  date: string;
+  weekday: number;
+  total: number;
+  done: number;
+  plans: {
+    planId: string;
+    title?: string;
+    project?: string;
+    ownerName?: string;
+    assets: TodayAssetDTO[] | null;
+    noAssets?: boolean;
+  }[] | null;
+}
+
+export async function getTodayBoard(signal?: AbortSignal): Promise<TodayBoardDTO> {
+  return api<TodayBoardDTO>("/api/inspection/today", { signal });
+}
+
 export async function listEngineeringTasks(
   signal?: AbortSignal,
 ): Promise<EngineeringTaskDTO[]> {

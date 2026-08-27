@@ -78,6 +78,11 @@ var apiRoutes = []apiRoute{
 	{http.MethodPost, "/api/engineering/plans", guardNone, "task_dispatch", (*Server).handleCreateEngineeringPlan},
 	// 今日应巡看板:每日计划 + 自动判定的完成情况(读口,管理角色都能看)
 	{http.MethodGet, "/api/engineering/plans/today", guardSupervisor, "", (*Server).handleTodayBoard},
+	// 同一份看板,给移动端用。【必须是 guardNone】——
+	// 巡检员本人才是要去巡的人,把"今天该巡什么"锁在管理角色后面,
+	// 这个功能就等于不存在。数据范围由 buildTodayBoard 里的 visibilityFor 管,
+	// 和管理端走的是同一条口径,不会因为换了入口就多看到东西。
+	{http.MethodGet, "/api/inspection/today", guardNone, "", (*Server).handleTodayBoard},
 	// 负责人绑定:报告只读、应用只吃显式清单。两条都是管理员级 ——
 	// 它改的是"提醒发给谁",错了会直接骚扰到人。
 	{http.MethodGet, "/api/engineering/plans/owner-binding", guardAdmin, "", (*Server).handleOwnerBindingReport},

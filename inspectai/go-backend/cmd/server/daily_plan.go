@@ -30,6 +30,15 @@ type DailyAssetStatus struct {
 	// 【要显式标出来】不标的话它会永远算作"未完成",完成率永远到不了 100%,
 	// 而没人知道是因为一台不存在的设备。
 	Missing bool `json:"missing,omitempty"`
+
+	// 下面三样是给移动端"点一下就去巡这台"用的 —— 和扫码锁定设备是同一套
+	// 上下文(templateId 跳过 AI 分类、assetKey 让后端认归属)。
+	//
+	// 【必须在这里一起给】列表里已经查过台账了,让手机再逐台去问一遍
+	// 就是几十次往返;而且中间那一刻台账被改了,两边还会对不上。
+	TemplateID string `json:"templateId,omitempty"`
+	AssetKey   string `json:"assetKey,omitempty"`
+	PointID    string `json:"pointId,omitempty"`
 }
 
 // DailyPlanStatus 一条每日计划今天的执行情况。
@@ -125,6 +134,9 @@ func (s *Server) buildTodayBoard(r *http.Request, now time.Time) (*TodayInspecti
 			} else {
 				item.AssetName = firstNonEmpty(a.AssetName, a.AssetKey, id)
 				item.Project = a.Project
+				item.TemplateID = a.TemplateID
+				item.AssetKey = a.AssetKey
+				item.PointID = a.PointID
 			}
 			if t, ok := doneAt[id]; ok {
 				item.Done = true

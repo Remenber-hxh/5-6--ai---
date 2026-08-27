@@ -1,15 +1,21 @@
 import { Skeleton, Toast } from "@/ui";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import EmptyState from "@/components/EmptyState";
 import FlowHeader from "@/components/FlowHeader";
+import SectionHeader from "@/components/SectionHeader";
 import StatusTag from "@/components/StatusTag";
-import { listEngineeringTasks, startEngineeringTask } from "@/api/inspection";
+import {
+  getTodayBoard,
+  listEngineeringTasks,
+  startEngineeringTask,
+} from "@/api/inspection";
 import { useResource } from "@/hooks/useResource";
 
-import type { EngineeringTaskDTO } from "@/api/inspection";
+import type { EngineeringTaskDTO, TodayAssetDTO } from "@/api/inspection";
 import { setActiveTask } from "@/store/activeTask";
+import { setRetakeTarget } from "@/store/retake";
 
 // 「该显示哪些任务」的规则在后端(?scope=open-mine,见 open_tasks.go):
 // 在办三态 + 主管看全部 / 巡检员看自己的和未指派的。
@@ -50,6 +56,47 @@ export default function TasksPage() {
     },
   );
   const tasks = loading ? null : (data ?? []);
+
+  // 今日待巡。【拉不到不该拖垮整页】—— 这一页原本的主体是工程任务,
+  // 今日待巡是加上去的一段。errorText: null:它自己有空态,不弹提示。
+  const { data: board } = useResource((signal) => getTodayBoard(signal), [], {
+    errorText: null,
+  });
+
+  // 【按设备去重】两条每日计划可能都点了同一台("每日例检"和"重点关注"),
+  // 不去重的话同一台会在清单里出现两次,巡检员会以为要拍两遍。
+  const todo = useMemo(() => {
+    const out: TodayAssetDTO[] = [];
+    const seen = new Set<string>();
+    for (const p of board?.plans ?? []) {
+      for (const a of p.assets ?? []) {
+        if (a.done || seen.has(a.assetId)) continue;
+        seen.add(a.assetId);
+        out.push(a);
+      }
+    }
+    return out;
+  }, [board]);
+
+  // 点一台就去巡它。复用扫码那套锁定机制 —— 扫码和"从清单里点"
+  // 对用户是两个入口,对系统是同一件事:已经确认了是哪台设备。
+  //
+  // 【mode 必须是 scan 不是 recheck】写成 recheck 的话,首页会挂一条
+  // 写着"复检"的横幅、提交后弹"复检已提交",而数据上这就是一次正常巡检 ——
+  // 巡检员会以为自己刚做的是复查,主管看记录也会被这句话误导。
+  function startAsset(a: TodayAssetDTO) {
+    if (a.missing) return;
+    setRetakeTarget({
+      mode: "scan",
+      assetId: a.assetId,
+      templateId: a.templateId || "",
+      pointId: a.pointId || "",
+      assetNo: a.assetKey || "",
+      assetName: a.assetName,
+    });
+    Toast.show({ content: `对准「${a.assetName}」拍照即可` });
+    nav("/");
+  }
 
   async function start(task: EngineeringTaskDTO) {
     setActiveTask(task); // 记住当前任务,拍照提交时带上,提交后自动销账
@@ -94,7 +141,55 @@ export default function TasksPage() {
       <FlowHeader title="我的任务" onBack={() => nav("/")} />
 
       <div className="scroll-area flow-body">
-        <p className="flow-caption">待办的工程巡检任务</p>
+        {/* ===== 今日待巡 =====
+
+            【和下面的复查任务分成两段,不合并成一个列表】两者性质不同:
+            这里的一台设备是「今天还没有巡检快照」——一个算出来的状态,
+            没有 ID、没有状态流转,拍照提交就自动销账;
+            下面的复查任务是一条真实记录,要人操作状态。
+            硬塞进同一个列表,就得给今日待巡编一个假的 ID 和假的状态机,
+            那正是后台那一页当初被说"混乱"的来源。 */}
+        {board && board.total > 0 && (
+          <>
+            <div className="tasks-sec-head">
+              <SectionHeader
+                title="今日待巡"
+                count={todo.length}
+                tone={todo.length ? "risk" : "ok"}
+              />
+            </div>
+            {todo.length === 0 ? (
+              <p className="today-clear">今天的 {board.total} 台已全部巡完</p>
+            ) : (
+              <div className="today-list">
+                {todo.map((a) => (
+                  <button
+                    key={a.assetId}
+                    className="today-item"
+                    // 台账里已经删掉的点不了 —— 跳过去是个死路,
+                    // 比不能点更让人困惑。但仍要显示,否则这台会永远
+                    // 算作未完成而没人知道为什么。
+                    disabled={a.missing}
+                    onClick={() => startAsset(a)}
+                  >
+                    <span className="ti-dot" aria-hidden />
+                    <span className="ti-main">
+                      <b>{a.assetName}</b>
+                      <span className="ti-sub">
+                        {a.missing ? "台账里已删除,请联系管理员" : a.project || ""}
+                      </span>
+                    </span>
+                    {!a.missing && <span className="ti-go">去巡检</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="tasks-sec-head">
+          <SectionHeader title="复查任务" count={sorted.length} />
+        </div>
         {sorted.length === 0 ? (
           <EmptyState
             icon="✓"

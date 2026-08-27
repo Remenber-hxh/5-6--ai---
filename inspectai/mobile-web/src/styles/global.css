@@ -4232,3 +4232,93 @@ a {
  * 一个不打扰的确认,做成同样醒目反而分散注意力。 */
 .rv-short { color: #d4713a; font-weight: 600; }
 .rv-ok { color: #3f9e79; }
+
+/* ===== 任务页:今日待巡 =====
+
+   这一段和下面的「复查任务」是两种东西:这里的一台设备是「今天还没有
+   巡检快照」——算出来的状态,拍照提交就自动销账;下面是一条真实记录,
+   要人操作状态。所以视觉上也分开:这里是紧凑的行,不是卡片。
+   行比卡片密,一屏能看完今天要跑的全部设备;卡片适合"每条都要读一遍"
+   的复查任务。 */
+.tasks-sec-head {
+  padding: 0 16px;
+}
+.today-list {
+  margin: 0 16px 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+}
+.today-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-bottom: 0.5px solid var(--lt-border);
+  background: transparent;
+  text-align: left;
+}
+.today-item:last-child {
+  border-bottom: 0;
+}
+.today-item:active {
+  background: var(--lt-fill);
+}
+/* 台账里已删除的点不了。【要看得出来不能点】—— 只是"点了没反应"的话,
+   现场会以为是卡了,反复戳。 */
+.today-item:disabled {
+  opacity: 0.55;
+}
+.ti-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ios-red);
+}
+.today-item:disabled .ti-dot {
+  background: var(--lt-fg-3);
+}
+.ti-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ti-main b {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lt-fg);
+}
+.ti-sub {
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  /* 名字长了不要把「去巡检」挤没 —— 那是这一行唯一的动作 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 柔和底 + 品牌色字,和「开始巡检」同一套语言,不用饱和实心块:
+   一屏叠十几行时实心色会重得压住所有信息。 */
+.ti-go {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+}
+.today-clear {
+  margin: 0 16px 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--lt-card);
+  box-shadow: var(--lt-shadow);
+  font-size: 14px;
+  color: var(--lt-fg-2);
+}
