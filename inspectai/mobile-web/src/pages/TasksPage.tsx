@@ -149,7 +149,7 @@ export default function TasksPage() {
             下面的复查任务是一条真实记录,要人操作状态。
             硬塞进同一个列表,就得给今日待巡编一个假的 ID 和假的状态机,
             那正是后台那一页当初被说"混乱"的来源。 */}
-        {board && board.total > 0 && (
+        {board && (
           <>
             <div className="tasks-sec-head">
               <SectionHeader
@@ -158,7 +158,17 @@ export default function TasksPage() {
                 tone={todo.length ? "risk" : "ok"}
               />
             </div>
-            {todo.length === 0 ? (
+            {/* 【空的时候也要说话】原来 total=0 就整段不渲染 —— 于是
+                "今天没排计划"、"计划里没填设备"、"接口挂了"三种情况
+                在屏幕上长得一模一样:什么都没有。排查时无从下手,
+                用户也只会觉得"这功能没做"。 */}
+            {board.total === 0 ? (
+              <p className="today-clear">
+                {(board.plans ?? []).some((p) => p.noAssets)
+                  ? "今天有每日计划,但计划里没写要巡哪些设备 —— 请联系管理员补上"
+                  : "今天没有排给你的巡检计划"}
+              </p>
+            ) : todo.length === 0 ? (
               <p className="today-clear">今天的 {board.total} 台已全部巡完</p>
             ) : (
               <div className="today-list">
