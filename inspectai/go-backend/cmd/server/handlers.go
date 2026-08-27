@@ -725,6 +725,17 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "角色无效")
 		return
 	}
+	if err := s.ensureDisplayNameFree(s.tenantForRequest(r), req.DisplayName, ""); err != nil {
+		if errors.Is(err, errDisplayNameTaken) {
+			writeError(w, http.StatusConflict, "display_name_taken",
+				"已经有人叫「"+req.DisplayName+"」了。系统按姓名认人(计划负责人、"+
+					"任务执行人、巡检记录的提交人),重名会分不清谁是谁 —— "+
+					"请加个区分,比如「"+req.DisplayName+"(工程部)」")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "check_name_failed", err.Error())
+		return
+	}
 	user := &User{
 		// 新账号归属创建者所在租户 —— 租户管理员只能在自己租户内建人。
 		// IsPlatformAdmin 刻意不从请求体读取:超管资格不可由接口自助获取。
@@ -812,6 +823,18 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userID
 	if req.DataScope != nil {
 		if scope := strings.TrimSpace(*req.DataScope); scope != "" && !validDataScopes[scope] {
 			writeError(w, http.StatusBadRequest, "bad_request", "数据范围无效")
+			return
+		}
+	}
+	// 改名也要查重 —— 只在建账号时拦的话,建完再改回同名就绕过去了。
+	if v := strings.TrimSpace(req.DisplayName); v != "" {
+		if err := s.ensureDisplayNameFree(s.tenantForRequest(r), v, userID); err != nil {
+			if errors.Is(err, errDisplayNameTaken) {
+				writeError(w, http.StatusConflict, "display_name_taken",
+					"已经有人叫「"+v+"」了 —— 系统按姓名认人,重名会分不清谁是谁")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "check_name_failed", err.Error())
 			return
 		}
 	}

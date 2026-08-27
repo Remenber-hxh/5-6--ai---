@@ -165,6 +165,23 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 姓名不能和同租户里已有的人重。
+	//
+	// 【租户取注册码上的,不是请求上的】注册是未登录的,请求里没有租户 ——
+	// 这个人归哪个租户由注册码决定,查重也必须在那个租户里查。
+	// 拿默认租户去查的话,别的租户会被误判成重名或漏判。
+	if nameErr := s.ensureDisplayNameFree(rc.TenantID, req.DisplayName, ""); nameErr != nil {
+		if errors.Is(nameErr, errDisplayNameTaken) {
+			writeError(w, http.StatusConflict, "display_name_taken",
+				"已经有同事叫「"+req.DisplayName+"」了。系统按姓名认人,"+
+					"重名会分不清谁是谁 —— 请加个区分,比如「"+req.DisplayName+"(二班)」")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "check_name_failed",
+			"服务暂时不可用,请稍后重试")
+		return
+	}
+
 	user := &User{
 		ID:           newID("user"),
 		Username:     req.Username,

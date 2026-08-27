@@ -266,6 +266,47 @@ func (s *MemStore) CreateUser(user *User, password string) error {
 	return nil
 }
 
+// errDisplayNameTaken 同租户里姓名重了。
+//
+// 【为什么姓名要唯一】系统里到处按姓名认人:计划的负责人、任务的执行人、
+// 巡检记录的提交人,历史数据里存的都是名字而不是账号。两个人同名,
+// 这些地方就分不清谁是谁 —— 而分错的表现是"提醒发给了另一个同名的人",
+// 不报错,得等有人抱怨才发现。
+//
+// 【代价说清楚】现实里重名很常见。真遇到第二个「张伟」,让他登记成
+// 「张伟(工程部)」这类带区分的写法 —— 麻烦一次,好过一直分不清。
+var errDisplayNameTaken = errors.New("display name taken")
+
+// ensureDisplayNameFree 同租户内姓名不能重。excludeUserID 用于改名时排除自己。
+//
+// 【必须是所有入口共用的一个函数】建账号、扫码注册、改资料是三条路,
+// 各写一份的话总有一条会漏 —— 而漏掉的那条就是重名进来的入口。
+func (s *Server) ensureDisplayNameFree(tenantID, name, excludeUserID string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	users, err := s.store.ListUsers()
+	if err != nil {
+		return err
+	}
+	key := ownerNameKey(name)
+	for _, u := range users {
+		if u == nil || u.ID == excludeUserID {
+			continue
+		}
+		if tenantOrDefault(u.TenantID) != tenantOrDefault(tenantID) {
+			continue
+		}
+		// 【按归一化后的键比,不是原样比】"张 伟" 和 "张伟" 在所有按姓名
+		// 认人的地方都会被当成同一个人,那这里就不该放行第二个。
+		if ownerNameKey(u.DisplayName) == key {
+			return errDisplayNameTaken
+		}
+	}
+	return nil
+}
+
 func (s *MemStore) UpdateUserProfile(id string, mutate func(*User)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
