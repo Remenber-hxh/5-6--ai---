@@ -162,17 +162,17 @@ func (s *Server) buildOwnerBindingReport(r *http.Request) (*ownerBindingReport, 
 	// 唯一命中的,再核一遍"这个人看得到那条计划的项目吗"。
 	// 写入时反正会拒,不如在报告里就说清楚 —— 否则人点了"全部绑定"
 	// 才被整批打回来,而报告刚刚还说这些是能绑的。
-	users4 := map[string]*User{}
+	userByID := map[string]*User{}
 	for _, u := range users {
 		if u != nil {
-			users4[u.ID] = u
+			userByID[u.ID] = u
 		}
 	}
 	for _, g := range groups {
 		if len(g.Candidates) != 1 {
 			continue
 		}
-		u := users4[g.Candidates[0].UserID]
+		u := userByID[g.Candidates[0].UserID]
 		if u == nil {
 			continue
 		}

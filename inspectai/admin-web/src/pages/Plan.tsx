@@ -248,6 +248,9 @@ export default function Plan() {
         .map((u) => {
           const name = u.displayName || u.username || "";
           return {
+            // 【key 必须唯一】重名时 value 会重复,而 antd 默认拿 value 当 key ——
+            // React 会因重复 key 复用错行,下拉里点谁都可能不对。
+            key: u.id,
             value: name,
             userId: u.id,
             label: u.departmentName ? `${name} · ${u.departmentName}` : name,
@@ -1037,12 +1040,23 @@ export default function Plan() {
               options={ownerOptions}
               placeholder="从人员里选,外委人员可直接填"
               filterOption={(input, option) => String(option?.label ?? "").includes(input)}
-              // 【名字一变就重算绑定】手打成一个对不上账号的名字时必须把
-              // ownerId 清掉 —— 留着旧 ID 的话,这条计划显示着新名字、
-              // 提醒却还发给旧账号那个人,而界面上完全看不出来。
+              // 【选人只认 onSelect 给的那个 option,不靠名字反查】
+              // 两个账号都叫「余红星」时,options 里就有两条 value 相同的项 ——
+              // 用 find(o => o.value === v) 会永远挑到排在前面的那个,
+              // 也就是说点第二个人会静默绑到第一个人身上。而这个错不报,
+              // 表现是"提醒发给了另一个同名的人"。
+              onSelect={(_v, option) => {
+                form.setFieldsValue({ ownerId: (option as { userId?: string }).userId || "" });
+              }}
+              // 【onChange 只负责作废,不负责挑人】名字被改成和当前绑定不一致了,
+              // 旧的 ID 必须清掉 —— 留着的话这条计划显示着新名字、
+              // 提醒却还发给旧账号那个人,界面上完全看不出来。
               onChange={(v) => {
-                const hit = ownerOptions.find((o) => o.value === v);
-                form.setFieldValue("ownerId", hit?.userId || "");
+                const cur = form.getFieldValue("ownerId");
+                if (!cur) return;
+                const bound = ownerOptions.find((o) => o.userId === cur);
+                if (bound && ownerNameKey(bound.value) === ownerNameKey(v || "")) return;
+                form.setFieldsValue({ ownerId: "" });
               }}
             />
           </Form.Item>
