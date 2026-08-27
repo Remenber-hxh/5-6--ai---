@@ -92,6 +92,13 @@ function toRange(start?: string, end?: string): PlanRange {
   return s || e ? [s, e] : undefined;
 }
 
+// 名字归一化。和后端的 ownerNameKey 保持一致 —— 两边算出不同的结果时,
+// 表现是"表单说对上了,保存却没绑",而这种错没有任何报错。
+// Excel 粘出来的名字中间带空格是常事,中文输入法敲的还是全角空格(U+3000)。
+function ownerNameKey(s: string): string {
+  return (s || "").replace(/[\s　]/g, "").toLowerCase();
+}
+
 // 详情面板字段行(旧版 label/value 样式)
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -249,6 +256,55 @@ export default function Plan() {
         .filter((o) => o.value),
     [users, scopes, formProject],
   );
+
+  // ===== 负责人名字 → 账号的解析 =====
+  //
+  // 【为什么必须有这一步】编辑一条老计划时,负责人栏里显示着一个正确的名字,
+  // 但 owner_id 是空的。不解析的话:用户改完保存 → 还是「未绑账号」,
+  // 而表单上完全看不出还差一步 —— 他只会反复编辑、反复失败。
+  //
+  // 【和迁移里拒绝"自动全绑"不矛盾】那里是一次几十条、没人在看;
+  // 这里是一条计划、一个名字、人正盯着屏幕,而且下面会明确写出对应到了谁。
+  // 唯一命中才自动填,重名一律不猜。
+  const ownerName = Form.useWatch<string | undefined>("ownerName", form) || "";
+  const ownerId = Form.useWatch<string | undefined>("ownerId", form) || "";
+
+  const ownerResolve = useMemo(() => {
+    const key = ownerNameKey(ownerName);
+    if (!key) return { eligible: [], anyMatch: false };
+    const eligible = ownerOptions.filter((o) => ownerNameKey(o.value) === key);
+    const anyMatch = users.some(
+      (u) =>
+        u.status !== "disabled" &&
+        (ownerNameKey(u.displayName || "") === key || ownerNameKey(u.username || "") === key),
+    );
+    return { eligible, anyMatch };
+  }, [ownerName, ownerOptions, users]);
+
+  // 唯一命中就填上。填的是隐藏字段,所以下面的 extra 必须把结果说出来 ——
+  // 否则就成了"系统偷偷替我决定了负责人是谁"。
+  useEffect(() => {
+    if (!editing || ownerId) return;
+    if (ownerResolve.eligible.length === 1) {
+      form.setFieldsValue({ ownerId: ownerResolve.eligible[0].userId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerResolve, ownerId, editing]);
+
+  const ownerHint = useMemo(() => {
+    if (!ownerName) return "选人员表里的人才能收到每日提醒;手填的名字只做记录";
+    if (ownerId) {
+      const hit = ownerOptions.find((o) => o.userId === ownerId);
+      return `已对应账号:${hit?.label || ownerId} —— 保存后按人过滤和提醒都按它算`;
+    }
+    if (ownerResolve.eligible.length > 1) {
+      return `「${ownerName}」对应 ${ownerResolve.eligible.length} 个账号,请从下拉里选一个`;
+    }
+    if (ownerResolve.anyMatch) {
+      return `「${ownerName}」的账号看不到「${formProject}」—— 派给他也看不到,请换人或先分配项目`;
+    }
+    return `人员表里没有「${ownerName}」—— 仍可保存(外委人员就是这种),只是收不到每日提醒`;
+  }, [ownerName, ownerId, ownerOptions, ownerResolve, formProject]);
 
   // 被项目范围筛掉了几个人。要说出来 —— 不说的话候选列表凭空变短,
   // 用户只会觉得"怎么找不到老张了",而不知道是范围没配。
@@ -972,8 +1028,8 @@ export default function Plan() {
             label="负责人"
             extra={
               hiddenOwnerCount > 0
-                ? `选人员表里的人才能收到每日提醒;手填的名字只做记录。已隐藏 ${hiddenOwnerCount} 人 —— 他们的数据范围里没有「${formProject}」,派了也看不到`
-                : "选人员表里的人才能收到每日提醒;手填的名字只做记录"
+                ? `${ownerHint}(已隐藏 ${hiddenOwnerCount} 人:数据范围里没有「${formProject}」)`
+                : ownerHint
             }
           >
             <AutoComplete
