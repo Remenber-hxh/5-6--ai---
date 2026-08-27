@@ -39,6 +39,17 @@ type ownerBindingGroup struct {
 	PlanCount int      `json:"planCount"`
 	// Candidates 匹配到的账号。唯一命中时只有一个;命中多个时全列出来让人挑。
 	Candidates []ownerBindingCandidate `json:"candidates,omitempty"`
+	// BlockedPlanIDs 名字对上了,但这个人的数据范围里没有那条计划的项目 ——
+	// 绑上去他也看不到,所以写入时会被拒。
+	//
+	// 【报告必须先说】不说的话,界面显示"唯一命中"、人点了"全部绑定",
+	// 然后整批被拒 —— 而报告刚刚还告诉他这些是能绑的。
+	// 只在唯一命中时算:命中多个时选哪个还没定,算不出结果。
+	BlockedPlanIDs []string `json:"blockedPlanIds,omitempty"`
+	// BlockedNote 给人看的原因,形如「胡晓悱 看不到:会议中心」
+	BlockedNote string `json:"blockedNote,omitempty"`
+	// projects 与 PlanIDs 一一对应,只在算 BlockedPlanIDs 时用,不出 JSON。
+	projects []string
 }
 
 // ownerBindingReport 绑定现状报告。纯只读,不改任何数据。
@@ -86,6 +97,7 @@ func (s *Server) buildOwnerBindingReport(r *http.Request) (*ownerBindingReport, 
 	if err != nil {
 		return nil, err
 	}
+	tenant := s.tenantForRequest(r)
 
 	// 名字键 → 账号。一个键可能对上多个账号(重名),所以是切片不是单值。
 	byKey := map[string][]ownerBindingCandidate{}
@@ -144,6 +156,44 @@ func (s *Server) buildOwnerBindingReport(r *http.Request) (*ownerBindingReport, 
 		}
 		g.PlanIDs = append(g.PlanIDs, p.ID)
 		g.PlanCount++
+		g.projects = append(g.projects, p.Project)
+	}
+
+	// 唯一命中的,再核一遍"这个人看得到那条计划的项目吗"。
+	// 写入时反正会拒,不如在报告里就说清楚 —— 否则人点了"全部绑定"
+	// 才被整批打回来,而报告刚刚还说这些是能绑的。
+	users4 := map[string]*User{}
+	for _, u := range users {
+		if u != nil {
+			users4[u.ID] = u
+		}
+	}
+	for _, g := range groups {
+		if len(g.Candidates) != 1 {
+			continue
+		}
+		u := users4[g.Candidates[0].UserID]
+		if u == nil {
+			continue
+		}
+		vis := s.visibilityForUser(tenant, u)
+		seen := map[string]bool{}
+		var badProjects []string
+		for i, pid := range g.PlanIDs {
+			proj := g.projects[i]
+			if vis.allowsProject(proj) {
+				continue
+			}
+			g.BlockedPlanIDs = append(g.BlockedPlanIDs, pid)
+			if !seen[proj] {
+				seen[proj] = true
+				badProjects = append(badProjects, firstNonEmpty(proj, "(未指定项目)"))
+			}
+		}
+		if len(badProjects) > 0 {
+			g.BlockedNote = g.Candidates[0].DisplayName + " 的数据范围里没有:" +
+				strings.Join(badProjects, "、")
+		}
 	}
 
 	for _, g := range groups {

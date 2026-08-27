@@ -24,6 +24,7 @@ import {
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
+import OwnerBinding from "../components/OwnerBinding";
 import TodayInspection from "../components/TodayInspection";
 import { useUi } from "../store/ui";
 
@@ -121,6 +122,7 @@ export default function Plan() {
   const [selPlanId, setSelPlanId] = useState("");
   const [selTaskId, setSelTaskId] = useState("");
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
+  const [bindingOpen, setBindingOpen] = useState(false);
   const { project } = useUi();
   const [params, setParams] = useSearchParams();
   // 顶层视图。默认「今日执行」—— 打开这一页最想知道的就是今天还差什么,
@@ -550,6 +552,11 @@ export default function Plan() {
               >
                 新建计划
               </Button>
+              {/* 【放在这里而不是单开一页】它是一次性的整理动作,不是日常功能。
+                  单开一页会让人以为这是要经常来的地方。 */}
+              <Button type="text" onClick={() => setBindingOpen(true)}>
+                负责人绑定
+              </Button>
             </Space>
             <Table<EngineeringPlan>
               rowKey="id"
@@ -862,6 +869,14 @@ export default function Plan() {
           </AnimatePresence>
         </div>
       </div>
+
+      <OwnerBinding
+        open={bindingOpen}
+        onClose={(changed) => {
+          setBindingOpen(false);
+          if (changed) void load(); // 绑过就刷新,否则详情面板还挂着「未绑账号」
+        }}
+      />
 
       {/* 新建 / 编辑计划 */}
       <Modal

@@ -226,6 +226,48 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+// ===== 负责人绑定 =====
+
+export interface OwnerBindingCandidate {
+  userId: string;
+  displayName: string;
+  username: string;
+  departmentName?: string;
+  roleName?: string;
+}
+
+export interface OwnerBindingGroup {
+  ownerName: string;
+  planIds: string[];
+  planCount: number;
+  candidates?: OwnerBindingCandidate[];
+  /** 名字对上了,但这个人看不到那几条计划的项目 —— 绑了会被拒 */
+  blockedPlanIds?: string[];
+  blockedNote?: string;
+}
+
+export interface OwnerBindingReport {
+  matched: OwnerBindingGroup[];
+  ambiguous: OwnerBindingGroup[];
+  unmatched: OwnerBindingGroup[];
+  alreadyBound: number;
+  noOwner: number;
+  totalPlans: number;
+}
+
+/** 只读:算出名字和账号的对应关系,不改任何数据 */
+export function getOwnerBindingReport() {
+  return api<OwnerBindingReport>("/api/engineering/plans/owner-binding");
+}
+
+/** 写入:只接受显式的 planId → userId 清单;后端先全量校验再动手 */
+export function applyOwnerBindings(bindings: { planId: string; userId: string }[]) {
+  return api<{ applied: number }>("/api/engineering/plans/owner-binding", {
+    method: "POST",
+    body: JSON.stringify({ bindings }),
+  });
+}
+
 /**
  * 删除计划 / 任务。
  *
