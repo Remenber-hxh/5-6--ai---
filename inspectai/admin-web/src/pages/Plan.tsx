@@ -203,13 +203,23 @@ export default function Plan() {
   }, [projectList, editing]);
 
   // 负责人:人员表做候选,但不锁死 —— 外委班组的人不一定有账号。
+  //
+  // 【userId 一起带着】选中候选时要把账号 ID 也存进计划,「我的计划」和
+  // 点名提醒按 ID 过滤才准。只存名字的话,重名和改过名的就分不清了。
+  //
+  // 【状态值是 "disabled" 不是「停用」】界面上写中文,库里存英文。
+  // 写成中文的话这个过滤【永远不成立】,停用的人照样出现在候选里 —— 踩过。
   const ownerOptions = useMemo(
     () =>
       users
-        .filter((u) => u.status !== "停用")
+        .filter((u) => u.status !== "disabled")
         .map((u) => {
           const name = u.displayName || u.username || "";
-          return { value: name, label: u.departmentName ? `${name} · ${u.departmentName}` : name };
+          return {
+            value: name,
+            userId: u.id,
+            label: u.departmentName ? `${name} · ${u.departmentName}` : name,
+          };
         })
         .filter((o) => o.value),
     [users],
@@ -645,7 +655,16 @@ export default function Plan() {
               <div style={{ borderTop: "1px solid #f0f2f5" }}>
                 <FieldRow label="项目">{selPlan.project || "—"}</FieldRow>
                 <FieldRow label="类别">{selPlan.category || "—"}</FieldRow>
-                <FieldRow label="责任人">{selPlan.ownerName || "—"}</FieldRow>
+                {/* 【标出有没有绑账号】绑了才收得到每日提醒。不标的话这两种
+                    情况在界面上长得一模一样,而差别要到提醒该来没来那天才暴露。 */}
+                <FieldRow label="责任人">
+                  {selPlan.ownerName || "—"}
+                  {selPlan.ownerName && !selPlan.ownerId && (
+                    <Tag color="orange" style={{ marginLeft: 8, fontWeight: 400 }}>
+                      未绑账号
+                    </Tag>
+                  )}
+                </FieldRow>
                 <FieldRow label="说明">{selPlan.cycleText || "—"}</FieldRow>
                 <FieldRow label="计划节点">
                   {[selPlan.planStart, selPlan.planEnd].filter(Boolean).join(" 至 ") || "—"}
@@ -685,6 +704,7 @@ export default function Plan() {
                       project: selPlan.project,
                       category: selPlan.category,
                       ownerName: selPlan.ownerName,
+                      ownerId: selPlan.ownerId || "",
                       cycleText: selPlan.cycleText,
                       remark: selPlan.remark,
                       budgetAmount: selPlan.budgetAmount || undefined,
@@ -793,13 +813,29 @@ export default function Plan() {
               filterOption={(input, option) => String(option?.value ?? "").includes(input)}
             />
           </Form.Item>
-          <Form.Item name="ownerName" label="负责人">
+          <Form.Item
+            name="ownerName"
+            label="负责人"
+            extra="选人员表里的人才能收到每日提醒;手填的名字只做记录"
+          >
             <AutoComplete
               allowClear
               options={ownerOptions}
               placeholder="从人员里选,外委人员可直接填"
               filterOption={(input, option) => String(option?.label ?? "").includes(input)}
+              // 【名字一变就重算绑定】手打成一个对不上账号的名字时必须把
+              // ownerId 清掉 —— 留着旧 ID 的话,这条计划显示着新名字、
+              // 提醒却还发给旧账号那个人,而界面上完全看不出来。
+              onChange={(v) => {
+                const hit = ownerOptions.find((o) => o.value === v);
+                form.setFieldValue("ownerId", hit?.userId || "");
+              }}
             />
+          </Form.Item>
+          {/* 绑定的账号 ID。不给人看也不给人改 —— 它是「负责人」那一栏选出来的
+              结果,单独摆出来只会让人以为这是两件要分别填的事。 */}
+          <Form.Item name="ownerId" hidden>
+            <Input />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(a, b) => a.planType !== b.planType}>
             {({ getFieldValue }) =>

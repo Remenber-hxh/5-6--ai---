@@ -168,6 +168,8 @@ export interface EngineeringPlan {
   project?: string;
   category?: string;
   ownerName?: string;
+  /** 负责人的账号 ID。空 = 没绑账号(外委人员),此时只有 ownerName 有意义。 */
+  ownerId?: string;
   planStart?: string;
   planEnd?: string;
   status?: string; // 待执行 / 执行中 / 待整改 / 已完成

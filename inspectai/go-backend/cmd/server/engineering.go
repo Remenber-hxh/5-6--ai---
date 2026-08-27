@@ -45,7 +45,16 @@ type EngineeringPlanItem struct {
 	PlanStart    string  `json:"planStart"`
 	PlanEnd      string  `json:"planEnd"`
 	OwnerName    string  `json:"ownerName"`
-	CycleText    string  `json:"cycleText"`
+	// OwnerID 负责人的账号 ID。
+	//
+	// 【和 OwnerName 并存,不是二选一】外委班组的人没有账号 —— 要求每条计划
+	// 都绑到账号,结果就是外委的活根本录不进来。所以:能对上账号的存 ID
+	// (「我的计划」「点名提醒」按它过滤),对不上的只留名字照常显示。
+	//
+	// 【为什么不能只靠名字】重名、改过名、名字里多个空格,按名字匹配就会
+	// 绑到错的人身上,而表现是提醒发给了不该发的人 —— 得等有人抱怨才发现。
+	OwnerID   string `json:"ownerId"`
+	CycleText string `json:"cycleText"`
 	Remark       string  `json:"remark"`
 	Status       string  `json:"status"`
 	RiskLevel    string  `json:"riskLevel"`
@@ -330,7 +339,7 @@ func (s *SQLiteStore) ListEngineeringPlans(filter EngineeringPlanFilter) ([]*Eng
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
 		       latest_task_id, created_at, updated_at, plan_type, weekdays,
-		       COALESCE(asset_ids_json, '[]')
+		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, '')
 		FROM engineering_plan_items
 		ORDER BY plan_end ASC, updated_at DESC`)
 	if err != nil {
@@ -357,7 +366,7 @@ func (s *SQLiteStore) GetEngineeringPlan(id string) (*EngineeringPlanItem, error
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
 		       latest_task_id, created_at, updated_at, plan_type, weekdays,
-		       COALESCE(asset_ids_json, '[]')
+		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, '')
 		FROM engineering_plan_items WHERE id=?`, id)
 	return scanEngineeringPlan(row)
 }
@@ -373,8 +382,9 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				id, source, sequence_no, business_type, project, category, sub_type,
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
-				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json,
+				owner_id
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE
 				source=VALUES(source), sequence_no=VALUES(sequence_no), business_type=VALUES(business_type),
 				project=VALUES(project), category=VALUES(category), sub_type=VALUES(sub_type),
@@ -383,15 +393,16 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				owner_name=VALUES(owner_name), cycle_text=VALUES(cycle_text), remark=VALUES(remark),
 				status=VALUES(status), risk_level=VALUES(risk_level), latest_task_id=VALUES(latest_task_id),
 				updated_at=VALUES(updated_at), plan_type=VALUES(plan_type), weekdays=VALUES(weekdays),
-				asset_ids_json=VALUES(asset_ids_json)`
+				asset_ids_json=VALUES(asset_ids_json), owner_id=VALUES(owner_id)`
 	} else {
 		query = `
 			INSERT INTO engineering_plan_items (
 				id, source, sequence_no, business_type, project, category, sub_type,
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
-				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json,
+				owner_id
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				source=excluded.source, sequence_no=excluded.sequence_no, business_type=excluded.business_type,
 				project=excluded.project, category=excluded.category, sub_type=excluded.sub_type,
@@ -400,7 +411,7 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				owner_name=excluded.owner_name, cycle_text=excluded.cycle_text, remark=excluded.remark,
 				status=excluded.status, risk_level=excluded.risk_level, latest_task_id=excluded.latest_task_id,
 				updated_at=excluded.updated_at, plan_type=excluded.plan_type, weekdays=excluded.weekdays,
-				asset_ids_json=excluded.asset_ids_json`
+				asset_ids_json=excluded.asset_ids_json, owner_id=excluded.owner_id`
 	}
 	// 设备清单存 JSON。序列化失败也要给个合法的空数组 —— 存进 NULL 或空串
 	// 会让下次读取时解析报错,而那时候已经查不出是哪一条写坏的了。
@@ -413,6 +424,7 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 		item.WorkContent, item.ScopeDesc, item.BudgetAmount, item.BudgetText, item.PlanStart,
 		item.PlanEnd, item.OwnerName, item.CycleText, item.Remark, item.Status, item.RiskLevel,
 		item.LatestTaskID, created, updated, item.PlanType, item.Weekdays, assetIDsJSON,
+		item.OwnerID,
 	)
 	return err
 }
@@ -535,6 +547,7 @@ func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 		&item.WorkContent, &item.ScopeDesc, &item.BudgetAmount, &item.BudgetText, &item.PlanStart,
 		&item.PlanEnd, &item.OwnerName, &item.CycleText, &item.Remark, &item.Status, &item.RiskLevel,
 		&item.LatestTaskID, &created, &updated, &item.PlanType, &item.Weekdays, &assetIDsJSON,
+		&item.OwnerID,
 	)
 	if err != nil {
 		return nil, err
@@ -760,6 +773,21 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 	if !validPlanType(req.PlanType) {
 		writeError(w, http.StatusBadRequest, "bad_plan_type", "计划类型无效")
 		return
+	}
+	// 【绑了账号就当场核实】存进一个不存在的 owner_id,「我的计划」和点名提醒
+	// 会安静地查不到这条 —— 表现是"这条计划谁都不归",而库里明明写着个 ID。
+	// 顺手让名字跟账号对齐:两列并存的代价就是它们可能说不一样的话。
+	if req.OwnerID = strings.TrimSpace(req.OwnerID); req.OwnerID != "" {
+		owner, uErr := s.store.GetUser(req.OwnerID)
+		if uErr != nil || owner == nil {
+			writeError(w, http.StatusBadRequest, "owner_not_found", "负责人账号不存在")
+			return
+		}
+		if owner.Status == userStatusDisabled {
+			writeError(w, http.StatusBadRequest, "owner_disabled", "负责人账号已停用")
+			return
+		}
+		req.OwnerName = firstNonEmpty(owner.DisplayName, owner.Username)
 	}
 	if req.PlanType == planTypeDaily {
 		// 每日计划的"完成"是自动判定的(这些设备今天有没有巡检快照)。

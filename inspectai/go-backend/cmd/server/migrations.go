@@ -42,6 +42,7 @@ var migrationList = []migration{
 	{18, "plan_type", (*SQLiteStore).migPlanType},
 	{19, "app_settings", (*SQLiteStore).migAppSettings},
 	{20, "plan_assets", (*SQLiteStore).migPlanAssets},
+	{21, "plan_owner_id", (*SQLiteStore).migPlanOwnerID},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -690,6 +691,38 @@ func (s *SQLiteStore) migPlanAssets() error {
 	if _, err := s.db.Exec(
 		`ALTER TABLE engineering_plan_items ADD COLUMN asset_ids_json ` + def); err != nil {
 		return fmt.Errorf("add engineering_plan_items.asset_ids_json: %w", err)
+	}
+	return nil
+}
+
+// migPlanOwnerID — 021:计划负责人绑到账号。
+//
+// 【为什么不直接把 owner_name 换成 owner_id】外委班组的人没有账号。
+// 换掉的话这些计划要么录不进来,要么被迫挂到一个不相干的账号上。
+// 两列并存:对得上账号的存 ID,对不上的只留名字照常显示。
+//
+// 【这次迁移【不】回填任何数据】按名字模糊匹配去猜谁是谁,重名和改过名的
+// 会被静默绑错,而"绑错人"的表现是提醒发给了不该发的人 —— 得等有人抱怨
+// 才发现,那时已经错了很多天。存量数据的对应关系走一个只读报告,
+// 人看过之后按精确 ID 更新(见 handleOwnerBindingReport)。
+func (s *SQLiteStore) migPlanOwnerID() error {
+	exists, err := s.hasColumn("engineering_plan_items", "owner_id")
+	if err != nil {
+		return fmt.Errorf("inspect engineering_plan_items.owner_id: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	// 【MySQL 不给 TEXT 加 DEFAULT】所以两个方言的列定义不一样。
+	// 这里用 VARCHAR:owner_id 是定长的账号 ID,而且以后要按它建索引,
+	// TEXT 在 MySQL 上建索引还得指定前缀长度。
+	def := `TEXT NOT NULL DEFAULT ''`
+	if s.dialect == "mysql" {
+		def = `VARCHAR(64) NOT NULL DEFAULT ''`
+	}
+	if _, err := s.db.Exec(
+		`ALTER TABLE engineering_plan_items ADD COLUMN owner_id ` + def); err != nil {
+		return fmt.Errorf("add engineering_plan_items.owner_id: %w", err)
 	}
 	return nil
 }

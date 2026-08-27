@@ -78,6 +78,10 @@ var apiRoutes = []apiRoute{
 	{http.MethodPost, "/api/engineering/plans", guardNone, "task_dispatch", (*Server).handleCreateEngineeringPlan},
 	// 今日应巡看板:每日计划 + 自动判定的完成情况(读口,管理角色都能看)
 	{http.MethodGet, "/api/engineering/plans/today", guardSupervisor, "", (*Server).handleTodayBoard},
+	// 负责人绑定:报告只读、应用只吃显式清单。两条都是管理员级 ——
+	// 它改的是"提醒发给谁",错了会直接骚扰到人。
+	{http.MethodGet, "/api/engineering/plans/owner-binding", guardAdmin, "", (*Server).handleOwnerBindingReport},
+	{http.MethodPost, "/api/engineering/plans/owner-binding", guardAdmin, "", (*Server).handleOwnerBindingApply},
 	{http.MethodGet, "/api/engineering/tasks", guardNone, "", (*Server).handleListEngineeringTasks},
 	{http.MethodPost, "/api/engineering/tasks", guardNone, "task_dispatch", (*Server).handleCreateEngineeringTask},
 

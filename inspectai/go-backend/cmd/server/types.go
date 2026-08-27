@@ -376,6 +376,16 @@ type SceneClassifyResult struct {
 // User is the first deliverable version of the admin identity model.
 // It stays small so the existing inspection workflow can keep using inspector
 // display names while the backend starts tracking real accounts.
+// 账号状态。【值是英文,不是中文】—— 界面上显示「停用」,库里存的是 "disabled"。
+//
+// 定成常量是因为这个坑已经踩过一次:写 `u.Status == "停用"` 编译得过、
+// 静态检查也过,但那个判断【永远不成立】—— 停用的账号照样被当成有效负责人。
+// 这类错不会报,只会表现成"某个规则好像没生效"。
+const (
+	userStatusActive   = "active"
+	userStatusDisabled = "disabled"
+)
+
 type User struct {
 	ID       string `json:"id"`
 	TenantID string `json:"tenantId"`
