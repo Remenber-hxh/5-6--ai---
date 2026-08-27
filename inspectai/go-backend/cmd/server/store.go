@@ -156,10 +156,15 @@ type EngineeringStore interface {
 	GetEngineeringPlan(id string) (*EngineeringPlanItem, error)
 	UpsertEngineeringPlan(item *EngineeringPlanItem) error
 	UpdateEngineeringPlanLatestTask(planID, taskID string) error
+	// DeleteEngineeringPlan 硬删除。名字打错、建重复了这类垃圾行必须能清掉,
+	// 否则它们会一直堵在列表里,而"看着乱"最后会变成"没人看"。
+	DeleteEngineeringPlan(id string) error
 	ListEngineeringTasks(filter EngineeringTaskFilter) ([]*EngineeringTask, error)
 	GetEngineeringTask(id string) (*EngineeringTask, error)
 	CreateEngineeringTask(task *EngineeringTask) error
 	UpdateEngineeringTask(id string, mutate func(*EngineeringTask)) error
+	// DeleteEngineeringTask 硬删除。挂着巡检记录的不给删(见 handler 里的拦截)。
+	DeleteEngineeringTask(id string) error
 }
 
 // SubmissionStore — 提交幂等锁

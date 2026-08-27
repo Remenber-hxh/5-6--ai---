@@ -67,6 +67,10 @@ func (s *Server) router(w http.ResponseWriter, r *http.Request) {
 		s.handleRegistrationCodeRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/engineering/tasks/"):
 		s.handleEngineeringTaskRoutes(w, r)
+	// 【放在精确路由表之后是安全的】上面那个循环先跑,
+	// /plans/today 和 /plans/owner-binding 已经被它接走了,不会掉到这里。
+	case strings.HasPrefix(r.URL.Path, "/api/engineering/plans/"):
+		s.handleEngineeringPlanRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/assets/"):
 		s.handleAssetRoutes(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/inspection/offline-shots/") &&
@@ -274,7 +278,15 @@ func (s *Server) currentUserName(r *http.Request) string {
 }
 
 func (s *Server) hasSupervisorAccess(r *http.Request) bool {
-	role := s.userRole(r)
+	return s.roleHasSupervisorAccess(s.userRole(r))
+}
+
+// roleHasSupervisorAccess 光看角色码算不算管理角色。
+//
+// 从 hasSupervisorAccess 里抽出来,是为了让"这个【人】能看到什么"
+// (visibilityForUser)和"这次【请求】能看到什么"用同一条角色规则。
+// 各写一份的话,哪天加了个新的管理角色,两边只会改一处。
+func (s *Server) roleHasSupervisorAccess(role string) bool {
 	switch role {
 	case roleAdmin, roleManager, roleSupervisor:
 		return true
@@ -482,7 +494,40 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_users_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	// 【把每个人能看到哪些项目一并给出去】建计划时要按项目筛负责人:
+	// 派给一个看不到这个项目的人,等于没派 —— 他打开什么都没有,
+	// 而派的人以为派出去了。让前端拿 dataScope 自己推是不行的:
+	// 那等于把规则复制一份到前端,两边迟早说不一样的话。
+	//
+	// 只有配了项目范围的人才查一次名单(这里通常是个位数),
+	// 看全部数据的人直接标 seesAllProjects。
+	// 【按 userId 索引,不要把 user 再复制一份】并排返回两份用户对象的话,
+	// 前端总有一天会去读错的那一份,而两份不同步时没人会发现。
+	tenant := s.tenantForRequest(r)
+	scopes := make(map[string]projectScopeDTO, len(users))
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		vis := s.visibilityForUser(tenant, u)
+		scopes[u.ID] = projectScopeDTO{
+			// 看全部数据、或者压根不按项目过滤(只看自己的)—— 两种都不受项目限制
+			SeesAll:  vis.AllData || (!vis.Blocked && len(vis.Projects) == 0),
+			Projects: vis.Projects,
+			Blocked:  vis.Blocked,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users, "projectScopes": scopes})
+}
+
+// projectScopeDTO 一个人能看到哪些项目。
+//
+// SeesAll 为真时 Projects 是空的 —— 别把它当成"一个项目都看不到"。
+// 这两种状态在界面上的表现正好相反,混了就会把管理员从候选里筛掉。
+type projectScopeDTO struct {
+	SeesAll  bool     `json:"seesAll"`
+	Projects []string `json:"projects,omitempty"`
+	Blocked  bool     `json:"blocked,omitempty"`
 }
 
 func (s *Server) handleSendWeWorkMessage(w http.ResponseWriter, r *http.Request) {

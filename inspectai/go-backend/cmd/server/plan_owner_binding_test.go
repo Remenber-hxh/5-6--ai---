@@ -71,6 +71,26 @@ func addOwnerUser(t *testing.T, store *MemStore, username, display string) *User
 	return u
 }
 
+// scopeUserToProject 把一个人限定到某个项目。
+//
+// 【user_projects 存的是项目 ID,不是名字】直接塞名字进去,
+// ListUserProjectNames 那一步 join 不到任何东西,结果是"这个人一个项目都
+// 看不到"—— 于是"该拦的拦住了"的用例会因为错误的原因通过,
+// 而"该放行的放行"的用例才会暴露出来。我第一版就是这么写的。
+func scopeUserToProject(t *testing.T, store *MemStore, userID, projectName string) {
+	t.Helper()
+	p := &Project{Name: projectName, TenantID: defaultTenantID}
+	if err := store.CreateProject(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateUserProfile(userID, func(x *User) { x.DataScope = dataScopeProject }); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetUserProjects(defaultTenantID, userID, []string{p.ID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func addPlanWithOwner(t *testing.T, store *MemStore, id, ownerName, ownerID string) {
 	t.Helper()
 	if err := store.UpsertEngineeringPlan(&EngineeringPlanItem{
@@ -315,14 +335,77 @@ func TestOwnerBindingApplyRejectsDuplicatePlan(t *testing.T) {
 	}
 }
 
+// ===== 看不到就不许派 =====
+
+// 【最要紧的一条】负责人看不到自己被派的活,是个不会报错的死结:
+// 派的人以为派出去了,被派的人打开什么都没有。必须在录入时就拦住。
+func TestSavePlanRejectsOwnerWhoCannotSeeProject(t *testing.T) {
+	srv, store, _ := bindStore(t)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	// 这个人被限定在「紫菡雅集」
+	scopeUserToProject(t, store, u.ID, "紫菡雅集")
+
+	// 派一条「会议中心」的计划给他 —— 应该被拒
+	w := savePlanDirect(t, srv, &EngineeringPlanItem{
+		ID: "p1", Project: "会议中心", WorkContent: "月度计划",
+		PlanType: planTypeMonthly, OwnerID: u.ID,
+	})
+	if w.Code != 400 {
+		t.Fatalf("看不到该项目的人不该能被派活,实际 %d:%s", w.Code, w.Body.String())
+	}
+
+	// 派他看得到的项目 —— 应该放行
+	w = savePlanDirect(t, srv, &EngineeringPlanItem{
+		ID: "p2", Project: "紫菡雅集", WorkContent: "月度计划",
+		PlanType: planTypeMonthly, OwnerID: u.ID,
+	})
+	if w.Code != 201 {
+		t.Fatalf("看得到的项目应该放行,实际 %d:%s", w.Code, w.Body.String())
+	}
+}
+
+// 看全部数据的人(管理员)不该被这条规则挡住。
+//
+// 【这一条是防止规则写反】"没有项目清单"有两种含义:看全部,和一个都看不到。
+// 混了的话管理员会被从所有候选里筛掉,而这个错在小数据量下很难注意到。
+func TestSavePlanAllowsOwnerWhoSeesAllData(t *testing.T) {
+	srv, store, _ := bindStore(t)
+	u := addOwnerUser(t, store, "boss", "管理员甲")
+	if err := store.UpdateUserProfile(u.ID, func(x *User) { x.DataScope = dataScopeAll }); err != nil {
+		t.Fatal(err)
+	}
+	w := savePlanDirect(t, srv, &EngineeringPlanItem{
+		ID: "p1", Project: "会议中心", WorkContent: "月度计划",
+		PlanType: planTypeMonthly, OwnerID: u.ID,
+	})
+	if w.Code != 201 {
+		t.Fatalf("看全部数据的人应该能被派任何项目,实际 %d:%s", w.Code, w.Body.String())
+	}
+}
+
+// 批量回填是最容易把人绑错的地方 —— 一次几十条,没人会逐条核对。
+func TestOwnerBindingApplyRejectsOwnerWhoCannotSeeProject(t *testing.T) {
+	srv, store, req := bindStore(t)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	scopeUserToProject(t, store, u.ID, "紫菡雅集")
+	addPlanWithOwner(t, store, "p1", "胡晓悱", "") // 这条属于「会议中心」
+
+	w := applyBindings(t, srv, req, bindBody(bindPair{PlanID: "p1", UserID: u.ID}))
+	if w.Code != 400 {
+		t.Fatalf("绑给看不到该项目的人应被拒,实际 %d:%s", w.Code, w.Body.String())
+	}
+	got, _ := store.GetEngineeringPlan("p1")
+	if got.OwnerID != "" {
+		t.Errorf("被拒的绑定不该落库,实际 OwnerID=%q", got.OwnerID)
+	}
+}
+
 // 数据范围要在写这一侧也生效 —— 计划 ID 可以直接写在请求体里,
 // 只在报告里裁等于没裁。
 func TestOwnerBindingRespectsProjectScope(t *testing.T) {
 	srv, req, store, userID := newScopeRequestWithStore(t, roleAdmin, dataScopeProject)
 	u := addOwnerUser(t, store, "huxf", "胡晓悱")
-	if err := store.SetUserProjects(defaultTenantID, userID, []string{"紫菡雅集"}); err != nil {
-		t.Fatal(err)
-	}
+	scopeUserToProject(t, store, userID, "紫菡雅集")
 	// 这条属于「会议中心」—— 当前用户被限定在「紫菡雅集」,看不到也不该改到
 	addPlanWithOwner(t, store, "p-other", "胡晓悱", "")
 

@@ -144,6 +144,60 @@ func (s *Server) visibilityFor(r *http.Request) dataVisibility {
 	}
 }
 
+// visibilityForUser 某个【指定的人】能看到什么。
+//
+// 【和 visibilityFor 刻意不合并】visibilityFor 回答的是"这次请求能看到什么",
+// 它还认主管令牌那条路 —— 有管理权限但背后没有会话用户。
+// 这里问的是"这个人能看到什么",只认账号本身:令牌不是人,
+// 不该出现在"这活能不能派给他"的判断里。
+//
+// 合并的话,派活时传进来一个 nil 用户就会被令牌那条路放行,
+// 于是"谁都能派"—— 而这个错不会报,只会表现成某人收不到提醒。
+func (s *Server) visibilityForUser(tenant string, u *User) dataVisibility {
+	if u == nil {
+		return dataVisibility{Blocked: true, OwnOnly: true, BlockedReason: blockReasonNoUser}
+	}
+	scope := strings.TrimSpace(u.DataScope)
+	if scope == "" || !validDataScopes[scope] {
+		// 没配过(或配了个不认识的值)→ 按角色推导,和请求那条路同一个规则
+		if s.roleHasSupervisorAccess(u.RoleCode) {
+			scope = dataScopeAll
+		} else {
+			scope = dataScopeSelf
+		}
+	}
+	switch scope {
+	case dataScopeAll:
+		return dataVisibility{AllData: true}
+	case dataScopeProject, dataScopeProjectSelf:
+		// 只返回【启用中】的项目 —— 和 visibilityFor 一致
+		names, err := s.store.ListUserProjectNames(tenant, u.ID)
+		if err != nil {
+			return dataVisibility{Blocked: true, OwnOnly: true, BlockedReason: blockReasonLookupFailed}
+		}
+		if len(names) == 0 {
+			return dataVisibility{
+				Blocked: true, OwnOnly: true,
+				BlockedReason: s.blockedReasonForEmptyProjects(tenant, u.ID),
+			}
+		}
+		return dataVisibility{Projects: names, OwnOnly: scope == dataScopeProjectSelf}
+	default:
+		// 只看自己的:不按项目过滤,所以对"能不能看到这个项目的计划"
+		// 这个问题,答案是能 —— 见 allowsProject。
+		return dataVisibility{OwnOnly: true}
+	}
+}
+
+// userCanSeeProject 这个人能不能看到这个项目。派活之前问这一句。
+//
+// 【为什么要在派活时就问】负责人看不到自己被派的活,是个不会报错的死结:
+// 派的人以为派出去了,被派的人打开什么都没有,两边都不知道对方在等什么。
+// 拦在录入环节,比让它跑起来之后再去查要便宜得多。
+func (s *Server) userCanSeeProject(tenant string, u *User, project string) bool {
+	return s.visibilityForUser(tenant, u).allowsProject(project)
+}
+
 // canSeeAllData 这次请求能不能看本租户的全部数据。
 //
 // 替换掉原来七处散落的 hasSupervisorAccess(r) —— 那七处判断的是

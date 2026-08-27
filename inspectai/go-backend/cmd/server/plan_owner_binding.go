@@ -259,6 +259,14 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 					"账号已停用,不能作为负责人:"+firstNonEmpty(u.DisplayName, u.Username))
 				return
 			}
+			// 和新建计划同一条规则:看不到这个项目就不许绑。
+			// 批量回填是最容易把人绑错的地方 —— 一次几十条,没人会逐条核对。
+			if !s.userCanSeeProject(s.tenantForRequest(r), u, plan.Project) {
+				writeError(w, http.StatusBadRequest, "owner_cannot_see_project",
+					firstNonEmpty(u.DisplayName, u.Username)+
+						" 的数据范围里没有「"+plan.Project+"」,绑了也看不到(计划 "+planID+")")
+				return
+			}
 			user = u
 		}
 		list = append(list, resolved{plan: plan, user: user})

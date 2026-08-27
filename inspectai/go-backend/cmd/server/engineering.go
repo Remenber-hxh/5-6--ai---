@@ -312,6 +312,26 @@ func (s *MemStore) GetEngineeringTask(id string) (*EngineeringTask, error) {
 	return &cp, nil
 }
 
+func (s *MemStore) DeleteEngineeringPlan(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.engPlans[id]; !ok {
+		return sql.ErrNoRows
+	}
+	delete(s.engPlans, id)
+	return nil
+}
+
+func (s *MemStore) DeleteEngineeringTask(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.engTasks[id]; !ok {
+		return sql.ErrNoRows
+	}
+	delete(s.engTasks, id)
+	return nil
+}
+
 func (s *MemStore) CreateEngineeringTask(task *EngineeringTask) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -427,6 +447,30 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 		item.OwnerID,
 	)
 	return err
+}
+
+func (s *SQLiteStore) DeleteEngineeringPlan(id string) error {
+	res, err := s.db.Exec(`DELETE FROM engineering_plan_items WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	// 【删了 0 行要报 ErrNoRows】不报的话,删一个不存在的 ID 会返回成功,
+	// 界面提示"已删除",而那条计划还好端端在别人屏幕上。
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteEngineeringTask(id string) error {
+	res, err := s.db.Exec(`DELETE FROM engineering_tasks WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *SQLiteStore) UpdateEngineeringPlanLatestTask(planID, taskID string) error {
@@ -787,6 +831,17 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusBadRequest, "owner_disabled", "负责人账号已停用")
 			return
 		}
+		// 【看不到就不许派】负责人看不到自己被派的活,是个不会报错的死结:
+		// 派的人以为派出去了,被派的人打开什么都没有 —— 两边都不知道
+		// 对方在等什么,而且要到"提醒该来没来"那天才会被发现。
+		// 拦在这里,错误当场可读,还告诉他该怎么办。
+		if !s.userCanSeeProject(s.tenantForRequest(r), owner, req.Project) {
+			writeError(w, http.StatusBadRequest, "owner_cannot_see_project",
+				firstNonEmpty(owner.DisplayName, owner.Username)+
+					" 的数据范围里没有「"+req.Project+"」,派给他也看不到 —— "+
+					"请换一个人,或先在「用户与权限」里把这个项目分给他")
+			return
+		}
 		req.OwnerName = firstNonEmpty(owner.DisplayName, owner.Username)
 	}
 	if req.PlanType == planTypeDaily {
@@ -915,7 +970,122 @@ func (s *Server) handleEngineeringTaskRoutes(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusOK, map[string]any{"task": task})
 		return
 	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		s.handleDeleteEngineeringTask(w, r, id)
+		return
+	}
 	writeError(w, http.StatusNotFound, "not_found", "task route not found")
+}
+
+// handleDeleteEngineeringTask —— DELETE /api/engineering/tasks/<id>
+//
+// 【删除和取消不是一回事】取消是"这活不做了",记录还在,谁在什么时候取消的
+// 查得到;删除是这条从来没存在过。所以只给"建错了"用 —— 已经有巡检记录
+// 挂在上面的一律不给删。
+func (s *Server) handleDeleteEngineeringTask(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.requirePermission(w, r, "task_dispatch") {
+		return
+	}
+	task, err := s.store.GetEngineeringTask(id)
+	if err != nil || task == nil {
+		writeError(w, http.StatusNotFound, "engineering_task_not_found", "工程任务不存在")
+		return
+	}
+	// 数据范围:看不到的项目不能删。和"不存在"给同一种回答 ——
+	// 分开报的话拿 ID 试一遍就能问出哪些任务存在但我看不到。
+	if !s.projectScopeFor(r, "").allows(task.Project) {
+		writeError(w, http.StatusNotFound, "engineering_task_not_found", "工程任务不存在")
+		return
+	}
+	// 【挂着巡检记录的不给删】那条记录是现场真拍的照片和结论,
+	// 任务删了它就没了来处 —— 台账里查"这次巡检是因为什么"会断链。
+	// 这种情况用「取消任务」,状态留痕、记录完整。
+	if strings.TrimSpace(task.RecordID) != "" {
+		writeError(w, http.StatusConflict, "task_has_record",
+			"这个任务已经有巡检记录了,删掉会让那条记录失去来处。"+
+				"请改用「取消任务」—— 状态会留痕,记录完整保留")
+		return
+	}
+	if err := s.store.DeleteEngineeringTask(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "engineering_task_not_found", "工程任务不存在")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "engineering_task_delete", "engineering_task", id, map[string]any{
+		"title": task.Title, "project": task.Project, "status": task.Status,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleEngineeringPlanRoutes 处理 /api/engineering/plans/<id>。
+//
+// 【只认单段路径】/plans/today、/plans/owner-binding 这些固定名字在精确路由表里
+// 已经被接走了,走不到这儿。但仍然只放行 parts==1 —— 万一以后有人往表里加了个
+// 两段的固定路径又忘了这里,让它 404 比让它被当成一个叫这个名字的计划 ID 好。
+func (s *Server) handleEngineeringPlanRoutes(w http.ResponseWriter, r *http.Request) {
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/engineering/plans/"), "/")
+	parts := strings.Split(rest, "/")
+	if rest == "" || len(parts) != 1 {
+		writeError(w, http.StatusNotFound, "not_found", "plan route not found")
+		return
+	}
+	if r.Method == http.MethodDelete {
+		s.handleDeleteEngineeringPlan(w, r, parts[0])
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "plan route not found")
+}
+
+// handleDeleteEngineeringPlan —— DELETE /api/engineering/plans/<id>
+//
+// 【派发过任务的不给删】计划删了,任务的 plan_item_id 就指向一个不存在的东西,
+// 而任务还在移动端等人做。要删得先把任务处理掉 —— 说清楚是哪几条,
+// 别让人对着一句"删除失败"猜。
+func (s *Server) handleDeleteEngineeringPlan(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.requirePermission(w, r, "task_dispatch") {
+		return
+	}
+	plan, err := s.store.GetEngineeringPlan(id)
+	if err != nil || plan == nil {
+		writeError(w, http.StatusNotFound, "engineering_plan_not_found", "计划不存在")
+		return
+	}
+	if !s.projectScopeFor(r, "").allows(plan.Project) {
+		writeError(w, http.StatusNotFound, "engineering_plan_not_found", "计划不存在")
+		return
+	}
+	tasks, tErr := s.store.ListEngineeringTasks(EngineeringTaskFilter{})
+	if tErr != nil {
+		writeError(w, http.StatusInternalServerError, "list_tasks_failed", tErr.Error())
+		return
+	}
+	var blocking []string
+	for _, t := range tasks {
+		if t != nil && t.PlanItemID == id {
+			blocking = append(blocking, firstNonEmpty(t.Title, t.ID))
+		}
+	}
+	if len(blocking) > 0 {
+		writeError(w, http.StatusConflict, "plan_has_tasks",
+			"这条计划已经派发过任务("+strings.Join(blocking, "、")+
+				"),删掉会让这些任务失去出处。请先处理完这些任务")
+		return
+	}
+	if err := s.store.DeleteEngineeringPlan(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "engineering_plan_not_found", "计划不存在")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "engineering_plan_delete", "engineering_plan", id, map[string]any{
+		"workContent": plan.WorkContent, "project": plan.Project, "planType": plan.PlanType,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleUpdateEngineeringTaskStatus(w http.ResponseWriter, r *http.Request, id string) {

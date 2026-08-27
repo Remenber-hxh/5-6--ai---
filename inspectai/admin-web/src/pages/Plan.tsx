@@ -10,14 +10,17 @@ import {
   EngineeringTask,
   PLAN_TYPES,
   ProjectEntry,
+  ProjectScopeDTO,
   UserEntry,
   WEEKDAY_OPTIONS,
+  deletePlan,
+  deleteTask,
   dispatchPlan,
   listAssets,
   listPlans,
   listProjects,
   listTasks,
-  listUsers,
+  listUsersWithScope,
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
@@ -108,6 +111,9 @@ export default function Plan() {
   // 一个谁都看不见的孤儿项目,而且不报错。
   const [projectList, setProjectList] = useState<ProjectEntry[]>([]);
   const [users, setUsers] = useState<UserEntry[]>([]);
+  // 每个人能看到哪些项目。由后端算好 —— 前端拿 dataScope 自己推等于把规则
+  // 复制一份,两边迟早说不一样的话。
+  const [scopes, setScopes] = useState<Record<string, ProjectScopeDTO>>({});
   const [loading, setLoading] = useState(false);
   const [bucket, setBucket] = useState<"" | Bucket>("");
   const [proj, setProj] = useState("");
@@ -134,6 +140,9 @@ export default function Plan() {
   const [form] = Form.useForm();
 
   const focusTask = params.get("task") || "";
+  // 表单里当前选的项目。负责人候选要跟着它变 —— 用 useWatch 而不是在
+  // onChange 里手动同步:后者漏一条路径(回填、重置)就会和表单说不一样的话。
+  const formProject = Form.useWatch<string | undefined>("project", form) || "";
   // 系统里关了动效的人(前庭功能敏感 / 远程桌面)照样要能用,只是不动
   const reduce = useReducedMotion();
 
@@ -147,13 +156,14 @@ export default function Plan() {
         listTasks(),
         listAssets().catch(() => [] as AssetEntry[]),
         listProjects().catch(() => [] as ProjectEntry[]),
-        listUsers().catch(() => [] as UserEntry[]),
+        listUsersWithScope().catch(() => ({ users: [] as UserEntry[], scopes: {} })),
       ]);
       setPlans(ps);
       setTasks(ts);
       setAssets(as);
       setProjectList(prj);
-      setUsers(us);
+      setUsers(us.users);
+      setScopes(us.scopes);
     } finally {
       setLoading(false);
     }
@@ -209,10 +219,23 @@ export default function Plan() {
   //
   // 【状态值是 "disabled" 不是「停用」】界面上写中文,库里存英文。
   // 写成中文的话这个过滤【永远不成立】,停用的人照样出现在候选里 —— 踩过。
+  //
+  // 【按项目筛掉看不到的人】派给一个数据范围里没有这个项目的人,等于没派:
+  // 他打开什么都没有,而派的人以为派出去了 —— 两边都不知道对方在等什么,
+  // 要到"提醒该来没来"那天才暴露。后端也会拦(owner_cannot_see_project),
+  // 这里筛掉是为了不让人填完一整张表才被打回来。
   const ownerOptions = useMemo(
     () =>
       users
         .filter((u) => u.status !== "disabled")
+        .filter((u) => {
+          if (!formProject) return true; // 还没选项目,先都列出来
+          const sc = scopes[u.id];
+          if (!sc) return true; // 后端没给范围信息就不筛 —— 宁可让后端拦,也别静默少人
+          if (sc.blocked) return false;
+          if (sc.seesAll) return true;
+          return (sc.projects || []).includes(formProject);
+        })
         .map((u) => {
           const name = u.displayName || u.username || "";
           return {
@@ -222,8 +245,30 @@ export default function Plan() {
           };
         })
         .filter((o) => o.value),
-    [users],
+    [users, scopes, formProject],
   );
+
+  // 被项目范围筛掉了几个人。要说出来 —— 不说的话候选列表凭空变短,
+  // 用户只会觉得"怎么找不到老张了",而不知道是范围没配。
+  const hiddenOwnerCount = useMemo(() => {
+    if (!formProject) return 0;
+    const active = users.filter((u) => u.status !== "disabled").length;
+    return Math.max(0, active - ownerOptions.length);
+  }, [users, ownerOptions, formProject]);
+
+  // 【改了项目就要重新检查负责人】先选人再改项目的话,那个人可能看不到
+  // 新项目了。不清掉的话表单看着完全正常,一提交才被后端打回来 ——
+  // 而那时用户已经填完整张表,还得自己猜是哪一项不对。
+  useEffect(() => {
+    if (!editing || !formProject) return;
+    const curId = form.getFieldValue("ownerId");
+    if (!curId) return;
+    if (ownerOptions.some((o) => o.userId === curId)) return;
+    form.setFieldsValue({ ownerId: "", ownerName: "" });
+    message.warning(`原负责人看不到「${formProject}」,已清空 —— 请重新选`);
+    // ownerOptions 是按 formProject 算出来的,依赖它就够了
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formProject, ownerOptions]);
 
   // 正在编辑的这条,有没有存着控件读不出来的日期。
   const unparsedDates = useMemo(() => {
@@ -297,6 +342,25 @@ export default function Plan() {
       await load();
     } catch (e) {
       message.error(e instanceof Error ? e.message : "派发失败");
+    }
+  }
+
+  // 【删除和取消不是一回事,文案要说清】取消是"这活不做了",记录还在;
+  // 删除是这条从来没存在过。后端会拦住有巡检记录 / 已派发任务的,
+  // 拦回来的话把原话直接给用户看 —— 那句话里已经写了该怎么办。
+  async function onDelete(kind: "plan" | "task", id: string) {
+    try {
+      if (kind === "plan") {
+        await deletePlan(id);
+        setSelPlanId("");
+      } else {
+        await deleteTask(id);
+        setSelTaskId("");
+      }
+      message.success("已删除");
+      await load();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "删除失败");
     }
   }
 
@@ -647,6 +711,20 @@ export default function Plan() {
                 <Button block type="text" onClick={() => setSelTaskId("")}>
                   返回计划详情
                 </Button>
+                {/* 【删除放在最后、用文字按钮】它和上面那些不是同一类操作:
+                    那些推进流程,这条抹掉一条数据。做成同样显眼的按钮
+                    会让人在赶时间时误点。 */}
+                <Popconfirm
+                  title="删除这个任务?"
+                  description="删除后无法恢复。只想停掉它的话请用「取消任务」——那样会留痕。"
+                  okText="删除"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => onDelete("task", selTask.id)}
+                >
+                  <Button block type="text" danger>
+                    删除任务
+                  </Button>
+                </Popconfirm>
               </Space>
             </Card>
           ) : selPlan ? (
@@ -731,6 +809,20 @@ export default function Plan() {
                 >
                   编辑计划
                 </Button>
+                {/* 计划也给删除:库里已经攒了一批名字叫「1」的测试行,
+                    没有删除键的话它们会一直堵在列表里 —— 而"看着乱"
+                    最后会变成"没人看"。已派发过任务的后端会拦住。 */}
+                <Popconfirm
+                  title="删除这条计划?"
+                  description="删除后无法恢复。已派发过任务的计划删不掉——需要先处理那些任务。"
+                  okText="删除"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => onDelete("plan", selPlan.id)}
+                >
+                  <Button block type="text" danger>
+                    删除计划
+                  </Button>
+                </Popconfirm>
               </Space>
             </Card>
                 ) : null}
@@ -832,7 +924,11 @@ export default function Plan() {
           <Form.Item
             name="ownerName"
             label="负责人"
-            extra="选人员表里的人才能收到每日提醒;手填的名字只做记录"
+            extra={
+              hiddenOwnerCount > 0
+                ? `选人员表里的人才能收到每日提醒;手填的名字只做记录。已隐藏 ${hiddenOwnerCount} 人 —— 他们的数据范围里没有「${formProject}」,派了也看不到`
+                : "选人员表里的人才能收到每日提醒;手填的名字只做记录"
+            }
           >
             <AutoComplete
               allowClear

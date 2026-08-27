@@ -226,6 +226,21 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+/**
+ * 删除计划 / 任务。
+ *
+ * 【删除不是取消】取消是"这活不做了",记录还在、谁什么时候取消的查得到;
+ * 删除是这条从来没存在过。所以只给"建错了"用 —— 后端会拦住已经有
+ * 巡检记录或已派发任务的那些。
+ */
+export function deletePlan(id: string) {
+  return api(`/api/engineering/plans/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function deleteTask(id: string) {
+  return api(`/api/engineering/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 // 资产标记正常(恢复正常三路径之一,自动销账)
 export function markAssetNormal(a: AssetEntry) {
   return api(`/api/assets/${encodeURIComponent(a.id)}`, {
@@ -341,8 +356,28 @@ export function savePermissions(matrix: Record<string, string[]>) {
   });
 }
 
+/** 一个人能看到哪些项目。seesAll 为真时 projects 是空的 —— 别当成"一个都看不到"。 */
+export interface ProjectScopeDTO {
+  seesAll: boolean;
+  projects?: string[];
+  blocked?: boolean;
+}
+
 export function listUsers() {
   return api<{ users: UserEntry[] }>("/api/users").then((d) => d.users || []);
+}
+
+/**
+ * 用户 + 每人的项目可见范围。建计划挑负责人时要用后者过滤。
+ *
+ * 【范围由后端算好,前端不要拿 dataScope 自己推】那等于把规则复制一份到前端,
+ * 两边迟早说不一样的话 —— 而不一致的表现是"这个人明明有权限却选不到",
+ * 或者更糟:选得到、派下去了、他打开什么都没有。
+ */
+export function listUsersWithScope() {
+  return api<{ users: UserEntry[]; projectScopes?: Record<string, ProjectScopeDTO> }>(
+    "/api/users",
+  ).then((d) => ({ users: d.users || [], scopes: d.projectScopes || {} }));
 }
 
 export interface RoleEntry {
