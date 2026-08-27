@@ -225,6 +225,14 @@ export default function Plan() {
     [users],
   );
 
+  // 正在编辑的这条,有没有存着控件读不出来的日期。
+  const unparsedDates = useMemo(() => {
+    if (!editing || editing === "new") return [];
+    return [editing.planStart, editing.planEnd].filter(
+      (v): v is string => Boolean(v) && !dayjs(v).isValid(),
+    );
+  }, [editing]);
+
   // 类型 / 点位:没有主数据表,拿历史填过的值做候选,避免同一类点位写出五种叫法。
   const categoryOptions = useMemo(
     () =>
@@ -752,14 +760,22 @@ export default function Plan() {
             // 一并清空,状态还被打回「待执行」——「派发执行任务」按钮重新出现,
             // 同一条计划能派发第二次。整条链路一个错都不报。
             const base = editing !== "new" && editing ? editing : null;
+            // 【没动过日期就原样带回去,不要用控件的空值覆盖】
+            // toRange 对解析不了的历史值(手打的 "2026年3月"、"3/1")返回空,
+            // 于是 RangePicker 显示成空 —— 如果照着控件写回去,用户只是改了个
+            // 负责人,原来的日期就被抹掉了,而且界面上看不出发生过什么。
+            // 用 isFieldTouched 区分"没碰过"和"主动清空":后者仍然要生效。
+            const rangeTouched = form.isFieldTouched("planRange");
+            const dateOut = (d: Dayjs | null | undefined, old?: string) =>
+              d ? d.format(DATE_FMT) : rangeTouched ? "" : old || "";
             const payload = {
               ...(base || {}),
               ...rest,
               weekdays: Array.isArray(weekdayList)
                 ? [...weekdayList].sort().join(",")
                 : undefined,
-              planStart: start ? start.format(DATE_FMT) : "",
-              planEnd: end ? end.format(DATE_FMT) : "",
+              planStart: dateOut(start, base?.planStart),
+              planEnd: dateOut(end, base?.planEnd),
             };
             await savePlan(payload);
             message.success("计划已保存");
@@ -894,7 +910,18 @@ export default function Plan() {
           {/* 【日期用选的】原来是手打 "YYYY-MM-DD" 的文本框:打错格式不报错,
               存进去之后排序、筛选、看板全部按字符串比,一条 "2026/3/1" 会永远排在最前面。
               而且起始日期以前根本没有入口 —— 列表的「计划节点」列只能显示单边。 */}
-          <Form.Item name="planRange" label="计划区间" extra="留空 = 长期有效">
+          {/* 【原值解析不了就说出来】历史数据里有手打的 "2026年3月"、"3/1",
+              控件显示不了它们,只能是空白 —— 不提示的话用户会以为这条计划
+              本来就没填日期,而它其实是有值的,只是选了新日期就会被替换掉。 */}
+          <Form.Item
+            name="planRange"
+            label="计划区间"
+            extra={
+              unparsedDates.length
+                ? `原值「${unparsedDates.join(" / ")}」不是标准日期,控件显示不出来。不动它就保留原样,选了新日期才会替换。`
+                : "留空 = 长期有效"
+            }
+          >
             <DatePicker.RangePicker
               style={{ width: "100%" }}
               format={DATE_FMT}

@@ -72,11 +72,16 @@ func ownerNameKey(s string) string {
 }
 
 // buildOwnerBindingReport 算出当前的绑定现状。只读。
-func (s *Server) buildOwnerBindingReport() (*ownerBindingReport, error) {
+//
+// 【要按数据范围裁】角色和数据范围是正交的:一个管理员也可以被限定只看某几个
+// 项目。不裁的话,他能从这份报告里读到别的项目有谁、各有多少条计划 ——
+// 名单本身就是信息,而且和列表页的口径对不上(那边是裁过的)。
+func (s *Server) buildOwnerBindingReport(r *http.Request) (*ownerBindingReport, error) {
 	plans, err := s.store.ListEngineeringPlans(EngineeringPlanFilter{})
 	if err != nil {
 		return nil, err
 	}
+	plans = filterPlansByScope(plans, s.projectScopeFor(r, ""))
 	users, err := s.store.ListUsers()
 	if err != nil {
 		return nil, err
@@ -168,7 +173,7 @@ func (s *Server) buildOwnerBindingReport() (*ownerBindingReport, error) {
 
 // handleOwnerBindingReport —— GET /api/engineering/plans/owner-binding
 func (s *Server) handleOwnerBindingReport(w http.ResponseWriter, r *http.Request) {
-	report, err := s.buildOwnerBindingReport()
+	report, err := s.buildOwnerBindingReport(r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "build_report_failed", err.Error())
 		return
@@ -209,6 +214,10 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 		plan *EngineeringPlanItem
 		user *User
 	}
+	// 【写这一侧也要裁范围】只在报告里裁没用 —— 计划 ID 是可以直接写在
+	// 请求体里的,不裁的话被限定项目的管理员能改到别的项目的计划,
+	// 而他在界面上根本看不到那条。
+	scope := s.projectScopeFor(r, "")
 	list := make([]resolved, 0, len(req.Bindings))
 	seen := map[string]bool{}
 	for _, b := range req.Bindings {
@@ -232,6 +241,12 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, "plan_not_found", "计划不存在:"+planID)
 			return
 		}
+		// 【和"不存在"给同一种回答】分开报的话,这个接口就成了一个探针:
+		// 拿 ID 试一遍就能问出"哪些计划存在但我看不到"。
+		if !scope.allows(plan.Project) {
+			writeError(w, http.StatusBadRequest, "plan_not_found", "计划不存在:"+planID)
+			return
+		}
 		var user *User
 		if userID != "" {
 			u, uErr := s.store.GetUser(userID)
@@ -249,9 +264,21 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 		list = append(list, resolved{plan: plan, user: user})
 	}
 
+	// 【日志要记清楚绑给了谁,不能只记条数】这条操作改的是"提醒发给谁",
+	// 事后要能回答"这条计划为什么归他"。只记 count 的话,查起来只知道
+	// "某天有人绑了 8 条",8 条是哪些、绑给谁,全靠猜。
+	trail := make([]map[string]any, 0, len(list))
 	applied := 0
 	for _, item := range list {
 		p := item.plan
+		entry := map[string]any{"planId": p.ID, "was": p.OwnerID}
+		if item.user != nil {
+			entry["userId"] = item.user.ID
+			entry["userName"] = firstNonEmpty(item.user.DisplayName, item.user.Username)
+		} else {
+			entry["userId"] = "" // 解绑
+		}
+		trail = append(trail, entry)
 		if item.user != nil {
 			p.OwnerID = item.user.ID
 			// 【名字跟着账号走】两列并存的代价是它们可能说不一样的话。
@@ -271,7 +298,8 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.recordOperation(r, "plan_owner_binding_apply", "engineering_plan", "", map[string]any{
-		"count": applied,
+		"count":    applied,
+		"bindings": trail,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"applied": applied})
 }

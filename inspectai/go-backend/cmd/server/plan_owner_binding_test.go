@@ -28,10 +28,35 @@ func savePlanDirect(t *testing.T, srv *Server, item *EngineeringPlanItem) *httpt
 // 这里错一次的代价很具体:每日提醒发给了不该发的人,而且不报错 ——
 // 要等到有人抱怨才会发现。所以匹配规则本身要有测试兜着。
 
-func bindStore(t *testing.T) (*Server, *MemStore) {
+func bindStore(t *testing.T) (*Server, *MemStore, *http.Request) {
 	t.Helper()
-	srv, _, store, _ := newScopeRequestWithStore(t, roleAdmin, "")
-	return srv, store
+	srv, req, store, _ := newScopeRequestWithStore(t, roleAdmin, "")
+	return srv, store, req
+}
+
+// applyBindings 打应用接口。带上带登录态的请求 —— 里面要按数据范围裁。
+func applyBindings(t *testing.T, srv *Server, base *http.Request, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/engineering/plans/owner-binding",
+		bytes.NewReader(raw))
+	r.Header = base.Header.Clone()
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.handleOwnerBindingApply(w, r)
+	return w
+}
+
+type bindPair struct {
+	PlanID string `json:"planId"`
+	UserID string `json:"userId"`
+}
+
+func bindBody(pairs ...bindPair) map[string]any {
+	return map[string]any{"bindings": pairs}
 }
 
 func addOwnerUser(t *testing.T, store *MemStore, username, display string) *User {
@@ -75,7 +100,7 @@ func TestOwnerNameKeyIgnoresWhitespace(t *testing.T) {
 
 // 报告要把三种情况分开,而不是给一个"匹配率 80%"了事。
 func TestOwnerBindingReportSplitsThreeWays(t *testing.T) {
-	srv, store := bindStore(t)
+	srv, store, req := bindStore(t)
 	addOwnerUser(t, store, "huxf", "胡晓悱")
 	// 重名:两个账号都叫「余红星」
 	addOwnerUser(t, store, "yuhx1", "余红星")
@@ -86,7 +111,7 @@ func TestOwnerBindingReportSplitsThreeWays(t *testing.T) {
 	addPlanWithOwner(t, store, "p-ambi", "余红星", "")
 	addPlanWithOwner(t, store, "p-unmatched", "外委-张工", "")
 
-	report, err := srv.buildOwnerBindingReport()
+	report, err := srv.buildOwnerBindingReport(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,14 +136,14 @@ func TestOwnerBindingReportSplitsThreeWays(t *testing.T) {
 // 停用的人不该做候选:绑上去提醒发不出去,而且没人负责 ——
 // 比不绑更糟,不绑至少还能从名字看出该找谁。
 func TestOwnerBindingSkipsDisabledUsers(t *testing.T) {
-	srv, store := bindStore(t)
+	srv, store, req := bindStore(t)
 	u := addOwnerUser(t, store, "leaver", "离职的人")
 	if err := store.SetUserStatus(u.ID, userStatusDisabled); err != nil {
 		t.Fatal(err)
 	}
 	addPlanWithOwner(t, store, "p1", "离职的人", "")
 
-	report, err := srv.buildOwnerBindingReport()
+	report, err := srv.buildOwnerBindingReport(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,12 +157,12 @@ func TestOwnerBindingSkipsDisabledUsers(t *testing.T) {
 
 // 已经绑过的不再进报告 —— 否则每跑一次都要把全部历史再确认一遍。
 func TestOwnerBindingSkipsAlreadyBound(t *testing.T) {
-	srv, store := bindStore(t)
+	srv, store, req := bindStore(t)
 	u := addOwnerUser(t, store, "huxf", "胡晓悱")
 	addPlanWithOwner(t, store, "p-bound", "胡晓悱", u.ID)
 	addPlanWithOwner(t, store, "p-free", "胡晓悱", "")
 
-	report, err := srv.buildOwnerBindingReport()
+	report, err := srv.buildOwnerBindingReport(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +182,7 @@ func TestOwnerBindingSkipsAlreadyBound(t *testing.T) {
 // 放过去的话「我的计划」和点名提醒会安静地查不到这条 ——
 // 表现是"这条计划谁都不归",而库里明明写着个 ID。
 func TestSavePlanRejectsUnknownOwnerID(t *testing.T) {
-	srv, _ := bindStore(t)
+	srv, _, _ := bindStore(t)
 	// 直接走 handler 才能覆盖到校验 —— store 层是不校验的
 	w := savePlanDirect(t, srv, &EngineeringPlanItem{
 		ID: "p1", Project: "会议中心", WorkContent: "月度计划",
@@ -170,8 +195,9 @@ func TestSavePlanRejectsUnknownOwnerID(t *testing.T) {
 
 // 绑定时名字要跟着账号走 —— 两列并存的代价就是它们可能说不一样的话。
 func TestSavePlanAlignsOwnerNameWithAccount(t *testing.T) {
-	srv, store := bindStore(t)
+	srv, store, req := bindStore(t)
 	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	_ = req
 
 	w := savePlanDirect(t, srv, &EngineeringPlanItem{
 		ID: "p1", Project: "会议中心", WorkContent: "月度计划",
@@ -187,5 +213,133 @@ func TestSavePlanAlignsOwnerNameWithAccount(t *testing.T) {
 	}
 	if got.OwnerName != "胡晓悱" {
 		t.Errorf("OwnerName=%q,应对齐成账号的名字「胡晓悱」", got.OwnerName)
+	}
+}
+
+// ===== 应用绑定(会写库的那一半)=====
+
+func TestOwnerBindingApplyBindsAndAlignsName(t *testing.T) {
+	srv, store, req := bindStore(t)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	addPlanWithOwner(t, store, "p1", "胡 晓悱", "") // 名字写法不规范
+
+	w := applyBindings(t, srv, req, bindBody(bindPair{PlanID: "p1", UserID: u.ID}))
+	if w.Code != 200 {
+		t.Fatalf("应 200,实际 %d:%s", w.Code, w.Body.String())
+	}
+	got, err := store.GetEngineeringPlan("p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OwnerID != u.ID {
+		t.Errorf("OwnerID=%q,应为 %q", got.OwnerID, u.ID)
+	}
+	if got.OwnerName != "胡晓悱" {
+		t.Errorf("OwnerName=%q,绑定时应对齐成账号的名字", got.OwnerName)
+	}
+}
+
+// 解绑:ID 清掉,名字保留 —— 否则这条计划连"该找谁"都看不出来了。
+func TestOwnerBindingApplyUnbindKeepsName(t *testing.T) {
+	srv, store, req := bindStore(t)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	addPlanWithOwner(t, store, "p1", "胡晓悱", u.ID)
+
+	w := applyBindings(t, srv, req, bindBody(bindPair{PlanID: "p1", UserID: ""}))
+	if w.Code != 200 {
+		t.Fatalf("应 200,实际 %d:%s", w.Code, w.Body.String())
+	}
+	got, _ := store.GetEngineeringPlan("p1")
+	if got.OwnerID != "" {
+		t.Errorf("OwnerID 应被清空,实际 %q", got.OwnerID)
+	}
+	if got.OwnerName != "胡晓悱" {
+		t.Errorf("解绑不该动名字,实际 %q", got.OwnerName)
+	}
+}
+
+// 【最要紧的一条】清单里有一条坏的,整批都不能生效。
+//
+// 放行一半的话,报告是照动手之前那一刻算的 —— 重跑一次结果对不上,
+// 人就不知道到底哪些绑上了。宁可一条都不改。
+func TestOwnerBindingApplyIsAllOrNothing(t *testing.T) {
+	srv, store, req := bindStore(t)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	addPlanWithOwner(t, store, "p-good", "胡晓悱", "")
+
+	w := applyBindings(t, srv, req, bindBody(
+		bindPair{PlanID: "p-good", UserID: u.ID},
+		bindPair{PlanID: "p-does-not-exist", UserID: u.ID},
+	))
+	if w.Code != 400 {
+		t.Fatalf("应 400 拒绝整批,实际 %d:%s", w.Code, w.Body.String())
+	}
+	got, _ := store.GetEngineeringPlan("p-good")
+	if got.OwnerID != "" {
+		t.Errorf("整批被拒时 p-good 不该被改动,实际 OwnerID=%q", got.OwnerID)
+	}
+}
+
+func TestOwnerBindingApplyRejectsUnknownAndDisabledUser(t *testing.T) {
+	srv, store, req := bindStore(t)
+	gone := addOwnerUser(t, store, "leaver", "离职的人")
+	if err := store.SetUserStatus(gone.ID, userStatusDisabled); err != nil {
+		t.Fatal(err)
+	}
+	addPlanWithOwner(t, store, "p1", "谁", "")
+
+	for name, userID := range map[string]string{
+		"不存在的账号": "user_nope",
+		"停用的账号":  gone.ID,
+	} {
+		w := applyBindings(t, srv, req, bindBody(bindPair{PlanID: "p1", UserID: userID}))
+		if w.Code != 400 {
+			t.Errorf("%s 应被拒,实际 %d:%s", name, w.Code, w.Body.String())
+		}
+	}
+}
+
+// 同一条计划出现两次:两条相反的指令谁生效取决于顺序,而调用方不会知道
+// 自己发了矛盾的东西。直接拒掉,不要挑一条执行。
+func TestOwnerBindingApplyRejectsDuplicatePlan(t *testing.T) {
+	srv, store, req := bindStore(t)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	addPlanWithOwner(t, store, "p1", "胡晓悱", "")
+
+	w := applyBindings(t, srv, req, bindBody(
+		bindPair{PlanID: "p1", UserID: u.ID},
+		bindPair{PlanID: "p1", UserID: ""},
+	))
+	if w.Code != 400 {
+		t.Fatalf("重复的计划 ID 应被拒,实际 %d:%s", w.Code, w.Body.String())
+	}
+}
+
+// 数据范围要在写这一侧也生效 —— 计划 ID 可以直接写在请求体里,
+// 只在报告里裁等于没裁。
+func TestOwnerBindingRespectsProjectScope(t *testing.T) {
+	srv, req, store, userID := newScopeRequestWithStore(t, roleAdmin, dataScopeProject)
+	u := addOwnerUser(t, store, "huxf", "胡晓悱")
+	if err := store.SetUserProjects(defaultTenantID, userID, []string{"紫菡雅集"}); err != nil {
+		t.Fatal(err)
+	}
+	// 这条属于「会议中心」—— 当前用户被限定在「紫菡雅集」,看不到也不该改到
+	addPlanWithOwner(t, store, "p-other", "胡晓悱", "")
+
+	report, err := srv.buildOwnerBindingReport(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.TotalPlans != 0 {
+		t.Errorf("报告应裁掉看不到的项目,实际 TotalPlans=%d", report.TotalPlans)
+	}
+
+	w := applyBindings(t, srv, req, bindBody(bindPair{PlanID: "p-other", UserID: u.ID}))
+	if w.Code != 400 {
+		t.Fatalf("越权改动应被拒,实际 %d:%s", w.Code, w.Body.String())
+	}
+	got, _ := store.GetEngineeringPlan("p-other")
+	if got.OwnerID != "" {
+		t.Errorf("越权的绑定不该落库,实际 OwnerID=%q", got.OwnerID)
 	}
 }
