@@ -103,7 +103,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="今天没有排定的每日巡检计划"
+        description="今天没有排定的每日计划"
         style={{ padding: "32px 0" }}
       />
     );

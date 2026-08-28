@@ -64,7 +64,7 @@ var pushWeekdayCN = []string{"", "周一", "周二", "周三", "周四", "周五
 func buildDailyPushDigest(board *TodayInspectionBoard, silentWhenDone bool) dailyPushDigest {
 	d := dailyPushDigest{Groups: []dailyPushGroup{}}
 	if board == nil {
-		d.SkipReason = "今天没有每日巡检计划"
+		d.SkipReason = "今天没有每日计划"
 		return d
 	}
 	d.Date, d.Weekday, d.Total, d.Done = board.Date, board.Weekday, board.Total, board.Done
@@ -124,7 +124,7 @@ func buildDailyPushDigest(board *TodayInspectionBoard, silentWhenDone bool) dail
 	d.Text = renderDailyPushText(d)
 	switch {
 	case d.Total == 0:
-		d.SkipReason = "今天没有排定的每日巡检计划"
+		d.SkipReason = "今天没有排定的每日计划"
 	case d.Pending == 0 && silentWhenDone:
 		d.SkipReason = "今天已全部巡完(设置为「全部完成时不发」)"
 	default:

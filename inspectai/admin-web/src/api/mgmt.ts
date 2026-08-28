@@ -926,7 +926,7 @@ export function getTodayBoard() {
 
 /** 计划类型的中文名。和后端 planTypeNames 一一对应 */
 export const PLAN_TYPES = [
-  { value: "daily", label: "每日巡检" },
+  { value: "daily", label: "每日计划" },
   { value: "weekly", label: "周计划" },
   { value: "monthly", label: "月度计划" },
   { value: "yearly", label: "年度计划" },

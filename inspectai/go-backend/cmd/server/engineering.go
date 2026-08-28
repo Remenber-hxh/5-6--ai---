@@ -850,7 +850,7 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 		// 建的时候拦住,比事后在看板上标一个"未指定设备"有用得多。
 		if len(req.AssetIDs) == 0 {
 			writeError(w, http.StatusBadRequest, "missing_assets",
-				"每日巡检计划必须指定要巡的设备 —— 完成情况是按设备自动判定的")
+				"每日计划必须指定要巡的设备 —— 完成情况是按设备自动判定的")
 			return
 		}
 		// 【设备必须属于这条计划的项目】混进别的项目的设备,那些设备名就会

@@ -129,7 +129,7 @@ func (s *Server) buildTodayBoardFor(tenant string, vis dataVisibility, now time.
 			continue
 		}
 		st := DailyPlanStatus{
-			PlanID: p.ID, Title: firstNonEmpty(p.WorkContent, p.SubType, "每日巡检"),
+			PlanID: p.ID, Title: firstNonEmpty(p.WorkContent, p.SubType, "每日计划"),
 			Project: p.Project, OwnerName: p.OwnerName,
 			Assets: []DailyAssetStatus{},
 		}

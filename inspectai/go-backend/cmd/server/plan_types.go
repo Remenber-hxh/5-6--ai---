@@ -16,7 +16,7 @@ const (
 	planTypeYearly  = "yearly"  // 年度计划
 	planTypeMonthly = "monthly" // 月度计划
 	planTypeWeekly  = "weekly"  // 周计划
-	planTypeDaily   = "daily"   // 每日巡检计划 —— 只有这一档参与每日提醒
+	planTypeDaily   = "daily"   // 每日计划 —— 只有这一档参与每日提醒
 	planTypeAdhoc   = "adhoc"   // 临时计划:对外部项目组的对接
 )
 
@@ -24,7 +24,7 @@ var planTypeNames = map[string]string{
 	planTypeYearly:  "年度计划",
 	planTypeMonthly: "月度计划",
 	planTypeWeekly:  "周计划",
-	planTypeDaily:   "每日巡检",
+	planTypeDaily:   "每日计划",
 	planTypeAdhoc:   "临时计划",
 }
 

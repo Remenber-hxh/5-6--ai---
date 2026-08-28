@@ -165,13 +165,13 @@ export default function Plan() {
     else next.set("view", v);
     setParams(next, { replace: true });
   };
-  // 【哪些视图里有计划表】只有计划类型那几个。today 和 coverage 都没有表。
+  // 【哪些视图里有计划表】只有计划类型那几个,「今日执行」没有表。
   //
-  // 抽成一个判断而不是到处写 view !== "today" —— 上一次加视图时
-  // 就是因为散着写,漏掉了右侧面板那一处:那一屏根本没有计划表,
-  // 详情面板却自动选中了一条,凭空冒出一个「计划详情」,
-  // 而它指向的计划在屏幕上一处都看不到。
-  const hasPlanTable = view !== "today" && view !== "coverage";
+  // 抽成一个判断而不是到处写 view !== "today" —— 散着写的话,
+  // 加视图时总会漏掉一处。漏掉右侧面板那一处的表现是:
+  // 那一屏根本没有计划表,详情面板却自动选中了一条,凭空冒出一个
+  // 「计划详情」,而它指向的计划在屏幕上一处都看不到(踩过)。
+  const hasPlanTable = view !== "today";
   // 计划表按当前视图筛类型 —— 视图本身就是类型,不用再来一个筛选器
   const planType = hasPlanTable ? view : "";
   const [form] = Form.useForm();
@@ -568,13 +568,9 @@ export default function Plan() {
             value={view}
             onChange={(v) => setView(v as string)}
             style={{ marginBottom: 16 }}
-            // 【覆盖单独一个视图,不塞进「今日执行」】那一屏回答的是
-            // "今天还差什么",而覆盖回答"长期有没有被漏掉的" ——
-            // 两个时间尺度混在一屏,人要不停切换视角,正是当初被说"混乱"的来源。
             options={[
               { value: "today", label: "今日执行" },
               ...PLAN_TYPES.map((t) => ({ value: t.value, label: t.label })),
-              { value: "coverage", label: "巡检覆盖" },
             ]}
           />
 
@@ -596,10 +592,6 @@ export default function Plan() {
               />
             </Card>
           )}
-          {view === "coverage" && (
-            <CoverageCard assets={scopedAssets} />
-          )}
-
           {/* 【待跟进归到执行视图】异常复查是"今天要处理的事",
               和长期计划台账不是一回事 —— 混在一起人要不停切换视角。 */}
           {view === "today" && showRecheck && (
@@ -637,6 +629,14 @@ export default function Plan() {
               dataSource 是 plans —— 同一页里另有一张真的任务表(复查任务)。
               用户点开一行,右侧详情展示的是计划的字段,却被告知这是任务。
               这是命名 bug,不是审美问题:人分不清自己在改什么。 */}
+          {/* 【覆盖放在最后】上面两块是"今天要干的",这块是"长期漏了的"。
+              眼前的事在前、长期的在后 —— 打开这一页第一眼该看到的是今天。 */}
+          {view === "today" && (
+            <div style={{ marginBottom: 16 }}>
+              <CoverageCard assets={scopedAssets} />
+            </div>
+          )}
+
           {hasPlanTable && (
           <Card title="巡检计划" size="small">
             <Space style={{ marginBottom: 14 }} wrap>
@@ -1051,7 +1051,7 @@ export default function Plan() {
           <Form.Item name="workContent" label="计划内容" rules={[{ required: true, message: "请输入计划内容" }]}>
             <Input placeholder="如:会议中心电梯月度巡检" />
           </Form.Item>
-          {/* 【类型放在最前面】它决定下面还要填什么 —— 选了「每日巡检」才需要
+          {/* 【类型放在最前面】它决定下面还要填什么 —— 选了「每日计划」才需要
               执行日和设备清单。放在后面的话人会先填一堆再发现要重来。 */}
           <Form.Item
             name="planType"
@@ -1149,7 +1149,7 @@ export default function Plan() {
                     name="assetIds"
                     label="要巡的设备"
                     extra="完成情况按这些设备自动判定 —— 巡检员正常拍照提交即可,不用另外打勾"
-                    rules={[{ required: true, message: "每日巡检计划必须指定设备" }]}
+                    rules={[{ required: true, message: "每日计划必须指定设备" }]}
                   >
                     <Select
                       mode="multiple"
@@ -1162,7 +1162,7 @@ export default function Plan() {
                   </Form.Item>
                 </>
               ) : (
-                // 预算只对工程类计划有意义,每日巡检不该问这个。
+                // 预算只对工程类计划有意义,每日计划不该问这个。
                 // 详情面板一直在显示「预算」,但表单以前根本没有这一项 ——
                 // 也就是说那个数字只能靠导入,后台永远填不进去。
                 <Form.Item name="budgetAmount" label="预算">
