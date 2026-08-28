@@ -96,16 +96,18 @@ export default function CoverageCard({
 
   const option = {
     tooltip: { trigger: "item", formatter: "{b}:{c} 台({d}%)" },
-    // 【图例和圆环之间留一口气】贴着画的话,图例那排小圆点会被读成
-    // 圆环的一部分,整块显得局促。padding 的第一个值就是上边距。
+    // 【窄栏里图例必须能换行】396px 的侧栏放不下四项一行 ——
+    // 不给 width 的话 echarts 不换行,直接把「从未巡检」整项截掉,
+    // 而那恰恰是最要紧的一档。给了宽度它才会折成两行。
     legend: {
       bottom: 0,
       icon: "circle",
       itemWidth: 8,
       itemHeight: 8,
-      itemGap: 14,
-      padding: [14, 0, 0, 0],
-      textStyle: { fontSize: 12, color: "#5b6b78" },
+      itemGap: compact ? 10 : 14,
+      width: compact ? "100%" : undefined,
+      padding: [10, 0, 0, 0],
+      textStyle: { fontSize: compact ? 11 : 12, color: "#5b6b78" },
     },
     series: [
       {
@@ -113,7 +115,7 @@ export default function CoverageCard({
         // 【环形而不是实心饼】中间那个洞不是装饰:总数放在那里,
         // 读者不用把四段加起来才知道基数是多少。
         radius: ["52%", "76%"],
-        center: ["50%", "40%"],
+        center: ["50%", compact ? "38%" : "40%"],
         avoidLabelOverlap: true,
         label: { show: false },
         labelLine: { show: false },
@@ -133,7 +135,7 @@ export default function CoverageCard({
     graphic: {
       type: "text",
       left: "center",
-      top: "34%",
+      top: compact ? "32%" : "34%",
       style: {
         // 选了某一段就显示那一段的台数 —— 和下面清单的条数对得上
         text: String(pick ? counts[pick] : assets.length),
@@ -157,13 +159,15 @@ export default function CoverageCard({
         style={{
           display: "grid",
           gridTemplateColumns: compact ? "minmax(0, 1fr)" : "minmax(0, 260px) minmax(0, 1fr)",
-          gap: compact ? 4 : 20,
+          // 【窄栏里图和清单之间要拉开】原来只有 4px,图例最后一行
+          // 紧贴着第一条设备,读起来像图例也是清单的一行。
+          gap: compact ? 18 : 20,
           alignItems: "start",
         }}
       >
         <ReactECharts
           option={option}
-          style={{ height: compact ? 190 : 220, cursor: "pointer" }}
+          style={{ height: compact ? 212 : 220, cursor: "pointer" }}
           onEvents={{ click: onChartClick }}
           notMerge
         />
