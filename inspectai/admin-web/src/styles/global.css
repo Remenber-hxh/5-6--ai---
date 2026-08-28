@@ -98,11 +98,84 @@ body {
   font-weight: 700 !important;
 }
 
-/* 表头:旧版灰字浅底 */
+/* ===== 表格 =====
+
+   原来是完全原生的 antd:灰底表头色块、列与列之间一条竖线、行高压到最紧。
+   于是每一页的表格长得一模一样,而且看着像后台管理模板,不像做过设计。
+
+   【减负的做法是拿掉东西,不是加装饰】
+   表头的底色、列间竖线、四面边框——这三样都不承载信息,只是在给眼睛加噪音。
+   去掉之后靠"一条分隔线 + 留白 + 字重对比"来分层,这也是极简风的通行做法。 */
+
+/* 表头:不要色块。一条细线 + 更小更淡的标签字,让数据本身成为视觉重心 */
 .ant-table-thead > tr > th {
-  color: #64748b !important;
-  background: #fbfcfe !important;
-  font-weight: 600 !important;
+  background: transparent !important;
+  color: #8aa0b0 !important;
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  letter-spacing: 0.03em;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid #eceff3 !important;
+}
+
+/* antd 在表头每两列之间画一条竖线。列已经靠留白分开了,这条线是纯噪音 */
+.ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+/* 行:给足竖向留白。原来 12 行挤在一起,眼睛没有落脚点 */
+.ant-table-tbody > tr > td {
+  padding-top: 13px !important;
+  padding-bottom: 13px !important;
+  border-bottom: 1px solid #f4f6f8 !important;
+  color: #1c2b3a;
+}
+
+/* 最后一行不画线 —— 它下面就是卡片边缘,再来一条是重复的 */
+.ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
+}
+
+/* 数字等宽:一列日期/金额/台数上下对齐,扫读时不用逐个对位 */
+.ant-table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* hover 只给极轻的一层。重了会让人以为自己选中了什么 */
+.ant-table-tbody > tr:hover > td,
+.ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: #fafbfc !important;
+}
+
+/* 【选中态要压过 hover】否则鼠标一放到选中行上,那抹绿就没了,
+   而绿底正是"我现在在看这一条"的唯一提示。
+   写成 tbody > tr.row-selected > td 是为了在特异性上高过上面那条 hover。 */
+.ant-table-tbody > tr.row-selected > td {
+  background: rgba(18, 169, 104, 0.07) !important;
+}
+
+/* 分页器:它是导航不是内容,不该和数据抢注意力 */
+.ant-pagination {
+  font-size: 13px;
+}
+.ant-pagination .ant-pagination-total-text {
+  color: #8aa0b0;
+}
+
+/* ===== 卡片 =====
+   页面底色是 #f5f7fa、卡片是白的,靠明度差已经分得很开 ——
+   再画一圈边框是多余的重量。换成极轻的投影。 */
+.ant-card {
+  border-color: #f0f2f5 !important;
+}
+.ant-card-bordered {
+  box-shadow: 0 1px 2px rgba(16, 32, 48, 0.03);
+}
+/* 卡片标题那条分隔线也调淡,和表头的线保持同一个重量 */
+.ant-card-head {
+  border-bottom-color: #eceff3 !important;
+  min-height: 46px !important;
 }
 
 /* 计划页状态卡 hover:浅色抬升 */
