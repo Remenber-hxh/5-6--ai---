@@ -24,6 +24,7 @@ import {
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
+import CoverageCard from "../components/CoverageCard";
 import DailyPushPreview from "../components/DailyPushPreview";
 import TodayInspection from "../components/TodayInspection";
 import { C } from "../styles/tokens";
@@ -164,8 +165,15 @@ export default function Plan() {
     else next.set("view", v);
     setParams(next, { replace: true });
   };
+  // 【哪些视图里有计划表】只有计划类型那几个。today 和 coverage 都没有表。
+  //
+  // 抽成一个判断而不是到处写 view !== "today" —— 上一次加视图时
+  // 就是因为散着写,漏掉了右侧面板那一处:那一屏根本没有计划表,
+  // 详情面板却自动选中了一条,凭空冒出一个「计划详情」,
+  // 而它指向的计划在屏幕上一处都看不到。
+  const hasPlanTable = view !== "today" && view !== "coverage";
   // 计划表按当前视图筛类型 —— 视图本身就是类型,不用再来一个筛选器
-  const planType = view === "today" ? "" : view;
+  const planType = hasPlanTable ? view : "";
   const [form] = Form.useForm();
 
   const focusTask = params.get("task") || "";
@@ -221,6 +229,13 @@ export default function Plan() {
   const projects = useMemo(
     () => Array.from(new Set(realPlans.map((p) => p.project).filter(Boolean))) as string[],
     [realPlans],
+  );
+
+  // 覆盖视图用的台账,跟随顶栏的项目筛选 —— 同屏两个数字对不上的话,
+  // 看的人只会觉得"这系统数字乱"。
+  const scopedAssets = useMemo(
+    () => assets.filter((a) => !project || a.project === project),
+    [assets, project],
   );
 
   // ===== 表单下拉的候选项 =====
@@ -428,7 +443,7 @@ export default function Plan() {
   // 冒出一条「计划详情」—— 而它指向的计划在当前页面上一处都看不到,
   // 用户不知道它从哪来、也不知道自己在改什么。
   useEffect(() => {
-    if (view === "today") {
+    if (!hasPlanTable) {
       setSelPlanId("");
       return;
     }
@@ -440,7 +455,7 @@ export default function Plan() {
 
   // 【今日执行只认任务】那一屏有复查任务表,点它是合理的;
   // 计划则一律不显示 —— 页面上没有它的入口。
-  const selPlan = view === "today" ? null : rows.find((p) => p.id === selPlanId) || null;
+  const selPlan = hasPlanTable ? rows.find((p) => p.id === selPlanId) || null : null;
   const selTask = tasks.find((t) => t.id === selTaskId) || null;
   const hasPanel = Boolean(selTask || selPlan);
 
@@ -553,9 +568,13 @@ export default function Plan() {
             value={view}
             onChange={(v) => setView(v as string)}
             style={{ marginBottom: 16 }}
+            // 【覆盖单独一个视图,不塞进「今日执行」】那一屏回答的是
+            // "今天还差什么",而覆盖回答"长期有没有被漏掉的" ——
+            // 两个时间尺度混在一屏,人要不停切换视角,正是当初被说"混乱"的来源。
             options={[
               { value: "today", label: "今日执行" },
               ...PLAN_TYPES.map((t) => ({ value: t.value, label: t.label })),
+              { value: "coverage", label: "巡检覆盖" },
             ]}
           />
 
@@ -577,6 +596,10 @@ export default function Plan() {
               />
             </Card>
           )}
+          {view === "coverage" && (
+            <CoverageCard assets={scopedAssets} />
+          )}
+
           {/* 【待跟进归到执行视图】异常复查是"今天要处理的事",
               和长期计划台账不是一回事 —— 混在一起人要不停切换视角。 */}
           {view === "today" && showRecheck && (
@@ -614,7 +637,7 @@ export default function Plan() {
               dataSource 是 plans —— 同一页里另有一张真的任务表(复查任务)。
               用户点开一行,右侧详情展示的是计划的字段,却被告知这是任务。
               这是命名 bug,不是审美问题:人分不清自己在改什么。 */}
-          {view !== "today" && (
+          {hasPlanTable && (
           <Card title="巡检计划" size="small">
             <Space style={{ marginBottom: 14 }} wrap>
               <Select

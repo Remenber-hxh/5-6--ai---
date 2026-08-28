@@ -3,11 +3,10 @@ import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { AssetEntry, AttentionItem, InspectorQualityRow, RepeatedIssue, listAssets, listAttention, listRecords } from "../api/mgmt";
+import { AttentionItem, InspectorQualityRow, RepeatedIssue, listAttention, listRecords } from "../api/mgmt";
 import { useUi } from "../store/ui";
 import { api } from "../api/client";
 import CountUp from "../components/CountUp";
-import CoverageCard from "../components/CoverageCard";
 import { InspectionRecord, fmtTime, recordBusinessStatus } from "../lib/status";
 
 interface Overview {
@@ -52,7 +51,6 @@ export default function DataBoard() {
   const [ov, setOv] = useState<Overview>({});
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [records, setRecords] = useState<InspectionRecord[]>([]);
-  const [assets, setAssets] = useState<AssetEntry[]>([]);
   const [drifts, setDrifts] = useState<DriftEntry[]>([]);
   const [summary, setSummary] = useState("");
   const [repeated, setRepeated] = useState<RepeatedIssue[]>([]);
@@ -82,16 +80,7 @@ export default function DataBoard() {
       })
       .catch(() => void 0);
     listRecords().then(setRecords).catch(() => void 0);
-    // 台账用于「巡检覆盖」。取不到就让那张卡显示空态,不拖垮整页。
-    listAssets().then(setAssets).catch(() => void 0);
   }, [project]);
-
-  // 【覆盖卡也要跟顶栏的项目筛选走】页面上别的块都筛了,这一块不筛的话
-  // 同一屏里两个数字对不上,而看的人只会觉得"这系统数字乱"。
-  const scopedAssets = useMemo(
-    () => assets.filter((a) => !project || a.project === project),
-    [assets, project],
-  );
 
   // 状态热力图:近 30 天每日格,按当日最差业务状态着色
   const heatCells = useMemo(() => {
@@ -158,12 +147,6 @@ export default function DataBoard() {
           </Col>
         ))}
       </Row>
-      {/* 【放在趋势图上面】趋势回答"最近干了多少",覆盖回答"有没有被漏掉的"。
-          后者是更容易出事、也更少被问到的那一个,所以给它更靠前的位置。 */}
-      <div style={{ marginBottom: 16 }}>
-        <CoverageCard assets={scopedAssets} />
-      </div>
-
       <Card title="近 30 天巡检趋势" style={{ marginBottom: 16 }} size="small">
         <ReactECharts option={trendOption} style={{ height: 260 }} notMerge />
       </Card>
