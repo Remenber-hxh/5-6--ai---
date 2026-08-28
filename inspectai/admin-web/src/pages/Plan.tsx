@@ -584,6 +584,7 @@ export default function Plan() {
               <Table<EngineeringTask>
                 rowKey="id"
                 size="middle"
+                scroll={{ x: "max-content" }}
                 dataSource={recheckTasks}
                 pagination={false}
                 rowClassName={(t) => (t.id === selTaskId ? "row-selected" : "")}
@@ -594,7 +595,12 @@ export default function Plan() {
                   style: { cursor: "pointer" },
                 })}
                 columns={[
-                  { title: "设备 / 任务", render: (_, t) => <b>{t.title || "异常复查"}</b> },
+                  {
+                    title: "设备 / 任务",
+                    width: 220,
+                    ellipsis: { showTitle: true },
+                    render: (_, t) => <b>{t.title || "异常复查"}</b>,
+                  },
                   { title: "项目", dataIndex: "project", width: 130 },
                   { title: "责任人", dataIndex: "assigneeName", width: 110 },
                   { title: "截止", dataIndex: "dueAt", width: 120, render: (v) => <b>{v || "—"}</b> },
@@ -653,6 +659,11 @@ export default function Plan() {
               rowKey="id"
               size="middle"
               loading={loading}
+              // 【放不下就横向滚,不要压缩列宽】详情面板一开,主区就少 396px,
+              // 而除「计划名称」外每一列都定了宽 —— antd 只能把这唯一有弹性的
+              // 一列压到极限,结果中文被排成一列一个字。
+              // 压缩带来的不是"挤一点",是彻底读不了。
+              scroll={{ x: "max-content" }}
               locale={{
                 emptyText: (
                   <Empty
@@ -693,7 +704,7 @@ export default function Plan() {
               // 而「周期」和「计划节点」对它没意义 —— 现在那两列全是横杠,
               // 占着宽度不说事。年度/月度正相反,起止日期才是重点。
               columns={[
-                { title: "计划名称", dataIndex: "workContent" },
+                { title: "计划名称", dataIndex: "workContent", width: 240, ellipsis: { showTitle: true } },
                 { title: "项目", dataIndex: "project", width: 100 },
                 ...(view === "daily"
                   ? [
