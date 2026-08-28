@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Modal, Space, Switch, Tag, TimePicker, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Modal, Space, Switch, TimePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 
@@ -116,11 +116,6 @@ export default function DailyPushPreview({
               <span style={{ fontWeight: 600, color: C.text }}>
                 {cfg.enabled ? "已开启自动推送" : "未开启,只能在这里预览"}
               </span>
-              {cfg.timezone && (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  按 {cfg.timezone} 计算
-                </Typography.Text>
-              )}
             </Space>
 
             <Space size={12} wrap>
@@ -161,7 +156,7 @@ export default function DailyPushPreview({
                 onChange={(v) => void patch({ silentWhenDone: !v })}
               />
               <span style={{ color: C.textSub, fontSize: 13 }}>
-                全部巡完时也发一条(默认不发 —— 空洞的推送会让人不再看它)
+                全部巡完时也发一条
               </span>
             </Space>
           </div>
@@ -169,14 +164,6 @@ export default function DailyPushPreview({
 
         {digest && (
           <>
-            <Space size={6} wrap>
-              <Tag>{digest.date}</Tag>
-              <Tag>共 {digest.total} 台</Tag>
-              <Tag color="green">已巡 {digest.done}</Tag>
-              {digest.pending > 0 && <Tag color="orange">待巡 {digest.pending}</Tag>}
-              {digest.missing > 0 && <Tag color="red">台账已删 {digest.missing}</Tag>}
-            </Space>
-
             {digest.wouldSend ? (
               <Alert
                 type="success"
@@ -191,13 +178,9 @@ export default function DailyPushPreview({
               <Alert type="info" showIcon message={`今天不会发 —— ${digest.skipReason || "无内容"}`} />
             )}
 
-            <div>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                发出去的原文
-              </Typography.Text>
-              <pre
+            <pre
                 style={{
-                  marginTop: 6,
+                  marginTop: 0,
                   padding: "12px 14px",
                   background: "#fafbfc",
                   border: `1px solid ${C.line}`,
@@ -209,8 +192,7 @@ export default function DailyPushPreview({
                 }}
               >
                 {digest.text || "(空)"}
-              </pre>
-            </div>
+            </pre>
           </>
         )}
 

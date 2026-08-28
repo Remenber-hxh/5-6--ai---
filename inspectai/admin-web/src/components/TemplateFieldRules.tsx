@@ -100,11 +100,6 @@ export default function TemplateFieldRules() {
       }
     >
       <Space direction="vertical" size={14} style={{ width: "100%" }}>
-        <Typography.Paragraph type="secondary" style={{ marginTop: -8, marginBottom: 0 }}>
-          配置这一单要交什么才算数：每个字段填不填、最少几张照片。保存后巡检端立即生效，不需要重新部署。
-          字段名称、类型和选项仍由系统定义，这里不改。
-        </Typography.Paragraph>
-
         {templates.length > 0 && (
           <Segmented
             value={current}
@@ -138,7 +133,7 @@ export default function TemplateFieldRules() {
                 addonAfter="张"
               />
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                0 = 不限；上限 {tpl.maxImages || 20} 张（超过上限就永远提交不了）
+                0 = 不限；上限 {tpl.maxImages || 20} 张
               </Typography.Text>
             </Space>
             <Table<ReportTemplateDTO["fields"][number]>
