@@ -226,6 +226,30 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+// ===== 每日未巡提醒 =====
+
+export interface DailyPushDigest {
+  date: string;
+  weekday: number;
+  total: number;
+  done: number;
+  pending: number;
+  /** 计划里点了、但台账里已经查不到的设备数 */
+  missing: number;
+  groups: { project: string; pending: number; lines: { ownerName: string; assets: string[] }[] }[];
+  /** 逐字的原文 —— 预览要给到"会发出去的那些字",不是"大概长这样" */
+  text: string;
+  wouldSend: boolean;
+  skipReason?: string;
+}
+
+/** 只算不发。定时和真发是下一步 —— 先让文案在页面上跑准。 */
+export function previewDailyPush(silentWhenDone: boolean) {
+  return api<DailyPushDigest>(
+    `/api/engineering/plans/daily-push/preview?silentWhenDone=${silentWhenDone ? 1 : 0}`,
+  );
+}
+
 // ===== 负责人绑定 =====
 
 export interface OwnerBindingCandidate {

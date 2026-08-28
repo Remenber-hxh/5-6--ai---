@@ -72,7 +72,19 @@ type TodayInspectionBoard struct {
 // 顶部的总数要按设备去重 —— 否则一台设备巡一次,总数却涨了 2,
 // 完成率看着永远差一截。而各条计划自己的进度仍然分别算,互不影响。
 func (s *Server) buildTodayBoard(r *http.Request, now time.Time) (*TodayInspectionBoard, error) {
-	tenant := s.tenantForRequest(r)
+	return s.buildTodayBoardFor(s.tenantForRequest(r), s.visibilityFor(r), now)
+}
+
+// buildTodayBoardFor 不依赖 *http.Request 的内核。
+//
+// 【为什么要劈开】定时推送没有 request —— 它是后台 goroutine 里跑的。
+// 而如果为它另写一份"算今天谁没巡"的代码,两份口径迟早分叉:
+// 页面上说还差 3 台、群里发出去说还差 5 台,而两边看起来都对,
+// 没人会想到去比对。所以算法只有这一份,入口有两个。
+//
+// vis 由调用方给:HTTP 那边传这次请求的可见范围,调度器传"全部数据"
+// (它代表系统本身,不代表某个人)。
+func (s *Server) buildTodayBoardFor(tenant string, vis dataVisibility, now time.Time) (*TodayInspectionBoard, error) {
 	plans, err := s.store.ListEngineeringPlans(EngineeringPlanFilter{})
 	if err != nil {
 		return nil, err
@@ -96,7 +108,6 @@ func (s *Server) buildTodayBoard(r *http.Request, now time.Time) (*TodayInspecti
 		byID[a.ID] = a
 	}
 
-	vis := s.visibilityFor(r)
 	board := &TodayInspectionBoard{Date: today, Weekday: wd, Plans: []DailyPlanStatus{}}
 	seen := map[string]bool{} // 顶部总数按设备去重
 

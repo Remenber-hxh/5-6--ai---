@@ -83,6 +83,8 @@ var apiRoutes = []apiRoute{
 	// 这个功能就等于不存在。数据范围由 buildTodayBoard 里的 visibilityFor 管,
 	// 和管理端走的是同一条口径,不会因为换了入口就多看到东西。
 	{http.MethodGet, "/api/inspection/today", guardNone, "", (*Server).handleTodayBoard},
+	// 每日提醒的预览。只算不发 —— 定时和真发是下一步。
+	{http.MethodGet, "/api/engineering/plans/daily-push/preview", guardSupervisor, "", (*Server).handleDailyPushPreview},
 	// 负责人绑定:报告只读、应用只吃显式清单。两条都是管理员级 ——
 	// 它改的是"提醒发给谁",错了会直接骚扰到人。
 	{http.MethodGet, "/api/engineering/plans/owner-binding", guardAdmin, "", (*Server).handleOwnerBindingReport},

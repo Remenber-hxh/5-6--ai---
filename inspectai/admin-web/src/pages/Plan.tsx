@@ -24,6 +24,7 @@ import {
   savePlan,
   setTaskStatus,
 } from "../api/mgmt";
+import DailyPushPreview from "../components/DailyPushPreview";
 import OwnerBinding from "../components/OwnerBinding";
 import TodayInspection from "../components/TodayInspection";
 import { useUi } from "../store/ui";
@@ -130,6 +131,7 @@ export default function Plan() {
   const [selTaskId, setSelTaskId] = useState("");
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
   const [bindingOpen, setBindingOpen] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
   const { project } = useUi();
   const [params, setParams] = useSearchParams();
   // 顶层视图。默认「今日执行」—— 打开这一页最想知道的就是今天还差什么,
@@ -536,7 +538,17 @@ export default function Plan() {
           />
 
           {view === "today" && (
-            <Card size="small" style={{ marginBottom: 16 }}>
+            <Card
+              size="small"
+              style={{ marginBottom: 16 }}
+              // 【入口放在这一屏】这条提醒发的就是这一屏的数字。
+              // 放到设置页里的话,没人会把两者联系起来,也就没人会去核对。
+              extra={
+                <Button type="text" size="small" onClick={() => setPushOpen(true)}>
+                  每日提醒预览
+                </Button>
+              }
+            >
               <TodayInspection />
             </Card>
           )}
@@ -928,6 +940,8 @@ export default function Plan() {
           </AnimatePresence>
         </div>
       </div>
+
+      <DailyPushPreview open={pushOpen} onClose={() => setPushOpen(false)} />
 
       <OwnerBinding
         open={bindingOpen}
