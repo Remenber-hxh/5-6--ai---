@@ -1,4 +1,4 @@
-import{j as ts}from"./index-BfCmOvMG.js";import{r as Ut}from"./antd-DEYEAU08.js";/**
+import{j as ts}from"./index-BBtpLqxM.js";import{r as Ut}from"./antd-DLNtj_kV.js";/**
  * Anime.js - core - ESM
  * @version v4.5.0
  * @license MIT

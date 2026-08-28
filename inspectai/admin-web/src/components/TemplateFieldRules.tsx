@@ -1,5 +1,5 @@
 import { SaveOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, InputNumber, Segmented, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Card, InputNumber, Space, Switch, Table, Tabs, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { ReportTemplateDTO, listReportTemplates, saveTemplateFields } from "../api/mgmt";
@@ -100,11 +100,17 @@ export default function TemplateFieldRules() {
       }
     >
       <Space direction="vertical" size={14} style={{ width: "100%" }}>
+        {/* 【用 Tabs 不用 Segmented】Segmented 不换行也不滚动:十个模板名
+            在 1400px 上就已经顶到边,窄一点直接被裁掉,后面几个模板
+            连点都点不到 —— 而且模板还要能自定义,以后只会更多。
+            Tabs 自带溢出滚动和"更多"下拉,加多少个都不会丢。 */}
         {templates.length > 0 && (
-          <Segmented
-            value={current}
-            onChange={(v) => setCurrent(v as string)}
-            options={templates.map((t) => ({ value: t.id, label: t.name }))}
+          <Tabs
+            size="small"
+            activeKey={current}
+            onChange={setCurrent}
+            items={templates.map((t) => ({ key: t.id, label: t.name }))}
+            style={{ marginBottom: -6 }}
           />
         )}
 
