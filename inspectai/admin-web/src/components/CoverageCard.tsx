@@ -43,7 +43,20 @@ function daysSince(iso?: string): number | null {
   return Math.floor((Date.now() - t) / 86400000);
 }
 
-export default function CoverageCard({ assets }: { assets: AssetEntry[] }) {
+/**
+ * compact:窄栏里用。图在上、名单在下,而不是左右并排。
+ *
+ * 【不是简单缩小,是换排布】396px 的栏里左右并排的话,
+ * 环形图和名单会互相挤到都读不了 —— 而那两块本来各自都很小,
+ * 上下摞开反而各得其所。
+ */
+export default function CoverageCard({
+  assets,
+  compact,
+}: {
+  assets: AssetEntry[];
+  compact?: boolean;
+}) {
   const nav = useNavigate();
 
   const { counts, needAction } = useMemo(() => {
@@ -124,12 +137,12 @@ export default function CoverageCard({ assets }: { assets: AssetEntry[] }) {
           display: "grid",
           // 【左图右单】图说"整体什么样",单说"具体是哪几台"。
           // 只有图的话,看完只会得到一个感受;要能直接去处理才有用。
-          gridTemplateColumns: "minmax(0, 260px) minmax(0, 1fr)",
-          gap: 20,
+          gridTemplateColumns: compact ? "minmax(0, 1fr)" : "minmax(0, 260px) minmax(0, 1fr)",
+          gap: compact ? 4 : 20,
           alignItems: "start",
         }}
       >
-        <ReactECharts option={option} style={{ height: 220 }} notMerge />
+        <ReactECharts option={option} style={{ height: compact ? 190 : 220 }} notMerge />
 
         <div>
           {needAction.length === 0 ? (
@@ -142,7 +155,7 @@ export default function CoverageCard({ assets }: { assets: AssetEntry[] }) {
                 <span style={{ fontWeight: 600, color: C.text, fontSize: 13 }}>需要安排</span>
                 <Tag color="orange">{needAction.length} 台</Tag>
               </Space>
-              <div style={{ maxHeight: 190, overflowY: "auto" }}>
+              <div style={{ maxHeight: compact ? 240 : 190, overflowY: "auto" }}>
                 {needAction.slice(0, 12).map(({ asset, days }) => (
                   <div
                     key={asset.id}
@@ -158,7 +171,7 @@ export default function CoverageCard({ assets }: { assets: AssetEntry[] }) {
                       fontSize: 13,
                     }}
                   >
-                    <span style={{ fontWeight: 600, minWidth: 120 }}>
+                    <span style={{ fontWeight: 600, minWidth: compact ? 84 : 120 }}>
                       {asset.assetName || asset.assetKey}
                     </span>
                     <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1 }}>

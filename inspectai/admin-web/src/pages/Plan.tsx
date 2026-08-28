@@ -458,6 +458,11 @@ export default function Plan() {
   const selPlan = hasPlanTable ? rows.find((p) => p.id === selPlanId) || null : null;
   const selTask = tasks.find((t) => t.id === selTaskId) || null;
   const hasPanel = Boolean(selTask || selPlan);
+  // 【今日执行这一屏右栏常驻】原来右栏只在选中某一行时出现,于是这一屏
+  // 九成时间是单列 —— 内容靠左排,1600px 的屏幕上右边一大片空着,
+  // 而三张一样宽、一样重的卡片竖着摞,读起来像章节列表不像看板。
+  // 现在:主列放"今天要干的",右栏放"长期的背景"(巡检覆盖)。
+  const hasRail = hasPanel || view === "today";
 
   const planTaskOf = (p: EngineeringPlan) =>
     tasks.find((t) => t.id === p.latestTaskId) || tasks.find((t) => t.planItemId === p.id) || null;
@@ -551,8 +556,8 @@ export default function Plan() {
           // 【左列必须 minmax(0, 1fr)】写成 1fr 的话,内容列会按里面最宽的
           // 元素(七列表格)撑开,把右侧 396px 面板挤出视口 —— 截图里
           // 「派发执行任务」按钮右半边就是这么没的。
-          gridTemplateColumns: hasPanel ? "minmax(0, 1fr) 396px" : "minmax(0, 1fr) 0px",
-          gap: hasPanel ? 16 : 0,
+          gridTemplateColumns: hasRail ? "minmax(0, 1fr) 396px" : "minmax(0, 1fr) 0px",
+          gap: hasRail ? 16 : 0,
           transition: reduce ? undefined : `grid-template-columns ${EASE}, gap ${EASE}`,
           alignItems: "start",
         }}
@@ -629,14 +634,6 @@ export default function Plan() {
               dataSource 是 plans —— 同一页里另有一张真的任务表(复查任务)。
               用户点开一行,右侧详情展示的是计划的字段,却被告知这是任务。
               这是命名 bug,不是审美问题:人分不清自己在改什么。 */}
-          {/* 【覆盖放在最后】上面两块是"今天要干的",这块是"长期漏了的"。
-              眼前的事在前、长期的在后 —— 打开这一页第一眼该看到的是今天。 */}
-          {view === "today" && (
-            <div style={{ marginBottom: 16 }}>
-              <CoverageCard assets={scopedAssets} />
-            </div>
-          )}
-
           {hasPlanTable && (
           <Card title="巡检计划" size="small">
             <Space style={{ marginBottom: 14 }} wrap>
@@ -781,6 +778,19 @@ export default function Plan() {
             表格行本来就有 hover 和手型,点一下就出来了。一个常驻的空卡片
             只是在页面底部多一块灰,让人以为下面还有内容。 */}
         <div style={{ position: "sticky", top: 0, overflow: "hidden" }}>
+          {/* 【覆盖放在右栏,不放主列】它是"长期背景",不是今天要动手的事。
+              放主列会和上面两块抢同样的宽度和重量,而它的信息量没那么大;
+              放右栏正好填上原来空着的那 396px。
+
+              【和详情面板互斥,不叠着放】两块摞起来接近 900px,
+              而这一栏是 position:sticky —— 比视口高的话底部永远看不到,
+              用户会以为内容被截断了。点了任务就专心看任务,
+              没点时才显示这份长期背景。 */}
+          {view === "today" && !hasPanel && (
+            <div style={{ width: 396 }}>
+              <CoverageCard assets={scopedAssets} compact />
+            </div>
+          )}
           <AnimatePresence mode="wait" initial={false}>
             {hasPanel && (
               <motion.div
