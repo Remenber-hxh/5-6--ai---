@@ -4323,15 +4323,24 @@ a {
   color: var(--lt-fg-2);
 }
 
-/* 填单页底部的"还差几张"提示。
- * 【常驻在按钮上方,不做成弹窗】补拍要走回设备旁边,是个需要人记住的动作;
- * 弹窗一闪就没了,回到页面又看不见了。 */
+/* "还差几张"的常驻提示(选照片页 / 填单页共用)。
+ *
+ * 【不做成弹窗】补拍要走回设备旁边,是个需要人记住的动作 ——
+ * 弹窗一闪就没了,回到页面又看不见,人只会反复点那个按钮。
+ *
+ * 【左右内边距和 .flow-foot 对齐】它贴在操作条正上方,
+ * 缩进对不上的话看着像两个不相干的东西叠在一起。 */
 .foot-warn {
-  margin-bottom: 8px;
-  padding: 8px 12px;
+  flex: none;
+  margin: 0 16px 8px;
+  padding: 9px 12px;
   border-radius: 10px;
   background: rgba(255, 59, 48, 0.08);
   color: var(--ios-red);
   font-size: 13px;
   line-height: 1.5;
+}
+/* 填单页那条在 .flow-foot 内部,不需要再缩进一次 */
+.flow-foot .foot-warn {
+  margin-inline: 0;
 }

@@ -52,19 +52,29 @@ export default function ReviewPage() {
   });
   const shots = data ?? [];
 
-  // 扫码或复检进来时模板是【已知】的,可以在这一步就说清还差几张 ——
-  // 而不是等填完一整张表、点提交才被后端打回来。普通流程要等 AI 分完场景
-  // 才知道用哪个模板,那条路只能靠提交时的复核兜底。
+  // 这一批照片最少要几张才值得送去识别。0 = 不限。
+  //
+  // 【必须在识别之前就拦住】识别要花时间和模型额度,而张数不够的话
+  // 分完场景、填完一整张表,最后在提交那一步照样被打回来 —— 那一趟纯属白做,
+  // 而且那时巡检员多半已经离开设备现场,补拍要重跑一趟。
+  //
+  // 【普通流程还不知道会落到哪个模板,所以取所有模板里最低的那个要求】
+  // 低于这个下限的话,分到任何一个模板都不够,识别必然白做 —— 拦得住且不冤枉。
+  // 有模板不限张数(0)时下限就是 0,那时不拦:那种照片确实可能是合法的。
+  // 扫码/复检进来时模板已知,直接用那一个的要求,更准。
   const [minImages, setMinImages] = useState(0);
   useEffect(() => {
-    const known = getRetakeTarget();
-    if (!known?.templateId) return;
     listTemplates()
       .then((tpls) => {
-        const hit = tpls.find((t) => t.id === known.templateId);
-        setMinImages(hit?.minImages || 0);
+        const known = getRetakeTarget()?.templateId;
+        if (known) {
+          setMinImages(tpls.find((t) => t.id === known)?.minImages || 0);
+          return;
+        }
+        const floor = tpls.reduce((m, t) => Math.min(m, t.minImages || 0), Infinity);
+        setMinImages(Number.isFinite(floor) ? floor : 0);
       })
-      .catch(() => void 0);
+      .catch(() => void 0); // 取不到就不拦,后端仍然会在提交时兜底
   }, []);
   const shortOf = minImages > 0 ? Math.max(0, minImages - picked.size) : 0;
 
@@ -123,9 +133,12 @@ export default function ReviewPage() {
       return;
     }
     if (shortOf > 0) {
+      // 【拦在这里,什么都不动】照片留在待处理里,没有被消费也没有被删除 ——
+      // 补拍几张回来接着选就行。文案要把这件事说出来:
+      // 不说的话,人会担心刚才那几张是不是白拍了。
       Toast.show({
-        content: `这类巡检至少要 ${minImages} 张照片,还差 ${shortOf} 张`,
-        duration: 3000,
+        content: `至少要 ${minImages} 张照片才能识别,还差 ${shortOf} 张。已选的照片会留着,补拍后一起识别`,
+        duration: 3500,
       });
       return;
     }
@@ -243,6 +256,11 @@ export default function ReviewPage() {
         onClose={() => setViewing(-1)}
       />
 
+      {shortOf > 0 && (
+        <div className="foot-warn">
+          至少要 {minImages} 张照片才能识别,还差 {shortOf} 张 —— 照片不会丢,补拍后回到这里一起选
+        </div>
+      )}
       <div className="flow-foot foot-row">
         <button
           className="foot-del"
@@ -254,7 +272,13 @@ export default function ReviewPage() {
         {/* 【只写"识别"】原来是"AI 识别场景"。扫码进来时场景早就定了,
             这一步只做字段识别 —— 按钮却还说要识别场景,和实际做的事对不上。
             两条路都写"识别"都准确:普通流程它含场景+字段,扫码流程它就是字段。 */}
-        <Button className="btn-primary foot-main" onClick={toClassify}>
+        <Button
+          className="btn-primary foot-main"
+          // 【看得出不能点】只在点了之后弹提示的话,人会反复点,
+          // 以为是网络卡了。禁用 + 上方那行字,一眼就知道差在哪。
+          disabled={shortOf > 0}
+          onClick={toClassify}
+        >
           识别
         </Button>
       </div>
