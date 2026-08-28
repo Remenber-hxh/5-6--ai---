@@ -865,6 +865,13 @@ export interface DailyAssetStatus {
   doneAt?: string;
   /** 台账里已经查不到这台设备(计划录入后被删) */
   missing?: boolean;
+  /**
+   * 设备类型(有机房电梯 / 扶梯 …)。
+   *
+   * 【用来区分同名设备】台账允许两台都叫 K01,只是类型不同。
+   * 清单里不写类型的话,两行长得一模一样 —— 到了现场不知道该巡哪一台。
+   */
+  assetType?: string;
 }
 
 export interface DailyPlanStatus {

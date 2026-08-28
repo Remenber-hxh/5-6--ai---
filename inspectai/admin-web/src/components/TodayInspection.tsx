@@ -57,26 +57,42 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
   //
   // 【按设备而不是按计划组织】客户关心的是"哪几台还没巡",不是
   // "第二条计划完成了 3/5"。按计划分组会让人在几个方框之间来回找灰色标签。
-  const { todo, done } = useMemo(() => {
-    const todo: { key: string; name: string; project?: string; owner?: string; missing?: boolean }[] = [];
+  const { groups, todoCount, done } = useMemo(() => {
+    type Row = { key: string; name: string; type?: string; missing?: boolean };
+    const byGroup = new Map<string, { project?: string; owner?: string; rows: Row[] }>();
     const done: { key: string; name: string; at?: string }[] = [];
     const seen = new Set<string>();
+    let todoCount = 0;
     for (const p of board?.plans ?? []) {
       for (const a of p.assets) {
         if (seen.has(a.assetId)) continue; // 两条计划点同一台设备,只列一次
         seen.add(a.assetId);
-        if (a.done) done.push({ key: a.assetId, name: a.assetName, at: a.doneAt });
-        else
-          todo.push({
-            key: a.assetId,
-            name: a.assetName,
-            project: a.project || p.project,
-            owner: p.ownerName,
-            missing: a.missing,
-          });
+        if (a.done) {
+          done.push({ key: a.assetId, name: a.assetName, at: a.doneAt });
+          continue;
+        }
+        todoCount++;
+        // 【按"项目 + 负责人"分组】上一版每行都重复一遍项目名和负责人。
+        // 13 行里这两个字段一模一样,占掉一半行宽却一个字都没说 ——
+        // 提到组标题上,说一次就够,行里只留真正有区别的东西。
+        const project = a.project || p.project || "";
+        const owner = p.ownerName || "";
+        const gk = `${project}|${owner}`;
+        if (!byGroup.has(gk)) byGroup.set(gk, { project, owner, rows: [] });
+        byGroup.get(gk)!.rows.push({
+          key: a.assetId,
+          name: a.assetName,
+          // 【类型是用来区分同名设备的】台账里可以有两台都叫 K01,
+          // 只是一台有机房一台无机房。不写类型,这两行长得一模一样,
+          // 到了现场不知道该巡哪台。
+          type: a.assetType,
+          missing: a.missing,
+        });
       }
     }
-    return { todo, done };
+    // 欠得多的组排前面 —— 这一屏是给人"还差什么"用的
+    const groups = [...byGroup.values()].sort((a, b) => b.rows.length - a.rows.length);
+    return { groups, todoCount, done };
   }, [board]);
 
   const noAssetPlans = (board?.plans ?? []).filter((p) => p.noAssets);
@@ -97,10 +113,10 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
     <Space direction="vertical" size={18} style={{ width: "100%" }}>
       {/* ── 一个数字。不是圆环、不是百分比 ── */}
       <Space align="baseline" size={12} wrap>
-        {todo.length > 0 ? (
+        {todoCount > 0 ? (
           <>
             <span style={{ fontSize: 40, fontWeight: 800, color: C.warn, lineHeight: 1 }}>
-              {todo.length}
+              {todoCount}
             </span>
             <span style={{ fontSize: 16, color: C.text }}>台还没巡</span>
           </>
@@ -119,44 +135,69 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
         {action}
       </Space>
 
-      {/* ── 待巡清单:唯一需要行动的信息 ── */}
-      {todo.length > 0 && (
-        <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
-          {todo.map((a, i) => (
-            <div
-              key={a.key}
-              // 【点一行跳台账】只看到"K01 没巡"是不够的 —— 现场调度前想知道
-              // 这台上次什么状态、有没有遗留异常。台账详情正好有这些。
-              //
-              // 已经从台账删掉的不给点:跳过去是个 404,比不能点更让人困惑。
-              onClick={a.missing ? undefined : () => nav(`/ledger?focus=${encodeURIComponent(a.key)}`)}
-              className={a.missing ? undefined : "today-row"}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "11px 14px",
-                borderTop: i ? `1px solid ${C.line}` : "none",
-                cursor: a.missing ? "default" : "pointer",
-              }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: 3, background: C.warn, flex: "0 0 6px" }} />
-              <span style={{ fontWeight: 600, minWidth: 130 }}>{a.name}</span>
-              {a.project && <Tag>{a.project}</Tag>}
-              {a.owner && (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {a.owner}
-                </Typography.Text>
-              )}
-              {a.missing && (
-                <Tooltip title="这台设备已不在台账里(计划录入后被删),请编辑计划移除它">
-                  <Tag color="red">台账已删除</Tag>
-                </Tooltip>
-              )}
-            </div>
-          ))}
+      {/* ── 待巡清单:唯一需要行动的信息 ──
+
+          【重复的字段提到组标题上】上一版每行都写一遍项目名和负责人,
+          13 行里这两列一模一样 —— 占掉一半行宽,却一个字都没告诉人。
+          说一次就够;行里只留真正有区别的东西(设备名 + 类型)。 */}
+      {groups.map((g) => (
+        <div key={`${g.project}|${g.owner}`}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8,
+              padding: "0 2px 8px",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ fontWeight: 600, color: C.text }}>{g.project || "未指定项目"}</span>
+            <span style={{ color: C.textFaint }}>·</span>
+            <span style={{ color: C.textSub }}>{g.owner || "未指定负责人"}</span>
+            <span style={{ marginLeft: "auto", color: C.textFaint, fontVariantNumeric: "tabular-nums" }}>
+              {g.rows.length} 台
+            </span>
+          </div>
+          <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
+            {g.rows.map((a, i) => (
+              <div
+                key={a.key}
+                // 【点一行跳台账】只看到"K01 没巡"是不够的 —— 现场调度前想知道
+                // 这台上次什么状态、有没有遗留异常。台账详情正好有这些。
+                //
+                // 已经从台账删掉的不给点:跳过去是个 404,比不能点更让人困惑。
+                onClick={a.missing ? undefined : () => nav(`/ledger?focus=${encodeURIComponent(a.key)}`)}
+                className={a.missing ? undefined : "today-row"}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "10px 14px",
+                  borderTop: i ? `1px solid ${C.line}` : "none",
+                  cursor: a.missing ? "default" : "pointer",
+                }}
+              >
+                <span
+                  style={{ width: 6, height: 6, borderRadius: 3, background: C.warn, flex: "0 0 6px" }}
+                />
+                <span style={{ fontWeight: 600, minWidth: 130 }}>{a.name}</span>
+                {/* 类型是这一行唯一可能有区别的补充信息 —— 两台都叫 K01 时,
+                    靠它才分得出是有机房还是无机房 */}
+                {a.type && (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {a.type}
+                  </Typography.Text>
+                )}
+                {a.missing && (
+                  <Tooltip title="这台设备已不在台账里(计划录入后被删),请编辑计划移除它">
+                    <Tag color="red">台账已删除</Tag>
+                  </Tooltip>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      )}
+      ))}
 
       {/* ── 已完成:折叠成一行 ── */}
       {done.length > 0 && (

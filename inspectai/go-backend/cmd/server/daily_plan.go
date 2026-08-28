@@ -39,6 +39,12 @@ type DailyAssetStatus struct {
 	TemplateID string `json:"templateId,omitempty"`
 	AssetKey   string `json:"assetKey,omitempty"`
 	PointID    string `json:"pointId,omitempty"`
+	// AssetType 设备类型(有机房电梯 / 扶梯 …)。
+	//
+	// 【用来区分同名设备】台账里允许两台设备叫同一个名字(K01),
+	// 只是类型不同。清单里不写类型的话,两行长得一模一样 ——
+	// 拿着手机到现场的人不知道该巡哪一台。
+	AssetType string `json:"assetType,omitempty"`
 }
 
 // DailyPlanStatus 一条每日计划今天的执行情况。
@@ -148,6 +154,7 @@ func (s *Server) buildTodayBoardFor(tenant string, vis dataVisibility, now time.
 				item.TemplateID = a.TemplateID
 				item.AssetKey = a.AssetKey
 				item.PointID = a.PointID
+				item.AssetType = a.AssetType
 			}
 			if t, ok := doneAt[id]; ok {
 				item.Done = true
