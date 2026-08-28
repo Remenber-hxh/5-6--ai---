@@ -25,7 +25,6 @@ import {
   setTaskStatus,
 } from "../api/mgmt";
 import DailyPushPreview from "../components/DailyPushPreview";
-import OwnerBinding from "../components/OwnerBinding";
 import TodayInspection from "../components/TodayInspection";
 import { C } from "../styles/tokens";
 import { useUi } from "../store/ui";
@@ -150,7 +149,6 @@ export default function Plan() {
   const [selPlanId, setSelPlanId] = useState("");
   const [selTaskId, setSelTaskId] = useState("");
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
-  const [bindingOpen, setBindingOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   const { project } = useUi();
   const [params, setParams] = useSearchParams();
@@ -562,7 +560,10 @@ export default function Plan() {
           />
 
           {view === "today" && (
-            <Card size="small" style={{ marginBottom: 16 }}>
+            // 【给标题,和下面的「复查任务」对齐】没标题的那张卡看着像一块
+            // 浮在页面上的内容,两张卡一有一没有更显得随意。
+            // 标题负责"这是什么",里面的大数字负责"还差多少"——不重复。
+            <Card title="今日待巡" size="small" style={{ marginBottom: 16 }}>
               {/* 【入口放在这一屏、且紧挨着「刷新」】这条提醒发的就是这一屏的数字,
                   放到设置页里没人会把两者联系起来,也就没人会去核对。
                   原来挂在 Card 的 extra 上 —— 那张卡没有标题,头部只是一条
@@ -646,11 +647,6 @@ export default function Plan() {
                 }}
               >
                 新建计划
-              </Button>
-              {/* 【放在这里而不是单开一页】它是一次性的整理动作,不是日常功能。
-                  单开一页会让人以为这是要经常来的地方。 */}
-              <Button type="text" onClick={() => setBindingOpen(true)}>
-                负责人绑定
               </Button>
             </Space>
             <Table<EngineeringPlan>
@@ -970,14 +966,6 @@ export default function Plan() {
       </div>
 
       <DailyPushPreview open={pushOpen} onClose={() => setPushOpen(false)} />
-
-      <OwnerBinding
-        open={bindingOpen}
-        onClose={(changed) => {
-          setBindingOpen(false);
-          if (changed) void load(); // 绑过就刷新,否则详情面板还挂着「未绑账号」
-        }}
-      />
 
       {/* 新建 / 编辑计划 */}
       <Modal
