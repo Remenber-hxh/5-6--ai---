@@ -111,7 +111,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
   }
 
   return (
-    <Space direction="vertical" size={18} style={{ width: "100%" }}>
+    <Space direction="vertical" size={22} style={{ width: "100%" }}>
       {/* ── 一个数字。不是圆环、不是百分比 ──
 
           【左边是状态,右边是操作】原来数字、日期、两个按钮挤在同一串里,
@@ -167,7 +167,9 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
               display: "flex",
               alignItems: "baseline",
               gap: 8,
-              padding: "0 2px 8px",
+              // 【组标题上下都要留白】上面贴着大数字那行、下面贴着第一条设备时,
+              // 它读起来像列表的一部分而不是一个分组标题。
+              padding: "6px 2px 12px",
               fontSize: 13,
             }}
           >

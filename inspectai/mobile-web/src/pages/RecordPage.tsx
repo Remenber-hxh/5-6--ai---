@@ -11,6 +11,7 @@ import {
   RecordDTO,
   enableManual,
   getRecord,
+  listTemplates,
   patchField,
   startAnalysis,
 } from "@/api/inspection";
@@ -156,6 +157,21 @@ export default function RecordPage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
   const [rec, setRec] = useState<RecordDTO | null>(null);
+  // 这类巡检最少要几张照片。0 = 不限。
+  //
+  // 【为什么填单页必须自己说一遍】拦截在后端的"提交"那一步,而在此之前
+  // 选照片、分类、填一整张表全都放行 —— 巡检员填完十几个字段才被打回来,
+  // 而那时他可能已经离开设备现场了,补拍要重新跑一趟。
+  // 选照片那一屏只有扫码/复检流程能提前提示(那时模板已知),
+  // 普通流程要等 AI 分完场景才知道模板 —— 也就是【到这一页才知道】。
+  const [minImages, setMinImages] = useState(0);
+
+  useEffect(() => {
+    if (!rec?.templateId) return;
+    listTemplates()
+      .then((tpls) => setMinImages(tpls.find((t) => t.id === rec.templateId)?.minImages || 0))
+      .catch(() => void 0); // 取不到就不提示,后端仍然会拦
+  }, [rec?.templateId]);
   const [analyzing, setAnalyzing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   // 看图存的是【第几张】而不是那一张的元数据:查看器现在能左右翻,
@@ -245,6 +261,9 @@ export default function RecordPage() {
   }
 
   // 整组照片的元数据 —— 缩略图和查看器用【同一份】,翻页时顺序才对得上
+  // 还差几张。0 = 够了或不限。
+  const shortOf = minImages > 0 ? Math.max(0, minImages - (rec?.images?.length || 0)) : 0;
+
   const photos: PhotoMeta[] = (rec?.images || []).map((img) => ({
     url: `/storage/uploads/${rec!.id}/${img.id}_${img.fileName}`,
     fileName: img.fileName,
@@ -349,6 +368,13 @@ export default function RecordPage() {
           <>
             <div className="fld-group-title">
               巡检照片({rec.images.length} 张)
+              {/* 【差几张就写在标题上】不够的时候这一行是红的,
+                  比等到点提交才被打回来早了整整一张表。 */}
+              {shortOf > 0 && (
+                <span style={{ color: "var(--ios-red)", marginLeft: 8, fontWeight: 400 }}>
+                  还差 {shortOf} 张
+                </span>
+              )}
             </div>
             <div className="photo-strip">
               {photos.map((p, i) => (
@@ -398,6 +424,14 @@ export default function RecordPage() {
       />
 
       <div className="flow-foot">
+        {/* 【差张数时把话说在按钮上方,而不是点完弹一下】
+            弹窗一闪就没了,而这是个要走回设备旁边补拍的动作 ——
+            提示必须一直在,直到他真的补够。 */}
+        {shortOf > 0 && (
+          <div className="foot-warn">
+            这类巡检至少要 {minImages} 张照片,还差 {shortOf} 张 —— 请回拍照页补拍
+          </div>
+        )}
         <Button block className="btn-primary" onClick={toPreview}>
           保存并预览日报
         </Button>

@@ -188,6 +188,11 @@ body {
   border-bottom-color: #eceff3 !important;
   min-height: 46px !important;
 }
+/* small 卡片正文默认 12px 内边距,标题和内容几乎贴在一起。
+   这一版整体是"靠留白分层"的思路,内边距太紧会把前面做的减负抵消掉。 */
+.ant-card-small > .ant-card-body {
+  padding: 16px !important;
+}
 
 /* 计划页状态卡 hover:浅色抬升 */
 .plan-bucket-cell {

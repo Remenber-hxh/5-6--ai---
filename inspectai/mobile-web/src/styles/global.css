@@ -4322,3 +4322,16 @@ a {
   font-size: 14px;
   color: var(--lt-fg-2);
 }
+
+/* 填单页底部的"还差几张"提示。
+ * 【常驻在按钮上方,不做成弹窗】补拍要走回设备旁边,是个需要人记住的动作;
+ * 弹窗一闪就没了,回到页面又看不见了。 */
+.foot-warn {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 59, 48, 0.08);
+  color: var(--ios-red);
+  font-size: 13px;
+  line-height: 1.5;
+}
