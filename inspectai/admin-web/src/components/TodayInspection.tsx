@@ -24,7 +24,14 @@ import { TodayBoard, getTodayBoard } from "../api/mgmt";
 
 const WEEKDAY_CN = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
-export default function TodayInspection() {
+/**
+ * action:放在「刷新」旁边的额外操作。
+ *
+ * 【为什么不放在外层 Card 的 extra 里】那张卡没有标题,头部就是一条空白横条,
+ * 右端一个浅灰文字按钮 —— 在这套极简配色里几乎等于隐形,用户找不到。
+ * 而这一行(大数字 · 日期 · 刷新)本来就是眼睛落点。
+ */
+export default function TodayInspection({ action }: { action?: React.ReactNode }) {
   const nav = useNavigate();
   const [board, setBoard] = useState<TodayBoard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,6 +115,7 @@ export default function TodayInspection() {
         <Button size="small" icon={<ReloadOutlined />} onClick={() => void load()}>
           刷新
         </Button>
+        {action}
       </Space>
 
       {/* ── 待巡清单:唯一需要行动的信息 ── */}

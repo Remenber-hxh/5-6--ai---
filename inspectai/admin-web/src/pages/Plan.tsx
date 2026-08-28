@@ -538,18 +538,18 @@ export default function Plan() {
           />
 
           {view === "today" && (
-            <Card
-              size="small"
-              style={{ marginBottom: 16 }}
-              // 【入口放在这一屏】这条提醒发的就是这一屏的数字。
-              // 放到设置页里的话,没人会把两者联系起来,也就没人会去核对。
-              extra={
-                <Button type="text" size="small" onClick={() => setPushOpen(true)}>
-                  每日提醒预览
-                </Button>
-              }
-            >
-              <TodayInspection />
+            <Card size="small" style={{ marginBottom: 16 }}>
+              {/* 【入口放在这一屏、且紧挨着「刷新」】这条提醒发的就是这一屏的数字,
+                  放到设置页里没人会把两者联系起来,也就没人会去核对。
+                  原来挂在 Card 的 extra 上 —— 那张卡没有标题,头部只是一条
+                  空白横条,按钮在这套极简配色里几乎隐形,实测找不到。 */}
+              <TodayInspection
+                action={
+                  <Button size="small" onClick={() => setPushOpen(true)}>
+                    每日提醒预览
+                  </Button>
+                }
+              />
             </Card>
           )}
           {/* 【待跟进归到执行视图】异常复查是"今天要处理的事",
