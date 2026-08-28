@@ -142,10 +142,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* hover 只给极轻的一层。重了会让人以为自己选中了什么 */
+/* hover:和上面的列表行同一套语言 —— 极淡的品牌色底 + 左侧竖条。
+   【底色不能重】重了会和"选中"(7% 绿底)撞车,人分不清哪条是自己点的。
+   靠竖条来表达"鼠标在这" —— 那是另一个维度,不会和底色打架。 */
 .ant-table-tbody > tr:hover > td,
 .ant-table-tbody > tr > td.ant-table-cell-row-hover {
-  background: #fafbfc !important;
+  background: rgba(18, 169, 104, 0.035) !important;
+}
+.ant-table-tbody > tr:hover > td:first-child {
+  box-shadow: inset 2px 0 0 rgba(18, 169, 104, 0.5);
 }
 
 /* 【选中态要压过 hover】否则鼠标一放到选中行上,那抹绿就没了,
@@ -153,6 +158,12 @@ body {
    写成 tbody > tr.row-selected > td 是为了在特异性上高过上面那条 hover。 */
 .ant-table-tbody > tr.row-selected > td {
   background: rgba(18, 169, 104, 0.07) !important;
+}
+/* 【选中的竖条要压过 hover 的】否则鼠标一放到选中行上,
+   那道 3px 的实心绿条会被 hover 的 2px 半透明条替掉,看着像"选中丢了"。 */
+.ant-table-tbody > tr.row-selected > td:first-child,
+.ant-table-tbody > tr.row-selected:hover > td:first-child {
+  box-shadow: inset 3px 0 0 #12a968;
 }
 
 /* 分页器:它是导航不是内容,不该和数据抢注意力 */
@@ -246,10 +257,48 @@ body {
   background: rgba(0, 0, 0, 0.035);
 }
 
-/* 今日执行的待巡行:可点。hover 给一层极淡的底,不做描边或位移 ——
- * 这是个列表不是按钮,反馈到"能点"为止就够了。 */
-.today-row:hover { background: rgba(0, 0, 0, 0.02); }
-.today-row:active { background: rgba(0, 0, 0, 0.04); }
+/* ===== 可点的列表行 =====
+ *
+ * 原来 hover 只是 2% 的灰底 —— 太轻了,鼠标扫过几乎没有反馈,
+ * 整块看着像一张静态的表而不是能操作的清单。
+ *
+ * 【加一道左侧竖条,而不是把底色加深】把底色加重会和"选中"撞车
+ * (选中态就是浅绿底),而竖条是另一个维度的信号:
+ * 底色说"这条被选中了",竖条说"鼠标在这条上"。两者可以同时出现而不打架。 */
+.hl-row {
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.hl-row:hover {
+  background: rgba(18, 169, 104, 0.045);
+  box-shadow: inset 2px 0 0 #12a968;
+}
+.hl-row:active {
+  background: rgba(18, 169, 104, 0.09);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hl-row { transition: none; }
+}
+
+/* ===== 细滚动条 =====
+ *
+ * 默认那条 17px 宽的灰滚动条会把一块 396px 的侧栏切掉一道 ——
+ * 而它承载的信息是零。做窄、平时半透明、hover 才显形。
+ * 只作用于挂了类的容器,不动整页滚动条(那个用户是靠它定位的)。 */
+.cov-list::-webkit-scrollbar {
+  width: 6px;
+}
+.cov-list::-webkit-scrollbar-thumb {
+  background: rgba(28, 43, 58, 0.14);
+  border-radius: 3px;
+}
+.cov-list:hover::-webkit-scrollbar-thumb {
+  background: rgba(28, 43, 58, 0.26);
+}
+.cov-list::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 /* ===== 视图切换(Segmented)=====
 

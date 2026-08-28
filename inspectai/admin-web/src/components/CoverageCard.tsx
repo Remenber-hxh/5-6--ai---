@@ -96,14 +96,24 @@ export default function CoverageCard({
 
   const option = {
     tooltip: { trigger: "item", formatter: "{b}:{c} 台({d}%)" },
-    legend: { bottom: 0, icon: "circle", itemWidth: 8, itemHeight: 8, textStyle: { fontSize: 12 } },
+    // 【图例和圆环之间留一口气】贴着画的话,图例那排小圆点会被读成
+    // 圆环的一部分,整块显得局促。padding 的第一个值就是上边距。
+    legend: {
+      bottom: 0,
+      icon: "circle",
+      itemWidth: 8,
+      itemHeight: 8,
+      itemGap: 14,
+      padding: [14, 0, 0, 0],
+      textStyle: { fontSize: 12, color: "#5b6b78" },
+    },
     series: [
       {
         type: "pie",
         // 【环形而不是实心饼】中间那个洞不是装饰:总数放在那里,
         // 读者不用把四段加起来才知道基数是多少。
         radius: ["52%", "76%"],
-        center: ["50%", "44%"],
+        center: ["50%", "40%"],
         avoidLabelOverlap: true,
         label: { show: false },
         labelLine: { show: false },
@@ -123,7 +133,7 @@ export default function CoverageCard({
     graphic: {
       type: "text",
       left: "center",
-      top: "38%",
+      top: "34%",
       style: {
         // 选了某一段就显示那一段的台数 —— 和下面清单的条数对得上
         text: String(pick ? counts[pick] : assets.length),
@@ -161,20 +171,23 @@ export default function CoverageCard({
         <div>
           {pick && (
             <Space size={8} style={{ marginBottom: 8 }}>
+              {/* 【只留一个动作,不复述当前筛的是哪一档】那件事图上已经说了:
+                  选中的那段是亮的、其余压暗,中心数字也跟着变。
+                  再用一行字说一遍,是把同一个事实讲了两遍。 */}
               <Tag
                 color={BUCKETS.find((b) => b.key === pick)?.color}
                 style={{ cursor: "pointer" }}
                 onClick={() => setPick(null)}
               >
-                只看「{BUCKETS.find((b) => b.key === pick)?.label}」· 点此看全部
+                展开全部
               </Tag>
             </Space>
           )}
-          <div style={{ maxHeight: compact ? 260 : 190, overflowY: "auto" }}>
+          <div className="cov-list" style={{ maxHeight: compact ? 260 : 190, overflowY: "auto" }}>
             {shown.map(({ asset, days, bucket }) => (
               <div
                 key={asset.id}
-                className="today-row"
+                className="hl-row"
                 // 【左右两边都跳到同一台设备的台账详情】这一屏做的所有事
                 // 最后都落在"去看那台设备",两边的落点必须一致。
                 onClick={() => nav(`/ledger?focus=${encodeURIComponent(asset.id)}`)}

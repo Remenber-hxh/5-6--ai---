@@ -112,8 +112,23 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
 
   return (
     <Space direction="vertical" size={18} style={{ width: "100%" }}>
-      {/* ── 一个数字。不是圆环、不是百分比 ── */}
-      <Space align="baseline" size={12} wrap>
+      {/* ── 一个数字。不是圆环、不是百分比 ──
+
+          【左边是状态,右边是操作】原来数字、日期、两个按钮挤在同一串里,
+          按钮跟在日期后面 —— 眼睛读到"共 13 台"还得继续往右扫才知道
+          后面是可点的东西。分成两头之后,左边一眼读完状态,
+          右边固定是这一屏的操作位。
+
+          用 flex + marginLeft:auto 而不是 Space:Space 只管间距,
+          推不到另一头。 */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         {todoCount > 0 ? (
           <>
             <span style={{ fontSize: 40, fontWeight: 800, color: C.warn, lineHeight: 1 }}>
@@ -130,11 +145,15 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
         <Typography.Text type="secondary" style={{ fontSize: 13 }}>
           {board.date} · {WEEKDAY_CN[board.weekday]} · 共 {board.total} 台
         </Typography.Text>
-        <Button size="small" icon={<ReloadOutlined />} onClick={() => void load()}>
-          刷新
-        </Button>
-        {action}
-      </Space>
+        {/* 【两个按钮绑成一组再推到右边】分别推的话,窄屏换行时它们会
+            各自跑到一行,中间隔着一大片空白。 */}
+        <Space size={8} style={{ marginLeft: "auto", alignSelf: "center" }}>
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => void load()}>
+            刷新
+          </Button>
+          {action}
+        </Space>
+      </div>
 
       {/* ── 待巡清单:唯一需要行动的信息 ──
 
@@ -166,7 +185,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
                 //
                 // 已经从台账删掉的不给点:跳过去是个 404,比不能点更让人困惑。
                 onClick={a.missing ? undefined : () => nav(`/ledger?focus=${encodeURIComponent(a.key)}`)}
-                className={a.missing ? undefined : "today-row"}
+                className={a.missing ? undefined : "hl-row"}
                 style={{
                   display: "flex",
                   alignItems: "center",
