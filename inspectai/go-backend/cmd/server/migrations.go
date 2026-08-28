@@ -43,6 +43,7 @@ var migrationList = []migration{
 	{19, "app_settings", (*SQLiteStore).migAppSettings},
 	{20, "plan_assets", (*SQLiteStore).migPlanAssets},
 	{21, "plan_owner_id", (*SQLiteStore).migPlanOwnerID},
+	{22, "push_log", (*SQLiteStore).migPushLog},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -723,6 +724,46 @@ func (s *SQLiteStore) migPlanOwnerID() error {
 	if _, err := s.db.Exec(
 		`ALTER TABLE engineering_plan_items ADD COLUMN owner_id ` + def); err != nil {
 		return fmt.Errorf("add engineering_plan_items.owner_id: %w", err)
+	}
+	return nil
+}
+
+// migPushLog — 022:推送发过什么的流水。
+//
+// 【这张表存在的唯一理由是去重】容器 16:59 重启,17:00 定时器重新起算,
+// 群里就会收到第二遍;崩溃循环时是十遍。而这功能的可信度一次就毁了 ——
+// 一旦大家觉得"这机器人乱发",以后真发对了也没人看。
+//
+// UNIQUE(tenant_id, kind, day):同一个租户、同一类推送、同一天,只允许一条。
+// 发之前【先插占位】—— 插入冲突就说明别人已经发过了。反过来"先发再记"的话,
+// 发成功但记失败,下次照样重发。
+//
+// status 记结果而不是只记"发过":发失败的要能重试,而"发失败"和"没发过"
+// 在界面上必须分得清 —— 前者要人去看企微配置,后者只是还没到点。
+func (s *SQLiteStore) migPushLog() error {
+	stmt := `CREATE TABLE IF NOT EXISTS push_log (
+		id         TEXT PRIMARY KEY,
+		tenant_id  TEXT NOT NULL DEFAULT '` + defaultTenantID + `',
+		kind       TEXT NOT NULL DEFAULT '',
+		day        TEXT NOT NULL DEFAULT '',
+		status     TEXT NOT NULL DEFAULT '',
+		detail     TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		UNIQUE(tenant_id, kind, day))`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS push_log (
+			id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+			tenant_id  VARCHAR(64)  NOT NULL DEFAULT 'tenant_default',
+			kind       VARCHAR(32)  NOT NULL DEFAULT '',
+			day        VARCHAR(16)  NOT NULL DEFAULT '',
+			status     VARCHAR(24)  NOT NULL DEFAULT '',
+			detail     TEXT,
+			created_at VARCHAR(40)  NOT NULL DEFAULT '',
+			UNIQUE KEY uk_push_once (tenant_id, kind, day)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("create push_log: %w", err)
 	}
 	return nil
 }

@@ -250,6 +250,32 @@ export function previewDailyPush(silentWhenDone: boolean) {
   );
 }
 
+export interface DailyPushConfig {
+  enabled: boolean;
+  time: string;
+  weekdays: string;
+  silentWhenDone: boolean;
+  /** 企微群机器人配没配。没配的话开关打开了也发不出去 —— 界面必须先说 */
+  botReady?: boolean;
+  timezone?: string;
+}
+
+export function getDailyPushConfig() {
+  return api<DailyPushConfig>("/api/engineering/plans/daily-push/config");
+}
+
+export function saveDailyPushConfig(c: {
+  enabled: boolean;
+  time: string;
+  weekdays: string;
+  silentWhenDone: boolean;
+}) {
+  return api("/api/engineering/plans/daily-push/config", {
+    method: "PUT",
+    body: JSON.stringify(c),
+  });
+}
+
 // ===== 负责人绑定 =====
 
 export interface OwnerBindingCandidate {

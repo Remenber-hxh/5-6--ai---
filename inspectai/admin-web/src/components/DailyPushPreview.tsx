@@ -1,18 +1,36 @@
-import { Alert, Button, Modal, Space, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Modal, Space, Switch, Tag, TimePicker, Typography, message } from "antd";
+import dayjs from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 
-import { DailyPushDigest, previewDailyPush } from "../api/mgmt";
+import {
+  DailyPushConfig,
+  DailyPushDigest,
+  getDailyPushConfig,
+  previewDailyPush,
+  saveDailyPushConfig,
+} from "../api/mgmt";
+import { C } from "../styles/tokens";
 
 /**
- * 每日未巡提醒 · 预览。
+ * 每日未巡提醒 · 预览 + 设置。
  *
- * 【为什么只到预览就停】口径不准的自动推送比不推送更糟:群里天天收到错的
- * 数字,很快就没人看了,而且很难挽回。先让这条消息在页面上跑准,
- * 再让它自己发出去 —— 和当初做今日看板是同一个顺序。
+ * 【预览和开关放在一起】它们回答的是同一件事的两半:
+ * "会发什么"和"什么时候发"。分成两个页面的话,人改完时间不会回去看文案,
+ * 而文案里那些数字正是这条提醒唯一的价值。
  *
- * 【给逐字原文,不给"大概长这样"】要确认的正是那些字会不会出现在
- * 领导的群里。所以下面那块是原样展示,不做任何美化渲染。
+ * 【逐字原文,不渲染 markdown】要确认的正是哪些字会出现在领导的群里。
  */
+
+const WEEKDAYS = [
+  { v: "1", label: "一" },
+  { v: "2", label: "二" },
+  { v: "3", label: "三" },
+  { v: "4", label: "四" },
+  { v: "5", label: "五" },
+  { v: "6", label: "六" },
+  { v: "7", label: "日" },
+];
+
 export default function DailyPushPreview({
   open,
   onClose,
@@ -21,51 +39,133 @@ export default function DailyPushPreview({
   onClose: () => void;
 }) {
   const [digest, setDigest] = useState<DailyPushDigest | null>(null);
+  const [cfg, setCfg] = useState<DailyPushConfig | null>(null);
   const [loading, setLoading] = useState(false);
-  // 今天全都巡完了要不要发。默认不发 —— 空洞的推送是让人取关最快的方式;
-  // 但"今天全部完成"对管理者确实是汇报,所以留个开关。
-  const [silent, setSilent] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async (s: boolean) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setDigest(await previewDailyPush(s));
+      // 设置读不到不该让预览也打不开 —— 预览是这个弹窗更常用的那一半
+      const c = await getDailyPushConfig().catch(() => null);
+      setCfg(c);
+      setDigest(await previewDailyPush(c?.silentWhenDone ?? true));
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "预览失败");
+      message.error(e instanceof Error ? e.message : "加载失败");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (open) void load(silent);
-  }, [open, silent, load]);
+    if (open) void load();
+  }, [open, load]);
+
+  // 改了设置立刻重算预览 —— "全部完成时也发"这个开关会直接改变文案
+  async function patch(next: Partial<DailyPushConfig>) {
+    if (!cfg) return;
+    const merged = { ...cfg, ...next };
+    setCfg(merged);
+    setSaving(true);
+    try {
+      await saveDailyPushConfig({
+        enabled: merged.enabled,
+        time: merged.time,
+        weekdays: merged.weekdays,
+        silentWhenDone: merged.silentWhenDone,
+      });
+      setDigest(await previewDailyPush(merged.silentWhenDone));
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+      await load(); // 失败就回到服务端的真实状态,别让界面停在一个没存进去的值上
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const picked = new Set((cfg?.weekdays || "").split(",").filter(Boolean));
 
   return (
     <Modal
-      title="每日提醒 · 预览"
+      title="每日未巡提醒"
       open={open}
-      width={640}
+      width={660}
       onCancel={onClose}
       footer={<Button onClick={onClose}>关闭</Button>}
     >
-      <Space direction="vertical" size={14} style={{ width: "100%" }}>
-        <Alert
-          type="info"
-          showIcon
-          message="这里只算不发"
-          description="定时发送还没接上。先确认这条消息的口径和措辞对不对——发错的数字比不发更难挽回。"
-        />
+      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        {/* 【没配 webhook 要第一时间说】否则用户打开开关、等到第二天、
+            然后来问"为什么没发" —— 而原因和计划、设备都无关。 */}
+        {cfg && !cfg.botReady && (
+          <Alert
+            type="warning"
+            showIcon
+            message="企业微信群机器人未配置,提醒发不出去"
+            description="需要在服务器上设置 WEWORK_BOT_WEBHOOK。设置可以先存,等配好了自动生效。"
+          />
+        )}
 
-        <Space size={16} wrap>
-          <Space size={8}>
-            <span style={{ color: "#666" }}>全部完成时也发</span>
-            <Switch checked={!silent} onChange={(v) => setSilent(!v)} />
-          </Space>
-          <Button size="small" loading={loading} onClick={() => void load(silent)}>
-            重新计算
-          </Button>
-        </Space>
+        {cfg && (
+          <div style={{ display: "grid", gap: 12 }}>
+            <Space size={12} wrap>
+              <Switch
+                checked={cfg.enabled}
+                loading={saving}
+                onChange={(v) => void patch({ enabled: v })}
+              />
+              <span style={{ fontWeight: 600, color: C.text }}>
+                {cfg.enabled ? "已开启自动推送" : "未开启,只能在这里预览"}
+              </span>
+              {cfg.timezone && (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  按 {cfg.timezone} 计算
+                </Typography.Text>
+              )}
+            </Space>
+
+            <Space size={12} wrap>
+              <span style={{ color: C.textSub, fontSize: 13 }}>每天</span>
+              <TimePicker
+                format="HH:mm"
+                allowClear={false}
+                value={dayjs(cfg.time, "HH:mm")}
+                onChange={(v) => v && void patch({ time: v.format("HH:mm") })}
+              />
+              <span style={{ color: C.textSub, fontSize: 13 }}>推送</span>
+            </Space>
+
+            <Space size={10} wrap>
+              <span style={{ color: C.textSub, fontSize: 13 }}>执行日</span>
+              {WEEKDAYS.map((d) => (
+                <Checkbox
+                  key={d.v}
+                  checked={picked.size === 0 || picked.has(d.v)}
+                  onChange={(e) => {
+                    // 空 = 每天。所以从"空"开始取消某一天,要先当成全选再去掉。
+                    const base = picked.size === 0 ? WEEKDAYS.map((x) => x.v) : [...picked];
+                    const next = e.target.checked
+                      ? [...new Set([...base, d.v])]
+                      : base.filter((x) => x !== d.v);
+                    void patch({ weekdays: next.sort().join(",") });
+                  }}
+                >
+                  {d.label}
+                </Checkbox>
+              ))}
+            </Space>
+
+            <Space size={12}>
+              <Switch
+                size="small"
+                checked={!cfg.silentWhenDone}
+                onChange={(v) => void patch({ silentWhenDone: !v })}
+              />
+              <span style={{ color: C.textSub, fontSize: 13 }}>
+                全部巡完时也发一条(默认不发 —— 空洞的推送会让人不再看它)
+              </span>
+            </Space>
+          </div>
+        )}
 
         {digest && (
           <>
@@ -78,13 +178,19 @@ export default function DailyPushPreview({
             </Space>
 
             {digest.wouldSend ? (
-              <Alert type="success" showIcon message="按当前设置,今天这个点会发出下面这条" />
+              <Alert
+                type="success"
+                showIcon
+                message={
+                  cfg?.enabled
+                    ? `今天 ${cfg.time} 会发出下面这条`
+                    : "开启后,今天这个点会发出下面这条"
+                }
+              />
             ) : (
-              <Alert type="warning" showIcon message={`今天不会发 —— ${digest.skipReason || "无内容"}`} />
+              <Alert type="info" showIcon message={`今天不会发 —— ${digest.skipReason || "无内容"}`} />
             )}
 
-            {/* 【原样展示,不渲染 markdown】企微那边怎么显示是它的事;
-                这里要确认的是"哪些字会被发出去",美化了反而看不清。 */}
             <div>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 发出去的原文
@@ -94,7 +200,7 @@ export default function DailyPushPreview({
                   marginTop: 6,
                   padding: "12px 14px",
                   background: "#fafbfc",
-                  border: "1px solid #f0f0f0",
+                  border: `1px solid ${C.line}`,
                   borderRadius: 8,
                   fontSize: 13,
                   lineHeight: 1.7,
@@ -107,6 +213,10 @@ export default function DailyPushPreview({
             </div>
           </>
         )}
+
+        <Button size="small" loading={loading} onClick={() => void load()}>
+          重新计算
+        </Button>
       </Space>
     </Modal>
   );

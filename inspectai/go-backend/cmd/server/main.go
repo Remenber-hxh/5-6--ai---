@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"bufio"
 	"log"
 	"net/http"
@@ -196,6 +197,14 @@ func main() {
 	log.Printf("  WeCom bot message: %v", weworkBotClient.Enabled())
 	log.Printf("  Public base URL: %s", publicBaseURL)
 	log.Printf("  CORS origins: %s", strings.Join(originList(corsAllowedOrigins), ", "))
+
+	// 每日未巡提醒的后台循环。
+	//
+	// 【默认是关的】设置里没打开就什么都不做 —— 谁也不希望某次部署完
+	// 当天就开始往群里发。打开是人在后台做的一个明确动作。
+	pushCtx, stopPush := context.WithCancel(context.Background())
+	defer stopPush()
+	server.startDailyPushLoop(pushCtx)
 
 	srv := &http.Server{
 		Addr:         addr,

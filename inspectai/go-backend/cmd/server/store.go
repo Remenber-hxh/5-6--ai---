@@ -165,6 +165,15 @@ type EngineeringStore interface {
 	UpdateEngineeringTask(id string, mutate func(*EngineeringTask)) error
 	// DeleteEngineeringTask 硬删除。挂着巡检记录的不给删(见 handler 里的拦截)。
 	DeleteEngineeringTask(id string) error
+	// ===== 运营参数 + 推送去重 =====
+	// ListAppSettings/SetAppSettings 是全局键值对(迁移 019 建表时就没有 tenant_id)。
+	ListAppSettings() (map[string]string, error)
+	SetAppSettings(kv map[string]string, actor string) error
+	// ClaimPushSlot 抢占"今天这类推送"的名额;已被占用返回 errPushAlreadySent。
+	// 【先占位再发送】"先发再记"的话发成功但记失败会导致重发,而重发正是要防的事。
+	ClaimPushSlot(tenantID, kind, day string) (string, error)
+	FinishPushSlot(id, status, detail string) error
+	LastPushDay(tenantID, kind string) (string, error)
 }
 
 // SubmissionStore — 提交幂等锁
@@ -261,6 +270,8 @@ type MemStore struct {
 	userProjects      map[string][]string                      // userID -> projectIDs
 	templateRules     map[string]map[string]*TemplateFieldRule // templateID -> fieldCode -> 规则
 	templateMinImages map[string]int                           // templateID -> 每单最少几张照片
+	appSettings       map[string]string                        // 运营参数(推送时间/开关)
+	pushLog           map[string]string                        // "tenant|kind|day" -> id,用于去重
 }
 
 type memUser struct {
@@ -292,6 +303,8 @@ func NewMemStore() *MemStore {
 		userProjects:      map[string][]string{},
 		templateRules:     map[string]map[string]*TemplateFieldRule{},
 		templateMinImages: map[string]int{},
+		appSettings:       map[string]string{},
+		pushLog:           map[string]string{},
 		rolePerms:         defaultPermMatrix(),
 	}
 }

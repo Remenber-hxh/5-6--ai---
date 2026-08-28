@@ -182,3 +182,68 @@ func (s *Server) handleDailyPushPreview(w http.ResponseWriter, r *http.Request) 
 	silent := r.URL.Query().Get("silentWhenDone") == "1"
 	writeJSON(w, http.StatusOK, buildDailyPushDigest(board, silent))
 }
+
+// ===== 推送设置 =====
+
+// handleDailyPushConfig —— GET/PUT /api/engineering/plans/daily-push/config
+//
+// 【放在同一个 handler 里】读和写用的是同一份字段定义,分开两个函数
+// 迟早会有一边漏改一个字段 —— 而漏改的表现是"我明明改了,保存后又变回去"。
+func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		kv, err := s.store.ListAppSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "read_settings_failed", err.Error())
+			return
+		}
+		c := dailyPushConfigFrom(kv)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled": c.Enabled, "time": c.HourMin, "weekdays": c.Weekdays,
+			"silentWhenDone": c.SilentWhenDone,
+			// 【把"通道通不通"一起告诉前端】没配 webhook 的话,开关打开了也发不出去。
+			// 不说的话用户会打开开关、等到第二天、然后来问"为什么没发"。
+			"botReady": s.weworkBot != nil && s.weworkBot.Enabled(),
+			"timezone": pushTZ.String(),
+		})
+		return
+	}
+
+	var req struct {
+		Enabled        bool   `json:"enabled"`
+		Time           string `json:"time"`
+		Weekdays       string `json:"weekdays"`
+		SilentWhenDone bool   `json:"silentWhenDone"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	// 【时间格式当场校验,不要存进去再说】存了个 "17点",调度器解析失败后
+	// 回落到默认时间 —— 用户以为改成了别的点,实际还是 17:00,而且没有任何提示。
+	if !validHourMin(req.Time) {
+		writeError(w, http.StatusBadRequest, "bad_time", "推送时间要写成 HH:MM,例如 17:00")
+		return
+	}
+	for _, part := range strings.Split(strings.TrimSpace(req.Weekdays), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(part); err != nil || n < 1 || n > 7 {
+			writeError(w, http.StatusBadRequest, "bad_weekdays", "执行日只能是 1-7(1=周一,7=周日)")
+			return
+		}
+	}
+	cfg := dailyPushConfig{
+		Enabled: req.Enabled, HourMin: strings.TrimSpace(req.Time),
+		Weekdays: strings.TrimSpace(req.Weekdays), SilentWhenDone: req.SilentWhenDone,
+	}
+	if err := s.store.SetAppSettings(cfg.toSettings(), s.currentUserName(r)); err != nil {
+		writeError(w, http.StatusInternalServerError, "save_settings_failed", err.Error())
+		return
+	}
+	s.recordOperation(r, "daily_push_config", "app_settings", keyPushEnabled, map[string]any{
+		"enabled": cfg.Enabled, "time": cfg.HourMin, "weekdays": cfg.Weekdays,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
