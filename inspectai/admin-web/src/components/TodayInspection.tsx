@@ -58,8 +58,8 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
   // 【按设备而不是按计划组织】客户关心的是"哪几台还没巡",不是
   // "第二条计划完成了 3/5"。按计划分组会让人在几个方框之间来回找灰色标签。
   const { groups, todoCount, done } = useMemo(() => {
-    type Row = { key: string; name: string; type?: string; missing?: boolean };
-    const byGroup = new Map<string, { project?: string; owner?: string; rows: Row[] }>();
+    type Row = { key: string; name: string; type?: string; owner?: string; missing?: boolean };
+    const byGroup = new Map<string, { project: string; rows: Row[] }>();
     const done: { key: string; name: string; at?: string }[] = [];
     const seen = new Set<string>();
     let todoCount = 0;
@@ -72,20 +72,21 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
           continue;
         }
         todoCount++;
-        // 【按"项目 + 负责人"分组】上一版每行都重复一遍项目名和负责人。
-        // 13 行里这两个字段一模一样,占掉一半行宽却一个字都没说 ——
-        // 提到组标题上,说一次就够,行里只留真正有区别的东西。
+        // 【只按项目分组,负责人放到行里】项目在一个组里是恒定的,
+        // 提到标题上说一次就够;而负责人是【按计划】走的 ——
+        // 同一个项目下不同计划可以派给不同的人,放在行里才有区别。
+        // (上一版把负责人也做进分组键,组标题就成了"项目 · 某人",
+        //  而那个人对组里每一行都一样,等于把恒定值说了两遍。)
         const project = a.project || p.project || "";
-        const owner = p.ownerName || "";
-        const gk = `${project}|${owner}`;
-        if (!byGroup.has(gk)) byGroup.set(gk, { project, owner, rows: [] });
-        byGroup.get(gk)!.rows.push({
+        if (!byGroup.has(project)) byGroup.set(project, { project, rows: [] });
+        byGroup.get(project)!.rows.push({
           key: a.assetId,
           name: a.assetName,
           // 【类型是用来区分同名设备的】台账里可以有两台都叫 K01,
           // 只是一台有机房一台无机房。不写类型,这两行长得一模一样,
           // 到了现场不知道该巡哪台。
           type: a.assetType,
+          owner: p.ownerName,
           missing: a.missing,
         });
       }
@@ -141,7 +142,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
           13 行里这两列一模一样 —— 占掉一半行宽,却一个字都没告诉人。
           说一次就够;行里只留真正有区别的东西(设备名 + 类型)。 */}
       {groups.map((g) => (
-        <div key={`${g.project}|${g.owner}`}>
+        <div key={g.project}>
           <div
             style={{
               display: "flex",
@@ -152,8 +153,6 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
             }}
           >
             <span style={{ fontWeight: 600, color: C.text }}>{g.project || "未指定项目"}</span>
-            <span style={{ color: C.textFaint }}>·</span>
-            <span style={{ color: C.textSub }}>{g.owner || "未指定负责人"}</span>
             <span style={{ marginLeft: "auto", color: C.textFaint, fontVariantNumeric: "tabular-nums" }}>
               {g.rows.length} 台
             </span>
@@ -188,6 +187,14 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
                     {a.type}
                   </Typography.Text>
                 )}
+                {/* 【负责人靠右成一列】一行只有名字和类型的话,宽屏上右边
+                    一大片空着;而"这台归谁"恰恰是调度时最想知道的下一件事。 */}
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 12, marginLeft: "auto", flex: "none" }}
+                >
+                  {a.owner || "未指定负责人"}
+                </Typography.Text>
                 {a.missing && (
                   <Tooltip title="这台设备已不在台账里(计划录入后被删),请编辑计划移除它">
                     <Tag color="red">台账已删除</Tag>

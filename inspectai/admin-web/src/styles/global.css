@@ -250,3 +250,41 @@ body {
  * 这是个列表不是按钮,反馈到"能点"为止就够了。 */
 .today-row:hover { background: rgba(0, 0, 0, 0.02); }
 .today-row:active { background: rgba(0, 0, 0, 0.04); }
+
+/* ===== 视图切换(Segmented)=====
+
+   原生 antd 的选中项是"白底 + 黑字",放在浅灰容器里几乎看不出选中 ——
+   而整页本来就是白卡片配 #f5f7fa 底色,再来一组白灰控件,
+   就成了用户说的"白花花一片"。
+
+   【一页只给一处主色】选中的那一格用品牌绿填充。它是这一页唯一的
+   饱和色块,所以"我现在在哪个视图"一眼就有着落;其余控件继续保持素净,
+   不会变成一堆彩色按钮互相抢。 */
+.ant-segmented {
+  background: #eef1f4;
+  padding: 3px;
+  border-radius: 10px;
+}
+.ant-segmented .ant-segmented-item {
+  border-radius: 7px;
+  transition: color 0.15s ease;
+}
+.ant-segmented .ant-segmented-item-label {
+  padding: 3px 16px;
+  font-size: 13.5px;
+}
+.ant-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover {
+  color: #12a968;
+}
+/* 【选中背景要盖在 thumb 上】antd 用一个绝对定位的 thumb 做滑动动画,
+   只给 item 上色的话,切换过程中那块白色 thumb 会盖住颜色,
+   看起来像"颜色闪了一下才出现"。两个都上色才连贯。 */
+.ant-segmented .ant-segmented-item-selected,
+.ant-segmented .ant-segmented-thumb {
+  background: #12a968 !important;
+  box-shadow: 0 1px 3px rgba(18, 169, 104, 0.28);
+}
+.ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #fff !important;
+  font-weight: 600;
+}
