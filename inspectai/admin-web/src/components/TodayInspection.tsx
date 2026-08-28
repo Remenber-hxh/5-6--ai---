@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { TodayBoard, getTodayBoard } from "../api/mgmt";
+import { C } from "../styles/tokens";
 
 /**
  * 今日执行。
@@ -80,7 +81,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
 
   const noAssetPlans = (board?.plans ?? []).filter((p) => p.noAssets);
 
-  if (loading) return <div style={{ padding: 24, color: "#8a99a5" }}>加载中…</div>;
+  if (loading) return <div style={{ padding: 24, color: C.textFaint }}>加载中…</div>;
 
   if (!board || board.plans.length === 0) {
     return (
@@ -98,15 +99,15 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
       <Space align="baseline" size={12} wrap>
         {todo.length > 0 ? (
           <>
-            <span style={{ fontSize: 40, fontWeight: 800, color: "#d4713a", lineHeight: 1 }}>
+            <span style={{ fontSize: 40, fontWeight: 800, color: C.warn, lineHeight: 1 }}>
               {todo.length}
             </span>
-            <span style={{ fontSize: 16, color: "#3d444c" }}>台还没巡</span>
+            <span style={{ fontSize: 16, color: C.text }}>台还没巡</span>
           </>
         ) : (
           <Space align="center">
-            <CheckCircleFilled style={{ color: "#3f9e79", fontSize: 26 }} />
-            <span style={{ fontSize: 20, fontWeight: 700, color: "#3f9e79" }}>今天的巡检已全部完成</span>
+            <CheckCircleFilled style={{ color: C.ok, fontSize: 26 }} />
+            <span style={{ fontSize: 20, fontWeight: 700, color: C.ok }}>今天的巡检已全部完成</span>
           </Space>
         )}
         <Typography.Text type="secondary" style={{ fontSize: 13 }}>
@@ -120,7 +121,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
 
       {/* ── 待巡清单:唯一需要行动的信息 ── */}
       {todo.length > 0 && (
-        <div style={{ border: "1px solid #f0f0f0", borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
           {todo.map((a, i) => (
             <div
               key={a.key}
@@ -135,11 +136,11 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
                 alignItems: "center",
                 gap: 12,
                 padding: "11px 14px",
-                borderTop: i ? "1px solid #f7f7f7" : "none",
+                borderTop: i ? `1px solid ${C.line}` : "none",
                 cursor: a.missing ? "default" : "pointer",
               }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: 3, background: "#d4713a", flex: "0 0 6px" }} />
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: C.warn, flex: "0 0 6px" }} />
               <span style={{ fontWeight: 600, minWidth: 130 }}>{a.name}</span>
               {a.project && <Tag>{a.project}</Tag>}
               {a.owner && (

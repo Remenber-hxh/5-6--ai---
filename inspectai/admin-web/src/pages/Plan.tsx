@@ -27,6 +27,7 @@ import {
 import DailyPushPreview from "../components/DailyPushPreview";
 import OwnerBinding from "../components/OwnerBinding";
 import TodayInspection from "../components/TodayInspection";
+import { C } from "../styles/tokens";
 import { useUi } from "../store/ui";
 
 // ===== 旧版口径:计划状态 → 四桶 =====
@@ -40,11 +41,14 @@ function planStatusBucket(status = ""): Bucket {
   return "overdue"; // 需跟进:待整改 / 未排期 / 暂停 等
 }
 
-const BUCKETS: { key: Bucket; label: string; sub: string; color: string }[] = [
-  { key: "pending", label: "待执行", sub: "未开始", color: "#f5a524" },
-  { key: "processing", label: "进行中", sub: "现场处理", color: "#246bfe" },
-  { key: "overdue", label: "需跟进", sub: "复核 / 异常", color: "#ef4b3f" },
-  { key: "done", label: "已完成", sub: "结果入库", color: "#12a968" },
+// 【只留 key 和 label】原来还带 sub("未开始"/"现场处理")和 color,
+// 但页面重排成六视图之后那两个字段一处都没用上 —— 留着会让读代码的人
+// 以为某个地方在渲染它们,然后去找。
+const BUCKETS: { key: Bucket; label: string }[] = [
+  { key: "pending", label: "待执行" },
+  { key: "processing", label: "进行中" },
+  { key: "overdue", label: "需跟进" },
+  { key: "done", label: "已完成" },
 ];
 
 const bucketTag = (status?: string) => {
@@ -65,6 +69,22 @@ const taskTag = (s?: string) => {
   if (s === "逾期") return <Tag color="volcano">逾期</Tag>;
   if (s === "已取消") return <Tag>已取消</Tag>;
   return <Tag color="orange">需跟进</Tag>;
+};
+
+// 详情面板左侧那道竖条的颜色。
+//
+// 【要跟着状态走】原来写死绿色 —— 一条「需跟进」的计划,标签是红的,
+// 而标题旁边那道条是绿的,同一张卡里两个信号互相矛盾。
+const bucketAccent = (status?: string) =>
+  ({ pending: C.warn, processing: C.progress, overdue: C.danger, done: C.ok })[
+    planStatusBucket(status)
+  ];
+
+const taskAccent = (s?: string) => {
+  if (s === "已完成") return C.ok;
+  if (s === "待整改" || s === "逾期") return C.danger;
+  if (s === "进行中") return C.progress;
+  return C.warn;
 };
 
 // 面板开合的时长与缓动。
@@ -104,8 +124,8 @@ function ownerNameKey(s: string): string {
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", padding: "7px 0", fontSize: 13.5 }}>
-      <span style={{ width: 74, flex: "none", color: "#8aa0b0" }}>{label}</span>
-      <b style={{ color: "#1c2b3a", fontWeight: 600 }}>{children}</b>
+      <span style={{ width: 74, flex: "none", color: C.textFaint }}>{label}</span>
+      <b style={{ color: C.text, fontWeight: 600 }}>{children}</b>
     </div>
   );
 }
@@ -492,7 +512,11 @@ export default function Plan() {
     );
   }
 
-  const hasFilter = Boolean(bucket || proj || planType || kw);
+  // 【planType 不算筛选,它就是当前视图】算进去的话,非今日视图下 hasFilter
+  // 永远为真 —— 空的「月度计划」会显示"没有匹配的计划 + 清除筛选",
+  // 而 clearFilters 清不掉视图,点了毫无反应;本该出现的「新建月度计划」
+  // 则永远不会出现。空态给出一个点了没用的按钮,比没有按钮更糟。
+  const hasFilter = Boolean(bucket || proj || kw);
   const clearFilters = () => {
     setBucket("");
     setProj("");
@@ -747,13 +771,15 @@ export default function Plan() {
               size="small"
               title={
                 <Space>
-                  <span style={{ borderLeft: "3px solid #12a968", paddingLeft: 8 }}>任务详情</span>
+                  <span style={{ borderLeft: `3px solid ${taskAccent(selTask.status)}`, paddingLeft: 8 }}>
+                    任务详情
+                  </span>
                   {taskTag(selTask.status)}
                 </Space>
               }
             >
               <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{selTask.title || "异常复查"}</h3>
-              <div style={{ borderTop: "1px solid #f0f2f5" }}>
+              <div style={{ borderTop: `1px solid ${C.line}` }}>
                 <FieldRow label="项目">{selTask.project || "—"}</FieldRow>
                 <FieldRow label="点位">{(selTask as { category?: string }).category || "—"}</FieldRow>
                 <FieldRow label="责任人">{selTask.assigneeName || "—"}</FieldRow>
@@ -762,7 +788,7 @@ export default function Plan() {
               </div>
               {(selTask as { workContent?: string }).workContent && (
                 <div style={{ margin: "6px 0 2px" }}>
-                  <div style={{ color: "#8aa0b0", fontSize: 13 }}>说明</div>
+                  <div style={{ color: C.textFaint, fontSize: 13 }}>说明</div>
                   <div style={{ fontSize: 13.5, marginTop: 2 }}>
                     {(selTask as { workContent?: string }).workContent}
                   </div>
@@ -781,13 +807,13 @@ export default function Plan() {
                       height: index === taskStep(selTask.status) ? 12 : 9,
                       borderRadius: "50%",
                       background:
-                        status === "finish" ? "#12a968" : status === "process" ? "#246bfe" : "#d9dee4",
+                        status === "finish" ? C.ok : status === "process" ? C.progress : C.muted,
                       boxShadow: status === "process" ? "0 0 0 3px rgba(36, 107, 254, 0.18)" : undefined,
                     }}
                   />
                 )}
               />
-              <div style={{ color: "#5b6b78", fontSize: 13, marginBottom: 14 }}>
+              <div style={{ color: C.textSub, fontSize: 13, marginBottom: 14 }}>
                 {selTask.status === "已完成"
                   ? "任务已完成,结果已入库"
                   : selTask.status === "待执行" || !selTask.status
@@ -796,7 +822,7 @@ export default function Plan() {
               </div>
               <Space
                 direction="vertical"
-                style={{ width: "100%", borderTop: "1px solid #f0f2f5", paddingTop: 14 }}
+                style={{ width: "100%", borderTop: `1px solid ${C.line}`, paddingTop: 14 }}
               >
                 {(selTask.status === "待执行" || !selTask.status) && (
                   <Button type="primary" size="large" block onClick={() => onTaskAction(selTask, "进行中")}>
@@ -841,13 +867,15 @@ export default function Plan() {
               size="small"
               title={
                 <Space>
-                  <span style={{ borderLeft: "3px solid #12a968", paddingLeft: 8 }}>计划详情</span>
+                  <span style={{ borderLeft: `3px solid ${bucketAccent(selPlan.status)}`, paddingLeft: 8 }}>
+                    计划详情
+                  </span>
                   {bucketTag(selPlan.status)}
                 </Space>
               }
             >
               <h3 style={{ margin: "4px 0 10px", fontSize: 17 }}>{selPlan.workContent || "—"}</h3>
-              <div style={{ borderTop: "1px solid #f0f2f5" }}>
+              <div style={{ borderTop: `1px solid ${C.line}` }}>
                 <FieldRow label="项目">{selPlan.project || "—"}</FieldRow>
                 <FieldRow label="类别">{selPlan.category || "—"}</FieldRow>
                 {/* 【标出有没有绑账号】绑了才收得到每日提醒。不标的话这两种
@@ -873,7 +901,7 @@ export default function Plan() {
               </div>
               <Space
                 direction="vertical"
-                style={{ width: "100%", marginTop: 12, borderTop: "1px solid #f0f2f5", paddingTop: 14 }}
+                style={{ width: "100%", marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 14 }}
               >
                 {planStatusBucket(selPlan.status) === "pending" && (
                   <Popconfirm title="派发执行任务并下发移动端?" onConfirm={() => onDispatch(selPlan)}>
