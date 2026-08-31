@@ -226,6 +226,35 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+// ===== 一台设备身上还没了结的事 =====
+
+export interface OpenTaskBrief {
+  id: string;
+  title: string;
+  status: string;
+  assigneeName?: string;
+  dueAt?: string;
+  /** 已过截止日期。没定期限的不算逾期 */
+  overdue?: boolean;
+}
+
+export interface AssetOpenItems {
+  assetId: string;
+  tasks: OpenTaskBrief[];
+  /**
+   * 最近一次判为异常/待整改,却没有任何在办任务 —— 出了问题没人接手。
+   *
+   * 【这是最不容易被发现的一种】台账里它只是一个红标签,任务列表里它根本不存在,
+   * 两边各自看都正常。所以这个判断由后端算,不留给前端拼。
+   */
+  abnormalWithoutTask?: boolean;
+  lastStatus?: string;
+}
+
+export function getAssetOpenItems(assetId: string) {
+  return api<AssetOpenItems>(`/api/assets/${encodeURIComponent(assetId)}/open-items`);
+}
+
 // ===== 单台设备的读数趋势 =====
 
 export interface TrendPoint {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { AssetEntry, AssetSnapshotEntry, listAssetSnapshots, listAssets } from "../api/mgmt";
+import AssetOpenItems from "../components/AssetOpenItems";
 import AssetTrend from "../components/AssetTrend";
 import { C } from "../styles/tokens";
 import { fmtTime, mediaUrl, statusTagColor } from "../lib/status";
@@ -78,6 +79,12 @@ export default function AssetProfile() {
       <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => nav("/ledger")} style={{ paddingLeft: 0 }}>
         返回台账
       </Button>
+
+      {/* ── 还有什么没了结 ──
+          【放在最上面】打开这一页的人要的从来是"这台设备现在要不要我管",
+          而这块就是答案本身。排在设备信息后面的话,人得往下翻才知道要不要管。
+          没有未了结的事时它整块不显示 —— 页面上没有警示本身就是"正常"。 */}
+      <AssetOpenItems assetId={asset.id} />
 
       {/* ── 它现在什么状态 ── */}
       <Card size="small">
