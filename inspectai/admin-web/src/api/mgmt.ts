@@ -226,6 +226,24 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+// ===== 一句话结论:这台设备现在要不要管 =====
+
+export interface AssetVerdict {
+  assetId: string;
+  /** act 需要处理 / schedule 建议安排 / ok 暂时不用管 */
+  level: "act" | "schedule" | "ok";
+  headline: string;
+  /**
+   * 依据。【结论可以被反驳,分数不能】——
+   * 摆出来人才有机会说"这条不算",而不是默默不信。
+   */
+  reasons: string[];
+}
+
+export function getAssetVerdict(assetId: string) {
+  return api<AssetVerdict>(`/api/assets/${encodeURIComponent(assetId)}/verdict`);
+}
+
 // ===== 一台设备身上还没了结的事 =====
 
 export interface OpenTaskBrief {

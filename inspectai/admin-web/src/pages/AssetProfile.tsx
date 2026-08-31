@@ -6,6 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AssetEntry, AssetSnapshotEntry, listAssetSnapshots, listAssets } from "../api/mgmt";
 import AssetOpenItems from "../components/AssetOpenItems";
 import AssetTrend from "../components/AssetTrend";
+import AssetVerdict from "../components/AssetVerdict";
 import { C } from "../styles/tokens";
 import { fmtTime, mediaUrl, statusTagColor } from "../lib/status";
 
@@ -110,6 +111,9 @@ export default function AssetProfile() {
                 </Typography.Text>
               )}
             </Space>
+            {/* 【结论紧跟在设备名下面】这一页上最靠上的那行字,应该是
+                "要不要管它",而不是又一个事实。事实往下排。 */}
+            <AssetVerdict assetId={asset.id} />
             <Typography.Text type="secondary" style={{ fontSize: 13 }}>
               最近巡检 {asset.lastInspectedAt ? fmtTime(asset.lastInspectedAt) : "从未巡检"}
               {trail.length > 0 && ` · 历史 ${trail.length} 次`}

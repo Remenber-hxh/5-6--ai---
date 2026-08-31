@@ -172,13 +172,26 @@ func buildAssetTrend(obs []*FieldObservation, numericFields map[string]string) [
 
 // handleAssetTrend —— GET /api/assets/{id}/trend
 func (s *Server) handleAssetTrend(w http.ResponseWriter, r *http.Request, id string) {
-	tenant := s.tenantForRequest(r)
-	asset, err := s.store.GetAsset(tenant, id)
+	asset, err := s.store.GetAsset(s.tenantForRequest(r), id)
 	if err != nil || asset == nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
 	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	resp, err := s.assetTrendFor(asset, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
 
+// assetTrendFor 算出这台设备的读数趋势。
+//
+// 【抽出来是为了让"结论"和"曲线"用同一份计算】顶部那句结论要说
+// "水箱水位较平时低 33%",下面的图要画出那条线 —— 各算一次的话,
+// 迟早出现结论和图对不上,而看的人不知道该信哪个。
+func (s *Server) assetTrendFor(asset *AssetEntry, limit int) (assetTrendResp, error) {
 	// 这台设备的模板声明了哪些数值字段
 	numeric := map[string]string{}
 	if tpl, ok := templateByID(asset.TemplateID); ok {
@@ -189,20 +202,18 @@ func (s *Server) handleAssetTrend(w http.ResponseWriter, r *http.Request, id str
 		}
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 2000 {
 		limit = 500
 	}
-	obs, err := s.store.ListFieldObservations(id, "", limit)
+	obs, err := s.store.ListFieldObservations(asset.ID, "", limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
-		return
+		return assetTrendResp{}, err
 	}
 
 	series := buildAssetTrend(obs, numeric)
 	resp := assetTrendResp{
-		AssetID:         id,
-		AssetName:       firstNonEmpty(asset.AssetName, asset.AssetKey, id),
+		AssetID:         asset.ID,
+		AssetName:       firstNonEmpty(asset.AssetName, asset.AssetKey, asset.ID),
 		HasNumericField: len(numeric) > 0,
 		Series:          make([]trendSeries, 0, len(series)),
 	}
@@ -215,5 +226,5 @@ func (s *Server) handleAssetTrend(w http.ResponseWriter, r *http.Request, id str
 		}
 		resp.Series = append(resp.Series, sr)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp, nil
 }

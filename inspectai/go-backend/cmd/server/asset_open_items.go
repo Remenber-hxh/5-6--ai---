@@ -68,11 +68,24 @@ func (s *Server) handleAssetOpenItems(w http.ResponseWriter, r *http.Request, id
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
 	}
-
-	tasks, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{TenantID: s.tenantForRequest(r)})
+	items, err := s.assetOpenItemsFor(r, asset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// assetOpenItemsFor 算出这台设备未了结的事。
+//
+// 【抽出来是为了让"结论"和"明细"用同一份计算】顶部那句结论要说
+// "有 2 项未了结",下面的清单要列出是哪两项 —— 各算一次的话,
+// 迟早出现"结论说 2 项、清单列 3 条"而没人知道该信哪个。
+func (s *Server) assetOpenItemsFor(r *http.Request, asset *AssetEntry) (assetOpenItems, error) {
+	id := asset.ID
+	tasks, err := s.store.ListEngineeringTasks(EngineeringTaskFilter{TenantID: s.tenantForRequest(r)})
+	if err != nil {
+		return assetOpenItems{}, err
 	}
 
 	// 【按东八区算今天】开发机是太平洋时区,用本地时间的话逾期判断会差一整天 ——
@@ -104,5 +117,5 @@ func (s *Server) handleAssetOpenItems(w http.ResponseWriter, r *http.Request, id
 	out.AbnormalWithoutTask = len(out.Tasks) == 0 &&
 		assetStatusNeedsFollowUp(asset.LastStatus, asset.StatusLevel)
 
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
