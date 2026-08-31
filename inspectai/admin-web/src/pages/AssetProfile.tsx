@@ -119,9 +119,7 @@ export default function AssetProfile() {
       {/* ── 它在往哪走 ──
           这一页里趋势排在轨迹前面:轨迹说"巡过几次、每次什么状态",
           趋势说"这台设备在往哪个方向走" —— 后者是单次巡检永远看不出来的。 */}
-      <Card size="small" title="读数趋势">
-        <AssetTrend assetId={asset.id} explainEmpty />
-      </Card>
+      <AssetTrend assetId={asset.id} card />
 
       {/* ── 都发生过什么 ── */}
       <Card size="small" title={`巡检轨迹（${trail.length} 次）`}>
