@@ -49,6 +49,34 @@ export interface AssetEntry {
   lastPhotoPath?: string;
   coverImagePath?: string;
   coverImage?: AssetImageInfo;
+  // ===== 静态档案(向甲方索要的那批资料)=====
+  // 全部可空:拿到多少填多少,没填的界面上直接不显示,不摆一行"—"占位。
+  manufacturer?: string;
+  model?: string;
+  /** YYYY-MM-DD 投运日期 */
+  commissionedAt?: string;
+  /** YYYY-MM-DD 上次维保 */
+  lastMaintainedAt?: string;
+  /** 维保周期(天)。0 = 还没填,【不是"不用维保"】 */
+  maintenanceCycleDays?: number;
+  assetNote?: string;
+}
+
+/** 静态档案的可改字段。只传要改的那几个 —— 全传会把没填的覆盖成空 */
+export interface AssetProfilePatch {
+  manufacturer?: string;
+  model?: string;
+  commissionedAt?: string;
+  lastMaintainedAt?: string;
+  maintenanceCycleDays?: number;
+  assetNote?: string;
+}
+
+export function saveAssetProfile(assetId: string, patch: AssetProfilePatch) {
+  return api<{ asset: AssetEntry }>(`/api/assets/${encodeURIComponent(assetId)}/profile`, {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  }).then((d) => d.asset);
 }
 
 export function uploadAssetCover(assetId: string, file: File) {

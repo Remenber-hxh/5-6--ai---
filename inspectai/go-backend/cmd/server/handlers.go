@@ -1382,6 +1382,14 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetRecords(w, r, id)
 		return
 	}
+	if id := strings.TrimSuffix(rest, "/profile"); id != rest {
+		if r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetProfile(w, r, id)
+		return
+	}
 	if id := strings.TrimSuffix(rest, "/photos"); id != rest {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")

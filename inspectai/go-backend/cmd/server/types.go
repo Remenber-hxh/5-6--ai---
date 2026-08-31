@@ -298,6 +298,24 @@ type AssetEntry struct {
 	LastPhotoPath   string    `json:"lastPhotoPath,omitempty"`
 	CoverImagePath  string    `json:"coverImagePath,omitempty"` // 主管指定的封面图路径，入库
 	InspectionCount int       `json:"inspectionCount"`
+	// ===== 静态档案(向甲方索要的那批资料)=====
+	//
+	// 【为什么要有它们:趋势只有相对值,没有绝对判断】供水压力 0.55 MPa
+	// 是低还是正常?看曲线只知道"比平时低 8%",而"是不是低到该报修"
+	// 要对着设计值才说得出来。一台 2011 年投运的电梯和 2024 年的,
+	// 同样的读数含义也完全不同。
+	//
+	// 全部可空:拿到多少填多少,没填的在界面上直接不显示。
+	Manufacturer     string `json:"manufacturer,omitempty"`
+	Model            string `json:"model,omitempty"`
+	CommissionedAt   string `json:"commissionedAt,omitempty"`   // YYYY-MM-DD 投运日期
+	LastMaintainedAt string `json:"lastMaintainedAt,omitempty"` // YYYY-MM-DD 上次维保
+	// MaintenanceCycleDays 维保周期(天)。
+	//
+	// 【0 = 没填,不是"不用维保"】判断那边遇到 0 要直接跳过 ——
+	// 当成"周期为 0 天"的话,每台没填周期的设备都会被报成"已超期"。
+	MaintenanceCycleDays int    `json:"maintenanceCycleDays,omitempty"`
+	AssetNote            string `json:"assetNote,omitempty"`
 	// countedInspections 内部标记:列表路径已批量算过巡检次数,
 	// enrichAssetForDisplay 就不必再逐台查一遍。不出现在 JSON 里。
 	countedInspections bool

@@ -80,6 +80,9 @@ type AssetStore interface {
 	ListAssets(tenantID string) ([]*AssetEntry, error)
 	GetAsset(tenantID, id string) (*AssetEntry, error)
 	UpdateAssetMeta(tenantID, id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
+	// UpdateAssetProfile 静态档案(厂家/型号/投运/维保)。只改传进来的字段 ——
+	// 全字段覆盖会把没传的那些写成空,和计划页那次"编辑即清空"是同一类事故。
+	UpdateAssetProfile(tenantID, id string, p AssetProfilePatch) (*AssetEntry, error)
 	// UpdateAssetCover 仅更新主管指定的封面图路径 cover_image_path。
 	UpdateAssetCover(tenantID, id, coverImagePath string) (*AssetEntry, error)
 	// DeleteAsset 删除资产及其快照/字段观测(巡检记录保留作历史证据)。
@@ -1795,7 +1798,9 @@ const assetSelectCols = `id, project_code, project, point_id, template_id,
 	asset_type, asset_key, asset_name, last_record_id,
 	last_status, status_level, status_order, last_summary,
 	last_inspected_at, last_inspector, last_photo_path,
-	cover_image_path, inspection_count, created_at, updated_at, tenant_id`
+	cover_image_path, inspection_count, created_at, updated_at, tenant_id,
+	manufacturer, model, commissioned_at, last_maintained_at,
+	maintenance_cycle_days, COALESCE(asset_note, '')`
 
 func (s *SQLiteStore) ListAssets(tenantID string) ([]*AssetEntry, error) {
 	rows, err := s.db.Query(
@@ -1987,6 +1992,8 @@ func scanAsset(row scanner) (*AssetEntry, error) {
 		&a.LastStatus, &a.StatusLevel, &a.StatusOrder, &a.LastSummary,
 		&lastInspectedStr, &a.LastInspector, &a.LastPhotoPath, &a.CoverImagePath,
 		&a.InspectionCount, &createdStr, &updatedStr, &a.TenantID,
+		&a.Manufacturer, &a.Model, &a.CommissionedAt, &a.LastMaintainedAt,
+		&a.MaintenanceCycleDays, &a.AssetNote,
 	)
 	if err != nil {
 		return nil, err

@@ -6,6 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AssetEntry, AssetSnapshotEntry, listAssetSnapshots, listAssets } from "../api/mgmt";
 import AssetOpenItems from "../components/AssetOpenItems";
 import AssetPhotoTimeline from "../components/AssetPhotoTimeline";
+import AssetProfileCard from "../components/AssetProfileCard";
 import AssetTrend from "../components/AssetTrend";
 import AssetVerdict from "../components/AssetVerdict";
 import { C } from "../styles/tokens";
@@ -131,6 +132,10 @@ export default function AssetProfile() {
       {/* ── 它在往哪走 ──
           这一页里趋势排在轨迹前面:轨迹说"巡过几次、每次什么状态",
           趋势说"这台设备在往哪个方向走" —— 后者是单次巡检永远看不出来的。 */}
+      {/* 【档案排在趋势之前】它是读趋势的前提:知道这台 2011 年投运、
+          维保周期一年,再看曲线才知道那个数是高是低。 */}
+      <AssetProfileCard asset={asset} onSaved={setAsset} />
+
       <AssetTrend assetId={asset.id} card />
 
       {/* 【照片排在曲线之后、轨迹之前】曲线是给懂读数的人看的,

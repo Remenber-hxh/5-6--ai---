@@ -49,6 +49,7 @@ func buildAssetVerdict(
 	items assetOpenItems,
 	trend assetTrendResp,
 	daysSinceInspect int, // <0 表示从未巡检
+	maintenanceOverdue int, // 距上次维保超期天数;0 = 不超期或算不出来
 ) assetVerdict {
 	v := assetVerdict{AssetID: asset.ID, Level: verdictOK, Reasons: []string{}}
 
@@ -87,6 +88,11 @@ func buildAssetVerdict(
 	if len(drifting) > 0 {
 		v.Reasons = append(v.Reasons, "读数偏离:"+strings.Join(drifting, "、"))
 	}
+	// 【维保超期归"需要处理"】它和"久没巡"不是一回事:久没巡是没人去看,
+	// 而维保超期是该做的保养没做 —— 后者是合同和安全上的实质缺失。
+	if maintenanceOverdue > 0 {
+		v.Reasons = append(v.Reasons, maintenanceReason(maintenanceOverdue))
+	}
 	switch {
 	case daysSinceInspect < 0:
 		v.Reasons = append(v.Reasons, "从未巡检")
@@ -96,7 +102,8 @@ func buildAssetVerdict(
 
 	// —— 定级 ——
 	switch {
-	case items.AbnormalWithoutTask || overdue > 0 || len(drifting) > 0 || len(items.Tasks) > 0:
+	case items.AbnormalWithoutTask || overdue > 0 || len(drifting) > 0 ||
+		len(items.Tasks) > 0 || maintenanceOverdue > 0:
 		v.Level = verdictAct
 		v.Headline = "需要处理"
 	case daysSinceInspect < 0 || daysSinceInspect > verdictStaleDays:
@@ -147,5 +154,6 @@ func (s *Server) handleAssetVerdict(w http.ResponseWriter, r *http.Request, id s
 		}
 	}
 
-	writeJSON(w, http.StatusOK, buildAssetVerdict(asset, items, trend, days))
+	writeJSON(w, http.StatusOK,
+		buildAssetVerdict(asset, items, trend, days, maintenanceOverdueDays(asset, time.Now())))
 }

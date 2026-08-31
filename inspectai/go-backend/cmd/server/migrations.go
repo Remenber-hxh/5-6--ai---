@@ -44,6 +44,7 @@ var migrationList = []migration{
 	{20, "plan_assets", (*SQLiteStore).migPlanAssets},
 	{21, "plan_owner_id", (*SQLiteStore).migPlanOwnerID},
 	{22, "push_log", (*SQLiteStore).migPushLog},
+	{23, "asset_profile_fields", (*SQLiteStore).migAssetProfileFields},
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。
@@ -764,6 +765,51 @@ func (s *SQLiteStore) migPushLog() error {
 	}
 	if _, err := s.db.Exec(stmt); err != nil {
 		return fmt.Errorf("create push_log: %w", err)
+	}
+	return nil
+}
+
+// migAssetProfileFields — 023:设备的静态档案字段。
+//
+// 【为什么要有它们:趋势只有相对值,没有绝对判断】
+// 供水压力 0.55 MPa 是低还是正常?看曲线只知道"比平时低了 8%",
+// 而"是不是已经低到该报修"要对着设计值才说得出来。
+// 同理:一台 2011 年投运的电梯和 2024 年的,同样的读数含义完全不同。
+//
+// 【维保周期是唯一一个直接参与判断的】其余几项是给人看的背景,
+// 而它能算出"距上次维保已 380 天,超过 365 天的周期" ——
+// 这句话不需要人懂设备也能行动。
+//
+// 全部可空:这批数据要向甲方索要,拿到多少填多少,
+// 没填的字段在界面上直接不显示,不摆一行"—"占位。
+func (s *SQLiteStore) migAssetProfileFields() error {
+	type col struct{ name, sqlite, mysql string }
+	cols := []col{
+		{"manufacturer", `TEXT NOT NULL DEFAULT ''`, `VARCHAR(128) NOT NULL DEFAULT ''`},
+		{"model", `TEXT NOT NULL DEFAULT ''`, `VARCHAR(128) NOT NULL DEFAULT ''`},
+		// 投运日期 / 上次维保:存 YYYY-MM-DD 字符串,和计划那边的日期口径一致
+		{"commissioned_at", `TEXT NOT NULL DEFAULT ''`, `VARCHAR(16) NOT NULL DEFAULT ''`},
+		{"last_maintained_at", `TEXT NOT NULL DEFAULT ''`, `VARCHAR(16) NOT NULL DEFAULT ''`},
+		// 维保周期(天)。0 = 没定 —— 【不能当成"不用维保"】,
+		// 只是还没填,所以判断那边遇到 0 直接跳过,不报"已超期"
+		{"maintenance_cycle_days", `INTEGER NOT NULL DEFAULT 0`, `INT NOT NULL DEFAULT 0`},
+		{"asset_note", `TEXT NOT NULL DEFAULT ''`, `TEXT`},
+	}
+	for _, c := range cols {
+		exists, err := s.hasColumn("assets", c.name)
+		if err != nil {
+			return fmt.Errorf("inspect assets.%s: %w", c.name, err)
+		}
+		if exists {
+			continue
+		}
+		def := c.sqlite
+		if s.dialect == "mysql" {
+			def = c.mysql
+		}
+		if _, err := s.db.Exec(`ALTER TABLE assets ADD COLUMN ` + c.name + ` ` + def); err != nil {
+			return fmt.Errorf("add assets.%s: %w", c.name, err)
+		}
 	}
 	return nil
 }
