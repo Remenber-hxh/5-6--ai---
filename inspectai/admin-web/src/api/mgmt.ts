@@ -226,6 +226,23 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+// ===== 历次巡检的照片 =====
+
+export interface AssetPhoto {
+  recordId: string;
+  path: string;
+  at: string;
+  status?: string;
+  inspector?: string;
+}
+
+/** 每次巡检取第一张,按时间正序(老的在左) */
+export function listAssetPhotos(assetId: string, limit = 12) {
+  return api<{ photos: AssetPhoto[] }>(
+    `/api/assets/${encodeURIComponent(assetId)}/photos?limit=${limit}`,
+  ).then((d) => d.photos || []);
+}
+
 // ===== 一句话结论:这台设备现在要不要管 =====
 
 export interface AssetVerdict {

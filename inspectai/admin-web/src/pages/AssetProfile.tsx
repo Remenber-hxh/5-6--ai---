@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { AssetEntry, AssetSnapshotEntry, listAssetSnapshots, listAssets } from "../api/mgmt";
 import AssetOpenItems from "../components/AssetOpenItems";
+import AssetPhotoTimeline from "../components/AssetPhotoTimeline";
 import AssetTrend from "../components/AssetTrend";
 import AssetVerdict from "../components/AssetVerdict";
 import { C } from "../styles/tokens";
@@ -131,6 +132,11 @@ export default function AssetProfile() {
           这一页里趋势排在轨迹前面:轨迹说"巡过几次、每次什么状态",
           趋势说"这台设备在往哪个方向走" —— 后者是单次巡检永远看不出来的。 */}
       <AssetTrend assetId={asset.id} card />
+
+      {/* 【照片排在曲线之后、轨迹之前】曲线是给懂读数的人看的,
+          照片是给所有人看的 —— 但它不能顶到最上面:先要知道"要不要管",
+          再看"哪里在变",最后才是"长什么样"。 */}
+      <AssetPhotoTimeline assetId={asset.id} />
 
       {/* ── 都发生过什么 ── */}
       <Card size="small" title={`巡检轨迹（${trail.length} 次）`}>
