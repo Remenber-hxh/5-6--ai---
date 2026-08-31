@@ -449,10 +449,23 @@ export default function Ledger() {
               </Form>
             </Modal>
             {/* 【趋势放在轨迹之前】轨迹回答"巡过几次、每次什么状态",
-                趋势回答"这台设备在往哪个方向走" —— 后者是单次巡检永远
-                看不出来的东西,也是打开这一页最该先看到的。 */}
-            <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>读数趋势</div>
-            <AssetTrend assetId={current.id} />
+                趋势回答"这台设备在往哪个方向走" —— 后者是单次巡检永远看不出来的。
+
+                标题由组件自己出:没有趋势时整块消失,标题写在这里的话
+                会剩一个孤零零的"读数趋势"底下什么都没有。 */}
+            <div style={{ marginTop: 16 }}>
+              <AssetTrend assetId={current.id} heading="读数趋势" />
+            </div>
+
+            {/* 【抽屉只是预览,完整档案另开一页】抽屉宽 400 上下,曲线被压成一条缝、
+                轨迹只能看最近几条。要把读数走向和历次巡检摆在一起看,得有整页宽度。 */}
+            <Button
+              block
+              style={{ marginTop: 14 }}
+              onClick={() => nav(`/asset/${encodeURIComponent(current.id)}`)}
+            >
+              查看完整档案
+            </Button>
 
             <div style={{ margin: "18px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
             {trail.length === 0 ? (

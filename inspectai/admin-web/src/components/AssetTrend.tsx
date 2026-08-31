@@ -107,7 +107,24 @@ function Chart({ s }: { s: TrendSeries }) {
   );
 }
 
-export default function AssetTrend({ assetId }: { assetId: string }) {
+/**
+ * heading:自带标题。【标题由这个组件自己出】——
+ * 没有趋势时整块要消失,标题写在外面的话会剩一个孤零零的"读数趋势"底下什么都没有。
+ *
+ * explainEmpty:没有趋势时是否解释原因。
+ * 侧边抽屉里不解释(那一屏还有别的内容,不该被一句"暂无"占位);
+ * 设备档案页要解释 —— 那一页就是专门看这台设备的,
+ * "为什么没有趋势"本身就是这一页该回答的问题之一。
+ */
+export default function AssetTrend({
+  assetId,
+  heading,
+  explainEmpty,
+}: {
+  assetId: string;
+  heading?: string;
+  explainEmpty?: boolean;
+}) {
   const [data, setData] = useState<AssetTrendData | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -128,41 +145,44 @@ export default function AssetTrend({ assetId }: { assetId: string }) {
   }, [assetId, load]);
 
   if (loading && !data) {
-    return <div style={{ color: C.textFaint, fontSize: 13, padding: "12px 0" }}>加载中…</div>;
+    return explainEmpty ? (
+      <div style={{ color: C.textFaint, fontSize: 13, padding: "12px 0" }}>加载中…</div>
+    ) : null;
   }
   if (!data) return null;
 
-  // 【三种"没图"要分开说】它们要人做的事完全不同:
-  //   模板没数值字段 → 去改模板
-  //   有字段还没攒够 → 再巡几次就有了
-  //   有图           → 看图
-  // 合成一句"暂无趋势数据"等于什么都没说。
-  if (!data.hasNumericField) {
-    return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="这类设备的模板里没有数值字段,画不出读数趋势"
-        style={{ padding: "18px 0" }}
-      />
-    );
-  }
-  if (data.series.length === 0) {
-    return (
-      <div style={{ color: C.textSub, fontSize: 13, padding: "14px 0" }}>
-        读数还不够画趋势 —— 至少要 3 次巡检。
-        {data.singleReading?.length ? (
-          <>
-            {" "}
-            已有读数的字段:
-            <Typography.Text type="secondary">{data.singleReading.join("、")}</Typography.Text>
-          </>
-        ) : null}
-      </div>
-    );
-  }
+  const empty = data.series.length === 0;
+
+  // 【没有趋势就整块不渲染】抽屉那一屏还有设备信息、照片、巡检轨迹,
+  // 多一句"暂无趋势数据"只是占位,不给人任何可做的事。
+  if (empty && !explainEmpty) return null;
 
   return (
     <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      {heading && <div style={{ fontWeight: 600 }}>{heading}</div>}
+
+      {/* 【三种"没图"要分开说】它们要人做的事完全不同:
+          模板没数值字段 → 去改模板;还没攒够 → 再巡几次;有图 → 看图。
+          合成一句"暂无趋势数据"等于什么都没说。 */}
+      {empty && !data.hasNumericField && (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="这类设备的模板里没有数值字段,画不出读数趋势"
+          style={{ padding: "14px 0" }}
+        />
+      )}
+      {empty && data.hasNumericField && (
+        <div style={{ color: C.textSub, fontSize: 13, padding: "10px 0" }}>
+          读数还不够画趋势 —— 至少要 3 次巡检。
+          {data.singleReading?.length ? (
+            <>
+              {" 已有读数的字段:"}
+              <Typography.Text type="secondary">{data.singleReading.join("、")}</Typography.Text>
+            </>
+          ) : null}
+        </div>
+      )}
+
       {data.series.map((s) => (
         <Chart key={s.fieldKey} s={s} />
       ))}

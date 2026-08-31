@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 const AgentHome = lazy(() => import("./pages/AgentHome"));
 const Approvals = lazy(() => import("./pages/Approvals"));
 const DataBoard = lazy(() => import("./pages/DataBoard"));
+const AssetProfile = lazy(() => import("./pages/AssetProfile"));
 const Ledger = lazy(() => import("./pages/Ledger"));
 const Logs = lazy(() => import("./pages/Logs"));
 const Plan = lazy(() => import("./pages/Plan"));
@@ -62,6 +63,9 @@ export default function App() {
             />
             <Route path="/plan" element={<Suspense fallback={fallback}><Plan /></Suspense>} />
             <Route path="/ledger" element={<Suspense fallback={fallback}><Ledger /></Suspense>} />
+            {/* 设备档案:一台设备的一整页。id 里含 :: 分隔符,用 * 捕获整段 —— 
+                写成 :id 的话「会议中心::elevator::K01」会被路由当成多层路径截断。 */}
+            <Route path="/asset/*" element={<Suspense fallback={fallback}><AssetProfile /></Suspense>} />
             <Route path="/record" element={<Suspense fallback={fallback}><Records /></Suspense>} />
             <Route path="/approval" element={<Suspense fallback={fallback}><Approvals /></Suspense>} />
             <Route path="/data" element={<Suspense fallback={fallback}><DataBoard /></Suspense>} />
