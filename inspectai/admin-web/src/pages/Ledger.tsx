@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { AssetEntry, AssetSnapshotEntry, EngineeringTask, createAsset, deleteAsset, listAssetSnapshots, listAssets, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
 import AssetQRSheet from "../components/AssetQRSheet";
+import AssetTrend from "../components/AssetTrend";
 import { exportCsv } from "../lib/csv";
 import { useUi } from "../store/ui";
 import { fmtTime, mediaUrl, statusTagColor } from "../lib/status";
@@ -447,7 +448,13 @@ export default function Ledger() {
                 </Form.Item>
               </Form>
             </Modal>
-            <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
+            {/* 【趋势放在轨迹之前】轨迹回答"巡过几次、每次什么状态",
+                趋势回答"这台设备在往哪个方向走" —— 后者是单次巡检永远
+                看不出来的东西,也是打开这一页最该先看到的。 */}
+            <div style={{ margin: "16px 0 8px", fontWeight: 600 }}>读数趋势</div>
+            <AssetTrend assetId={current.id} />
+
+            <div style={{ margin: "18px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
             {trail.length === 0 ? (
               <div style={{ color: "#8aa0b0", fontSize: 13 }}>暂无巡检记录</div>
             ) : (

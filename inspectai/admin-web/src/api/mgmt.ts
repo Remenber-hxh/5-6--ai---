@@ -226,6 +226,45 @@ export function savePlan(p: Partial<EngineeringPlan> & { workContent: string }) 
   });
 }
 
+// ===== 单台设备的读数趋势 =====
+
+export interface TrendPoint {
+  at: string;
+  value: number;
+  recordId?: string;
+  /** 明显偏离基线的点 */
+  outlier?: boolean;
+}
+
+export interface TrendSeries {
+  fieldKey: string;
+  fieldLabel: string;
+  points: TrendPoint[];
+  latest: number;
+  /** 平时大约是多少。取中位数不取均值 —— 均值会被离群点拖走 */
+  baseline: number;
+  min: number;
+  max: number;
+  /** 最新一次相对基线的偏离,百分比 */
+  deviation?: number;
+  /** 最新一次落在异常区间外,需要人看一眼 */
+  drifting?: boolean;
+}
+
+export interface AssetTrend {
+  assetId: string;
+  assetName: string;
+  series: TrendSeries[];
+  /** 有数据但点数不够、画不出趋势的字段名 */
+  singleReading?: string[];
+  /** 这台设备的模板里到底有没有数值字段 —— 和"有字段但还没攒够数据"是两回事 */
+  hasNumericField: boolean;
+}
+
+export function getAssetTrend(assetId: string) {
+  return api<AssetTrend>(`/api/assets/${encodeURIComponent(assetId)}/trend`);
+}
+
 // ===== 每日未巡提醒 =====
 
 export interface DailyPushDigest {

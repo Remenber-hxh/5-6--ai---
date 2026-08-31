@@ -1382,6 +1382,14 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetRecords(w, r, id)
 		return
 	}
+	if id := strings.TrimSuffix(rest, "/trend"); id != rest {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleAssetTrend(w, r, id)
+		return
+	}
 	if id := strings.TrimSuffix(rest, "/report"); id != rest {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
