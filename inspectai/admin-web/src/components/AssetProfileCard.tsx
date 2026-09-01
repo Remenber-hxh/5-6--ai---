@@ -18,12 +18,23 @@ import { C } from "../styles/tokens";
 
 const DATE_FMT = "YYYY-MM-DD";
 
-function ageYears(commissionedAt?: string): number | null {
-  if (!commissionedAt) return null;
+/**
+ * 投运至今多久,一句人话。
+ *
+ * 【不要出现「已 0 年」】那读起来像系统算错了,而不是"今年刚投运"。
+ * 不满一年就说月份;当月投运就直说,一个数字都不给 —— 没有信息量的
+ * 数字比不给更糟,它会让人怀疑旁边那些数字准不准。
+ */
+function ageText(commissionedAt?: string): string {
+  if (!commissionedAt) return "";
   const d = dayjs(commissionedAt, DATE_FMT);
-  if (!d.isValid()) return null;
+  if (!d.isValid()) return "";
   const y = dayjs().diff(d, "year");
-  return y >= 0 ? y : null;
+  if (y > 0) return `已 ${y} 年`;
+  const m = dayjs().diff(d, "month");
+  if (m > 0) return `已 ${m} 个月`;
+  // 未来日期(填错了)也走这里 —— 不编一个负数出来
+  return dayjs().isBefore(d) ? "" : "本月投运";
 }
 
 export default function AssetProfileCard({
@@ -37,7 +48,7 @@ export default function AssetProfileCard({
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
-  const age = ageYears(asset.commissionedAt);
+  const age = ageText(asset.commissionedAt);
   const rows: { label: string; value: React.ReactNode }[] = [];
   if (asset.manufacturer) rows.push({ label: "厂家", value: asset.manufacturer });
   if (asset.model) rows.push({ label: "型号", value: asset.model });
@@ -45,12 +56,27 @@ export default function AssetProfileCard({
     rows.push({
       label: "投运",
       // 【年限比日期有用】"2011-06-01"要人自己减一次;"已投运 15 年"直接就是判断依据。
-      value: age !== null ? `${asset.commissionedAt}(已 ${age} 年)` : asset.commissionedAt,
+      value: (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {asset.commissionedAt}
+          {age && <span style={{ color: C.textFaint, marginLeft: 6 }}>{age}</span>}
+        </span>
+      ),
     });
   }
-  if (asset.lastMaintainedAt) rows.push({ label: "上次维保", value: asset.lastMaintainedAt });
+  if (asset.lastMaintainedAt) {
+    rows.push({
+      label: "上次维保",
+      value: <span style={{ fontVariantNumeric: "tabular-nums" }}>{asset.lastMaintainedAt}</span>,
+    });
+  }
   if (asset.maintenanceCycleDays) {
-    rows.push({ label: "维保周期", value: `${asset.maintenanceCycleDays} 天` });
+    rows.push({
+      label: "维保周期",
+      value: (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>{asset.maintenanceCycleDays} 天</span>
+      ),
+    });
   }
   if (asset.assetNote) rows.push({ label: "备注", value: asset.assetNote });
 
@@ -109,11 +135,27 @@ export default function AssetProfileCard({
             维保超期也能自动提醒。
           </Typography.Text>
         ) : (
-          <div style={{ display: "grid", gap: 7 }}>
+          // 【标签列右对齐、正文左对齐】两列各自贴着中缝,眼睛只需要
+          // 沿一条线往下扫;标签左对齐的话,长短不一的标签会把值列
+          // 推得参差,五行看起来像五个不同的东西。
+          <div style={{ display: "grid", gap: 9 }}>
             {rows.map((r) => (
-              <div key={r.label} style={{ display: "flex", fontSize: 13.5 }}>
-                <span style={{ width: 72, flex: "none", color: C.textFaint }}>{r.label}</span>
-                <span style={{ color: C.text }}>{r.value}</span>
+              <div
+                key={r.label}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr",
+                  gap: 12,
+                  fontSize: 13.5,
+                  alignItems: "baseline",
+                }}
+              >
+                <span style={{ color: C.textFaint, textAlign: "right", minWidth: 56 }}>
+                  {r.label}
+                </span>
+                <span style={{ color: C.text, minWidth: 0, wordBreak: "break-word" }}>
+                  {r.value}
+                </span>
               </div>
             ))}
           </div>
