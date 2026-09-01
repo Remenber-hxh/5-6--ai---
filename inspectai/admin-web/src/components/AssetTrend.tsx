@@ -118,10 +118,18 @@ export default function AssetTrend({
   assetId,
   heading,
   card,
+  style,
 }: {
   assetId: string;
   heading?: string;
   card?: boolean;
+  // style:外间距也要交给组件自己出。
+  //
+  // 【为什么不能包一层 div 加 marginTop】组件返回 null 时那层 div 还在,
+  // 16px 的上边距照样占着 —— 上下两个按钮之间就凭空多出一截空白,
+  // 而屏幕上什么都没有。电梯类设备全是是/否项、根本没有数值趋势,
+  // 于是这个空隙在大多数设备上都能看到。
+  style?: React.CSSProperties;
 }) {
   const [data, setData] = useState<AssetTrendData | null>(null);
 
@@ -146,7 +154,7 @@ export default function AssetTrend({
   if (!data || data.series.length === 0) return null;
 
   const body = (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+    <Space direction="vertical" size={10} style={{ width: "100%", ...(card ? undefined : style) }}>
       {heading && <div style={{ fontWeight: 600 }}>{heading}</div>}
       {data.series.map((s) => (
         <Chart key={s.fieldKey} s={s} />
@@ -155,7 +163,7 @@ export default function AssetTrend({
   );
 
   return card ? (
-    <Card size="small" title="读数趋势">
+    <Card size="small" title="读数趋势" style={style}>
       {body}
     </Card>
   ) : (

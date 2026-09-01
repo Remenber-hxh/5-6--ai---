@@ -377,45 +377,71 @@ export default function Ledger() {
             </Descriptions>
             {(() => {
               const follow = tasks.filter((t) => t.assetId === current.id && t.status === "待整改");
-              return follow.length ? (
-                <div
-                  onClick={() => nav("/plan")}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "8px 12px",
-                    margin: "12px 0",
-                    borderRadius: 8,
-                    background: "rgba(224,57,43,0.07)",
-                    cursor: "pointer",
-                    fontSize: 13,
+              if (!follow.length) return null;
+              // 【一条一行,各自跳各自的】以前整块只跳 /plan,落到列表里还得
+              // 自己找是哪一条 —— 而这一格的全部意义就是"点它能直接处理"。
+              // 深链 /plan?task=xxx 计划页已经支持(会切到全部并选中该条)。
+              //
+              // 多条时也不再只显示第一条:只显示一条的话,人处理完它就以为
+              // 这台设备清干净了,而另外几条还挂着。
+              return (
+                <div style={{ display: "grid", gap: 6, margin: "12px 0" }}>
+                  {follow.map((t) => (
+                    <div
+                      key={t.id}
+                      onClick={() => nav(`/plan?task=${encodeURIComponent(t.id)}`)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        background: "rgba(224,57,43,0.07)",
+                        cursor: "pointer",
+                        fontSize: 13,
+                      }}
+                    >
+                      <Tag color="red" style={{ margin: 0 }}>待整改</Tag>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.title}
+                      </span>
+                      <span style={{ color: "#d4380d", flex: "none" }}>查看任务 →</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {/* 【两个按钮放一组,间距交给 gap】它们是这一屏仅有的两个动作,
+                中间不该塞别的东西。以前「查看完整档案」被趋势块隔在下面,
+                而趋势对大多数设备是空的 —— 于是两个按钮之间挂着一截
+                没有内容的空白(12 + 16 + 14 三段边距叠出来的)。 */}
+            <div style={{ display: "grid", gap: 8, margin: "14px 0 0" }}>
+              {(current.lastStatus === "异常" || current.lastStatus === "待复核" || current.statusLevel === "danger" || current.statusLevel === "warning") && (
+                <Popconfirm
+                  title="确认复核后标记该资产为正常?关联的待整改任务将自动销账。"
+                  onConfirm={async () => {
+                    try {
+                      await markAssetNormal(current);
+                      message.success("已标记正常,关联任务自动销账");
+                      await reload();
+                    } catch (e) {
+                      message.error(e instanceof Error ? e.message : "操作失败");
+                    }
                   }}
                 >
-                  <Tag color="red" style={{ margin: 0 }}>待整改</Tag>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {follow[0].title}
-                  </span>
-                  <span style={{ color: "#d4380d" }}>查看任务 →</span>
-                </div>
-              ) : null;
-            })()}
-            {(current.lastStatus === "异常" || current.lastStatus === "待复核" || current.statusLevel === "danger" || current.statusLevel === "warning") && (
-              <Popconfirm
-                title="确认复核后标记该资产为正常?关联的待整改任务将自动销账。"
-                onConfirm={async () => {
-                  try {
-                    await markAssetNormal(current);
-                    message.success("已标记正常,关联任务自动销账");
-                    await reload();
-                  } catch (e) {
-                    message.error(e instanceof Error ? e.message : "操作失败");
-                  }
-                }}
+                  <Button type="primary" size="large" block>标记正常</Button>
+                </Popconfirm>
+              )}
+              {/* 【抽屉只是预览,完整档案另开一页】抽屉宽 400 上下,曲线被压成一条缝、
+                  轨迹只能看最近几条。要把读数走向和历次巡检摆在一起看,得有整页宽度。 */}
+              <Button
+                block
+                size="large"
+                onClick={() => nav(`/asset/${encodeURIComponent(current.id)}`)}
               >
-                <Button type="primary" size="large" block style={{ margin: "12px 0" }}>标记正常</Button>
-              </Popconfirm>
-            )}
+                查看完整档案
+              </Button>
+            </div>
             <Modal
               title="编辑资产"
               open={editing}
@@ -451,21 +477,10 @@ export default function Ledger() {
             {/* 【趋势放在轨迹之前】轨迹回答"巡过几次、每次什么状态",
                 趋势回答"这台设备在往哪个方向走" —— 后者是单次巡检永远看不出来的。
 
-                标题由组件自己出:没有趋势时整块消失,标题写在这里的话
-                会剩一个孤零零的"读数趋势"底下什么都没有。 */}
-            <div style={{ marginTop: 16 }}>
-              <AssetTrend assetId={current.id} heading="读数趋势" />
-            </div>
-
-            {/* 【抽屉只是预览,完整档案另开一页】抽屉宽 400 上下,曲线被压成一条缝、
-                轨迹只能看最近几条。要把读数走向和历次巡检摆在一起看,得有整页宽度。 */}
-            <Button
-              block
-              style={{ marginTop: 14 }}
-              onClick={() => nav(`/asset/${encodeURIComponent(current.id)}`)}
-            >
-              查看完整档案
-            </Button>
+                标题和外间距都由组件自己出:没有趋势时整块连同间距一起消失。
+                包一层 div 加 marginTop 的话,组件返回 null 那层 div 还在,
+                空白照样占着(这正是刚修掉的那个空隙)。 */}
+            <AssetTrend assetId={current.id} heading="读数趋势" style={{ marginTop: 18 }} />
 
             <div style={{ margin: "18px 0 8px", fontWeight: 600 }}>巡检轨迹(近 {trail.length} 条)</div>
             {trail.length === 0 ? (
