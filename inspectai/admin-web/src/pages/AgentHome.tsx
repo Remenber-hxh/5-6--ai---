@@ -44,6 +44,11 @@ interface Msg {
   proposalDismissed?: boolean;
   report?: any; // 周报/日报数据(结构化渲染)
   reportKind?: "weekly" | "daily";
+  // degraded:这条不是模型答的,是 AI 不可用时的兜底文案。
+  // 【必须标出来】兜底文案完全不读问题,只把台账数字念一遍 ——
+  // 于是"你好"和"?"会得到一模一样的回复,而界面上看不出任何异常,
+  // 只能靠"答得不太对"去猜。曾经就这么发生过一次。
+  degraded?: boolean;
   navJump?: { path: string; label: string } | null; // 「前往 X」跳转 chip
 }
 
@@ -206,13 +211,15 @@ export default function AgentHome() {
         const d = await weeklyReport();
         setMsgs((m) => [
           ...m,
-          { id: mid(), role: "ai", text: d.summary || "本周周报已生成。", report: d, reportKind: "weekly", ts: Date.now() },
+          // 周报同样会兜底(AI 挂了就用规则拼一段综述)——
+          // 这条比聊天更要紧:它会被导出成 Word 交上去。
+          { id: mid(), role: "ai", text: d.summary || "本周周报已生成。", report: d, reportKind: "weekly", degraded: Boolean(d?.isMock), ts: Date.now() },
         ]);
       } else if (DAILY_RE.test(q)) {
         const d = await dailyReport();
         setMsgs((m) => [
           ...m,
-          { id: mid(), role: "ai", text: d.summary || "今日日报已生成。", report: d, reportKind: "daily", ts: Date.now() },
+          { id: mid(), role: "ai", text: d.summary || "今日日报已生成。", report: d, reportKind: "daily", degraded: Boolean(d?.isMock), ts: Date.now() },
         ]);
       } else {
         const res = await chat(q, msgsToHistory(msgs));
@@ -226,6 +233,7 @@ export default function AgentHome() {
             proposal,
             sources: res.sources || [],
             navJump: navIntent(q) || presetJump(q),
+            degraded: Boolean(res.isMock),
             ts: Date.now(),
           },
         ]);
@@ -679,6 +687,33 @@ function MsgView({
       style={{ display: "flex", flexDirection: "column", alignItems: user ? "flex-end" : "flex-start" }}
     >
       <div style={user ? st.userBubble : st.aiBubble}>
+        {m.degraded && (
+          // 【只说影响,不说故障原因】"余额不足"这种话不该出现在对着甲方
+          // 的这一屏上;要排查去系统页,那里写得清清楚楚。
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 8,
+              paddingBottom: 8,
+              borderBottom: "1px solid rgba(245, 165, 36, 0.22)",
+              fontSize: 12,
+              color: "#f5a524",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "#f5a524",
+                flex: "none",
+              }}
+            />
+            {m.report ? "AI 综述暂不可用,以下为规则汇总" : "AI 问答暂不可用,以下为台账摘要"}
+          </div>
+        )}
         {m.text.split("\n").map((line, i) => (
           <p key={i} style={{ margin: i ? "8px 0 0" : 0 }}>
             {renderBold(line).map((node, j) =>

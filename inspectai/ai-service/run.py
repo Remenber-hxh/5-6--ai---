@@ -189,6 +189,39 @@ def account_error_of(exc: Exception) -> str:
     return ""
 
 
+# 管理 AI(DeepSeek)的账号级错误。
+#
+# 【为什么要单独一份】上面那张表全是阿里云的码(Arrearage 等),而 DeepSeek
+# 返回的是 "Insufficient Balance" 这类文案 —— 一个都对不上。于是出现过:
+# DeepSeek 欠费,管理问答每一句都是兜底文案,而 /health 一片正常,
+# 系统页全绿,聊天窗口不吭声,只能靠"回答看着不太对"去猜。
+#
+# 【也不能和视觉合成一个】视觉走 DashScope、问答走 DeepSeek,是两个账户。
+# 合成一个标记的话,DeepSeek 欠费会把"拍照识别还能用"这条关键信息一起抹掉。
+CHAT_ACCOUNT_ERROR_MARKERS = (
+    ("insufficient balance", "InsufficientBalance"),   # 余额耗尽
+    ("insufficient_balance", "InsufficientBalance"),
+    ("authentication fails", "InvalidApiKey"),         # key 失效或写错
+    ("invalid_api_key", "InvalidApiKey"),
+    ("invalid api key", "InvalidApiKey"),
+    ("quota", "QuotaExhausted"),                       # 配额用尽
+    ("rate_limit_reached", "RateLimited"),
+)
+
+LAST_CHAT_ERROR: dict = {}
+
+
+def chat_account_error_of(exc: Exception) -> str:
+    """从 DeepSeek 异常里认出账号级错误。不是账号问题返回空串。"""
+    text = str(exc).lower()
+    for marker, code in CHAT_ACCOUNT_ERROR_MARKERS:
+        if marker in text:
+            LAST_CHAT_ERROR.clear()
+            LAST_CHAT_ERROR.update({"code": code, "at": now_iso(), "detail": str(exc)[:200]})
+            return code
+    return ""
+
+
 def call_qwen_chat(
     *,
     model: str,
@@ -373,6 +406,9 @@ def call_deepseek_chat(
                     raise RuntimeError("deepseek response has no choices")
                 content = (choices[0].get("message") or {}).get("content") or ""
                 actual_model = payload.get("model") or model
+                # 【成功就清掉账号故障标记】否则充值之后 /health 会一直报欠费
+                # 直到重启服务 —— 假警报比不报警更糟,人会学会忽略它。
+                LAST_CHAT_ERROR.clear()
                 return content, actual_model
             except subprocess.TimeoutExpired:
                 last_err = RuntimeError(f"deepseek curl timeout after {timeout}s")
@@ -1160,6 +1196,7 @@ def management_chat_tools(payload: dict) -> dict:
             api_key=key, timeout=timeout,
         )
     except Exception as exc:
+        chat_account_error_of(exc)
         print(f"[management/chat-tools] failed: {exc}", file=sys.stderr)
         return {"finish": "error", "message": str(exc)[:200]}
 
@@ -1198,6 +1235,9 @@ def management_chat(payload: dict) -> dict:
             user_content=user_text, api_key=key, timeout=timeout,
         )
     except Exception as exc:
+        # 记下账号级故障,/health 才看得见 —— 不记的话,欠费时界面
+        # 和一切正常时长得一模一样。
+        chat_account_error_of(exc)
         print(f"[management/chat] deepseek failed, fallback mock: {exc}", file=sys.stderr)
         out = management_chat_mock(payload)
         out["fallbackReason"] = str(exc)[:120]
@@ -1271,6 +1311,7 @@ def management_analyze(payload: dict) -> dict:
             user_content=user_text, api_key=key, timeout=timeout,
         )
     except Exception as exc:
+        chat_account_error_of(exc)
         print(f"[management/analyze] deepseek failed, fallback mock: {exc}", file=sys.stderr)
         out = management_analyze_mock(payload)
         out["fallbackReason"] = str(exc)[:120]
@@ -1335,6 +1376,9 @@ class Handler(BaseHTTPRequestHandler):
             # 这一条才是"为什么识别全都失败"的答案
             if LAST_ACCOUNT_ERROR:
                 degraded_reasons.append("account_" + LAST_ACCOUNT_ERROR.get("code", "error"))
+            # 问答账户单独报 —— 和视觉是两个账户,合并会把"识别还能用"抹掉
+            if LAST_CHAT_ERROR:
+                degraded_reasons.append("chat_" + LAST_CHAT_ERROR.get("code", "error"))
             write_json(self, 200, {
                 "status": "ok",
                 "service": "ai-service",
@@ -1344,6 +1388,8 @@ class Handler(BaseHTTPRequestHandler):
                 "hasVisionKey": has_dashscope_key,
                 # 有值 = AI 整体不可用,不是个别照片识别不出来
                 "accountError": LAST_ACCOUNT_ERROR or None,
+                # 管理问答(DeepSeek)的账号级故障。有值 = 每一句回答都是兜底文案
+                "chatError": LAST_CHAT_ERROR or None,
                 "hasDeepSeekKey": has_deepseek_key,
                 "managementAIReady": has_deepseek_key,
                 "managementAI": "deepseek" if has_deepseek_key else "rule_fallback",

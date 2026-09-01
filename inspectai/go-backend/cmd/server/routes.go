@@ -136,6 +136,10 @@ var apiRoutes = []apiRoute{
 
 	// —— 提示词模板(读写均在 prompt_manage 能力下,单条读写在前缀路由内检查) ——
 	{http.MethodGet, "/api/prompt/templates", guardNone, "", (*Server).handleListPromptTemplates},
+
+	// AI 服务真实健康状态。放在登录后的管理档位:密钥是否配好、账户是否欠费
+	// 属于运营信息,不该像 /health 那样对公网开着。
+	{http.MethodGet, "/api/system/ai-health", guardSupervisor, "", (*Server).handleAIHealth},
 }
 
 // allow — 表层准入:先角色档位,再能力矩阵。不通过时已写好 403 响应。

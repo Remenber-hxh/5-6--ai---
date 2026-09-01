@@ -670,6 +670,21 @@ export function getHealth() {
   return api<Record<string, unknown>>("/health");
 }
 
+// AI 服务真实健康状态。
+// 【和 /health 分开】/health 只说"配了地址没有",配了地址不代表能用 ——
+// 账户欠费时它照样全绿,而每一句回答其实都是兜底文案。
+export interface AIHealth {
+  reachable: boolean;
+  vision: boolean;
+  chat: boolean;
+  reason: string;
+  url: string;
+}
+
+export function getAIHealth() {
+  return api<AIHealth>("/api/system/ai-health");
+}
+
 // ===== 提示词模板 =====
 export interface PromptField {
   code: string;

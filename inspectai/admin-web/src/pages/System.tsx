@@ -2,7 +2,7 @@ import { ReloadOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Row, Skeleton, Tag, message } from "antd";
 import { useEffect, useState } from "react";
 
-import { getHealth } from "../api/mgmt";
+import { AIHealth, getAIHealth, getHealth } from "../api/mgmt";
 import { fmtTime } from "../lib/status";
 
 interface Health {
@@ -78,6 +78,7 @@ function SvcCard({
 // 系统管理:服务健康矩阵 + 运行详情(含时区哨兵);配置写入仍在服务端管理
 export default function System() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [ai, setAi] = useState<AIHealth | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -89,6 +90,13 @@ export default function System() {
       setHealth(null);
     } finally {
       setLoading(false);
+    }
+    // 【单独一条,失败不影响整页】AI 探活要打一次外部服务,
+    // 它超时的时候不该把服务状态页一起拖黑。
+    try {
+      setAi(await getAIHealth());
+    } catch {
+      setAi(null);
     }
   }
 
@@ -127,12 +135,15 @@ export default function System() {
           okText="运行中"
           badText="异常"
         />
+        {/* 【这张卡以前恒绿】它只判断 aiServiceUrl 非空就显示「已配置」,
+            跟能不能用无关 —— 账户欠费时管理问答每一句都是兜底文案,
+            而这里照样绿着。一个永远显示健康的指示灯比没有更糟。 */}
         <SvcCard
           name="AI 视觉 / 问答服务"
-          desc={aiUrl}
-          ok={Boolean(aiUrl)}
-          okText="已配置"
-          badText="未配置"
+          desc={ai ? ai.reason || aiUrl : aiUrl}
+          ok={Boolean(ai?.reachable && ai?.vision && ai?.chat)}
+          okText="正常"
+          badText={!ai ? "状态未知" : !ai.reachable ? "连不上" : "部分不可用"}
         />
         <SvcCard
           name="数据库"
