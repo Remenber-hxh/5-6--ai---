@@ -342,3 +342,15 @@ body {
   color: #fff !important;
   font-weight: 600;
 }
+
+/* 多行截断。
+   【必须写成 CSS 类,不能用 React 内联样式】React 会把 -webkit-box-orient
+   这类带前缀的非标准属性从 style 对象里丢掉,结果是 overflow:hidden 生效、
+   行数限制不生效 —— 文字全量显示,底下还挂着一个"展开全文",
+   点下去什么都不变。踩过一次。 */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

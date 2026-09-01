@@ -138,7 +138,17 @@ export default function AssetProfileCard({
           // 【标签列右对齐、正文左对齐】两列各自贴着中缝,眼睛只需要
           // 沿一条线往下扫;标签左对齐的话,长短不一的标签会把值列
           // 推得参差,五行看起来像五个不同的东西。
-          <div style={{ display: "grid", gap: 9 }}>
+          // 【按可用宽度自动分列】这张卡在档案页的右栏里只有 300px 宽(一列),
+          // 窄屏落回单栏时却有整页宽 —— 还按一列排的话,五行短字段又变成
+          // "九成是空白",正是要改掉的那个毛病。auto-fit 让同一份代码
+          // 在两种宽度下都排得满。
+          <div
+            style={{
+              display: "grid",
+              gap: "9px 24px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+            }}
+          >
             {rows.map((r) => (
               <div
                 key={r.label}

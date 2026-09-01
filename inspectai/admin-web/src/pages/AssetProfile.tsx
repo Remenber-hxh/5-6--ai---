@@ -1,6 +1,6 @@
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Button, Card, Empty, Skeleton, Tag, Typography, message } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { AssetEntry, AssetSnapshotEntry, listAssetSnapshots, listAssets } from "../api/mgmt";
@@ -194,7 +194,11 @@ export default function AssetProfile() {
           flexWrap: "wrap",
         }}
       >
-        <div style={{ flex: "1 1 560px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* 【两栏的 minWidth 决定什么时候落回单栏】flex-wrap 只在
+            "再也收缩不动"时才换行,而不是宽度不够就换 —— 左栏写 minWidth:0
+            的话它会一直被压扁,窄屏永远是两栏,右栏挤成一条。
+            560 + 300 + 14 = 874:低于这个宽度就堆成单栏。 */}
+        <div style={{ flex: "1 1 560px", minWidth: 560, display: "flex", flexDirection: "column", gap: 14, minHeight: 1 }}>
           {/* 【趋势排在轨迹前面】轨迹说"巡过几次、每次什么状态",
               趋势说"这台设备在往哪个方向走" —— 后者是单次巡检永远看不出来的。
               没有数值字段的设备(电梯这类全是是/否项)整块不显示。 */}
@@ -204,8 +208,22 @@ export default function AssetProfile() {
               照片是给所有人看的 —— 但它不能顶到最上面:先"要不要管",
               再"哪里在变",最后才是"长什么样"。 */}
           <AssetPhotoTimeline assetId={asset.id} />
+        </div>
 
-          <Card size="small" title={`巡检轨迹（${trail.length} 次）`}>
+        {/* ── 右栏:事实 ──
+            【粘顶】它是读左边那些东西的前提 —— 知道维保周期 5 天、
+            投运不到一年,再看轨迹和照片才知道该不该紧张。滚下去就看不到的话,
+            人得往回翻,而翻回来时已经忘了自己想核对什么。 */}
+        <div style={{ flex: "1 1 320px", minWidth: 300, position: "sticky", top: 12 }}>
+          <AssetProfileCard asset={asset} onSaved={setAsset} />
+        </div>
+      </div>
+
+      {/* ── 都发生过什么 ──
+          【通栏,不进两栏】轨迹每行带一句摘要,挤在左栏里会折成两行;
+          而它又比右栏的档案高出好几倍,并排放的话右边空出一大片。
+          时间线这种"窄而长"的东西,横过来才好读。 */}
+      <Card size="small" title={`巡检轨迹（${trail.length} 次）`}>
         {trail.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这台设备还没有巡检记录" />
         ) : (
@@ -248,17 +266,7 @@ export default function AssetProfile() {
             ))}
           </div>
         )}
-          </Card>
-        </div>
-
-        {/* ── 右栏:事实 ──
-            【粘顶】它是读左边那些东西的前提 —— 知道维保周期 5 天、
-            投运不到一年,再看轨迹和照片才知道该不该紧张。滚下去就看不到的话,
-            人得往回翻,而翻回来时已经忘了自己想核对什么。 */}
-        <div style={{ flex: "0 1 320px", minWidth: 260, position: "sticky", top: 12 }}>
-          <AssetProfileCard asset={asset} onSaved={setAsset} />
-        </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -276,26 +284,38 @@ export default function AssetProfile() {
  */
 function Summary({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  // 【短摘要不给按钮】两行以内的文字后面挂一个"展开",点下去什么都不变。
-  const long = text.length > 88;
+  const [clipped, setClipped] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  /**
+   * 【按"实际有没有被裁"决定给不给按钮,不按字数】
+   *
+   * 按字数判断在宽屏上会翻车:同一段一百二十字的摘要,窄屏折成五行、
+   * 宽屏两行就放得下 —— 后者没被裁,却照样挂一个"展开全文",
+   * 点下去什么都不变。一个点了没反应的控件,比没有这个控件更糟。
+   *
+   * 所以量真值:内容高度超过可见高度才算被裁。宽度会变(窗口缩放、
+   * 右栏折行),所以要跟着重新量。
+   */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // 展开状态下不量(此时没有裁剪),但文字换了要重量
+  }, [text]);
 
   return (
     <div style={{ fontSize: 13.5, lineHeight: 1.75, color: C.textSub }}>
-      <div
-        style={
-          open || !long
-            ? undefined
-            : {
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }
-        }
-      >
+      {/* 【裁剪走 CSS 类】写成内联 style 的话 React 会把
+          -webkit-box-orient 丢掉,行数限制不生效。 */}
+      <div ref={ref} className={open ? undefined : "clamp-2"}>
         {text}
       </div>
-      {long && (
+      {(clipped || open) && (
         <a
           onClick={() => setOpen((v) => !v)}
           style={{ fontSize: 12.5, color: C.textFaint, cursor: "pointer" }}
