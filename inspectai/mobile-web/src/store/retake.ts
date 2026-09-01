@@ -45,11 +45,32 @@ export interface RetakeTarget {
   assetId?: string;
   /** 只用于界面提示 */
   assetName: string;
+  /**
+   * 设上的时刻(毫秒)。用来判过期。
+   *
+   * 【为什么必须有】清除只发生在"提交成功"和"手动取消"两处,中途放弃
+   * (退出微信、切走不回来、拍到一半发现拍错了)就永远留着。于是第二天
+   * 的一次普通巡检会被悄悄强制成昨天那台设备的模板和编号 —— 照片挂错设备,
+   * 而界面上看不出任何异常。
+   *
+   * 已经踩到过一次:残留上下文的 templateId 失效,建记录报「未找到日报模板」,
+   * 而屏幕上明明显示 AI 识别成功。换台手机就好了,因为残留在本机。
+   */
+  setAt?: number;
 }
+
+/**
+ * 多久算过期。
+ *
+ * 【半天】一次复检从点"复检"到提交完,正常是几分钟,极端情况(现场没信号、
+ * 中途去处理别的事)也就一两个小时。跨天还没提交的,几乎可以肯定是放弃了 ——
+ * 而留着它的代价是把不相干的巡检记录挂到那台设备头上。
+ */
+const MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 export function setRetakeTarget(t: RetakeTarget | null) {
   try {
-    if (t) localStorage.setItem(KEY, JSON.stringify(t));
+    if (t) localStorage.setItem(KEY, JSON.stringify({ ...t, setAt: Date.now() }));
     else localStorage.removeItem(KEY);
   } catch {
     /* 隐私模式下写不进就算了,不影响主流程 */
@@ -63,7 +84,15 @@ export function getRetakeTarget(): RetakeTarget | null {
     const t = JSON.parse(raw) as RetakeTarget;
     // 没有 templateId 就等于没有复检能力(既跳不过分类,也保证不了归属),
     // 当作无效上下文丢掉,免得留下一个"看着在复检、实际没生效"的横幅。
-    return t && t.templateId ? t : null;
+    if (!t || !t.templateId) return null;
+    // 【没有 setAt 的一律当过期】那是加过期判断之前存下的,而现在装着这种
+    // 上下文的手机里,躺的正是已经出过问题的那一批。代价不对称:
+    // 误清 = 用户重新点一次"复检";误留 = 照片挂到别的设备上,谁都看不出来。
+    if (!t.setAt || Date.now() - t.setAt > MAX_AGE_MS) {
+      setRetakeTarget(null);
+      return null;
+    }
+    return t;
   } catch {
     return null;
   }

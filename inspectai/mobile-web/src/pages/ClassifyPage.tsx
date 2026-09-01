@@ -4,7 +4,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
-import { getRetakeTarget } from "@/store/retake";
+import { clearRetakeTarget, getRetakeTarget } from "@/store/retake";
+import { ApiError } from "@/api/client";
 import {
   ClassifyResult,
   TemplateDTO,
@@ -27,6 +28,8 @@ export default function ClassifyPage() {
   const [skipping, setSkipping] = useState(false);
   const [templates, setTemplates] = useState<TemplateDTO[]>([]);
   const [busy, setBusy] = useState(false);
+  // 残留的复检/扫码上下文已被判定无效并清掉 —— 本次渲染起不再采用它
+  const [retakeGone, setRetakeGone] = useState(false);
 
   const run = useCallback(async () => {
     if (!shotIds.length) {
@@ -50,10 +53,41 @@ export default function ClassifyPage() {
         );
         nav(`/record/${rec.id}`, { replace: true });
         return;
-      } catch {
+      } catch (err) {
         // 建记录失败(多半是网络)不该把人卡死在这一屏 —— 退回正常的分类流程,
         // 照片还在服务器上,手动选模板照样走得下去。
         setSkipping(false);
+
+        // 【上下文本身坏了就必须扔掉,不能只是退回】
+        //
+        // 这里静默吞掉一切错误,踩过一个很难查的坑:localStorage 里残留了一条
+        // 过期的复检/扫码上下文(它只在"提交成功"或"手动取消"时才清,中途
+        // 失败就一直留着),它的 templateId 已经无效。于是——
+        //   1. 这一步拿它建记录,服务器回「未找到日报模板」,被这个 catch 吞掉
+        //   2. 屏幕翻到"AI 正在识别场景",人以为一切正常
+        //   3. AI 正确识别出「电梯巡检(无机房)」96%,界面也这么显示
+        //   4. 点「下一步」,go() 里又用这条坏上下文把正确结果覆盖回去
+        //   5. 同一个错误这次才弹出来 —— 而界面上明明写着识别成功
+        // 换台手机就好了,因为残留在本机 localStorage 里。
+        //
+        // 4xx = 服务器明确说这个上下文不成立(模板/点位/任务不存在),
+        // 留着它只会让后面每一步继续用错的 id。5xx 和网络错误则保留,
+        // 那些是临时故障,清掉会让正在做的复检白做。
+        const bad =
+          err instanceof ApiError && err.status >= 400 && err.status < 500;
+        if (bad) {
+          clearRetakeTarget();
+          setRetakeGone(true);
+          // 【必须说一声】人是带着"我在复检这台设备"的预期进来的,
+          // 默默取消锁定的话,这条记录会当成一次普通巡检落库,
+          // 而他以为原来那条异常已经销账了。
+          Toast.show({
+            content:
+              known.mode === "scan"
+                ? "扫码锁定的设备已失效,本次按普通巡检继续"
+                : "复检目标已失效,本次按普通巡检继续",
+          });
+        }
       }
     }
     try {
@@ -81,7 +115,11 @@ export default function ClassifyPage() {
 
   // 复检:目标设备用哪个模板是【已知】的,不该再让 AI 猜一次 ——
   // 猜错了这条记录就落到别的模板上,原来那条异常照样挂着,而且多出一台"新设备"。
-  const retake = getRetakeTarget();
+  //
+  // 【上面判定为无效的,这里必须一起失效】只清 localStorage 不够:
+  // retake 是渲染期读的,本次渲染里它还是旧值,go() 照样会拿它覆盖
+  // AI 的正确结果 —— 那正是这个 bug 的最后一步。
+  const retake = retakeGone ? null : getRetakeTarget();
 
   async function go(templateId: string) {
     if (retake?.templateId) templateId = retake.templateId;
