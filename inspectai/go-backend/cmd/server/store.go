@@ -191,6 +191,9 @@ type PromptTemplateStore interface {
 	ListPromptTemplates() ([]PromptTemplate, error)
 	GetPromptTemplate(id string) (PromptTemplate, bool, error)
 	UpsertPromptTemplate(t PromptTemplate) error
+	AddPromptVersion(v PromptVersion) error
+	ListPromptVersions(templateID string, limit int) ([]PromptVersion, error)
+	GetPromptVersion(id string) (PromptVersion, bool, error)
 }
 
 // PermissionStore — 角色×能力 权限矩阵(后台可视化配置)
@@ -265,6 +268,7 @@ type MemStore struct {
 	engPlans          map[string]*EngineeringPlanItem
 	engTasks          map[string]*EngineeringTask
 	promptTpls        map[string]PromptTemplate
+	promptVers        []PromptVersion
 	rolePerms         map[string][]string
 	roles             map[string]*Role
 	regCodes          map[string]*RegistrationCode // key = code 本身
@@ -336,6 +340,41 @@ func (s *MemStore) UpsertPromptTemplate(t PromptTemplate) error {
 	defer s.mu.Unlock()
 	s.promptTpls[t.ID] = t
 	return nil
+}
+
+func (s *MemStore) AddPromptVersion(v PromptVersion) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// 新的排在前面 —— 和 SQL 那边 ORDER BY created_at DESC 一致
+	s.promptVers = append([]PromptVersion{v}, s.promptVers...)
+	return nil
+}
+
+func (s *MemStore) ListPromptVersions(templateID string, limit int) ([]PromptVersion, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []PromptVersion{}
+	for _, v := range s.promptVers {
+		if v.TemplateID != templateID {
+			continue
+		}
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+func (s *MemStore) GetPromptVersion(id string) (PromptVersion, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.promptVers {
+		if v.ID == id {
+			return v, true, nil
+		}
+	}
+	return PromptVersion{}, false, nil
 }
 
 func (s *MemStore) CreateRecord(rec *Record) error {
@@ -974,6 +1013,53 @@ func (s *SQLiteStore) UpsertPromptTemplate(t PromptTemplate) error {
 	}
 	_, err = s.db.Exec(stmt, t.ID, t.Name, string(data), now)
 	return err
+}
+
+// ===== 提示词版本留痕 =====
+
+func (s *SQLiteStore) AddPromptVersion(v PromptVersion) error {
+	_, err := s.db.Exec(
+		"INSERT INTO prompt_versions(id,template_id,name,mode,data,note,author,created_at) VALUES(?,?,?,?,?,?,?,?)",
+		v.ID, v.TemplateID, v.Name, v.Mode, v.Data, v.Note, v.Author, v.CreatedAt)
+	return err
+}
+
+// ListPromptVersions 不查 data 列 —— 一份提示词几千字,列表页不需要正文,
+// 查了只是把几十万字拖过网络再扔掉。
+func (s *SQLiteStore) ListPromptVersions(templateID string, limit int) ([]PromptVersion, error) {
+	if limit <= 0 {
+		limit = promptVersionLimit
+	}
+	rows, err := s.db.Query(
+		"SELECT id,template_id,name,mode,note,author,created_at FROM prompt_versions WHERE template_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+		templateID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PromptVersion{}
+	for rows.Next() {
+		var v PromptVersion
+		if err := rows.Scan(&v.ID, &v.TemplateID, &v.Name, &v.Mode, &v.Note, &v.Author, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) GetPromptVersion(id string) (PromptVersion, bool, error) {
+	var v PromptVersion
+	err := s.db.QueryRow(
+		"SELECT id,template_id,name,mode,data,note,author,created_at FROM prompt_versions WHERE id = ?", id,
+	).Scan(&v.ID, &v.TemplateID, &v.Name, &v.Mode, &v.Data, &v.Note, &v.Author, &v.CreatedAt)
+	if err == sql.ErrNoRows {
+		return PromptVersion{}, false, nil
+	}
+	if err != nil {
+		return PromptVersion{}, false, err
+	}
+	return v, true, nil
 }
 
 type assetColumnMigration struct {

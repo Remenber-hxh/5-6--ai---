@@ -20,6 +20,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 # 让 print 支持中文
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -1350,6 +1351,29 @@ class Handler(BaseHTTPRequestHandler):
                 "promptsLoaded": len(TEMPLATE_PROMPT_MAP) + 3,  # +common+scene+summary
             })
             return
+
+        # /prompt-source?template=xxx —— 把内置的那份提示词正文交出去。
+        #
+        # 【为什么要这个接口】后台要让人编辑提示词,就得先给他看到"现在用的
+        # 是什么"。而这份正文只有 ai-service 手里有(在 prompts/*.md)。
+        # 把文本抄一份到 Go 里也能做,但两份文本一定会走散 —— 到时候后台
+        # 显示的和模型实际收到的不是同一段,而人是照着后台那段在调。
+        if self.path.startswith("/prompt-source"):
+            query = parse_qs(urlparse(self.path).query)
+            template_id = (query.get("template") or [""])[0]
+            paper_ocr = (query.get("paperOCR") or [""])[0] in ("1", "true", "yes")
+            try:
+                text = prompt_for_template(template_id, paper_ocr=paper_ocr) or ""
+            except OSError as exc:  # 文件被删/权限问题,不该让后台整页挂掉
+                print(f"[prompt-source] {template_id}: {exc}", file=sys.stderr)
+                text = ""
+            write_json(self, 200, {
+                "template": template_id,
+                "found": bool(text),
+                "prompt": text,
+            })
+            return
+
         write_json(self, 404, {"error": "not_found"})
 
     def do_POST(self):

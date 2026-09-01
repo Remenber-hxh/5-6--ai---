@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,31 @@ func (c *AIClient) Summarize(payload map[string]any) (*SummarizeResponse, error)
 		out.Tags = []string{}
 	}
 	return &out, nil
+}
+
+// BuiltinPrompt — 取 ai-service 内置的那份提示词正文(prompts/*.md)。
+//
+// 【只在后台点开编辑器时调,不在识别链路上】识别走的是 promptText 下发,
+// 不依赖这个接口 —— 所以它挂了顶多是"编辑器载不出底稿",识别照跑。
+func (c *AIClient) BuiltinPrompt(templateID string) (string, error) {
+	u := c.baseURL + "/prompt-source?template=" + url.QueryEscape(templateID)
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(u)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("ai-service /prompt-source status %d", resp.StatusCode)
+	}
+	var out struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", fmt.Errorf("decode prompt-source: %w", err)
+	}
+	return out.Prompt, nil
 }
 
 // Classify — 调 /classify（场景分类，multipart 上传图）

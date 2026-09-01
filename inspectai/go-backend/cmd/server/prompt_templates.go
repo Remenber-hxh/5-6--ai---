@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ===== 模块化提示词:结构化数据 → 渲染成模型用的提示词文本 =====
@@ -46,14 +48,33 @@ type PromptCommons struct {
 	Confidence     []string // 置信度档位
 }
 
+// 提示词的两种维护方式。
+//
+// 【为什么留两种】结构化(字段表)让不懂提示词工程的人也能安全地改判定规则,
+// 但它只覆盖"逐字段判是否"这一类模板;抄表读数、纸质表单 OCR、场景分类
+// 这些套路不一样的,硬塞进字段表反而写不出来。留一个"直接写整段"的出口,
+// 十个模板才能全部可编辑 —— 而只能改两个的编辑能力,等于没有。
+const (
+	PromptModeStructured = "structured" // 字段表 → 渲染成提示词
+	PromptModeRaw        = "raw"        // 直接写整段提示词正文
+)
+
 // PromptTemplate — 一个模板(头部 + 字段表)
 type PromptTemplate struct {
-	ID             string        `json:"id"`
-	Name           string        `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Mode 空值按 structured 处理 —— 老数据里没有这个字段,
+	// 默认必须落在"和以前一样"那一边。
+	Mode string `json:"mode"`
+	// RawText 仅 raw 模式使用。留空 = 没配,运行时回退内置提示词。
+	RawText        string        `json:"rawText"`
 	Scene          string        `json:"scene"`          // 场景一句话
 	ExpectedPhotos []string      `json:"expectedPhotos"` // 期望拍到哪些照片
 	Fields         []PromptField `json:"fields"`
 }
+
+// isRaw 老数据没有 Mode 字段,空值算 structured。
+func (t PromptTemplate) isRaw() bool { return t.Mode == PromptModeRaw }
 
 // ---------- 公共模块(固定一份,所有模板共享) ----------
 
@@ -265,10 +286,17 @@ func renderPromptFromSeed(id string) (string, bool) {
 
 // renderPromptViaStore — 优先从 DB 取模板渲染;DB 没有则回退内存种子。
 // 后台改了 DB,下一次识别立刻用新规则(即时生效)。
+//
+// 【渲染结果为空 = 当作没配】raw 模式清空正文,是人在说"别用我的,
+// 用回内置那份"。这里返回 false,调用方就不下发 promptText,
+// ai-service 照旧读 .md —— 也就是"恢复内置"这个动作的实现。
 func renderPromptViaStore(store Store, id string) (string, bool) {
 	if store != nil {
 		if t, ok, err := store.GetPromptTemplate(id); err == nil && ok {
-			return renderPromptText(t), true
+			if text := renderPromptText(t); strings.TrimSpace(text) != "" {
+				return text, true
+			}
+			return "", false
 		}
 	}
 	return renderPromptFromSeed(id)
@@ -293,6 +321,13 @@ func ensurePromptTemplateSeeds(store Store) error {
 
 // renderPromptText — 把一个模板渲染成完整提示词文本(等价原 .md)
 func renderPromptText(t PromptTemplate) string {
+	// raw 模式:人写什么就发什么,一个字不加。
+	// 【不要在这里拼公共模块】人在编辑器里看到的那段文字,必须就是模型收到的
+	// 那段文字 —— 否则调半天调的是一份自己看不见的东西。
+	if t.isRaw() {
+		return strings.TrimSpace(t.RawText)
+	}
+
 	c := promptCommons()
 	var b strings.Builder
 
@@ -343,26 +378,100 @@ func promptModeOptions() []map[string]string {
 
 // ---------- 后台接口 ----------
 
+// promptTemplateOrDraft 取模板;库里没有就按业务模板造一份空白 raw 草稿。
+//
+// 【为什么不能"库里没有就 404"】十个业务模板里只有两个有结构化数据,
+// 其余八个的提示词写死在 ai-service 的 .md 里 —— 404 的话它们连编辑器
+// 都打不开,而"提示词是固定的"说的正是这八个。
+func promptTemplateOrDraft(store Store, id string) (PromptTemplate, bool) {
+	if t, ok, err := store.GetPromptTemplate(id); err == nil && ok {
+		return t, true
+	}
+	tpl, ok := templateByID(id)
+	if !ok {
+		return PromptTemplate{}, false
+	}
+	// 草稿:raw 模式 + 空正文。空正文 = 运行时仍走内置 .md,
+	// 也就是"打开看看但没保存"不会改变任何行为。
+	return PromptTemplate{ID: tpl.ID, Name: tpl.Name, Mode: PromptModeRaw}, true
+}
+
+// builtinPromptText 内置提示词正文。取不到一律返回空串 ——
+// 调用方只关心"有没有底稿给人看",拿不到就是没有。
+func (s *Server) builtinPromptText(id string) string {
+	if s.aiClient == nil {
+		return ""
+	}
+	text, err := s.aiClient.BuiltinPrompt(id)
+	if err != nil {
+		log.Printf("WARN: 取内置提示词失败 template=%s: %v", id, err)
+		return ""
+	}
+	return text
+}
+
 // GET /api/prompt/templates —— 模板列表(给后台选择)
+//
+// 【列的是业务模板全集,不是 DB 里有几行】以前只列 DB,于是十个模板里
+// 有八个连下拉框都进不去 —— 界面上看不出它们存在,人自然以为"提示词
+// 就这两个能改"。
 func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePermission(w, r, "prompt_manage") {
 		return
 	}
-	tpls, err := s.store.ListPromptTemplates()
+	stored, err := s.store.ListPromptTemplates()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	sort.Slice(tpls, func(i, j int) bool { return tpls[i].ID < tpls[j].ID })
-	list := make([]map[string]any, 0, len(tpls))
-	for _, t := range tpls {
-		list = append(list, map[string]any{"id": t.ID, "name": t.Name, "fieldCount": len(t.Fields)})
+	byID := map[string]PromptTemplate{}
+	for _, t := range stored {
+		byID[t.ID] = t
 	}
+
+	list := []map[string]any{}
+	seen := map[string]bool{}
+	add := func(id, name string) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		row := map[string]any{"id": id, "name": name, "mode": PromptModeRaw, "customized": false, "fieldCount": 0}
+		if t, ok := byID[id]; ok {
+			mode := t.Mode
+			if mode == "" {
+				mode = PromptModeStructured
+			}
+			row["mode"] = mode
+			row["fieldCount"] = len(t.Fields)
+			if t.Name != "" {
+				row["name"] = t.Name
+			}
+			// customized:这份提示词已经由后台接管。false = 仍在用内置 .md。
+			row["customized"] = strings.TrimSpace(renderPromptText(t)) != ""
+		}
+		list = append(list, row)
+	}
+	for _, tpl := range reportTemplates() {
+		add(tpl.ID, tpl.Name)
+	}
+	// DB 里有、业务模板里已经没有的(下线过的模板)也列出来,
+	// 否则它的历史版本就再也点不到了。
+	for _, t := range stored {
+		add(t.ID, t.Name)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i]["id"].(string) < list[j]["id"].(string)
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"templates": list, "modes": promptModeOptions()})
 }
 
-// /api/prompt/templates/{id}        GET 取详情 / PUT 保存
-// /api/prompt/templates/{id}/render GET 预览渲染
+// /api/prompt/templates/{id}                       GET 取详情 / PUT 保存
+// /api/prompt/templates/{id}/render                GET 预览渲染后的完整提示词
+// /api/prompt/templates/{id}/builtin               GET 取 ai-service 内置的那份正文
+// /api/prompt/templates/{id}/versions              GET 历史版本列表
+// /api/prompt/templates/{id}/versions/{vid}        GET 某一版的完整内容
+// /api/prompt/templates/{id}/versions/{vid}/restore POST 回滚到某一版
 func (s *Server) handlePromptTemplateRoutes(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePermission(w, r, "prompt_manage") {
 		return
@@ -372,46 +481,167 @@ func (s *Server) handlePromptTemplateRoutes(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "bad_id", "缺少模板 id")
 		return
 	}
-	if strings.HasSuffix(rest, "/render") {
-		id := strings.TrimSuffix(rest, "/render")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	id := parts[0]
+	sub := parts[1:]
+
+	switch {
+	case len(sub) == 0:
+		s.promptTemplateDetail(w, r, id)
+	case len(sub) == 1 && sub[0] == "render" && r.Method == http.MethodGet:
 		text, ok := renderPromptViaStore(s.store, id)
 		if !ok {
-			writeError(w, http.StatusNotFound, "not_found", "模板不存在")
+			// 渲染不出来 = 没自定义过,预览就该看内置那份 ——
+			// 否则"预览"和"实际发给模型的"是两回事,调不动。
+			text = s.builtinPromptText(id)
+		}
+		if strings.TrimSpace(text) == "" {
+			writeError(w, http.StatusNotFound, "not_found", "这个模板还没有提示词")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"id": id, "prompt": text})
-		return
-	}
-	id := rest
-	switch r.Method {
-	case http.MethodGet:
-		t, ok, err := s.store.GetPromptTemplate(id)
+	case len(sub) == 1 && sub[0] == "builtin" && r.Method == http.MethodGet:
+		text := s.builtinPromptText(id)
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "prompt": text, "found": text != ""})
+	case len(sub) == 1 && sub[0] == "versions" && r.Method == http.MethodGet:
+		vs, err := s.store.ListPromptVersions(id, promptVersionLimit)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
+			writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 			return
 		}
+		writeJSON(w, http.StatusOK, map[string]any{"versions": vs})
+	case len(sub) == 2 && sub[0] == "versions" && r.Method == http.MethodGet:
+		s.promptVersionDetail(w, sub[1])
+	case len(sub) == 3 && sub[0] == "versions" && sub[2] == "restore" && r.Method == http.MethodPost:
+		s.promptVersionRestore(w, r, id, sub[1])
+	default:
+		writeError(w, http.StatusNotFound, "not_found", "接口不存在")
+	}
+}
+
+func (s *Server) promptTemplateDetail(w http.ResponseWriter, r *http.Request, id string) {
+	switch r.Method {
+	case http.MethodGet:
+		t, ok := promptTemplateOrDraft(s.store, id)
 		if !ok {
 			writeError(w, http.StatusNotFound, "not_found", "模板不存在")
 			return
 		}
+		if t.Mode == "" {
+			t.Mode = PromptModeStructured
+		}
 		writeJSON(w, http.StatusOK, t)
 	case http.MethodPut:
-		var t PromptTemplate
-		if err := decodeJSON(r, &t); err != nil {
+		var body struct {
+			PromptTemplate
+			Note string `json:"note"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
+		t := body.PromptTemplate
 		t.ID = id // 以路径 id 为准,防改错
 		if strings.TrimSpace(t.Name) == "" {
 			writeError(w, http.StatusBadRequest, "bad_name", "模板名不能为空")
 			return
 		}
+		if t.Mode == "" {
+			t.Mode = PromptModeStructured
+		}
+		if t.Mode != PromptModeStructured && t.Mode != PromptModeRaw {
+			writeError(w, http.StatusBadRequest, "bad_mode", "维护方式只能是 structured 或 raw")
+			return
+		}
+		if t.Mode == PromptModeStructured && len(t.Fields) == 0 {
+			// 【拦在这里,不然是静默失灵】字段表空的结构化模板会渲染出一份
+			// 只有表头没有任何判定项的提示词,模型照跑,结果全空。
+			writeError(w, http.StatusBadRequest, "empty_fields",
+				"字段表不能为空 —— 一个判定项都没有的话,AI 会返回空结果")
+			return
+		}
+
+		// 先把"改之前"存成基线(仅在这个模板一条版本都没有时发生),
+		// 再覆盖 —— 顺序反了就永远留不下改动前的样子。
+		ensureBaselineVersion(s.store, id)
+
 		if err := s.store.UpsertPromptTemplate(t); err != nil {
 			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
 			return
 		}
+		// 【留痕失败不挡保存】历史是安全网,不是业务前提;
+		// 因为写不进历史就拒绝保存,等于让安全网变成新的故障点。
+		if err := snapshotPromptTemplate(s.store, t, s.currentUserName(r), body.Note); err != nil {
+			log.Printf("prompt: 版本留痕失败 template=%s: %v", t.ID, err)
+		}
+		s.recordOperation(r, "prompt_template_update", "prompt_template", id, map[string]any{
+			"name": t.Name, "mode": t.Mode, "note": strings.TrimSpace(body.Note),
+		})
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的方法")
 	}
+}
+
+func (s *Server) promptVersionDetail(w http.ResponseWriter, versionID string) {
+	v, ok, err := s.store.GetPromptVersion(versionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "版本不存在")
+		return
+	}
+	t, err := v.Template()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "bad_snapshot", "这一版的内容已损坏,无法读取")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version": v, "template": t, "prompt": renderPromptText(t),
+	})
+}
+
+// promptVersionRestore 回滚。
+//
+// 【回滚本身也留一条版本】否则"回滚错了"就没得救 —— 而人按下回滚时,
+// 恰恰是最慌、最容易再按错一次的时候。
+func (s *Server) promptVersionRestore(w http.ResponseWriter, r *http.Request, id, versionID string) {
+	v, ok, err := s.store.GetPromptVersion(versionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
+		return
+	}
+	if !ok || v.TemplateID != id {
+		writeError(w, http.StatusNotFound, "not_found", "版本不存在")
+		return
+	}
+	t, err := v.Template()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "bad_snapshot", "这一版的内容已损坏,无法回滚")
+		return
+	}
+	t.ID = id
+	if err := s.store.UpsertPromptTemplate(t); err != nil {
+		writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
+		return
+	}
+	note := "回滚到 " + shortStamp(v.CreatedAt) + " 那一版"
+	if err := snapshotPromptTemplate(s.store, t, s.currentUserName(r), note); err != nil {
+		log.Printf("prompt: 回滚留痕失败 template=%s: %v", id, err)
+	}
+	s.recordOperation(r, "prompt_template_restore", "prompt_template", id, map[string]any{
+		"name": t.Name, "versionId": versionID, "versionAt": v.CreatedAt,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
+}
+
+// shortStamp RFC3339 → "08-31 14:05"。取不出来就原样返回。
+func shortStamp(ts string) string {
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return ts
+	}
+	return t.In(cnLoc).Format("01-02 15:04")
 }

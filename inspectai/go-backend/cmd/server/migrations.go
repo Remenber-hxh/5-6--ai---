@@ -45,6 +45,48 @@ var migrationList = []migration{
 	{21, "plan_owner_id", (*SQLiteStore).migPlanOwnerID},
 	{22, "push_log", (*SQLiteStore).migPushLog},
 	{23, "asset_profile_fields", (*SQLiteStore).migAssetProfileFields},
+	{24, "prompt_versions", (*SQLiteStore).migPromptVersions},
+}
+
+// 024 — 提示词版本留痕。
+//
+// 【建索引是必须的,不是优化】列表页每次打开一个模板都按 template_id 查一次,
+// 而这张表只增不删 —— 一年后全表扫描会拖慢一个"看起来只是打开个下拉框"的动作。
+func (s *SQLiteStore) migPromptVersions() error {
+	stmt := `CREATE TABLE IF NOT EXISTS prompt_versions (
+		id TEXT PRIMARY KEY,
+		template_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL DEFAULT '',
+		mode TEXT NOT NULL DEFAULT '',
+		data TEXT NOT NULL DEFAULT '',
+		note TEXT NOT NULL DEFAULT '',
+		author TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT ''
+	)`
+	if s.dialect == "mysql" {
+		stmt = `CREATE TABLE IF NOT EXISTS prompt_versions (
+			id VARCHAR(64) PRIMARY KEY,
+			template_id VARCHAR(64) NOT NULL DEFAULT '',
+			name VARCHAR(255) NOT NULL DEFAULT '',
+			mode VARCHAR(32) NOT NULL DEFAULT '',
+			data LONGTEXT NOT NULL,
+			note VARCHAR(255) NOT NULL DEFAULT '',
+			author VARCHAR(128) NOT NULL DEFAULT '',
+			created_at VARCHAR(40) NOT NULL DEFAULT '',
+			KEY idx_prompt_versions_tpl (template_id, created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+	}
+	if _, err := s.db.Exec(stmt); err != nil {
+		return fmt.Errorf("ensure prompt_versions: %w", err)
+	}
+	if s.dialect != "mysql" {
+		if _, err := s.db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_prompt_versions_tpl ON prompt_versions (template_id, created_at)`,
+		); err != nil {
+			return fmt.Errorf("index prompt_versions: %w", err)
+		}
+	}
+	return nil
 }
 
 // 011 — 离线照片:弱网现场先存本机、联网后上传的照片。

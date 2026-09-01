@@ -682,16 +682,42 @@ export interface PromptField {
   note?: string;
 }
 
+// 维护方式:字段表渲染 / 直接写整段正文
+export type PromptMode = "structured" | "raw";
+
 export interface PromptTemplate {
   id: string;
   name?: string;
+  mode?: PromptMode;
+  rawText?: string;
   scene?: string;
-  expectedPhotos?: string;
+  // 【和后端一致的数组】以前这里写成 string,一旦编辑这个字段,
+  // 提交上去后端解不了 JSON,保存直接 400。
+  expectedPhotos?: string[];
   fields: PromptField[];
 }
 
+// 列表行:比模板本身少,多一个"是否已由后台接管"
+export interface PromptTemplateRow {
+  id: string;
+  name: string;
+  mode: PromptMode;
+  fieldCount: number;
+  customized: boolean;
+}
+
+export interface PromptVersion {
+  id: string;
+  templateId: string;
+  name: string;
+  mode: PromptMode;
+  note: string;
+  author: string;
+  createdAt: string;
+}
+
 export function listPromptTemplates() {
-  return api<{ templates: PromptTemplate[]; modes: { value: string; label: string }[] }>(
+  return api<{ templates: PromptTemplateRow[]; modes: { value: string; label: string }[] }>(
     "/api/prompt/templates",
   );
 }
@@ -700,16 +726,42 @@ export function getPromptTemplate(id: string) {
   return api<PromptTemplate>(`/api/prompt/templates/${encodeURIComponent(id)}`);
 }
 
-export function savePromptTemplate(t: PromptTemplate) {
+export function savePromptTemplate(t: PromptTemplate, note?: string) {
   return api(`/api/prompt/templates/${encodeURIComponent(t.id)}`, {
     method: "PUT",
-    body: JSON.stringify(t),
+    body: JSON.stringify({ ...t, note: note || "" }),
   });
 }
 
 export function renderPromptTemplate(id: string) {
   return api<{ prompt: string }>(`/api/prompt/templates/${encodeURIComponent(id)}/render`).then(
     (d) => d.prompt || "",
+  );
+}
+
+// 内置提示词正文(ai-service 的 prompts/*.md)—— 编辑器的底稿来源
+export function builtinPrompt(id: string) {
+  return api<{ prompt: string; found: boolean }>(
+    `/api/prompt/templates/${encodeURIComponent(id)}/builtin`,
+  );
+}
+
+export function listPromptVersions(id: string) {
+  return api<{ versions: PromptVersion[] }>(
+    `/api/prompt/templates/${encodeURIComponent(id)}/versions`,
+  ).then((d) => d.versions || []);
+}
+
+export function getPromptVersion(id: string, versionId: string) {
+  return api<{ version: PromptVersion; template: PromptTemplate; prompt: string }>(
+    `/api/prompt/templates/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`,
+  );
+}
+
+export function restorePromptVersion(id: string, versionId: string) {
+  return api(
+    `/api/prompt/templates/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`,
+    { method: "POST" },
   );
 }
 
