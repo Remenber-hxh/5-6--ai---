@@ -838,10 +838,94 @@ def summary_value_is_abnormal(label: str, value: str) -> bool:
     return any(p in value for p in abnormal_phrases)
 
 
-def summarize_abnormal_fields(payload: dict) -> list[str]:
+# ===== 让总结读得懂 =====
+#
+# 【领导读的是结论,不是表单】原来这里拼出来的是 "电梯使用登记标志完好=否",
+# 那是表单原文,不是一句话。而且踩了三个更实的坑:
+#
+#   1. "不符合项处理情况记录" 是一条【文本记录】,不是判定项。它的正文里
+#      带着"缺失"两个字,于是被当成第 4 个问题算了一遍 —— 同一段话里
+#      开头写"待跟进 4 项"、结尾写"发现 3 项不符合项",自己跟自己打架。
+#      读到这儿的人不会去分辨谁对,他会不再信这段话。
+#   2. 那条记录的正文是 `reg_mark:缺失使用标志; alarm_device:未见报警装置`
+#      这种形式 —— 字段代码直接倒给人看。
+#   3. "未拍操作面板"是【照片没拍到】,不是设备坏了。混进不符合项里会把
+#      问题数量报高,而模板提示词里明写着"缺照片 ≠ 设备异常"。
+
+# 不参与"问题计数"的字段:它们是记录/说明,不是判定项。
+SUMMARY_RECORD_CODES = ("nonconformity",)
+
+# 照片没拍到 ≠ 设备异常。这类要单独说,不能混进不符合项。
+PHOTO_GAP_PHRASES = ("未拍", "没拍", "未提供", "无照片", "缺照片", "补拍", "看不清", "未拍到")
+
+# 正向问法的结尾词 → 判"否"时的人话说法
+NEGATED_SUFFIX = (
+    ("完好", "不完好"),
+    ("正常", "异常"),
+    ("有效", "失效"),
+    ("齐全", "不齐全"),
+    ("完整", "不完整"),
+    ("合格", "不合格"),
+    ("通过", "未通过"),
+)
+
+
+def summary_field_code(field: dict) -> str:
+    return str(field.get("code") or "").strip()
+
+
+def summary_is_record_field(field: dict) -> bool:
+    """这一条是"记录/说明"而不是判定项。"""
+    if summary_field_code(field) in SUMMARY_RECORD_CODES:
+        return True
+    # 老记录可能没带 code,退回按标签认
+    return "不符合项" in summary_field_label(field)
+
+
+def parse_nonconformity(text: str) -> dict:
+    """把 `code:描述; code:描述` 拆成 {code: 描述}。
+
+    【这串东西其实是结构化数据】模型按提示词逐条写问题时,会带上字段代码。
+    拆开之后每个问题的人话描述就有了 —— 比 "某某完好=否" 具体得多。
+    拆不出来(模型写成了整句)就返回空,调用方回退到标签改写。
+    """
+    out = {}
+    for part in re.split(r"[;；]", text or ""):
+        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*[:：]\s*(.+?)\s*$", part)
+        if m:
+            out[m.group(1)] = m.group(2).strip(" 。;；,，")
+    return out
+
+
+def summary_is_photo_gap(text: str) -> bool:
+    return any(p in (text or "") for p in PHOTO_GAP_PHRASES)
+
+
+def humanize_abnormal(label: str, value: str) -> str:
+    """把 "X完好" + "否" 说成 "X不完好",而不是 "X完好=否"。"""
+    for pos, neg in NEGATED_SUFFIX:
+        if label.endswith(pos) and value in ("否", "无"):
+            return label[: -len(pos)] + neg
+    if value in ("否", "无"):
+        return f"{label}不符合"
+    return f"{label}:{value}"
+
+
+def summarize_field_findings(payload: dict) -> tuple[list[str], list[str]]:
+    """返回 (真正的不符合项, 因照片缺失无法判定的项),都是人话。"""
+    fields = [f for f in (payload.get("fields") or []) if isinstance(f, dict)]
+
+    # 先把"不符合项记录"里的逐条描述取出来,它比标签具体
+    detail = {}
+    for f in fields:
+        if summary_is_record_field(f):
+            detail.update(parse_nonconformity(summary_field_value(f)))
+
     abnormal: list[str] = []
-    for field in payload.get("fields") or []:
-        if not isinstance(field, dict):
+    photo_gaps: list[str] = []
+    for field in fields:
+        # 【记录字段本身不算一个问题】它是对上面那些问题的说明
+        if summary_is_record_field(field):
             continue
         label = summary_field_label(field)
         value = summary_field_value(field)
@@ -851,12 +935,24 @@ def summarize_abnormal_fields(payload: dict) -> list[str]:
             if field.get("required"):
                 abnormal.append(f"{label}未填写")
             continue
-        if summary_value_is_abnormal(label, value):
-            abnormal.append(f"{label}={value}")
+        if not summary_value_is_abnormal(label, value):
+            continue
+        # 有逐条描述就用描述("缺失使用标志"),没有才退回标签改写
+        desc = detail.get(summary_field_code(field), "")
+        if summary_is_photo_gap(desc):
+            photo_gaps.append(desc or label)
+        else:
+            abnormal.append(desc or humanize_abnormal(label, value))
 
     note = str(payload.get("abnormalNote") or "").strip()
     if note and not any(p in note for p in ("无异常", "未发现异常", "没有异常")):
-        abnormal.append(f"异常说明={note[:30]}")
+        abnormal.append(note[:30])
+    return abnormal, photo_gaps
+
+
+def summarize_abnormal_fields(payload: dict) -> list[str]:
+    """只要不符合项(不含照片缺失)。给"要不要标异常"这类判断用。"""
+    abnormal, _ = summarize_field_findings(payload)
     return abnormal
 
 
@@ -864,23 +960,52 @@ def enforce_summary_policy(summary: str, payload: dict, abnormal_fields: list[st
     abnormal_fields = abnormal_fields if abnormal_fields is not None else summarize_abnormal_fields(payload)
     summary = re.sub(r"\s+", " ", summary or "").strip()
     if not summary:
-        fields = payload.get("fields") or []
-        parts = [f"{summary_field_label(f)}={summary_field_value(f)}" for f in fields[:6] if isinstance(f, dict)]
+        # 模型没给正文时的兜底。
+        #
+        # 【不要再把字段倒一遍】原来这里拼的是 "关键字段:某某完好=否; 某某有效=否;…",
+        # 表单原文照抄一份 —— 既和开头那句重复,又是给读表单的人看的东西。
+        # 兜底要做的是把"谁、什么时候、哪台、其余是否正常"说清楚,仅此而已。
+        normal = [
+            summary_field_label(f)
+            for f in (payload.get("fields") or [])
+            if isinstance(f, dict)
+            and not summary_is_record_field(f)
+            and summary_field_value(f)
+            and not summary_value_is_abnormal(summary_field_label(f), summary_field_value(f))
+        ]
+        where = payload.get("pointName") or payload.get("project") or ""
         summary = (
-            f"{payload.get('inspector', '巡检员')}在{payload.get('inspectionTime', '')}"
-            f"完成{payload.get('templateName', '巡检')}，关键字段：{'; '.join(parts) or '无'}。"
+            f"{payload.get('inspectionTime', '')}"
+            f"{('，' + where) if where else ''}"
+            f"由{payload.get('inspector', '巡检员')}完成{payload.get('templateName', '巡检')}。"
         )
+        if normal:
+            summary += f"其余各项（{'、'.join(normal[:4])}{'等' if len(normal) > 4 else ''}）均正常。"
 
     # 去掉模型/历史可能写的旧式"异常提示：…""低风险总结：…"前后缀（历史提示词遗留，啰嗦）
     summary = re.sub(r"^异常提示[:：][^。；;]*[。；;]?\s*", "", summary).strip()
     summary = re.sub(r"\s*低风险总结[:：].*$", "", summary).strip()
     summary = summary.lstrip("。；; ").strip()
-    # 干净拼装：有异常 → 以一句"待跟进 N 项：…"开头，正文跟随；无异常 → 直接用正文
+    # 【开头一句话交代结论,而且只交代一次】
+    #
+    # 原来这里写 "待跟进 N 项:某某完好=否、…",而正文里模型又会写一遍
+    # "本次巡检发现 3 项不符合项" —— 两个数还经常对不上(记录字段被多算了一个)。
+    # 同一段话里两个互相矛盾的数字,读的人不会去分辨谁对,他会不再信这段话。
+    #
+    # 所以:数只由这里给,措辞和正文统一成"不符合";照片缺失单独说一句,
+    # 不混进那个数里。
+    _, photo_gaps = summarize_field_findings(payload)
+    head = ""
     if abnormal_fields:
         labels = "、".join(abnormal_fields[:4])
         if len(abnormal_fields) > 4:
             labels += "等"
-        head = f"待跟进 {len(abnormal_fields)} 项：{labels}。"
+        head = f"本次发现 {len(abnormal_fields)} 项不符合：{labels}。"
+    if photo_gaps:
+        # 【和不符合项分开】"没拍到"是照片问题,不是设备坏了。混在一起会把
+        # 问题数量报高,而模板提示词里明写着"缺照片 ≠ 设备异常"。
+        head += f"另有 {len(photo_gaps)} 项因照片缺失无法判定：{'、'.join(photo_gaps[:3])}。"
+    if head:
         summary = head + summary if summary else head
     elif not summary:
         summary = "本次已确认字段未发现异常。"

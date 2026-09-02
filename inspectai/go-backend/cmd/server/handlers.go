@@ -3409,6 +3409,11 @@ func simplifyFieldsForSummary(fields []FieldValue) []map[string]string {
 			continue
 		}
 		out = append(out, map[string]string{
+			// 【code 必须带上】总结服务要靠它认出哪一条是"不符合项记录"
+			// (那是一条文本记录,不是判定项,不该被算成一个问题),
+			// 也要靠它把记录里的 `reg_mark:缺失使用标志` 映射回中文标签。
+			// 不传的话,那串字段代码只能原样倒进总结里给人看。
+			"code":  f.Code,
 			"label": f.Label,
 			"value": v,
 		})
