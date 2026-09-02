@@ -33,6 +33,13 @@ type RecordStore interface {
 	UpdateRecord(rec *Record) error
 	ListRecords(tenantID string, limit int) ([]*Record, error)
 	ListRecordsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
+	// ListDraftsByOwner 只取自己【还没提交】的记录。
+	//
+	// 【必须在 SQL 里筛,不能取回来再过滤】提交过的记录远多于草稿,
+	// 先取最新 N 条再挑未提交的,人稍微多干几天活草稿就掉出窗口 ——
+	// 表现是"我明明有一条没提交完的,列表里就是不显示"。
+	// 这个坑项目里已经踩过好几次(见 handleListRecords 里那段注释)。
+	ListDraftsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error)
 	// ListRecordsInProjects 限定到若干项目的记录(项目范围用)。
 	// 【必须在 SQL 里限】先取一个 limit 窗口再在内存里筛,等于"从最新 N 条里
 	// 挑本项目的",冷清一点的项目会直接筛空。projects 为空返回空结果,
@@ -528,6 +535,30 @@ func (s *MemStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName, us
 	for _, rec := range s.records {
 		if rec.TenantID != tenantID {
 			continue // 租户隔离先于归属判断
+		}
+		if recordOwnedBy(rec, inspectorUserID, displayName, username) {
+			out = append(out, rec)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *MemStore) ListDraftsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Record, 0, len(s.records))
+	for _, rec := range s.records {
+		if rec.TenantID != tenantID {
+			continue // 租户隔离先于归属判断
+		}
+		if rec.Submitted {
+			continue
 		}
 		if recordOwnedBy(rec, inspectorUserID, displayName, username) {
 			out = append(out, rec)
@@ -1630,6 +1661,35 @@ func (s *SQLiteStore) ListRecordsByOwner(tenantID, inspectorUserID, displayName,
 	rows, err := s.db.Query(
 		`SELECT `+recordSelectCols+` FROM records
 		WHERE tenant_id = ?
+		  AND ( (? <> '' AND inspector_user_id = ?)
+		     OR (inspector_user_id = '' AND inspector IN (?, ?)) )
+		ORDER BY created_at DESC LIMIT ?`,
+		tenantID, inspectorUserID, inspectorUserID,
+		strings.TrimSpace(displayName), strings.TrimSpace(username), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListDraftsByOwner(tenantID, inspectorUserID, displayName, username string, limit int) ([]*Record, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	// 和 ListRecordsByOwner 同一套归属条件,只多一个 submitted = 0。
+	rows, err := s.db.Query(
+		`SELECT `+recordSelectCols+` FROM records
+		WHERE tenant_id = ?
+		  AND submitted = 0
 		  AND ( (? <> '' AND inspector_user_id = ?)
 		     OR (inspector_user_id = '' AND inspector IN (?, ?)) )
 		ORDER BY created_at DESC LIMIT ?`,

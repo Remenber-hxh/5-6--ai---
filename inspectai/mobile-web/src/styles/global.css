@@ -4344,3 +4344,86 @@ a {
 .flow-foot .foot-warn {
   margin-inline: 0;
 }
+
+/* ===== 没提交完的记录(待处理页顶部)=====
+   提交被打断后那条记录在手机上原本一个入口都没有,照片也跟着锁在里面。
+   这一块给两条出路:接着填,或删掉(照片会放回待处理)。
+   用橙色而不是红色:它不是故障,是"还没干完的活",红色会让人以为出事了。 */
+.draft-list {
+  margin: 0 16px 14px;
+  border: 0.5px solid var(--brand-border);
+  border-radius: 12px;
+  background: var(--lt-card);
+  overflow: hidden;
+}
+.draft-list-title {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  background: var(--c-orange-soft);
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.draft-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.draft-row:last-child {
+  border-bottom: none;
+}
+.draft-main {
+  flex: 1;
+  min-width: 0;
+}
+.draft-name {
+  font-size: 14px;
+  color: var(--lt-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.draft-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--lt-fg-2);
+  /* 日期和"已填 3/8 项"要对得齐,不然一列数字看着是歪的 */
+  font-variant-numeric: tabular-nums;
+}
+.draft-actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+/* 行内小按钮。
+   【不复用 .btn-primary】那是深色页的翡翠渐变+绿色投影,套在浅色页的
+   蓝色按钮上会在底下透出一圈绿光 —— 两套主题的东西混在一起了。 */
+.draft-btn.arco-button {
+  min-width: 0;
+  padding: 0 14px;
+  margin: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+/* 高度不覆盖:Arco 的默认 46px 正好是手指点得准的尺寸(≥44px)。
+   之前写过 height:32px,被 Arco 的尺寸类盖掉了从来没生效 ——
+   留着一条不生效的规则,下一个人会照着它算布局。 */
+.draft-btn-go.arco-button {
+  border: 0;
+  background: var(--brand);
+  color: #fff;
+}
+/* 【要压过 Arco 的默认 ghost 样式】它默认是品牌蓝的描边+蓝字,
+   和旁边填充蓝的「接着填」看起来一样重 —— 而这是个删东西的按钮,
+   不该和主操作抢注意力。提高一级选择器权重才盖得住。 */
+.draft-actions .draft-btn-del.arco-button {
+  background: transparent;
+  border: 0.5px solid var(--lt-border);
+  color: var(--lt-fg-2);
+}
+.draft-btn.arco-button:active {
+  opacity: 0.9;
+}

@@ -109,6 +109,9 @@ var apiRoutes = []apiRoute{
 	{http.MethodPost, "/api/inspection/offline-shots/delete", guardNone, "", (*Server).handleDeleteOfflineShots},
 	{http.MethodGet, "/api/inspection/records", guardNone, "", (*Server).handleListRecords},
 	{http.MethodPost, "/api/inspection/records", guardNone, "", (*Server).handleCreateRecord},
+	// 没提交完的记录。单开一条路径而不是给 records 加参数:它只列自己的,
+	// 不走那边的数据范围分支,混在一起两套口径迟早会串。
+	{http.MethodGet, "/api/inspection/drafts", guardNone, "", (*Server).handleListDrafts},
 	{http.MethodPost, "/api/scene/classify", guardNone, "", (*Server).handleClassifyScene},
 	{http.MethodPost, "/api/ai/chat", guardNone, "", (*Server).handleAIChat},
 

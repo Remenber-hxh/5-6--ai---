@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import CenterLoading from "@/components/CenterLoading";
+import DraftList from "@/components/DraftList";
 import FlowHeader from "@/components/FlowHeader";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
 import { useAuth } from "@/store/auth";
@@ -167,17 +168,26 @@ export default function ReviewPage() {
   }
 
   if (!shots.length) {
+    // 【没有照片时也要列草稿】提交中断的那条记录,照片已经被它认领走了 ——
+    // 也就是说这一屏正好是空的,而那条记录还挂着。原来这里直接 return
+    // "没有待处理的照片",于是它彻底没有了入口。
     return (
-      <div className="center-screen">
-        <h1 className="screen-title" style={{ textAlign: "center" }}>
-          没有待处理的照片
-        </h1>
-        <p className="screen-sub" style={{ textAlign: "center" }}>
-          先去拍照,联网后照片会自动上传到这里
-        </p>
-        <Button block className="btn-ghost" onClick={() => nav("/")}>
-          去拍照
-        </Button>
+      <div className="flow-screen">
+        <FlowHeader title="待处理" onBack={() => nav("/")} />
+        <div className="scroll-area flow-body">
+          <DraftList />
+          <div className="center-screen" style={{ minHeight: "auto", paddingTop: 24 }}>
+            <h1 className="screen-title" style={{ textAlign: "center" }}>
+              没有待处理的照片
+            </h1>
+            <p className="screen-sub" style={{ textAlign: "center" }}>
+              先去拍照,联网后照片会自动上传到这里
+            </p>
+            <Button block className="btn-ghost" onClick={() => nav("/")}>
+              去拍照
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -187,6 +197,9 @@ export default function ReviewPage() {
       <FlowHeader title="选择照片" onBack={() => nav("/")} step="review" />
 
       <div className="scroll-area flow-body">
+        {/* 没提交完的记录排在照片前面:它是【已经发生过的半截活】,
+            比再挑一组新照片更该先收拾掉。 */}
+        <DraftList />
         <div className="flow-sub-row flow-caption">
           <span>
             已上传 {shots.length} 张 · 选中 {picked.size} 张

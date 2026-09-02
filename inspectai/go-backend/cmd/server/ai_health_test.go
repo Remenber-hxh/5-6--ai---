@@ -200,7 +200,14 @@ func TestAIHealthHandlerWhenHealthy(t *testing.T) {
 // 巡检员看不到 —— 密钥配置/账户状态属于运营信息。
 func TestAIHealthRequiresManagementRole(t *testing.T) {
 	server, tokens := newRecordAccessTestServer(t)
-	got := requestWithToken(server, http.MethodGet, "/api/system/ai-health", tokens["inspector"])
+	// 【必须用真实存在的巡检员账号】用 tokens["inspector"](不存在的键)
+	// 拿到的是空串,那测的是"没登录",不是"登录了但角色不够" ——
+	// 接口就算对所有登录用户敞开,这条也照样绿。
+	tok := tokens["inspector_a"]
+	if tok == "" {
+		t.Fatal("测试骨架里没有 inspector_a,这条断言就失去意义了")
+	}
+	got := requestWithToken(server, http.MethodGet, "/api/system/ai-health", tok)
 	if got.Code == http.StatusOK {
 		t.Errorf("巡检员不该看得到 AI 运营状态,实际 code=%d", got.Code)
 	}

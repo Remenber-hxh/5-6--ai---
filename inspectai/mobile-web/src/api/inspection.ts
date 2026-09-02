@@ -203,6 +203,31 @@ export async function deleteDraftRecord(id: string): Promise<void> {
   await api<void>(`/api/inspection/records/${id}`, { method: "DELETE" });
 }
 
+/** 没提交完的记录 */
+export interface DraftBrief {
+  id: string;
+  templateName: string;
+  project: string;
+  pointName: string;
+  assetNo: string;
+  createdAt: string;
+  imageCount: number;
+  fieldsFilled: number;
+  fieldsTotal: number;
+}
+
+/**
+ * 自己还没提交的记录。
+ *
+ * 【为什么不复用 listRecords 再前端筛】已提交的远多于草稿,先取最近 N 条
+ * 再挑未提交的,人多干几天活草稿就掉出窗口 —— 表现是"我明明有一条没交完的,
+ * 就是不显示",而且越忙越容易发生。后端这条路径在 SQL 里筛。
+ */
+export async function listDrafts(signal?: AbortSignal): Promise<DraftBrief[]> {
+  const body = await api<{ drafts: DraftBrief[] }>("/api/inspection/drafts", { signal });
+  return body.drafts || [];
+}
+
 // ===== 工程任务(我的任务) =====
 
 export interface EngineeringTaskDTO {
