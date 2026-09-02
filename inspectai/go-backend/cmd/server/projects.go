@@ -42,6 +42,12 @@ type ProjectStore interface {
 	// ListUserProjectNames 这个人被分到了哪些项目(返回项目名,直接用于过滤)。
 	// 返回空切片 = 没被分配过 = 不受项目限制。
 	ListUserProjectNames(tenantID, userID string) ([]string, error)
+	// ListUserIDsInProjects 反查:这些项目里都有谁。
+	//
+	// 【为什么需要反查】照片表里没有项目字段,只有上传人。所以
+	// "本项目的照片"只能翻译成"同项目那些人上传的照片"。
+	// 返回空 = 这些项目一个成员都没有(不是"不限")。
+	ListUserIDsInProjects(tenantID string, projectNames []string) ([]string, error)
 	// AllUserProjectNames 批量版:一次取全租户的 用户 → 可见项目名。
 	// 用户列表要显示每个人的范围,逐个查在人数上百之后会明显拖慢页面。
 	AllUserProjectNames(tenantID string) (map[string][]string, error)
@@ -159,6 +165,36 @@ func (s *SQLiteStore) UpdateProjectMeta(tenantID, id, note string, disabled bool
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (s *SQLiteStore) ListUserIDsInProjects(tenantID string, projectNames []string) ([]string, error) {
+	if len(projectNames) == 0 {
+		return nil, nil
+	}
+	// 项目名走参数绑定,只有占位符数量是拼出来的
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(projectNames)), ",")
+	args := make([]any, 0, len(projectNames)+1)
+	args = append(args, tenantOrDefault(tenantID))
+	for _, n := range projectNames {
+		args = append(args, n)
+	}
+	rows, err := s.db.Query(`
+		SELECT DISTINCT up.user_id FROM user_projects up
+		JOIN projects p ON p.id = up.project_id
+		WHERE p.tenant_id = ? AND p.disabled = 0 AND p.name IN (`+ph+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *SQLiteStore) ListUserProjectNames(tenantID, userID string) ([]string, error) {
@@ -364,6 +400,36 @@ func (s *MemStore) ListUserProjectNames(tenantID, userID string) ([]string, erro
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+func (s *MemStore) ListUserIDsInProjects(tenantID string, projectNames []string) ([]string, error) {
+	if len(projectNames) == 0 {
+		return nil, nil
+	}
+	tenantID = tenantOrDefault(tenantID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	want := make(map[string]bool, len(projectNames))
+	for _, n := range projectNames {
+		want[n] = true
+	}
+	seen := map[string]bool{}
+	ids := []string{}
+	for userID, pids := range s.userProjects {
+		for _, pid := range pids {
+			p, ok := s.projects[pid]
+			if !ok || p.TenantID != tenantID || p.Disabled || !want[p.Name] {
+				continue
+			}
+			if !seen[userID] {
+				seen[userID] = true
+				ids = append(ids, userID)
+			}
+			break
+		}
+	}
+	sort.Strings(ids) // 顺序稳定,测试才好断言
+	return ids, nil
 }
 
 func (s *MemStore) ListUserProjectIDs(tenantID, userID string) ([]string, error) {

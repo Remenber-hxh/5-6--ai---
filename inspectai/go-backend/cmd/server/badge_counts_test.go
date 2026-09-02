@@ -50,7 +50,7 @@ func TestCountPendingNotTruncatedByDefaultLimit(t *testing.T) {
 		mk("pend_"+itoa(i), false, base.Add(-time.Duration(i+1)*time.Hour))
 	}
 
-	n, err := store.CountPendingOfflineShots("t_a", "")
+	n, err := store.CountPendingOfflineShots("t_a", nil)
 	if err != nil {
 		t.Fatalf("CountPendingOfflineShots: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestCountPendingNotTruncatedByDefaultLimit(t *testing.T) {
 	}
 
 	// 列表页也一样:过滤必须在 LIMIT 之前
-	list, err := store.ListPendingOfflineShots("t_a", "", 200)
+	list, err := store.ListPendingOfflineShots("t_a", nil, 200)
 	if err != nil {
 		t.Fatalf("ListPendingOfflineShots: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestCountPendingNotTruncatedByDefaultLimit(t *testing.T) {
 	}
 
 	// 跨租户不能数到别家的
-	if other, err := store.CountPendingOfflineShots("t_b", ""); err != nil || other != 0 {
+	if other, err := store.CountPendingOfflineShots("t_b", nil); err != nil || other != 0 {
 		t.Fatalf("跨租户计数应为 0,得到 %d (err=%v)", other, err)
 	}
 }

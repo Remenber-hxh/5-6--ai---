@@ -50,17 +50,24 @@ type OfflineShotStore interface {
 	// CreateOfflineShot 幂等写入:同一 idempotencyKey 重复提交返回既有行,
 	// 第二个返回值表示本次是否命中了已存在的记录(重放)。
 	CreateOfflineShot(shot *OfflineShot) (*OfflineShot, bool, error)
-	ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error)
+	// owners 限定上传人。nil/空 = 不限(调用方已确认可以看全部)。
+	// 【用一组而不是一个】数据范围有四档,「本项目」要看的是同项目【所有人】
+	// 的照片 —— 只能传一个 userID 时,那一档只能退化成「仅自己」,
+	// 和它的定义(含组内其他人提交的)对不上。
+	ListOfflineShots(tenantID string, owners []string, limit int) ([]*OfflineShot, error)
 	// ListPendingOfflineShots 只列未成单的。
 	//
 	// 【必须在 SQL 里过滤,不能取回来再筛】ListOfflineShots 的 limit 作用在
 	// 【全部】照片上(而且 limit<=0 会被当成默认 100),先截断再筛的话,
 	// 最新 100 条里成单的多,未成单的就被截没了 —— 实测过:页面显示 20 张,
 	// 按这个口径只数出 6 张。
-	ListPendingOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error)
+	ListPendingOfflineShots(tenantID string, owners []string, limit int) ([]*OfflineShot, error)
 	// CountPendingOfflineShots 未成单照片数。走 COUNT(*),不把行拉回来 ——
 	// 底栏角标只要一个数字。
-	CountPendingOfflineShots(tenantID, userID string) (int, error)
+	// owners 与 ListPendingOfflineShots 同义(nil = 不限)。
+	// 【必须和列表同一套口径】角标数字和点进去看到的条数对不上,
+	// 比不显示更糟 —— 会让人以为丢了数据。
+	CountPendingOfflineShots(tenantID string, owners []string) (int, error)
 	// OfflineShotsByIDs 按 ID 精确取照片。
 	//
 	// 【为什么不能"先列一批再筛"】原来的做法是 ListOfflineShots(…, 500) 拉最近
@@ -167,15 +174,31 @@ func (s *SQLiteStore) DeleteOfflineShots(tenantID string, ids []string) ([]*Offl
 	return deleted, nil
 }
 
-func (s *SQLiteStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
-	return s.listShots(tenantID, userID, limit, false)
+func (s *SQLiteStore) ListOfflineShots(tenantID string, owners []string, limit int) ([]*OfflineShot, error) {
+	return s.listShots(tenantID, owners, limit, false)
 }
 
-func (s *SQLiteStore) ListPendingOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
-	return s.listShots(tenantID, userID, limit, true)
+func (s *SQLiteStore) ListPendingOfflineShots(tenantID string, owners []string, limit int) ([]*OfflineShot, error) {
+	return s.listShots(tenantID, owners, limit, true)
 }
 
-func (s *SQLiteStore) listShots(tenantID, userID string, limit int, pendingOnly bool) ([]*OfflineShot, error) {
+// ownerAllowed owners 为空 = 不限;否则上传人必须在名单里。
+//
+// 【空切片和 nil 一样当"不限"】调用方要表达"谁都看不到"时用的是
+// 提前返回空结果,不是传一个空名单 —— 两者混淆的后果是彻底放开。
+func ownerAllowed(owners []string, userID string) bool {
+	if len(owners) == 0 {
+		return true
+	}
+	for _, o := range owners {
+		if o != "" && o == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SQLiteStore) listShots(tenantID string, owners []string, limit int, pendingOnly bool) ([]*OfflineShot, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -185,11 +208,20 @@ func (s *SQLiteStore) listShots(tenantID, userID string, limit int, pendingOnly 
 	if pendingOnly {
 		where = " AND record_id=''"
 	}
+	args := []any{tenantID}
+	// 归属过滤同理走 SQL:先截断再筛的话,别人的照片会把自己的挤出窗口。
+	if len(owners) > 0 {
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(owners)), ",")
+		where += " AND user_id IN (" + ph + ")"
+		for _, o := range owners {
+			args = append(args, o)
+		}
+	}
+	args = append(args, limit)
 	rows, err := s.db.Query(
 		`SELECT `+offlineShotCols+` FROM offline_shots
-		 WHERE tenant_id=? AND (?='' OR user_id=?)`+where+`
-		 ORDER BY captured_at DESC LIMIT ?`,
-		tenantID, userID, userID, limit)
+		 WHERE tenant_id=?`+where+`
+		 ORDER BY captured_at DESC LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -245,12 +277,20 @@ func (s *SQLiteStore) OfflineShotsByIDs(tenantID string, ids []string) ([]*Offli
 	return out, nil
 }
 
-func (s *SQLiteStore) CountPendingOfflineShots(tenantID, userID string) (int, error) {
+func (s *SQLiteStore) CountPendingOfflineShots(tenantID string, owners []string) (int, error) {
+	args := []any{tenantID}
+	where := ""
+	if len(owners) > 0 {
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(owners)), ",")
+		where = " AND user_id IN (" + ph + ")"
+		for _, o := range owners {
+			args = append(args, o)
+		}
+	}
 	var n int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM offline_shots
-		 WHERE tenant_id=? AND (?='' OR user_id=?) AND record_id=''`,
-		tenantID, userID, userID).Scan(&n)
+		 WHERE tenant_id=?`+where+` AND record_id=''`, args...).Scan(&n)
 	return n, err
 }
 
@@ -305,15 +345,15 @@ func (m *MemStore) DeleteOfflineShots(tenantID string, ids []string) ([]*Offline
 	return deleted, nil
 }
 
-func (m *MemStore) ListOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
-	return m.listShots(tenantID, userID, limit, false)
+func (m *MemStore) ListOfflineShots(tenantID string, owners []string, limit int) ([]*OfflineShot, error) {
+	return m.listShots(tenantID, owners, limit, false)
 }
 
-func (m *MemStore) ListPendingOfflineShots(tenantID, userID string, limit int) ([]*OfflineShot, error) {
-	return m.listShots(tenantID, userID, limit, true)
+func (m *MemStore) ListPendingOfflineShots(tenantID string, owners []string, limit int) ([]*OfflineShot, error) {
+	return m.listShots(tenantID, owners, limit, true)
 }
 
-func (m *MemStore) listShots(tenantID, userID string, limit int, pendingOnly bool) ([]*OfflineShot, error) {
+func (m *MemStore) listShots(tenantID string, owners []string, limit int, pendingOnly bool) ([]*OfflineShot, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]*OfflineShot, 0, len(m.offlineShots))
@@ -321,7 +361,7 @@ func (m *MemStore) listShots(tenantID, userID string, limit int, pendingOnly boo
 		if s.TenantID != tenantID {
 			continue // 租户隔离
 		}
-		if userID != "" && s.UserID != userID {
+		if !ownerAllowed(owners, s.UserID) {
 			continue
 		}
 		// 截断前先筛,和 SQL 版一致 —— 先截后筛会把靠后的未成单照片漏掉
@@ -348,8 +388,8 @@ func (m *MemStore) OfflineShotsByIDs(tenantID string, ids []string) ([]*OfflineS
 	return out, nil
 }
 
-func (m *MemStore) CountPendingOfflineShots(tenantID, userID string) (int, error) {
-	list, err := m.listShots(tenantID, userID, 0, true)
+func (m *MemStore) CountPendingOfflineShots(tenantID string, owners []string) (int, error) {
+	list, err := m.listShots(tenantID, owners, 0, true)
 	return len(list), err
 }
 
@@ -427,12 +467,18 @@ func shotIsPending(s *OfflineShot) bool {
 }
 
 func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) {
-	userID := ""
-	// 数据范围:看不了全部的人只列自己的照片
-	if !s.canSeeAllData(r) {
-		if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-			userID = user.ID // 巡检员只看自己的
-		}
+	// 数据范围。【owners 为 nil = 不限】,所以每一条分支都必须明确赋值 ——
+	// 漏一条就是把全租户的照片交出去。
+	//
+	// 原来这里是 canSeeAllData 的二选一,有两个毛病:
+	//   1. fail-open:不能看全部、又取不到会话用户时(比如拿静态令牌调接口),
+	//      userID 留空 → 过滤条件被短路 → 看到全租户所有照片。
+	//      而代码的意图明明写着"巡检员只看自己的"。
+	//   2. 数据范围有四档,这里只认「全部 vs 自己」——「本项目」那一档
+	//      (定义是"含组内其他人提交的")实际退化成了只看自己。
+	owners, ok := s.shotOwnersFor(w, r)
+	if !ok {
+		return // 已写过响应
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	// 默认保持原样(admin-web 要看全量);移动端传 ?pending=1 只要未成单的。
@@ -441,9 +487,9 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 	var shots []*OfflineShot
 	var err error
 	if r.URL.Query().Get("pending") == "1" {
-		shots, err = s.store.ListPendingOfflineShots(tenantID, userID, limit)
+		shots, err = s.store.ListPendingOfflineShots(tenantID, owners, limit)
 	} else {
-		shots, err = s.store.ListOfflineShots(tenantID, userID, limit)
+		shots, err = s.store.ListOfflineShots(tenantID, owners, limit)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
@@ -545,7 +591,33 @@ func (s *Server) shotsByIDs(tenantID string, ids []string) ([]*OfflineShot, erro
 
 // adoptOfflineShots 把离线照片并入某条巡检记录:复制进记录目录,并回填 record_id
 // 标记已消费(避免同一张照片被重复成单)。
-func (s *Server) adoptOfflineShots(recordID, tenantID string, ids []string) ([]ImageInfo, error) {
+// adoptOfflineShots 把离线照片认领进一条记录。
+//
+// ownerID 是发起认领的人。传空 = 不校验归属(仅限本地免鉴权的开发模式)。
+//
+// 【为什么必须校验】原来这里只看租户和"是否已成单" —— 也就是说只要
+// 知道照片 ID,就能把【同事拍的现场照】认领进自己的记录。而照片一旦被
+// 认领,原主的「待处理」里就没了,现场证据被记到了别人名下,两边都不报错。
+//
+// 【可见性挡不住这件事】能不能看见是界面问题,能不能拿走是数据问题。
+// 所以校验做在这里,而不是指望列表少列几张。
+// canAdoptShot 这张照片能不能被 ownerID 认领进自己的记录。
+//
+//	ownerID == ""   本地免鉴权的开发模式,不校验
+//	shotOwner == "" 加 user_id 字段之前的老照片,放行 ——
+//	                否则升级后现场那批存量照片谁都成不了单
+//
+// 【抽成具名函数是为了能直接测】原来这条判断嵌在一个要读写文件的循环里,
+// 想测它就得先在磁盘上摆好文件,结果测试要么很重、要么被跳过 ——
+// 而"能不能拿走别人的照片"恰恰是最不能靠跳过来敷衍的一条。
+func canAdoptShot(ownerID, shotOwner string) bool {
+	if ownerID == "" || shotOwner == "" {
+		return true
+	}
+	return shotOwner == ownerID
+}
+
+func (s *Server) adoptOfflineShots(recordID, tenantID, ownerID string, ids []string) ([]ImageInfo, error) {
 	shots, err := s.shotsByIDs(tenantID, ids)
 	if err != nil {
 		return nil, err
@@ -559,6 +631,9 @@ func (s *Server) adoptOfflineShots(recordID, tenantID string, ids []string) ([]I
 	for _, shot := range shots {
 		if shot.RecordID != "" {
 			continue // 已成单,跳过防重复
+		}
+		if !canAdoptShot(ownerID, shot.UserID) {
+			continue
 		}
 		data, err := os.ReadFile(shot.ImagePath)
 		if err != nil {

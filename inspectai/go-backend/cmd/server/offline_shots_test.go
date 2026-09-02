@@ -97,7 +97,7 @@ func TestOfflineShotUploadIsIdempotent(t *testing.T) {
 		t.Fatalf("第二张 = %d; body=%s", third.Code, third.Body.String())
 	}
 
-	shots, err := srv.store.ListOfflineShots(defaultTenantID, "", 100)
+	shots, err := srv.store.ListOfflineShots(defaultTenantID, nil, 100)
 	if err != nil {
 		t.Fatalf("ListOfflineShots: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestOfflineShotIdempotencyOnSQLite(t *testing.T) {
 		t.Errorf("同键应返回同一行: %q vs %q", a.ID, b.ID)
 	}
 
-	shots, _ := store.ListOfflineShots(defaultTenantID, "", 100)
+	shots, _ := store.ListOfflineShots(defaultTenantID, nil, 100)
 	if len(shots) != 1 {
 		t.Errorf("唯一约束应挡住重复,实际 %d 行", len(shots))
 	}
@@ -158,7 +158,7 @@ func TestOfflineShotAdoptMarksConsumed(t *testing.T) {
 	_ = json.Unmarshal(up.Body.Bytes(), &r)
 
 	// 第一条记录认领
-	first, err := srv.adoptOfflineShots("rec_1", defaultTenantID, []string{r.ID})
+	first, err := srv.adoptOfflineShots("rec_1", defaultTenantID, "", []string{r.ID})
 	if err != nil {
 		t.Fatalf("adoptOfflineShots: %v", err)
 	}
@@ -166,13 +166,13 @@ func TestOfflineShotAdoptMarksConsumed(t *testing.T) {
 		t.Fatalf("第一条应认领到 1 张,实际 %d", len(first))
 	}
 
-	shots, _ := srv.store.ListOfflineShots(defaultTenantID, "", 100)
+	shots, _ := srv.store.ListOfflineShots(defaultTenantID, nil, 100)
 	if len(shots) != 1 || shots[0].RecordID != "rec_1" || shots[0].Status != "consumed" {
 		t.Errorf("认领后应回填 record_id 并标记 consumed: %+v", shots[0])
 	}
 
 	// 第二条记录再认领同一张 → 应拿不到(已消费)
-	second, err := srv.adoptOfflineShots("rec_2", defaultTenantID, []string{r.ID})
+	second, err := srv.adoptOfflineShots("rec_2", defaultTenantID, "", []string{r.ID})
 	if err != nil {
 		t.Fatalf("二次 adopt: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestOfflineShotAdoptMarksConsumed(t *testing.T) {
 	}
 
 	// 跨租户认领拿不到
-	cross, err := srv.adoptOfflineShots("rec_3", "tenant_other", []string{r.ID})
+	cross, err := srv.adoptOfflineShots("rec_3", "tenant_other", "", []string{r.ID})
 	if err != nil {
 		t.Fatalf("跨租户 adopt: %v", err)
 	}
@@ -205,11 +205,11 @@ func TestOfflineShotTenantIsolation(t *testing.T) {
 			t.Fatalf("CreateOfflineShot(%s): %v", tc.tenant, err)
 		}
 	}
-	a, _ := store.ListOfflineShots("t_a", "", 100)
+	a, _ := store.ListOfflineShots("t_a", nil, 100)
 	if len(a) != 1 || a[0].TenantID != "t_a" {
 		t.Errorf("t_a 应只见自己的 1 张,实际 %d", len(a))
 	}
-	b, _ := store.ListOfflineShots("t_b", "", 100)
+	b, _ := store.ListOfflineShots("t_b", nil, 100)
 	if len(b) != 1 || b[0].TenantID != "t_b" {
 		t.Errorf("t_b 应只见自己的 1 张,实际 %d", len(b))
 	}
@@ -251,11 +251,11 @@ func TestDeleteOfflineShotsProtectsConsumedAndTenants(t *testing.T) {
 		t.Fatalf("应只删掉未成单的那张,实际删了 %d 张 %+v", len(deleted), deleted)
 	}
 
-	left, _ := store.ListOfflineShots(defaultTenantID, "", 100)
+	left, _ := store.ListOfflineShots(defaultTenantID, nil, 100)
 	if len(left) != 1 || left[0].ID != consumed {
 		t.Errorf("已成单的照片应保留,实际剩 %+v", left)
 	}
-	otherLeft, _ := store.ListOfflineShots("t_other", "", 100)
+	otherLeft, _ := store.ListOfflineShots("t_other", nil, 100)
 	if len(otherLeft) != 1 {
 		t.Errorf("跨租户照片不应被删,实际剩 %d 张", len(otherLeft))
 	}

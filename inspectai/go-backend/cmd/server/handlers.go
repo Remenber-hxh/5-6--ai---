@@ -2132,7 +2132,9 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	// 离线上传的照片:已在服务器上,按 ID 认领并标记已消费(防同一张重复成单)
 	if len(req.OfflineShotIDs) > 0 {
-		adopted, err := s.adoptOfflineShots(rec.ID, s.tenantForRequest(r), req.OfflineShotIDs)
+		// inspectorUserID 在上面已按登录会话锁定过(不认前端传的名字)。
+		// 空值只出现在本地免鉴权的开发模式,那种情况不校验归属。
+		adopted, err := s.adoptOfflineShots(rec.ID, s.tenantForRequest(r), inspectorUserID, req.OfflineShotIDs)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "adopt_offline_failed", err.Error())
 			return

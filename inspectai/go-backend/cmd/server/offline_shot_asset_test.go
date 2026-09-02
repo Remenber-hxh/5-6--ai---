@@ -37,7 +37,7 @@ func TestOfflineShotRemembersItsAsset(t *testing.T) {
 	b := mk("k2", "会议中心::escalator::FT-7")
 	manual := mk("k3", "") // 手动路径拍的:没有归属,行为和以前一样
 
-	got, err := store.ListOfflineShots(defaultTenantID, "", 50)
+	got, err := store.ListOfflineShots(defaultTenantID, nil, 50)
 	if err != nil {
 		t.Fatal(err)
 	}

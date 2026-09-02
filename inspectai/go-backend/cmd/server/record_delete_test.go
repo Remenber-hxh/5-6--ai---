@@ -90,7 +90,7 @@ func TestDeleteDraftReleasesOfflineShots(t *testing.T) {
 
 	pending := func() []*OfflineShot {
 		t.Helper()
-		all, err := store.ListOfflineShots("t_a", "", 0)
+		all, err := store.ListOfflineShots("t_a", nil, 0)
 		if err != nil {
 			t.Fatalf("ListOfflineShots: %v", err)
 		}

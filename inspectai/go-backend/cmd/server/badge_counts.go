@@ -19,12 +19,14 @@ import "net/http"
 //
 // 改动其中任何一处,这里都要跟着改。
 func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
-	userID := ""
-	// 数据范围:看不了全部的人,角标只数自己的
-	if !s.canSeeAllData(r) {
-		if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-			userID = user.ID
-		}
+	// 【和列表共用同一个函数,不再各写一遍】原来这里是自己那份
+	// canSeeAllData 二选一,和 handleListOfflineShots 一模一样地重复着 ——
+	// 于是那边修了 fail-open、加了四档数据范围,这边还是老口径,
+	// 角标和点进去的条数就对不上了。而"改动其中任何一处这里都要跟着改"
+	// 这句注释,恰恰是靠人记住的,记不住才是常态。
+	owners, ok := s.shotOwnersFor(w, r)
+	if !ok {
+		return // 已写过响应
 	}
 
 	// 角标是辅助信息:某一路取不到就返回 0,不让整个接口失败 ——
@@ -35,7 +37,7 @@ func (s *Server) handleBadgeCounts(w http.ResponseWriter, r *http.Request) {
 	// limit<=0 会被 store 当成"默认 100",而且筛在 LIMIT 之后 —— 最新 100 条里
 	// 成单的多,未成单的就被截没了。实测页面显示 20 张,角标却报 6。
 	// 角标和用户点进去看到的条数对不上,比不显示更糟。
-	shots, err := s.store.CountPendingOfflineShots(s.tenantForRequest(r), userID)
+	shots, err := s.store.CountPendingOfflineShots(s.tenantForRequest(r), owners)
 	if err != nil {
 		shots = 0 // 角标是辅助信息,取不到就显示 0,不让整个接口失败
 	}
