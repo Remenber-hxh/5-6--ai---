@@ -341,11 +341,7 @@ export default function Prompts() {
           ) : (
           <>
           <Row gutter={12} style={{ marginBottom: 12 }}>
-            <Col span={8}>
-              <div style={lbl}>模板名称</div>
-              <Input value={current.name} onChange={(e) => patch({ ...current, name: e.target.value })} />
-            </Col>
-            <Col span={10}>
+            <Col span={14}>
               <div style={lbl}>场景描述</div>
               <Input value={current.scene} onChange={(e) => patch({ ...current, scene: e.target.value })} />
             </Col>

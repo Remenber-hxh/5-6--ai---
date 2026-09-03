@@ -614,10 +614,9 @@ func (s *Server) promptTemplateDetail(w http.ResponseWriter, r *http.Request, id
 		}
 		t := body.PromptTemplate
 		t.ID = id // 以路径 id 为准,防改错
-		if strings.TrimSpace(t.Name) == "" {
-			writeError(w, http.StatusBadRequest, "bad_name", "模板名不能为空")
-			return
-		}
+		// 【不再校验模板名】它归「巡检模板」页管,这个接口既不写它、
+		// 也就不该因为它为空而拒收 —— 那会让一次纯粹的判定规则修改
+		// 被一个和自己无关的字段挡下来。
 		if t.Mode == "" {
 			t.Mode = PromptModeStructured
 		}
@@ -735,9 +734,8 @@ func (s *Server) applyPromptToTemplate(p PromptTemplate) error {
 	if !ok {
 		return fmt.Errorf("模板 %s 不存在", p.ID)
 	}
-	if strings.TrimSpace(p.Name) != "" {
-		tpl.Name = p.Name
-	}
+	// 【模板名不归提示词页管】它是模板页的。两个页面都能改的话,
+	// 谁后保存谁赢,而界面上看不出来发生过覆盖。
 	tpl.Scene = p.Scene
 	tpl.ExpectedPhotos = p.ExpectedPhotos
 	tpl.PromptMode = p.Mode
@@ -765,12 +763,7 @@ func (s *Server) applyPromptToTemplate(p PromptTemplate) error {
 			fields[i].JudgeNote = ""
 			continue
 		}
-		// 【中文名以提示词这边为准】合并前两边各存一份,同一个字段
-		// 一边叫「日期」一边叫「检查时间」。合并之后只能有一个名字,
-		// 谁改谁生效 —— 而不是两个页面各说各的。
-		if strings.TrimSpace(r.Label) != "" {
-			fields[i].Label = r.Label
-		}
+		// 字段中文名同理:归模板页管,这里不写。
 		fields[i].JudgeMode = r.Mode
 		fields[i].JudgeGroup = r.Group
 		fields[i].YesWhen = r.YesWhen

@@ -3,9 +3,7 @@ import {
   Alert,
   Button,
   Card,
-  Checkbox,
   Input,
-  InputNumber,
   Modal,
   Select,
   Skeleton,
@@ -258,6 +256,12 @@ export default function TemplateEditor() {
     >
       {!current ? null : (
         <>
+          {/* 【这一页只管"有哪些字段、字段长什么样"】必填和照片张数是
+              「提交规则」页的,放两处的话同一份数据有两个写入口,
+              迟早互相冲掉而且不报错。后端也按这条规则拒收。 */}
+          <div style={{ fontSize: 12.5, color: C.textFaint, marginBottom: 12 }}>
+            必填与照片张数在「提交规则」里设置
+          </div>
           {/* 【把"改不得"说在前面】不说的话人会改半天才被拒,
               而且不知道是自己填错了还是系统坏了。 */}
           {codeLocked && (
@@ -296,24 +300,6 @@ export default function TemplateEditor() {
             </Labeled>
             <Labeled label="设备类型">
               <Input value={current.assetType || ""} onChange={(e) => patch({ ...current, assetType: e.target.value })} />
-            </Labeled>
-            <Labeled label="每单最少照片">
-              <InputNumber
-                min={0}
-                max={50}
-                style={{ width: "100%" }}
-                value={current.minImages ?? 0}
-                onChange={(v) => patch({ ...current, minImages: v ?? 0 })}
-              />
-            </Labeled>
-            <Labeled label="每单最多照片">
-              <InputNumber
-                min={1}
-                max={50}
-                style={{ width: "100%" }}
-                value={current.maxImages ?? 20}
-                onChange={(v) => patch({ ...current, maxImages: v ?? 20 })}
-              />
             </Labeled>
           </div>
 
@@ -385,13 +371,6 @@ export default function TemplateEditor() {
                     options={SOURCE_OPTIONS}
                     onChange={(v) => patchField(i, "source", v)}
                   />
-                ),
-              },
-              {
-                title: "必填",
-                width: 70,
-                render: (_, f, i) => (
-                  <Checkbox checked={!!f.required} onChange={(e) => patchField(i, "required", e.target.checked)} />
                 ),
               },
               {

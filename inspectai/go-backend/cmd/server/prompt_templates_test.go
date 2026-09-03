@@ -39,13 +39,14 @@ func TestPromptRendersFromMergedTemplate(t *testing.T) {
 	if len(view.Fields) == 0 {
 		t.Fatal("有机房电梯本该有判定规则 —— 断言没生效")
 	}
-	view.Fields[0].Label = "机房门窗_改过了"
+	// 【改判定规则,不改中文名】中文名归模板页管,提示词页写不动
 	view.Fields[0].Mode = ModeVisual
+	view.Fields[0].YesWhen = "改过的判定依据"
 	if err := srv.applyPromptToTemplate(view); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := renderPromptViaStore(store, "elevator_machine_room")
-	if !strings.Contains(out, "机房门窗_改过了") {
+	if !strings.Contains(out, "改过的判定依据") {
 		t.Error("改完没有立刻生效 —— 后台改提示词会变成「保存了但没变」")
 	}
 }

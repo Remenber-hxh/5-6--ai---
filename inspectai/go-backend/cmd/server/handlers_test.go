@@ -468,8 +468,11 @@ func TestPromptTemplateEndpoints(t *testing.T) {
 	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "字段映射") {
 		t.Fatalf("render code=%d body=%s", got.Code, got.Body.String())
 	}
-	// 保存(改名 + 改字段)→ 再取应反映
-	body := `{"id":"elevator_machine_room","name":"改名测试","scene":"x","fields":[{"code":"door_window_sign","label":"门改过了","group":"机房","mode":"visual","yesWhen":"y"}]}`
+	// 保存判定规则 → 再取应反映。
+	//
+	// 【不再断言改名】模板名和字段中文名归「巡检模板」页,提示词页写不动它们 ——
+	// 一份数据只有一个写入口。这里改成断言它真正拥有的东西:判定规则和场景。
+	body := `{"id":"elevator_machine_room","scene":"x","fields":[{"code":"door_window_sign","group":"机房","mode":"visual","yesWhen":"改过的判定依据"}]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/prompt/templates/elevator_machine_room", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-InspectAI-Token", tok)
@@ -479,12 +482,12 @@ func TestPromptTemplateEndpoints(t *testing.T) {
 		t.Fatalf("put code=%d body=%s", rec.Code, rec.Body.String())
 	}
 	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/elevator_machine_room", tok)
-	if !strings.Contains(got.Body.String(), "改名测试") || !strings.Contains(got.Body.String(), "门改过了") {
+	if !strings.Contains(got.Body.String(), "改过的判定依据") {
 		t.Fatalf("after save not reflected: %s", got.Body.String())
 	}
 	// 渲染应反映新内容(即时生效)
 	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/elevator_machine_room/render", tok)
-	if !strings.Contains(got.Body.String(), "门改过了") {
+	if !strings.Contains(got.Body.String(), "改过的判定依据") {
 		t.Fatalf("render after save not reflected: %s", got.Body.String())
 	}
 }

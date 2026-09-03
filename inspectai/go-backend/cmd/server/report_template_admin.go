@@ -166,6 +166,14 @@ func (s *Server) handleReportTemplateAdmin(w http.ResponseWriter, r *http.Reques
 				writeError(w, http.StatusConflict, "unsafe_change", err.Error())
 				return
 			}
+			// 【提交约束不归这个接口管】必填和照片张数是「提交规则」页的,
+			// 这里一律沿用原值,不看请求里传了什么。
+			//
+			// 光在界面上把输入框藏起来不够:同一份数据有两个写入口,
+			// 迟早会有一个把另一个的改动冲掉,而且不报错 —— 表现是
+			// "我在那边改好的,过一会儿又变回去了",查起来极难。
+			// 所以这条规则落在接口上。
+			next = keepSubmissionRules(old, next)
 		}
 		if err := s.saveReportTemplate(next); err != nil {
 			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
@@ -252,4 +260,26 @@ func logTemplateReloadFailure(err error) {
 	// 【刷新失败要留痕但不挡操作】缓存里还是上一份模板,系统照常能用;
 	// 而把它当错误抛回去的话,人会以为删除没成功、再删一次。
 	log.Printf("WARN: 模板缓存刷新失败,仍在使用上一份: %v", err)
+}
+
+// keepSubmissionRules 保留「提交规则」页管的那几项:必填、照片张数。
+//
+// 按 code 对应;新加的字段没有原值,保持请求里的样子(新字段默认非必填,
+// 之后到提交规则页去配)。
+func keepSubmissionRules(old, next ReportTemplate) ReportTemplate {
+	next.MinImages = old.MinImages
+	next.MaxImages = old.MaxImages
+	wasRequired := map[string]bool{}
+	for _, f := range old.Fields {
+		wasRequired[f.Code] = f.Required
+	}
+	fields := make([]TemplateField, len(next.Fields))
+	copy(fields, next.Fields)
+	for i := range fields {
+		if r, ok := wasRequired[fields[i].Code]; ok {
+			fields[i].Required = r
+		}
+	}
+	next.Fields = fields
+	return next
 }

@@ -208,3 +208,107 @@ func TestCannotDeleteTemplateInUse(t *testing.T) {
 		t.Errorf("用过的模板应拒绝删除,实际 code=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// ===== 职责边界:一份数据只有一个写入口 =====
+
+// 【模板页改不动必填和照片张数】它们归「提交规则」页。
+//
+// 光在界面上把输入框藏起来不够:同一份数据两个写入口,迟早有一个把另一个
+// 冲掉,而且不报错 —— 表现是"我在那边改好的,过一会儿又变回去了",
+// 查起来极难。所以这条规则落在接口上,界面只是跟着它走。
+func TestTemplatePageCannotChangeSubmissionRules(t *testing.T) {
+	isolateTemplateCache(t)
+	server, tokens := newRecordAccessTestServer(t)
+	if err := loadReportTemplates(server.store); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := templateByID("hot_water_room")
+	if before.MinImages == 0 {
+		t.Fatal("前置条件不成立:这个模板本该有最少照片数")
+	}
+	var requiredBefore bool
+	for _, f := range before.Fields {
+		if f.Code == "cabinet_temperature" {
+			requiredBefore = f.Required
+		}
+	}
+
+	// 请求里把张数和必填都改掉 —— 应该被忽略
+	body := `{"name":"热水机房巡检","project":"会议中心","assetType":"热水机房",
+		"minImages":1,"maxImages":2,
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","required":false},
+		          {"code":"cabinet_temperature","label":"控制柜温度℃","kind":"number","required":` +
+		map[bool]string{true: "false", false: "true"}[requiredBefore] + `}]}`
+	got := putTpl(t, server, "/api/report/templates/hot_water_room", tokens["admin"], body)
+	if got.Code != http.StatusOK {
+		t.Fatalf("保存失败 code=%d body=%s", got.Code, got.Body.String())
+	}
+
+	after, _ := templateByID("hot_water_room")
+	if after.MinImages != before.MinImages || after.MaxImages != before.MaxImages {
+		t.Errorf("照片张数被模板页改掉了:%d/%d → %d/%d",
+			before.MinImages, before.MaxImages, after.MinImages, after.MaxImages)
+	}
+	for _, f := range after.Fields {
+		if f.Code == "cabinet_temperature" && f.Required != requiredBefore {
+			t.Errorf("必填被模板页改掉了:%v → %v", requiredBefore, f.Required)
+		}
+	}
+	// 但字段名这类归模板页管的,必须改得动 —— 否则这一页就没用了
+	var renamed bool
+	for _, f := range after.Fields {
+		if f.Code == "cabinet_temperature" && f.Label == "控制柜温度℃" {
+			renamed = true
+		}
+	}
+	if !renamed {
+		t.Error("字段中文名归模板页管,应该改得动")
+	}
+}
+
+// 【提示词页改不动模板名和字段中文名】它们归模板页。
+func TestPromptPageCannotRenameTemplateOrFields(t *testing.T) {
+	isolateTemplateCache(t)
+	server, tokens := newRecordAccessTestServer(t)
+	if err := loadReportTemplates(server.store); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := templateByID("elevator_machine_room")
+	nameBefore := before.Name
+	var labelBefore string
+	for _, f := range before.Fields {
+		if f.Code == "room_clean" {
+			labelBefore = f.Label
+		}
+	}
+	if labelBefore == "" {
+		t.Fatal("前置条件不成立:找不到 room_clean")
+	}
+
+	body := `{"name":"提示词页改的名字","mode":"structured","scene":"新场景",
+		"fields":[{"code":"room_clean","label":"提示词页改的字段名","mode":"visual","yesWhen":"看着干净"}]}`
+	got := putJSON(t, server, "/api/prompt/templates/elevator_machine_room", tokens["admin"], body)
+	if got.Code != http.StatusOK {
+		t.Fatalf("保存失败 code=%d body=%s", got.Code, got.Body.String())
+	}
+
+	after, _ := templateByID("elevator_machine_room")
+	if after.Name != nameBefore {
+		t.Errorf("模板名被提示词页改掉了:%q → %q", nameBefore, after.Name)
+	}
+	for _, f := range after.Fields {
+		if f.Code == "room_clean" {
+			if f.Label != labelBefore {
+				t.Errorf("字段中文名被提示词页改掉了:%q → %q", labelBefore, f.Label)
+			}
+			// 但判定规则归它管,必须写得进去
+			if f.YesWhen != "看着干净" {
+				t.Errorf("判定规则没写进去:%q", f.YesWhen)
+			}
+		}
+	}
+	// 场景归提示词页管
+	if after.Scene != "新场景" {
+		t.Errorf("场景描述归提示词页管,应该写得进去,实际 %q", after.Scene)
+	}
+}
