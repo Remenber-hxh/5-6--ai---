@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, AssetSnapshotEntry, EngineeringTask, createAsset, deleteAsset, listAssetSnapshots, listAssets, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
+import { AssetEntry, AssetSnapshotEntry, EngineeringTask, ReportTemplateDTO, createAsset, deleteAsset, listAssetSnapshots, listAssets, listReportTemplates, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
 import AssetQRSheet from "../components/AssetQRSheet";
 import AssetTrend from "../components/AssetTrend";
 import { exportCsv } from "../lib/csv";
@@ -75,6 +75,21 @@ export default function Ledger() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 建档表单的设备类型候选。【来自模板,不是来自已有资产】—— 见表单里的注释。
+  const [templateTypes, setTemplateTypes] = useState<{ assetType: string; name: string }[]>([]);
+  useEffect(() => {
+    listReportTemplates()
+      .then((tpls: ReportTemplateDTO[]) =>
+        setTemplateTypes(
+          tpls
+            .filter((t) => (t.assetType || "").trim() !== "")
+            .map((t) => ({ assetType: t.assetType as string, name: t.name })),
+        ),
+      )
+      .catch(() => setTemplateTypes([]));
+  }, []);
+
+  // 筛选栏用的类型仍取自已有资产 —— 那里是"筛现有的",不是"定新的"
   const types = useMemo(
     () => Array.from(new Set(assets.map((a) => a.assetType).filter(Boolean))) as string[],
     [assets],
@@ -568,11 +583,25 @@ export default function Ledger() {
           <Form.Item name="assetName" label="设备名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={64} />
           </Form.Item>
-          <Form.Item name="assetType" label="设备类型">
-            <AutoComplete
-              options={types.map((t) => ({ value: t }))}
-              placeholder="如 有机房电梯 / 消防泵房"
-              filterOption={(input, opt) => String(opt?.value || "").includes(input)}
+          {/* 【候选必须来自模板,不能来自已有资产】
+              后台建的设备只填类型、不选模板,系统靠类型反推它属于哪个模板。
+              反推不出来的话资产 ID 会落成 manual::,这台设备一被巡检就裂成两条 ——
+              台账里凭空多一台,而谁都看不出为什么。
+              原来的候选是"已有资产用过的类型":第一次录某类设备时列表是空的,
+              只能手打;而列表里还可能混着对不上任何模板的历史值,选了照样裂。 */}
+          <Form.Item
+            name="assetType"
+            label="设备类型"
+            extra="从巡检模板里选 —— 选错或自己打的类型,这台设备巡检后会挂不上模板"
+          >
+            <Select
+              showSearch
+              allowClear
+              placeholder="选择设备类型"
+              options={templateTypes.map((t) => ({ value: t.assetType, label: `${t.assetType}(${t.name})` }))}
+              filterOption={(input, opt) =>
+                String(opt?.label || "").toLowerCase().includes(input.toLowerCase())
+              }
             />
           </Form.Item>
           <Form.Item name="summary" label="备注">

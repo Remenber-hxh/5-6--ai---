@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -325,8 +326,8 @@ func TestNewTemplateAppearsEverywhere(t *testing.T) {
 	}
 	tok := tokens["admin"]
 
-	body := `{"id":"zihan_meter_new","name":"紫菡抄表(新建)","project":"紫菡雅集",
-		"assetType":"抄表点","maxImages":20,"minImages":5,
+	body := `{"name":"紫菡抄表(新建)","project":"紫菡雅集",
+		"assetType":"抄表点(新建测试)","maxImages":20,"minImages":5,
 		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","required":true,"source":"manual"},
 		          {"code":"reading","label":"读数","kind":"number","source":"ai"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/report/templates", strings.NewReader(body))
@@ -337,31 +338,161 @@ func TestNewTemplateAppearsEverywhere(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("新建失败 code=%d body=%s", rec.Code, rec.Body.String())
 	}
+	// 标识由机器生成,从响应里取 —— 写死一个再断言的话,
+	// 测的就不是"新建的模板到处可见",而是"我猜的那个 id 存在"。
+	var created struct {
+		Template ReportTemplateDTOForTest `json:"template"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	newID := created.Template.ID
+	if newID == "" {
+		t.Fatal("响应里没有新模板的标识")
+	}
 
 	// ① 巡检模板页 / 提交规则页 —— 都读 /api/report/templates
 	got := requestWithToken(server, http.MethodGet, "/api/report/templates", tok)
-	if !strings.Contains(got.Body.String(), "zihan_meter_new") {
+	if !strings.Contains(got.Body.String(), newID) {
 		t.Error("新模板没出现在模板列表里 —— 模板页和提交规则页都看不到它")
 	}
 
 	// ② 提示词页 —— 读 /api/prompt/templates
 	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates", tok)
-	if !strings.Contains(got.Body.String(), "zihan_meter_new") {
+	if !strings.Contains(got.Body.String(), newID) {
 		t.Error("新模板没出现在提示词列表里 —— 没法给它配 AI 判定规则")
 	}
 
 	// ③ 能打开它的提示词编辑器(新模板还没有判定规则,应给空草稿而不是 404)
-	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/zihan_meter_new", tok)
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/"+newID, tok)
 	if got.Code != http.StatusOK {
 		t.Errorf("新模板的提示词编辑器打不开 code=%d", got.Code)
 	}
 
 	// ④ 提交规则页能给它配必填(读得到 ≠ 配得了)
-	w := saveRules(t, server, req, "zihan_meter_new", `{"required":{"reading":true}}`)
+	w := saveRules(t, server, req, newID, `{"required":{"reading":true}}`)
 	if w.Code != http.StatusOK {
 		t.Errorf("给新模板配必填失败 code=%d body=%s", w.Code, w.Body.String())
 	}
-	if f, _ := findField("zihan_meter_new", "reading"); !f.Required {
+	if f, _ := findField(newID, "reading"); !f.Required {
 		t.Error("必填没配上 —— 提交规则页对新模板不生效")
 	}
+}
+
+// ===== 标识自动生成 =====
+
+// 【标识不能让人填】它是永久的:一旦有记录就再也改不了。
+// 让人手填一个永久且不可改的键,等于把一次手滑变成永久债务。
+func TestNewTemplateIDIsGeneratedNotTaken(t *testing.T) {
+	isolateTemplateCache(t)
+	server, tokens := newRecordAccessTestServer(t)
+	if err := loadReportTemplates(server.store); err != nil {
+		t.Fatal(err)
+	}
+
+	// 请求里塞一个乱七八糟的 id —— 应该被忽略
+	body := `{"id":"我 手 打 的 ID","name":"新模板","assetType":"新类型甲",
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","source":"manual"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/report/templates", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-InspectAI-Token", tokens["admin"])
+	rec := httptest.NewRecorder()
+	server.router(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("新建失败 code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "我 手 打 的 ID") {
+		t.Error("请求里的标识被采用了 —— 它必须由机器生成")
+	}
+	// 生成的标识要合法(否则后面每一处按标识关联的地方都会出问题)
+	var out struct {
+		Template ReportTemplateDTOForTest `json:"template"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !tplIDPattern.MatchString(out.Template.ID) {
+		t.Errorf("生成的标识不合法: %q", out.Template.ID)
+	}
+}
+
+// 连着建两个,标识不能撞车 —— 撞了的话后建的会把先建的覆盖掉。
+func TestGeneratedIDsDoNotCollide(t *testing.T) {
+	isolateTemplateCache(t)
+	seen := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		id := newTemplateID()
+		if seen[id] {
+			t.Fatalf("生成了重复的标识: %s", id)
+		}
+		if !tplIDPattern.MatchString(id) {
+			t.Fatalf("生成的标识不合法: %q", id)
+		}
+		seen[id] = true
+	}
+}
+
+// ===== 设备类型唯一 =====
+
+// 【设备类型是关联键,不只是标签】后台建资产时只填类型、不选模板,
+// 系统靠它反推这台设备属于哪个模板(取第一个匹配)。两个模板用同一个类型的话,
+// 第二个永远反推不到 —— 资产 ID 会落成 manual::,这台设备一被巡检就裂成两条,
+// 台账里凭空多一台,而谁都看不出为什么。
+func TestAssetTypeMustBeUniqueAcrossTemplates(t *testing.T) {
+	isolateTemplateCache(t)
+	server, tokens := newRecordAccessTestServer(t)
+	if err := loadReportTemplates(server.store); err != nil {
+		t.Fatal(err)
+	}
+	taken, ok := templateByID("hot_water_room")
+	if !ok || taken.AssetType == "" {
+		t.Fatal("前置条件不成立:热水机房应该有设备类型")
+	}
+
+	// 新建一个用同样类型的
+	body := `{"name":"另一个热水机房","assetType":"` + taken.AssetType + `",
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","source":"manual"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/report/templates", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-InspectAI-Token", tokens["admin"])
+	rec := httptest.NewRecorder()
+	server.router(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Error("允许两个模板用同一个设备类型 —— 后台建的设备会认错模板")
+	}
+	if !strings.Contains(rec.Body.String(), taken.Name) {
+		t.Errorf("拒绝理由应说清被谁占用了,实际 %s", rec.Body.String())
+	}
+
+	// 改已有模板去撞车,同样要拦
+	dup := `{"name":"变电所巡检","assetType":"` + taken.AssetType + `",
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","source":"manual"}]}`
+	if w := putTpl(t, server, "/api/report/templates/power_room", tokens["admin"], dup); w.Code == http.StatusOK {
+		t.Error("编辑时撞车没拦住")
+	}
+
+	// 但改自己的类型不该被自己拦下
+	self := `{"name":"热水机房巡检","assetType":"` + taken.AssetType + `",
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","source":"manual"}]}`
+	if w := putTpl(t, server, "/api/report/templates/hot_water_room", tokens["admin"], self); w.Code != http.StatusOK {
+		t.Errorf("保存自己原有的类型被拦下了 code=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// 建资产时靠设备类型反推模板 —— 这是上面那条唯一性约束保护的东西。
+func TestAssetTypeStillResolvesToTemplate(t *testing.T) {
+	isolateTemplateCache(t)
+	store := NewMemStore()
+	if err := loadReportTemplates(store); err != nil {
+		t.Fatal(err)
+	}
+	tpl, _ := templateByID("hot_water_room")
+	if got := templateIDForAssetType(tpl.AssetType); got != "hot_water_room" {
+		t.Errorf("设备类型 %q 应反推出 hot_water_room,得到 %q —— 反推不出来资产会落 manual::",
+			tpl.AssetType, got)
+	}
+}
+
+type ReportTemplateDTOForTest struct {
+	ID string `json:"id"`
 }

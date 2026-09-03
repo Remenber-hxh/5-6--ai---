@@ -15,11 +15,13 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  ProjectEntry,
   ReportTemplateDTO,
   TemplateFieldDTO,
   createReportTemplate,
   deleteReportTemplate,
   getReportTemplate,
+  listProjects,
   listReportTemplates,
   saveReportTemplate,
 } from "../api/mgmt";
@@ -51,7 +53,7 @@ const SOURCE_OPTIONS = [
 
 function emptyTemplate(): ReportTemplateDTO {
   return {
-    id: "",
+    id: "", // 后端生成
     name: "",
     project: "",
     assetType: "",
@@ -78,6 +80,7 @@ export default function TemplateEditor() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
 
   const reloadList = useCallback(async () => {
     const tpls = await listReportTemplates().catch(() => []);
@@ -105,6 +108,8 @@ export default function TemplateEditor() {
 
   useEffect(() => {
     void (async () => {
+      // 项目拉不到不该拖垮整页 —— 它只是个下拉的候选
+      listProjects().then(setProjects).catch(() => setProjects([]));
       const tpls = await reloadList();
       if (tpls.length) await select(tpls[0].id);
       setLoading(false);
@@ -284,22 +289,37 @@ export default function TemplateEditor() {
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 16 }}>
-            <Labeled label="模板标识">
-              <Input
-                value={current.id}
-                disabled={!creating}
-                placeholder="小写字母/数字/下划线"
-                onChange={(e) => patch({ ...current, id: e.target.value.trim() })}
-              />
-            </Labeled>
+            {/* 【标识不给人填】它是永久的:一旦有记录就再也改不了。
+                让人手填一个永久且不可改的键,等于把一次手滑变成永久债务。
+                新建时后端生成,这里只在已有模板上显示出来备查。 */}
+            {!creating && (
+              <Labeled label="模板标识">
+                <Input value={current.id} disabled />
+              </Labeled>
+            )}
             <Labeled label="模板名称">
               <Input value={current.name} onChange={(e) => patch({ ...current, name: e.target.value })} />
             </Labeled>
             <Labeled label="所属项目">
-              <Input value={current.project || ""} onChange={(e) => patch({ ...current, project: e.target.value })} />
+              {/* 【选而不是打】项目名是权限、数据范围、看板的关联键,
+                  手打多一个空格就成了一个谁都看不见的孤儿项目,而且不报错。 */}
+              <Select
+                style={{ width: "100%" }}
+                placeholder="选择项目"
+                options={projects.map((p) => ({ value: p.name, label: p.name }))}
+                value={current.project || undefined}
+                onChange={(v) => patch({ ...current, project: v })}
+              />
             </Labeled>
             <Labeled label="设备类型">
-              <Input value={current.assetType || ""} onChange={(e) => patch({ ...current, assetType: e.target.value })} />
+              {/* 【这里是"定义"类型,不是"引用"】所以是自由输入 + 唯一性校验,
+                  而不是下拉 —— 下拉里选一个已有的反而会和别的模板撞车。
+                  后台建资产时靠它反推模板,撞车的话第二个模板永远反推不到。 */}
+              <Input
+                value={current.assetType || ""}
+                placeholder="如 有机房电梯;不能和别的模板重复"
+                onChange={(e) => patch({ ...current, assetType: e.target.value })}
+              />
             </Labeled>
           </div>
 

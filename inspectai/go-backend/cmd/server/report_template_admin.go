@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -175,6 +176,10 @@ func (s *Server) handleReportTemplateAdmin(w http.ResponseWriter, r *http.Reques
 			// 所以这条规则落在接口上。
 			next = keepSubmissionRules(old, next)
 		}
+		if err := checkAssetTypeUnique(next); err != nil {
+			writeError(w, http.StatusConflict, "asset_type_taken", err.Error())
+			return
+		}
 		if err := s.saveReportTemplate(next); err != nil {
 			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
 			return
@@ -223,9 +228,20 @@ func (s *Server) handleCreateReportTemplate(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	next.ID = strings.TrimSpace(next.ID)
+	// 【标识不让人填,机器生成】它是永久的:一旦有记录就再也改不了。
+	// 让人手填一个永久且不可改的键,等于把一次手滑变成永久债务 ——
+	// 会填出中文、空格、和别人重复的值,而错误要到几个月后翻旧记录才暴露。
+	//
+	// 生成的值不带含义:模板改名、换项目、换设备类型都不影响它。
+	// 想按含义生成(比如拼音)反而不稳 —— 名字一改,标识就该跟着改,
+	// 而它恰恰是不能改的那个东西。
+	next.ID = newTemplateID()
 	if err := validateReportTemplate(next); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_template", err.Error())
+		return
+	}
+	if err := checkAssetTypeUnique(next); err != nil {
+		writeError(w, http.StatusConflict, "asset_type_taken", err.Error())
 		return
 	}
 	if _, exists := templateByID(next.ID); exists {
@@ -282,4 +298,43 @@ func keepSubmissionRules(old, next ReportTemplate) ReportTemplate {
 	}
 	next.Fields = fields
 	return next
+}
+
+// newTemplateID 生成一个不会撞车的模板标识。
+//
+// 【为什么不按名字生成】名字会改,而标识一旦有记录就永远不能改 ——
+// 按名字生成等于埋一个"改名之后标识就名不副实"的坑,而且改名是常事。
+// 不带含义的标识反而稳:模板改名、换项目、换设备类型都不影响它。
+func newTemplateID() string {
+	for i := 0; i < 8; i++ {
+		id := "tpl_" + strings.ToLower(randomHex(4))
+		if _, exists := templateByID(id); !exists {
+			return id
+		}
+	}
+	// 八次都撞上基本不可能;真撞上就用全局唯一的那个,牺牲一点可读性
+	return "tpl_" + strings.ToLower(randomHex(8))
+}
+
+// checkAssetTypeUnique 设备类型在模板之间不能重复。
+//
+// 【它是关联键,不只是个标签】后台建资产时只填设备类型、不选模板,
+// 系统靠它反推这台设备属于哪个模板(见 templateIDForAssetType,取第一个匹配)。
+// 两个模板用同一个类型的话,第二个永远反推不到 —— 而资产 ID 会落成
+// manual::,于是这台设备一被巡检就裂成两条,谁都看不出为什么。
+func checkAssetTypeUnique(t ReportTemplate) error {
+	at := strings.TrimSpace(t.AssetType)
+	if at == "" {
+		return nil // 没填就不判;它只在"想被反推到"时才有意义
+	}
+	for _, other := range reportTemplates() {
+		if other.ID == t.ID {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(other.AssetType), at) {
+			return fmt.Errorf("设备类型「%s」已经被模板「%s」占用了 —— "+
+				"两个模板用同一个类型的话,后台建的设备会认错模板", at, other.Name)
+		}
+	}
+	return nil
 }
