@@ -312,3 +312,56 @@ func TestPromptPageCannotRenameTemplateOrFields(t *testing.T) {
 		t.Errorf("场景描述归提示词页管,应该写得进去,实际 %q", after.Scene)
 	}
 }
+
+// 新建的模板必须【三页都能看到】。
+//
+// 这是"一份数据三个视角"的直接检验:巡检模板页、提交规则页、提示词页
+// 读的都是同一个 reportTemplates()。任何一处看不到,就说明还有第二份数据。
+func TestNewTemplateAppearsEverywhere(t *testing.T) {
+	isolateTemplateCache(t)
+	server, tokens := newRecordAccessTestServer(t)
+	if err := loadReportTemplates(server.store); err != nil {
+		t.Fatal(err)
+	}
+	tok := tokens["admin"]
+
+	body := `{"id":"zihan_meter_new","name":"紫菡抄表(新建)","project":"紫菡雅集",
+		"assetType":"抄表点","maxImages":20,"minImages":5,
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","required":true,"source":"manual"},
+		          {"code":"reading","label":"读数","kind":"number","source":"ai"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/report/templates", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-InspectAI-Token", tok)
+	rec := httptest.NewRecorder()
+	server.router(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("新建失败 code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// ① 巡检模板页 / 提交规则页 —— 都读 /api/report/templates
+	got := requestWithToken(server, http.MethodGet, "/api/report/templates", tok)
+	if !strings.Contains(got.Body.String(), "zihan_meter_new") {
+		t.Error("新模板没出现在模板列表里 —— 模板页和提交规则页都看不到它")
+	}
+
+	// ② 提示词页 —— 读 /api/prompt/templates
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates", tok)
+	if !strings.Contains(got.Body.String(), "zihan_meter_new") {
+		t.Error("新模板没出现在提示词列表里 —— 没法给它配 AI 判定规则")
+	}
+
+	// ③ 能打开它的提示词编辑器(新模板还没有判定规则,应给空草稿而不是 404)
+	got = requestWithToken(server, http.MethodGet, "/api/prompt/templates/zihan_meter_new", tok)
+	if got.Code != http.StatusOK {
+		t.Errorf("新模板的提示词编辑器打不开 code=%d", got.Code)
+	}
+
+	// ④ 提交规则页能给它配必填(读得到 ≠ 配得了)
+	w := saveRules(t, server, req, "zihan_meter_new", `{"required":{"reading":true}}`)
+	if w.Code != http.StatusOK {
+		t.Errorf("给新模板配必填失败 code=%d body=%s", w.Code, w.Body.String())
+	}
+	if f, _ := findField("zihan_meter_new", "reading"); !f.Required {
+		t.Error("必填没配上 —— 提交规则页对新模板不生效")
+	}
+}
