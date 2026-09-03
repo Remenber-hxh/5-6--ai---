@@ -312,7 +312,14 @@ func (s *Server) handleSaveTemplateFields(w http.ResponseWriter, r *http.Request
 func (s *Server) handleTemplateRoutes(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/report/templates/")
 	id := strings.TrimSuffix(rest, "/fields")
-	if id == rest || id == "" {
+	if id == rest {
+		// 【同一个前缀只留一个分发器】不带 /fields 的是模板本体的增删改,
+		// 交给编辑那一套。分成两个 case 的话,谁先匹配到就由 switch 的
+		// 书写顺序决定 —— 那种耦合改起来必然踩。
+		s.handleReportTemplateAdmin(w, r)
+		return
+	}
+	if id == "" {
 		writeError(w, http.StatusNotFound, "not_found", "未匹配的模板路由")
 		return
 	}

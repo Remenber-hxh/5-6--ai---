@@ -24,6 +24,13 @@ type ReportTemplateStore interface {
 	// "谁被删了、谁挪了位",而顺序错了表单就乱了。整份替换只有一种结果。
 	UpsertReportTemplate(t ReportTemplate) error
 	DeleteReportTemplate(id string) error
+	// CountRecordsUsingTemplate 有多少条巡检记录用了这个模板。
+	//
+	// 【决定哪些改动还允许做】字段的 code 是记录里字段值的键:有记录之后
+	// 改 code 或删字段,历史记录里那一项就再也读不出来 —— 而且不报错,
+	// 表现是"以前填过的内容不见了"。所以有记录的模板只允许改中文标签、
+	// 加新字段,不允许改 code、不允许删字段。
+	CountRecordsUsingTemplate(templateID string) (int, error)
 }
 
 // ===== SQLiteStore(SQLite + MySQL) =====
@@ -142,6 +149,12 @@ func (s *SQLiteStore) UpsertReportTemplate(t ReportTemplate) error {
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) CountRecordsUsingTemplate(templateID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM records WHERE template_id=?`, templateID).Scan(&n)
+	return n, err
+}
+
 func (s *SQLiteStore) DeleteReportTemplate(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -179,6 +192,18 @@ func (m *MemStore) UpsertReportTemplate(t ReportTemplate) error {
 	}
 	m.reportTemplates[t.ID] = t
 	return nil
+}
+
+func (m *MemStore) CountRecordsUsingTemplate(templateID string) (int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, rec := range m.records {
+		if rec != nil && rec.TemplateID == templateID {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (m *MemStore) DeleteReportTemplate(id string) error {

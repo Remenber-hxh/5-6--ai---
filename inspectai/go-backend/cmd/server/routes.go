@@ -98,6 +98,9 @@ var apiRoutes = []apiRoute{
 	// —— 巡检与识别 ——
 	{http.MethodGet, "/api/inspection/points", guardNone, "", (*Server).handleListPoints},
 	{http.MethodGet, "/api/report/templates", guardNone, "", (*Server).handleListTemplates},
+	// 模板编辑。列表那条保持 guardNone(移动端要拿模板渲染表单),
+	// 写操作全在 template_manage 之下 —— 单条读写在前缀路由里再查一次。
+	{http.MethodPost, "/api/report/templates", guardNone, "template_manage", (*Server).handleCreateReportTemplate},
 	// 离线照片:弱网现场先存手机、联网后上传(带幂等键,重传不产生重复)
 	{http.MethodPost, "/api/inspection/offline-shots", guardNone, "", (*Server).handleUploadOfflineShot},
 	{http.MethodGet, "/api/inspection/offline-shots", guardNone, "", (*Server).handleListOfflineShots},
