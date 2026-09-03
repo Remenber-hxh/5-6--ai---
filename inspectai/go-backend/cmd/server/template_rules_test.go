@@ -28,6 +28,7 @@ func findField(tplID, code string) (TemplateField, bool) {
 // 【asset_no 必须锁死】它是台账认归属的字段。放开成选填之后,提交时不填,
 // 这条记录就挂不到任何设备上 —— 台账里既看不到这次巡检,也不知道少了谁。
 func TestAssetNoCannotBeMadeOptional(t *testing.T) {
+	isolateTemplateCache(t)
 	setTemplateRules(nil, nil)
 	t.Cleanup(func() { setTemplateRules(nil, nil) })
 
@@ -99,6 +100,7 @@ func TestTemplateRuleOverridesRequired(t *testing.T) {
 
 // 保存之后必须【立刻】生效,不能等重启。
 func TestSaveTemplateFieldsTakesEffectImmediately(t *testing.T) {
+	isolateTemplateCache(t)
 	setTemplateRules(nil, nil)
 	t.Cleanup(func() { setTemplateRules(nil, nil) })
 	srv, auth := newScopeRequest(t, roleAdmin, "")
@@ -134,6 +136,7 @@ func TestSaveTemplateFieldsTakesEffectImmediately(t *testing.T) {
 
 // 模板里没有的字段要当场拒绝。存下去也永远不生效,而后台会显示"已保存"。
 func TestSaveTemplateFieldsRejectsUnknownField(t *testing.T) {
+	isolateTemplateCache(t)
 	setTemplateRules(nil, nil)
 	t.Cleanup(func() { setTemplateRules(nil, nil) })
 	srv, auth := newScopeRequest(t, roleAdmin, "")
@@ -181,6 +184,7 @@ func TestMinImagesEnforcedOnSubmit(t *testing.T) {
 // 最少张数不能超过单次上传上限 —— 超过就永远提交不了,
 // 而巡检员在现场只看到「还差 N 张」,拍到死也够不着。
 func TestMinImagesCannotExceedMax(t *testing.T) {
+	isolateTemplateCache(t)
 	setTemplateRules(nil, nil)
 	t.Cleanup(func() { setTemplateRules(nil, nil) })
 	srv, auth := newScopeRequest(t, roleAdmin, "")

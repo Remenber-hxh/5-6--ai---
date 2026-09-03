@@ -5,29 +5,93 @@ import (
 	"testing"
 )
 
-// 种子灌库 → 从库取出渲染,应与直接用种子渲染一致(存取无损 + 即时生效基础)
-func TestPromptStoreRoundtrip(t *testing.T) {
+// 合并之后:判定规则存在模板字段表上,改了要【立刻】反映到渲染结果里。
+//
+// 【这条以前测的是另一条路】合并前提示词单独一张表,这里验的是"写那张表
+// 能不能渲染出来"。现在那张表不再作为事实来源 —— 继续那样测的话,
+// 测试会一直绿着,而后台改提示词其实完全不生效。
+func TestPromptRendersFromMergedTemplate(t *testing.T) {
+	isolateTemplateCache(t)
 	store := NewMemStore()
-	if err := ensurePromptTemplateSeeds(store); err != nil {
-		t.Fatalf("seed failed: %v", err)
+	if err := loadReportTemplates(store); err != nil {
+		t.Fatal(err)
 	}
+
 	for _, id := range []string{"elevator_machine_room", "elevator_no_room"} {
-		fromStore, ok := renderPromptViaStore(store, id)
+		out, ok := renderPromptViaStore(store, id)
 		if !ok {
-			t.Fatalf("renderViaStore %s failed", id)
+			t.Fatalf("%s 应该渲染得出来", id)
 		}
-		fromSeed, _ := renderPromptFromSeed(id)
-		if fromStore != fromSeed {
-			t.Errorf("%s: 库渲染与种子渲染不一致", id)
+		for _, want := range []string{"字段映射", "置信度", "输出"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s 渲染结果缺少「%s」段", id, want)
+			}
 		}
 	}
-	// 改库后立即生效:改一个字段名,再渲染应能看到
-	tpl, _, _ := store.GetPromptTemplate("elevator_machine_room")
-	tpl.Fields[3].Label = "机房门窗_改过了"
-	_ = store.UpsertPromptTemplate(tpl)
+
+	// 改一个字段的判定规则,渲染应立刻反映 —— 不生效的话人会反复保存,
+	// 而问题在别处。
+	srv := &Server{store: store}
+	view, ok := promptTemplateOrDraft(store, "elevator_machine_room")
+	if !ok {
+		t.Fatal("取不到有机房电梯的提示词视图")
+	}
+	if len(view.Fields) == 0 {
+		t.Fatal("有机房电梯本该有判定规则 —— 断言没生效")
+	}
+	view.Fields[0].Label = "机房门窗_改过了"
+	view.Fields[0].Mode = ModeVisual
+	if err := srv.applyPromptToTemplate(view); err != nil {
+		t.Fatal(err)
+	}
 	out, _ := renderPromptViaStore(store, "elevator_machine_room")
 	if !strings.Contains(out, "机房门窗_改过了") {
-		t.Errorf("改库后渲染未反映新内容(即时生效失败)")
+		t.Error("改完没有立刻生效 —— 后台改提示词会变成「保存了但没变」")
+	}
+}
+
+// 从提示词字段表里删掉一行 = 这一项不再让 AI 判。
+//
+// 【只覆盖不清除是个静默 bug】人在界面上删了、保存成功了,而 AI 照旧在判 ——
+// 界面和实际行为对不上,谁都看不出来。
+func TestRemovingFieldFromPromptStopsAIJudging(t *testing.T) {
+	isolateTemplateCache(t)
+	store := NewMemStore()
+	if err := loadReportTemplates(store); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{store: store}
+
+	view, _ := promptTemplateOrDraft(store, "elevator_machine_room")
+	before := len(view.Fields)
+	if before < 2 {
+		t.Fatalf("前置条件不成立,只有 %d 个判定字段", before)
+	}
+	dropped := view.Fields[0].Code
+	view.Fields = view.Fields[1:]
+	if err := srv.applyPromptToTemplate(view); err != nil {
+		t.Fatal(err)
+	}
+
+	after, _ := promptTemplateOrDraft(store, "elevator_machine_room")
+	if len(after.Fields) != before-1 {
+		t.Errorf("删掉的字段还在:期望 %d 项,实际 %d 项", before-1, len(after.Fields))
+	}
+	for _, f := range after.Fields {
+		if f.Code == dropped {
+			t.Errorf("字段 %s 已从提示词里删掉,却还带着判定规则", dropped)
+		}
+	}
+	// 表单定义不能跟着被删 —— 那是模板页在管的,提示词页无权删表单字段
+	tpl, _ := templateByID("elevator_machine_room")
+	var stillInForm bool
+	for _, f := range tpl.Fields {
+		if f.Code == dropped {
+			stillInForm = true
+		}
+	}
+	if !stillInForm {
+		t.Errorf("字段 %s 连表单定义一起被删了 —— 提示词页不该动表单", dropped)
 	}
 }
 

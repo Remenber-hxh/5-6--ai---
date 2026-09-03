@@ -47,7 +47,7 @@ func currentReportTemplates() []ReportTemplate {
 	cached := templateCache.tpls
 	templateCache.mu.RUnlock()
 	if len(cached) == 0 {
-		return baseReportTemplates()
+		return defaultReportTemplates()
 	}
 	// 【必须给副本】调用方(applyTemplateRules)会就地改 MinImages 和 Fields。
 	// 直接把缓存交出去的话,一次请求的改动会写回全局缓存,而且是悄悄地 ——
@@ -69,7 +69,7 @@ func loadReportTemplates(store Store) error {
 		return err
 	}
 	if len(tpls) == 0 {
-		for _, t := range baseReportTemplates() {
+		for _, t := range defaultReportTemplates() {
 			if err := store.UpsertReportTemplate(t); err != nil {
 				return fmt.Errorf("种子模板 %s 写入失败: %w", t.ID, err)
 			}
@@ -455,4 +455,66 @@ func initialFieldValues(tpl ReportTemplate, inspector string) []FieldValue {
 		})
 	}
 	return values
+}
+
+// defaultReportTemplates 代码里那份模板的【完整形态】——
+// 表单定义 + 判定规则,和灌进库里的一模一样。
+//
+// 【回退必须和入库等价】读库失败时用的就是这一份。如果回退那份没有判定规则,
+// 一次读库失败就会让 AI 识别静默停摆 —— 表单照常能填,但每张照片都不识别了,
+// 而且不报错。安全网上有个洞比没有安全网更糟,因为没人会去检查它。
+func defaultReportTemplates() []ReportTemplate {
+	return withPromptSeeds(baseReportTemplates())
+}
+
+// withPromptSeeds 把代码里那份判定规则贴到模板字段上。
+//
+// 【为什么要有这一步】判定规则和表单定义现在存在同一张字段表上(迁移 026),
+// 但代码里它们仍分两处写:表单定义在 baseReportTemplates,判定规则在
+// promptTemplateSeeds。全新部署(库是空的)走这里合并;已有库走迁移回填。
+//
+// 【按 code 对应,对不上就跳过】不按顺序也不按标签 —— 顺序会变、标签会改,
+// 只有 code 稳定。贴错的话 AI 会拿着 A 字段的判定规则去判 B 字段,而且不报错。
+func withPromptSeeds(tpls []ReportTemplate) []ReportTemplate {
+	rules := map[string]map[string]PromptField{}
+	heads := map[string]PromptTemplate{}
+	for _, p := range promptTemplateSeeds() {
+		heads[p.ID] = p
+		byCode := map[string]PromptField{}
+		for _, f := range p.Fields {
+			byCode[f.Code] = f
+		}
+		rules[p.ID] = byCode
+	}
+
+	out := make([]ReportTemplate, len(tpls))
+	copy(out, tpls)
+	for i := range out {
+		head, ok := heads[out[i].ID]
+		if !ok {
+			continue // 这个模板还没有结构化判定规则,保持原样
+		}
+		out[i].Scene = head.Scene
+		out[i].ExpectedPhotos = head.ExpectedPhotos
+		out[i].PromptMode = head.Mode
+		out[i].RawText = head.RawText
+
+		byCode := rules[out[i].ID]
+		fields := make([]TemplateField, len(out[i].Fields))
+		copy(fields, out[i].Fields)
+		for j := range fields {
+			r, ok := byCode[fields[j].Code]
+			if !ok {
+				continue
+			}
+			fields[j].JudgeMode = r.Mode
+			fields[j].JudgeGroup = r.Group
+			fields[j].YesWhen = r.YesWhen
+			fields[j].NoWhen = r.NoWhen
+			fields[j].SkipWhen = r.SkipWhen
+			fields[j].JudgeNote = r.Note
+		}
+		out[i].Fields = fields
+	}
+	return out
 }

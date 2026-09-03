@@ -243,6 +243,7 @@ func putJSON(t *testing.T, srv *Server, path, tok, body string) *httptest.Respon
 
 // 列表要列出全部十个业务模板 —— 只列 DB 的话,那八个在界面上根本不存在。
 func TestListShowsEveryBusinessTemplate(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	if err := ensurePromptTemplateSeeds(server.store); err != nil {
 		t.Fatal(err)
@@ -266,6 +267,7 @@ func TestListShowsEveryBusinessTemplate(t *testing.T) {
 
 // 整段文本:存进去 → 渲染出来必须一字不差。
 func TestRawSaveThenRenderOverHTTP(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	tok := tokens["admin"]
 	const id = "fire_pump"
@@ -290,6 +292,7 @@ func TestRawSaveThenRenderOverHTTP(t *testing.T) {
 // 结构化模板字段表被清空 → 必须拦住。
 // 【放过去就是静默失灵】只有表头没有判定项的提示词,模型照跑,结果全空。
 func TestEmptyFieldTableRejected(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	if err := ensurePromptTemplateSeeds(server.store); err != nil {
 		t.Fatal(err)
@@ -303,6 +306,7 @@ func TestEmptyFieldTableRejected(t *testing.T) {
 
 // 改坏 → 回滚 → 内容真的回来了。这条不过,版本功能就只是个装饰。
 func TestSaveThenRollbackOverHTTP(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	tok := tokens["admin"]
 	const id = "ups_room"
@@ -356,6 +360,7 @@ func TestSaveThenRollbackOverHTTP(t *testing.T) {
 
 // 版本接口同样要挡住没权限的人 —— 历史里是完整提示词正文。
 func TestPromptVersionsRequirePermission(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	got := requestWithToken(server, http.MethodGet,
 		"/api/prompt/templates/ups_room/versions", tokens["inspector"])

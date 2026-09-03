@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -37,7 +38,8 @@ type ReportTemplateStore interface {
 
 func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 	rows, err := s.db.Query(`SELECT id, name, project, asset_type, max_images,
-		min_images, featured, has_ai, ai_prompt FROM report_templates
+		min_images, featured, has_ai, ai_prompt, scene, expected_photos,
+		prompt_mode, raw_text FROM report_templates
 		WHERE disabled = 0 ORDER BY sort_no ASC, id ASC`)
 	if err != nil {
 		return nil, err
@@ -49,12 +51,24 @@ func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 	for rows.Next() {
 		var t ReportTemplate
 		var featured, hasAI int
+		// 【新加的列必须按可空扫】MySQL 的 TEXT 列加不了 DEFAULT,存量行是 NULL;
+		// 直接扫进 string 会报 "converting NULL to string is unsupported",
+		// 整份模板加载失败 —— 表现是启动 WARN + 全系统退回代码里那份,
+		// 而后台改的模板全部不生效。
+		var photosJSON, scene, promptMode, rawText sql.NullString
 		if err := rows.Scan(&t.ID, &t.Name, &t.Project, &t.AssetType, &t.MaxImages,
-			&t.MinImages, &featured, &hasAI, &t.AIPrompt); err != nil {
+			&t.MinImages, &featured, &hasAI, &t.AIPrompt, &scene, &photosJSON,
+			&promptMode, &rawText); err != nil {
 			return nil, err
 		}
+		t.Scene = scene.String
+		t.PromptMode = promptMode.String
+		t.RawText = rawText.String
 		t.Featured = featured != 0
 		t.HasAI = hasAI != 0
+		if strings.TrimSpace(photosJSON.String) != "" {
+			_ = json.Unmarshal([]byte(photosJSON.String), &t.ExpectedPhotos)
+		}
 		t.Fields = []TemplateField{}
 		out = append(out, t)
 		order = append(order, t.ID)
@@ -72,26 +86,36 @@ func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 	// 【一次查全部字段,不逐个模板查】十个模板就是十次往返,而这是启动
 	// 和每次保存后都要跑的路径。
 	fRows, err := s.db.Query(`SELECT template_id, code, label, kind, required,
-		source, options, default_val, manual_only FROM report_template_fields
+		source, options, default_val, manual_only, judge_mode, judge_group,
+		yes_when, no_when, skip_when, judge_note FROM report_template_fields
 		ORDER BY template_id ASC, sort_no ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer fRows.Close()
 	for fRows.Next() {
-		var tplID, optionsJSON string
+		var tplID string
 		var f TemplateField
 		var required, manualOnly int
+		// 同上:判定那几列也是后加的,存量行为 NULL
+		var optionsJSON, judgeMode, judgeGroup, yesWhen, noWhen, skipWhen, judgeNote sql.NullString
 		if err := fRows.Scan(&tplID, &f.Code, &f.Label, &f.Kind, &required,
-			&f.Source, &optionsJSON, &f.Default, &manualOnly); err != nil {
+			&f.Source, &optionsJSON, &f.Default, &manualOnly, &judgeMode,
+			&judgeGroup, &yesWhen, &noWhen, &skipWhen, &judgeNote); err != nil {
 			return nil, err
 		}
+		f.JudgeMode = judgeMode.String
+		f.JudgeGroup = judgeGroup.String
+		f.YesWhen = yesWhen.String
+		f.NoWhen = noWhen.String
+		f.SkipWhen = skipWhen.String
+		f.JudgeNote = judgeNote.String
 		f.Required = required != 0
 		f.ManualOnly = manualOnly != 0
-		if strings.TrimSpace(optionsJSON) != "" {
+		if strings.TrimSpace(optionsJSON.String) != "" {
 			// 解不出来就当没有选项 —— 一条脏数据不该让整份模板加载失败,
 			// 那会让全系统建不了记录。
-			_ = json.Unmarshal([]byte(optionsJSON), &f.Options)
+			_ = json.Unmarshal([]byte(optionsJSON.String), &f.Options)
 		}
 		if tpl, ok := byID[tplID]; ok {
 			tpl.Fields = append(tpl.Fields, f)
@@ -108,24 +132,34 @@ func (s *SQLiteStore) UpsertReportTemplate(t ReportTemplate) error {
 	defer func() { _ = tx.Rollback() }()
 
 	stmt := `INSERT INTO report_templates
-		(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?)
+		(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at,scene,expected_photos,prompt_mode,raw_text)
+		VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, project=excluded.project,
 		asset_type=excluded.asset_type, max_images=excluded.max_images,
 		min_images=excluded.min_images, featured=excluded.featured,
-		has_ai=excluded.has_ai, ai_prompt=excluded.ai_prompt, updated_at=excluded.updated_at`
+		has_ai=excluded.has_ai, ai_prompt=excluded.ai_prompt, updated_at=excluded.updated_at,
+		scene=excluded.scene, expected_photos=excluded.expected_photos,
+		prompt_mode=excluded.prompt_mode, raw_text=excluded.raw_text`
 	if s.dialect == "mysql" {
 		stmt = `INSERT INTO report_templates
-			(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?)
+			(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at,scene,expected_photos,prompt_mode,raw_text)
+			VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,?)
 			ON DUPLICATE KEY UPDATE name=VALUES(name), project=VALUES(project),
 			asset_type=VALUES(asset_type), max_images=VALUES(max_images),
 			min_images=VALUES(min_images), featured=VALUES(featured),
-			has_ai=VALUES(has_ai), ai_prompt=VALUES(ai_prompt), updated_at=VALUES(updated_at)`
+			has_ai=VALUES(has_ai), ai_prompt=VALUES(ai_prompt), updated_at=VALUES(updated_at),
+			scene=VALUES(scene), expected_photos=VALUES(expected_photos),
+			prompt_mode=VALUES(prompt_mode), raw_text=VALUES(raw_text)`
+	}
+	photosJSON := ""
+	if len(t.ExpectedPhotos) > 0 {
+		if b, err := json.Marshal(t.ExpectedPhotos); err == nil {
+			photosJSON = string(b)
+		}
 	}
 	if _, err := tx.Exec(stmt, t.ID, defaultTenantID, t.Name, t.Project, t.AssetType,
 		t.MaxImages, t.MinImages, boolToInt(t.Featured), boolToInt(t.HasAI),
-		t.AIPrompt, nowStamp()); err != nil {
+		t.AIPrompt, nowStamp(), t.Scene, photosJSON, t.PromptMode, t.RawText); err != nil {
 		return fmt.Errorf("upsert report_template %s: %w", t.ID, err)
 	}
 
@@ -139,10 +173,12 @@ func (s *SQLiteStore) UpsertReportTemplate(t ReportTemplate) error {
 			optionsJSON = string(b)
 		}
 		if _, err := tx.Exec(`INSERT INTO report_template_fields
-			(id,template_id,code,label,kind,required,source,options,default_val,manual_only,sort_no)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			(id,template_id,code,label,kind,required,source,options,default_val,manual_only,sort_no,
+			 judge_mode,judge_group,yes_when,no_when,skip_when,judge_note)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			t.ID+"__"+f.Code, t.ID, f.Code, f.Label, f.Kind, boolToInt(f.Required),
-			f.Source, optionsJSON, f.Default, boolToInt(f.ManualOnly), i); err != nil {
+			f.Source, optionsJSON, f.Default, boolToInt(f.ManualOnly), i,
+			f.JudgeMode, f.JudgeGroup, f.YesWhen, f.NoWhen, f.SkipWhen, f.JudgeNote); err != nil {
 			return fmt.Errorf("insert field %s.%s: %w", t.ID, f.Code, err)
 		}
 	}

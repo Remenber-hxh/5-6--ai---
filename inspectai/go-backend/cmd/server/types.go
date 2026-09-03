@@ -31,6 +31,18 @@ type ReportTemplate struct {
 	Fields    []TemplateField `json:"fields"`
 	HasAI     bool            `json:"hasAI"`              // 是否接入了 AI prompt（决定是否调 ai-service）
 	AIPrompt  string          `json:"aiPrompt,omitempty"` // 对应的 prompt 文件名（无后缀）
+
+	// ===== 提示词(原来存在 prompt_templates 里的模板头)=====
+
+	// Scene 场景一句话,写进提示词开头
+	Scene string `json:"scene,omitempty"`
+	// ExpectedPhotos 期望拍到哪些照片
+	ExpectedPhotos []string `json:"expectedPhotos,omitempty"`
+	// PromptMode structured(按字段表渲染)/ raw(直接写整段正文)。
+	// 空值按 structured 处理 —— 老数据没有这个字段,默认必须落在"和以前一样"。
+	PromptMode string `json:"promptMode,omitempty"`
+	// RawText 仅 raw 模式使用。留空 = 没配,运行时回退内置 .md。
+	RawText string `json:"rawText,omitempty"`
 }
 
 // TemplateField — 字段定义（模板里写死的）
@@ -48,6 +60,27 @@ type TemplateField struct {
 	// (buildAsset 拿它当资产名),AI 认错一个字符就会把两台设备并成一台，
 	// 或者凭空多出一台。这种错在台账里很难发现，更难回滚。
 	ManualOnly bool `json:"manualOnly,omitempty"`
+
+	// ===== 判定规则(原来存在 prompt_templates 里的那一份)=====
+	//
+	// 【为什么并进来】同一个字段原来被描述了两遍:这里存"怎么填"
+	// (类型/选项/必填),提示词那张表存"怎么判"(判是看什么、判否看什么)。
+	// 两边的 code 一个不差地重合 —— 它们本来就是同一批字段,分成两张表
+	// 纯粹是历史原因(提示词那套是后加的,没敢动模板)。
+	//
+	// 分着放的代价是永久的:每加一个功能都要问"这个改动要不要推到另一边",
+	// 而漏掉的那次不报错 —— 表现是两个页面对同一个字段说不一样的话。
+	// 并进来之后,提示词页和模板页只是同一张字段表的两个视角。
+
+	// JudgeMode 这一项"怎么判"的固定套路(visual / read_text / summary …)
+	JudgeMode string `json:"judgeMode,omitempty"`
+	// JudgeGroup 分组:头部 / 机房 / 轿厢层站 / 汇总。只影响提示词里的排版。
+	JudgeGroup string `json:"judgeGroup,omitempty"`
+	YesWhen    string `json:"yesWhen,omitempty"`
+	NoWhen     string `json:"noWhen,omitempty"`
+	// SkipWhen 什么情况不返回(留给人工)
+	SkipWhen  string `json:"skipWhen,omitempty"`
+	JudgeNote string `json:"judgeNote,omitempty"`
 }
 
 // FieldValue — 字段实例（每条记录里的一项）

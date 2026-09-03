@@ -17,6 +17,23 @@ func templateStoreForTest(t *testing.T) Store {
 	return NewMemStore()
 }
 
+// isolateTemplateCache 用完把全局模板缓存还原。
+//
+// 【必须每个碰模板的测试都调】templateCache 是进程级的可变状态:
+// 一个测试把它设成自己那份,后面所有测试都吃到脏数据 ——
+// 而症状是"单独跑过、一起跑挂",最难查的那一类。
+func isolateTemplateCache(t *testing.T) {
+	t.Helper()
+	templateCache.mu.RLock()
+	saved := templateCache.tpls
+	templateCache.mu.RUnlock()
+	t.Cleanup(func() {
+		templateCache.mu.Lock()
+		templateCache.tpls = saved
+		templateCache.mu.Unlock()
+	})
+}
+
 // 【核心】灌进去再读出来,必须和代码里那份一模一样。
 func TestSeedRoundTripIsIdentical(t *testing.T) {
 	store := templateStoreForTest(t)
@@ -111,8 +128,9 @@ func TestUpsertReplacesFieldsWholesale(t *testing.T) {
 // 模板列表为空 = 全系统建不了记录、表单渲染不出来、移动端一个模板都选不到。
 // 而症状是"什么都点不了",没人会想到是模板表空了。
 func TestEmptyNeverClearsTheCache(t *testing.T) {
-	setReportTemplateCache(baseReportTemplates())
-	defer setReportTemplateCache(baseReportTemplates()) // 别影响其他测试
+	isolateTemplateCache(t)
+	setReportTemplateCache(defaultReportTemplates())
+	defer setReportTemplateCache(defaultReportTemplates()) // 别影响其他测试
 
 	before := len(currentReportTemplates())
 	if before == 0 {
@@ -145,8 +163,8 @@ func TestFallsBackToCodeWhenCacheEmpty(t *testing.T) {
 // 【调用方会就地改模板】所以每次必须给副本 —— 否则一次请求的改动
 // 会悄悄写回全局缓存,下一次请求看到的就是被污染过的模板。
 func TestCallersCannotMutateTheCache(t *testing.T) {
-	setReportTemplateCache(baseReportTemplates())
-	defer setReportTemplateCache(baseReportTemplates())
+	isolateTemplateCache(t)
+	setReportTemplateCache(defaultReportTemplates())
 
 	first := currentReportTemplates()
 	if len(first) == 0 {
@@ -163,6 +181,7 @@ func TestCallersCannotMutateTheCache(t *testing.T) {
 
 // 首次启动:库空 → 灌种子 → 之后以库为准。
 func TestLoadSeedsWhenEmptyThenReadsFromStore(t *testing.T) {
+	isolateTemplateCache(t)
 	store := templateStoreForTest(t)
 	if err := loadReportTemplates(store); err != nil {
 		t.Fatal(err)
@@ -285,5 +304,159 @@ func TestSQLiteDisabledTemplateHidden(t *testing.T) {
 		if g.ID == src.ID {
 			t.Error("停用的模板不该出现在列表里")
 		}
+	}
+}
+
+// ===== 合并迁移(真库) =====
+
+// 升级路径:库里已有旧的 prompt_templates,迁移要把判定规则搬到字段上。
+//
+// 【搬错比没搬更糟】按 code 精确对应,对不上就跳过 —— 贴错的话 AI 会拿着
+// A 字段的判定规则去判 B 字段,而且不报错。
+func TestMigrationMovesPromptRulesOntoFields(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "merge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	// 模拟升级前的状态:模板在库里(没有判定规则),提示词在旧表里
+	for _, tpl := range baseReportTemplates() {
+		if err := store.UpsertReportTemplate(tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, p := range promptTemplateSeeds() {
+		if err := store.UpsertPromptTemplate(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 确认前置:此刻字段上还没有判定规则
+	pre, _ := store.ListReportTemplates()
+	for _, tpl := range pre {
+		if templateHasJudgeRules(tpl) {
+			t.Fatalf("前置条件不成立:%s 还没迁移就已经有判定规则了", tpl.ID)
+		}
+	}
+
+	if err := store.backfillPromptIntoTemplates(); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+
+	post, _ := store.ListReportTemplates()
+	byID := map[string]ReportTemplate{}
+	for _, tpl := range post {
+		byID[tpl.ID] = tpl
+	}
+	for _, seed := range promptTemplateSeeds() {
+		tpl, ok := byID[seed.ID]
+		if !ok {
+			t.Errorf("模板 %s 不见了", seed.ID)
+			continue
+		}
+		if tpl.Scene != seed.Scene {
+			t.Errorf("%s 的场景描述没搬过来", seed.ID)
+		}
+		if len(tpl.ExpectedPhotos) != len(seed.ExpectedPhotos) {
+			t.Errorf("%s 的期望照片没搬全:%d → %d",
+				seed.ID, len(seed.ExpectedPhotos), len(tpl.ExpectedPhotos))
+		}
+		// 逐条核判定规则,按 code 对
+		want := map[string]PromptField{}
+		for _, f := range seed.Fields {
+			want[f.Code] = f
+		}
+		var checked int
+		for _, f := range tpl.Fields {
+			w, ok := want[f.Code]
+			if !ok {
+				continue
+			}
+			checked++
+			if f.JudgeMode != w.Mode || f.YesWhen != w.YesWhen ||
+				f.NoWhen != w.NoWhen || f.SkipWhen != w.SkipWhen {
+				t.Errorf("%s.%s 的判定规则搬错了\n期望 mode=%q yes=%q\n实际 mode=%q yes=%q",
+					seed.ID, f.Code, w.Mode, w.YesWhen, f.JudgeMode, f.YesWhen)
+			}
+		}
+		if checked == 0 {
+			t.Errorf("%s 一条判定规则都没搬过来 —— AI 会失去这个模板的全部判断依据", seed.ID)
+		}
+	}
+}
+
+// 迁移可以重复跑(升级中途失败要能重来)。
+func TestMigrationIsRepeatable(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "twice.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	for _, tpl := range baseReportTemplates() {
+		_ = store.UpsertReportTemplate(tpl)
+	}
+	for _, p := range promptTemplateSeeds() {
+		_ = store.UpsertPromptTemplate(p)
+	}
+	for i := 0; i < 3; i++ {
+		if err := store.migMergePromptIntoTemplate(); err != nil {
+			t.Fatalf("第 %d 次跑迁移失败: %v", i+1, err)
+		}
+	}
+	post, _ := store.ListReportTemplates()
+	if len(post) != len(baseReportTemplates()) {
+		t.Errorf("跑三次之后模板数变了:%d", len(post))
+	}
+}
+
+// 新加的列在存量行上是 NULL,读的时候不能炸。
+//
+// 【这个 bug 真的溜到了运行环境才暴露】MySQL 的 TEXT 列加不了 DEFAULT,
+// 升级后存量行全是 NULL,直接扫进 string 会报
+// "converting NULL to string is unsupported" —— 整份模板加载失败,
+// 系统退回代码里那份,于是【后台改的模板全部不生效】,而界面上只有
+// 一行启动日志能看出来。
+//
+// 之前测不出来是因为测试只跑 SQLite,而那边我给了 NOT NULL DEFAULT ''。
+// 这里显式把列置成 NULL 来复现。
+func TestNullColumnsDoNotBreakLoading(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "nulls.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	src, _ := templateByID("hot_water_room")
+	if err := store.UpsertReportTemplate(src); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟 MySQL 升级后的样子:后加的列全是 NULL
+	for _, col := range []string{"scene", "expected_photos", "prompt_mode", "raw_text"} {
+		if _, err := store.db.Exec(`UPDATE report_templates SET ` + col + `=NULL`); err != nil {
+			t.Fatalf("置 NULL 失败 %s: %v", col, err)
+		}
+	}
+	for _, col := range []string{"judge_mode", "judge_group", "yes_when", "no_when", "skip_when", "judge_note", "options"} {
+		if _, err := store.db.Exec(`UPDATE report_template_fields SET ` + col + `=NULL`); err != nil {
+			t.Fatalf("置 NULL 失败 %s: %v", col, err)
+		}
+	}
+
+	got, err := store.ListReportTemplates()
+	if err != nil {
+		t.Fatalf("存量行有 NULL 就读不出来了: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("应读回 1 个模板,实际 %d", len(got))
+	}
+	if len(got[0].Fields) != len(src.Fields) {
+		t.Errorf("字段数对不上:期望 %d,实际 %d", len(src.Fields), len(got[0].Fields))
+	}
+	// NULL 读成空串,不是让整份加载失败
+	if got[0].Scene != "" || got[0].RawText != "" {
+		t.Errorf("NULL 应读成空串,实际 scene=%q raw=%q", got[0].Scene, got[0].RawText)
 	}
 }

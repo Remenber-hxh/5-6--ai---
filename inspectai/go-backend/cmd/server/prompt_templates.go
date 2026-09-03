@@ -291,15 +291,67 @@ func renderPromptFromSeed(id string) (string, bool) {
 // 用回内置那份"。这里返回 false,调用方就不下发 promptText,
 // ai-service 照旧读 .md —— 也就是"恢复内置"这个动作的实现。
 func renderPromptViaStore(store Store, id string) (string, bool) {
-	if store != nil {
-		if t, ok, err := store.GetPromptTemplate(id); err == nil && ok {
-			if text := renderPromptText(t); strings.TrimSpace(text) != "" {
-				return text, true
-			}
-			return "", false
+	// 【从合并后的模板读,不再读 prompt_templates】判定规则现在和表单定义
+	// 存在同一张字段表上(迁移 026)。旧表还留着但不再作为事实来源 ——
+	// 两个来源并存的话,改了一边而另一边照旧,人看不出来。
+	if tpl, ok := templateByID(id); ok {
+		if text := renderTemplatePrompt(tpl); strings.TrimSpace(text) != "" {
+			return text, true
 		}
+		return "", false
 	}
 	return renderPromptFromSeed(id)
+}
+
+// renderTemplatePrompt 把合并后的模板渲染成提示词。
+//
+// 【这就是那份 skill 的代码化】总则 → 字段映射 → 输出 → 置信度,
+// 结构和最早手写的那几份 .md 一致 —— 所以从字段表生成出来的提示词,
+// 和人手写的是同一个格式,模型不需要适应两种写法。
+func renderTemplatePrompt(t ReportTemplate) string {
+	if strings.EqualFold(t.PromptMode, PromptModeRaw) {
+		// raw:人写什么模型就收到什么,一个字不加
+		return strings.TrimSpace(t.RawText)
+	}
+	// 没有任何判定规则的模板,渲染出来只有表头没有内容 ——
+	// 那种提示词模型照跑,结果全空。当作"没配",让调用方回退内置 .md。
+	if !templateHasJudgeRules(t) {
+		return ""
+	}
+	return renderPromptText(promptViewOfTemplate(t))
+}
+
+// templateHasJudgeRules 这个模板有没有配过判定规则。
+func templateHasJudgeRules(t ReportTemplate) bool {
+	for _, f := range t.Fields {
+		if strings.TrimSpace(f.JudgeMode) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// promptViewOfTemplate 合并后的模板 → 渲染器要的那个视角。
+//
+// 【保留这一层转换,不把渲染器改成直接吃 ReportTemplate】渲染器只关心
+// "怎么判",不关心类型/选项/必填。让它继续只看见判定那几列,
+// 加表单字段时就不会牵动提示词的渲染。
+func promptViewOfTemplate(t ReportTemplate) PromptTemplate {
+	out := PromptTemplate{
+		ID: t.ID, Name: t.Name, Scene: t.Scene,
+		ExpectedPhotos: t.ExpectedPhotos,
+		Mode:           t.PromptMode, RawText: t.RawText,
+	}
+	for _, f := range t.Fields {
+		if strings.TrimSpace(f.JudgeMode) == "" {
+			continue // 没配判定规则的字段不进提示词
+		}
+		out.Fields = append(out.Fields, PromptField{
+			Code: f.Code, Label: f.Label, Group: f.JudgeGroup, Mode: f.JudgeMode,
+			YesWhen: f.YesWhen, NoWhen: f.NoWhen, SkipWhen: f.SkipWhen, Note: f.JudgeNote,
+		})
+	}
+	return out
 }
 
 // ensurePromptTemplateSeeds — 首次启动时把内存种子灌进 DB(已有数据则不动)
@@ -384,16 +436,20 @@ func promptModeOptions() []map[string]string {
 // 其余八个的提示词写死在 ai-service 的 .md 里 —— 404 的话它们连编辑器
 // 都打不开,而"提示词是固定的"说的正是这八个。
 func promptTemplateOrDraft(store Store, id string) (PromptTemplate, bool) {
-	if t, ok, err := store.GetPromptTemplate(id); err == nil && ok {
-		return t, true
-	}
+	// 【从合并后的模板取,不再读 prompt_templates】判定规则已经和表单定义
+	// 存在同一张字段表上。还读旧表的话,后台改完提示词看着存住了,
+	// 实际识别时用的还是另一份 —— 而两边都不报错。
 	tpl, ok := templateByID(id)
 	if !ok {
 		return PromptTemplate{}, false
 	}
-	// 草稿:raw 模式 + 空正文。空正文 = 运行时仍走内置 .md,
-	// 也就是"打开看看但没保存"不会改变任何行为。
-	return PromptTemplate{ID: tpl.ID, Name: tpl.Name, Mode: PromptModeRaw}, true
+	view := promptViewOfTemplate(tpl)
+	if len(view.Fields) == 0 && strings.TrimSpace(view.RawText) == "" {
+		// 还没配过判定规则:给一份 raw 空草稿。
+		// 空正文 = 运行时仍走内置 .md,所以"打开看看没保存"不改变任何行为。
+		view.Mode = PromptModeRaw
+	}
+	return view, true
 }
 
 // builtinPromptText 内置提示词正文。取不到一律返回空串 ——
@@ -428,6 +484,11 @@ func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Reques
 	for _, t := range stored {
 		byID[t.ID] = t
 	}
+	// 是否已配过判定规则/正文,以【合并后的模板】为准 —— 那才是识别真正用的那份
+	live := map[string]ReportTemplate{}
+	for _, t := range reportTemplates() {
+		live[t.ID] = t
+	}
 
 	list := []map[string]any{}
 	seen := map[string]bool{}
@@ -437,6 +498,18 @@ func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Reques
 		}
 		seen[id] = true
 		row := map[string]any{"id": id, "name": name, "mode": PromptModeRaw, "customized": false, "fieldCount": 0}
+		if t, ok := live[id]; ok {
+			row["customized"] = strings.TrimSpace(renderTemplatePrompt(t)) != ""
+			mode := t.PromptMode
+			if mode == "" {
+				mode = PromptModeStructured
+			}
+			row["mode"] = mode
+			row["fieldCount"] = len(promptViewOfTemplate(t).Fields)
+			if t.Name != "" {
+				row["name"] = t.Name
+			}
+		}
 		if t, ok := byID[id]; ok {
 			mode := t.Mode
 			if mode == "" {
@@ -447,8 +520,7 @@ func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Reques
 			if t.Name != "" {
 				row["name"] = t.Name
 			}
-			// customized:这份提示词已经由后台接管。false = 仍在用内置 .md。
-			row["customized"] = strings.TrimSpace(renderPromptText(t)) != ""
+			row["customized"] = false
 		}
 		list = append(list, row)
 	}
@@ -565,10 +637,14 @@ func (s *Server) promptTemplateDetail(w http.ResponseWriter, r *http.Request, id
 		// 再覆盖 —— 顺序反了就永远留不下改动前的样子。
 		ensureBaselineVersion(s.store, id)
 
-		if err := s.store.UpsertPromptTemplate(t); err != nil {
+		// 【写回合并后的模板】判定规则现在存在字段表上,不再是独立一张表。
+		// 还写旧表的话,后台看着保存成功,而识别时用的是另一份 —— 两边都不报错。
+		if err := s.applyPromptToTemplate(t); err != nil {
 			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
 			return
 		}
+		// 旧表继续留一份,只为历史版本和回退时能对照原始数据,不再被读取
+		_ = s.store.UpsertPromptTemplate(t)
 		// 【留痕失败不挡保存】历史是安全网,不是业务前提;
 		// 因为写不进历史就拒绝保存,等于让安全网变成新的故障点。
 		if err := snapshotPromptTemplate(s.store, t, s.currentUserName(r), body.Note); err != nil {
@@ -623,10 +699,11 @@ func (s *Server) promptVersionRestore(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	t.ID = id
-	if err := s.store.UpsertPromptTemplate(t); err != nil {
+	if err := s.applyPromptToTemplate(t); err != nil {
 		writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
 		return
 	}
+	_ = s.store.UpsertPromptTemplate(t)
 	note := "回滚到 " + shortStamp(v.CreatedAt) + " 那一版"
 	if err := snapshotPromptTemplate(s.store, t, s.currentUserName(r), note); err != nil {
 		log.Printf("prompt: 回滚留痕失败 template=%s: %v", id, err)
@@ -644,4 +721,63 @@ func shortStamp(ts string) string {
 		return ts
 	}
 	return t.In(cnLoc).Format("01-02 15:04")
+}
+
+// applyPromptToTemplate 把提示词那一份(判定规则 + 模板头)写回合并后的模板。
+//
+// 【只覆盖判定那几列】表单定义(类型/选项/必填/顺序)不动 —— 那是模板页在管的,
+// 提示词页一保存就把它们冲掉的话,人在两个页面之间来回改会互相打架。
+//
+// 【按 code 对应,提示词里没有的字段保持原样】提示词只覆盖它管到的那些字段;
+// 一个模板可以有二十个表单字段而只给其中八个配了判定规则。
+func (s *Server) applyPromptToTemplate(p PromptTemplate) error {
+	tpl, ok := templateByID(p.ID)
+	if !ok {
+		return fmt.Errorf("模板 %s 不存在", p.ID)
+	}
+	if strings.TrimSpace(p.Name) != "" {
+		tpl.Name = p.Name
+	}
+	tpl.Scene = p.Scene
+	tpl.ExpectedPhotos = p.ExpectedPhotos
+	tpl.PromptMode = p.Mode
+	tpl.RawText = p.RawText
+
+	byCode := map[string]PromptField{}
+	for _, f := range p.Fields {
+		byCode[f.Code] = f
+	}
+	fields := make([]TemplateField, len(tpl.Fields))
+	copy(fields, tpl.Fields)
+	for i := range fields {
+		r, ok := byCode[fields[i].Code]
+		if !ok {
+			// 【提示词里删掉的字段要把判定规则清掉,不能只是不覆盖】
+			// 提示词那张表就是"AI 要判哪些字段"的完整清单:删掉一行的意思是
+			// "这一项不再让 AI 判"。只覆盖不清除的话,人在界面上删了、
+			// 保存成功了,而 AI 照旧在判 —— 界面和实际行为对不上。
+			// 表单定义(标签/类型/选项)不动,那是模板页在管的。
+			fields[i].JudgeMode = ""
+			fields[i].JudgeGroup = ""
+			fields[i].YesWhen = ""
+			fields[i].NoWhen = ""
+			fields[i].SkipWhen = ""
+			fields[i].JudgeNote = ""
+			continue
+		}
+		// 【中文名以提示词这边为准】合并前两边各存一份,同一个字段
+		// 一边叫「日期」一边叫「检查时间」。合并之后只能有一个名字,
+		// 谁改谁生效 —— 而不是两个页面各说各的。
+		if strings.TrimSpace(r.Label) != "" {
+			fields[i].Label = r.Label
+		}
+		fields[i].JudgeMode = r.Mode
+		fields[i].JudgeGroup = r.Group
+		fields[i].YesWhen = r.YesWhen
+		fields[i].NoWhen = r.NoWhen
+		fields[i].SkipWhen = r.SkipWhen
+		fields[i].JudgeNote = r.Note
+	}
+	tpl.Fields = fields
+	return s.saveReportTemplate(tpl)
 }

@@ -146,6 +146,7 @@ func putTpl(t *testing.T, srv *Server, path, tok, body string) *httptest.Respons
 
 // 巡检员改不了模板 —— 改一个字段就改变了所有人填什么。
 func TestTemplateEditRequiresPermission(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	tok := tokens["inspector_a"]
 	if tok == "" {
@@ -163,11 +164,11 @@ func TestTemplateEditRequiresPermission(t *testing.T) {
 // 【漏了刷新缓存的表现是"保存成功但没变"】人会反复点保存、反复确认自己
 // 填对了,而问题在别处。模板规则那一套已经栽过这个坑。
 func TestSaveTakesEffectImmediately(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	if err := loadReportTemplates(server.store); err != nil {
 		t.Fatal(err)
 	}
-	defer setReportTemplateCache(baseReportTemplates())
 
 	body := `{"name":"热水机房(改过)","project":"会议中心","maxImages":20,"minImages":5,
 		"fields":[{"code":"asset_no","label":"设备编号","kind":"text"},
@@ -188,11 +189,11 @@ func TestSaveTakesEffectImmediately(t *testing.T) {
 // 用过的模板不能删 —— 删了那些记录的字段定义就没了,
 // 详情页会变成一堆没有名字的值。
 func TestCannotDeleteTemplateInUse(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	if err := loadReportTemplates(server.store); err != nil {
 		t.Fatal(err)
 	}
-	defer setReportTemplateCache(baseReportTemplates())
 
 	if err := server.store.CreateRecord(&Record{
 		ID: "r_uses_tpl", TenantID: defaultTenantID, TemplateID: "hot_water_room",

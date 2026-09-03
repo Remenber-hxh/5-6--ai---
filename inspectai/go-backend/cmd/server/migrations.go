@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -47,6 +48,148 @@ var migrationList = []migration{
 	{23, "asset_profile_fields", (*SQLiteStore).migAssetProfileFields},
 	{24, "prompt_versions", (*SQLiteStore).migPromptVersions},
 	{25, "report_templates", (*SQLiteStore).migReportTemplates},
+	{26, "merge_prompt_into_template", (*SQLiteStore).migMergePromptIntoTemplate},
+}
+
+// 026 — 把提示词那张表并进模板字段表。
+//
+// 【为什么合并】同一个字段原来被描述了两遍:report_template_fields 存"怎么填"
+// (类型/选项/必填),prompt_templates 存"怎么判"(判是看什么、判否看什么)。
+// 两边的 code 一个不差地重合 —— 它们本来就是同一批字段。
+//
+// 分着放的代价是永久的:每加一个功能都要问"这个改动要不要推到另一边",
+// 而漏掉的那次不报错,表现是两个页面对同一个字段说不一样的话。
+//
+// 【旧表不删】prompt_templates / prompt_versions 都留着:
+//   - 历史版本要能翻(那是"改坏了能退回去"的唯一依据)
+//   - 合并出问题时还能回去看原始数据
+// 只是从此不再从它读。
+func (s *SQLiteStore) migMergePromptIntoTemplate() error {
+	// 判定规则并到字段上
+	// 【两种数据库的列定义必须一致】MySQL 的 TEXT 加不了 DEFAULT,存量行是 NULL;
+	// 而我最初给 SQLite 写了 NOT NULL DEFAULT ''。结果是测试环境比生产环境严格 ——
+	// 读 NULL 会炸的 bug 在测试里根本复现不出来,直接溜到运行环境才暴露
+	// (整份模板加载失败 → 退回代码里那份 → 后台改的模板全部不生效)。
+	// 统一成可空,读取一侧按可空处理。
+	fieldCols := []assetColumnMigration{
+		{"judge_mode", `VARCHAR(32)`, `TEXT`},
+		{"judge_group", `VARCHAR(64)`, `TEXT`},
+		{"yes_when", `TEXT`, `TEXT`},
+		{"no_when", `TEXT`, `TEXT`},
+		{"skip_when", `TEXT`, `TEXT`},
+		{"judge_note", `TEXT`, `TEXT`},
+	}
+	if err := s.addColumns("report_template_fields", fieldCols); err != nil {
+		return err
+	}
+	// 提示词的模板头并到模板上
+	tplCols := []assetColumnMigration{
+		{"scene", `TEXT`, `TEXT`},
+		{"expected_photos", `TEXT`, `TEXT`},
+		{"prompt_mode", `VARCHAR(32)`, `TEXT`},
+		{"raw_text", `LONGTEXT`, `TEXT`},
+	}
+	if err := s.addColumns("report_templates", tplCols); err != nil {
+		return err
+	}
+	return s.backfillPromptIntoTemplates()
+}
+
+// addColumns 逐列加,已存在就跳过。
+//
+// 【必须逐列判断】一次 ALTER 加多列在 SQLite 上不支持,而且升级可能中途失败 ——
+// 重跑时已经加过的那几列会报错,把整条迁移卡死。
+func (s *SQLiteStore) addColumns(table string, cols []assetColumnMigration) error {
+	for _, c := range cols {
+		exists, err := s.hasColumn(table, c.name)
+		if err != nil {
+			return fmt.Errorf("inspect %s.%s: %w", table, c.name, err)
+		}
+		if exists {
+			continue
+		}
+		def := c.sqlite
+		if s.dialect == "mysql" {
+			def = c.mysql
+		}
+		if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + c.name + ` ` + def); err != nil {
+			return fmt.Errorf("add %s.%s: %w", table, c.name, err)
+		}
+	}
+	return nil
+}
+
+// backfillPromptIntoTemplates 把 prompt_templates 里已有的判定规则搬到字段上。
+//
+// 【按 template_id + code 精确对应】不按顺序、不按标签 —— 顺序会变,标签会改,
+// 只有 code 是稳定的。对不上的直接跳过:宁可少搬一条(提示词那边还留着原始数据),
+// 也不能搬到错的字段上 —— 那会让 AI 拿着 A 字段的判定规则去判 B 字段,
+// 而且不报错。
+func (s *SQLiteStore) backfillPromptIntoTemplates() error {
+	rows, err := s.db.Query(`SELECT id, data FROM prompt_templates`)
+	if err != nil {
+		// 提示词表还不存在(全新部署)—— 没有要搬的东西,不是错误
+		return nil
+	}
+	type pending struct{ id, data string }
+	var all []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.id, &p.data); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, p := range all {
+		var old struct {
+			Scene          string   `json:"scene"`
+			ExpectedPhotos []string `json:"expectedPhotos"`
+			Mode           string   `json:"mode"`
+			RawText        string   `json:"rawText"`
+			Fields         []struct {
+				Code     string `json:"code"`
+				Group    string `json:"group"`
+				Mode     string `json:"mode"`
+				YesWhen  string `json:"yesWhen"`
+				NoWhen   string `json:"noWhen"`
+				SkipWhen string `json:"skipWhen"`
+				Note     string `json:"note"`
+			} `json:"fields"`
+		}
+		if err := json.Unmarshal([]byte(p.data), &old); err != nil {
+			continue // 一条解不开不该卡住整条迁移
+		}
+		photos := ""
+		if len(old.ExpectedPhotos) > 0 {
+			if b, err := json.Marshal(old.ExpectedPhotos); err == nil {
+				photos = string(b)
+			}
+		}
+		if _, err := s.db.Exec(
+			`UPDATE report_templates SET scene=?, expected_photos=?, prompt_mode=?, raw_text=? WHERE id=?`,
+			old.Scene, photos, old.Mode, old.RawText, p.id); err != nil {
+			return fmt.Errorf("backfill template %s: %w", p.id, err)
+		}
+		for _, f := range old.Fields {
+			if strings.TrimSpace(f.Code) == "" {
+				continue
+			}
+			if _, err := s.db.Exec(
+				`UPDATE report_template_fields
+				 SET judge_mode=?, judge_group=?, yes_when=?, no_when=?, skip_when=?, judge_note=?
+				 WHERE template_id=? AND code=?`,
+				f.Mode, f.Group, f.YesWhen, f.NoWhen, f.SkipWhen, f.Note, p.id, f.Code); err != nil {
+				return fmt.Errorf("backfill field %s.%s: %w", p.id, f.Code, err)
+			}
+		}
+	}
+	return nil
 }
 
 // 025 — 巡检模板搬进数据库。
@@ -86,7 +229,7 @@ func (s *SQLiteStore) migReportTemplates() error {
 		kind        TEXT NOT NULL DEFAULT 'text',
 		required    INTEGER NOT NULL DEFAULT 0,
 		source      TEXT NOT NULL DEFAULT 'manual',
-		options     TEXT NOT NULL DEFAULT '',
+		options     TEXT,
 		default_val TEXT NOT NULL DEFAULT '',
 		manual_only INTEGER NOT NULL DEFAULT 0,
 		sort_no     INTEGER NOT NULL DEFAULT 0

@@ -446,6 +446,7 @@ func TestManagementRolesCanAccessManagementAI(t *testing.T) {
 }
 
 func TestPromptTemplateEndpoints(t *testing.T) {
+	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	if err := ensurePromptTemplateSeeds(server.store); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -489,6 +490,7 @@ func TestPromptTemplateEndpoints(t *testing.T) {
 }
 
 func TestPromptTemplateRequiresAuth(t *testing.T) {
+	isolateTemplateCache(t)
 	server, _ := newRecordAccessTestServer(t)
 	got := requestWithToken(server, http.MethodGet, "/api/prompt/templates", "")
 	if got.Code == http.StatusOK {
