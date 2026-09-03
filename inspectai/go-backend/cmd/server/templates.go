@@ -16,7 +16,12 @@ import (
 // 就全局生效:表单渲染、建记录、提交校验、AI 提示词……十几处调用一处不用改,
 // 也就不会漏。散着改必然漏,而漏掉的那处不报错 —— 权限那一轮的教训。
 func reportTemplates() []ReportTemplate {
-	return applyTemplateRules(currentReportTemplates())
+	// 【不再有覆盖层】必填和照片张数以前存在 template_field_rules /
+	// template_settings 里,读的时候盖到模板上。那一层是"模板写死在代码里"
+	// 时代的产物;模板进库可编辑之后(025/026),它只剩坏处 ——
+	// 同一份数据两个存储,而覆盖层盖底表,于是在模板页改必填会被静默盖回去。
+	// 迁移 027 已把配置搬进底表。
+	return currentReportTemplates()
 }
 
 // templateCache 库里的模板。启动时加载,保存后刷新 —— 和 templateRuleCache

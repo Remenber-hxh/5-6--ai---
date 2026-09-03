@@ -460,3 +460,96 @@ func TestNullColumnsDoNotBreakLoading(t *testing.T) {
 		t.Errorf("NULL 应读成空串,实际 scene=%q raw=%q", got[0].Scene, got[0].RawText)
 	}
 }
+
+// ===== 迁移 027:覆盖层并进底表 =====
+
+// 【覆盖层的值必须赢】它是当前正在生效的那份;底表里可能还是代码默认值。
+// 搬反的话,所有人在后台配过的必填和张数会一次性回退到出厂设置,
+// 而且没有任何提示 —— 等有人发现"我配的必填怎么没了"已经过去几天。
+func TestOverlayWinsWhenMerging(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "rules.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	// 升级前:模板在库里(用代码默认值),配置在覆盖层里
+	for _, tpl := range defaultReportTemplates() {
+		if err := store.UpsertReportTemplate(tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base, _ := store.ListReportTemplates()
+	var target ReportTemplate
+	for _, tpl := range base {
+		if tpl.ID == "zihan_energy" {
+			target = tpl
+		}
+	}
+	// 找一个默认非必填的字段,在覆盖层里把它设成必填
+	var code string
+	for _, f := range target.Fields {
+		if !f.Required && f.Code != "asset_no" {
+			code = f.Code
+			break
+		}
+	}
+	if code == "" {
+		t.Fatal("前置条件不成立:找不到默认非必填的字段")
+	}
+	if err := store.ReplaceTemplateFieldRules("zihan_energy", []*TemplateFieldRule{
+		{TemplateID: "zihan_energy", FieldCode: code, Required: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetTemplateMinImages("zihan_energy", 3, "测试"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.migMergeFieldRulesIntoTemplate(); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+
+	after, _ := store.ListReportTemplates()
+	for _, tpl := range after {
+		if tpl.ID != "zihan_energy" {
+			continue
+		}
+		if tpl.MinImages != 3 {
+			t.Errorf("最少张数没搬过来:期望 3,实际 %d —— 后台配过的值被出厂默认冲掉了", tpl.MinImages)
+		}
+		for _, f := range tpl.Fields {
+			if f.Code == code && !f.Required {
+				t.Errorf("字段 %s 的必填没搬过来 —— 后台配过的必填全丢了", code)
+			}
+		}
+	}
+}
+
+// 【最少张数为 0 的一律跳过】0 的含义是"没配过",不是"不限"。
+// 当成配置搬过去会把模板自带的默认张数清成 0 —— 现场从此一张照片就能提交,
+// 而且没人会注意到要求消失了。
+func TestZeroMinImagesIsNotMigrated(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "zero.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	for _, tpl := range defaultReportTemplates() {
+		_ = store.UpsertReportTemplate(tpl)
+	}
+	if err := store.SetTemplateMinImages("zihan_energy", 0, "测试"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.migMergeFieldRulesIntoTemplate(); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := store.ListReportTemplates()
+	for _, tpl := range after {
+		if tpl.ID == "zihan_energy" && tpl.MinImages == 0 {
+			t.Error("配置里的 0 被当成了「不限」搬进底表 —— 五张照片的要求悄悄消失了")
+		}
+	}
+}

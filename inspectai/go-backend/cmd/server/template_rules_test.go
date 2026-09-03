@@ -7,9 +7,14 @@ import (
 	"testing"
 )
 
-// 模板字段的必填/选填配置。
+// 「提交规则」页:每个字段必填还是选填 + 每单最少几张照片。
 //
-// 这层覆盖最怕两件事:改了不生效(用户以为改了,线上照旧),
+// 【覆盖层已撤(迁移 027)】这些配置以前存在 template_field_rules /
+// template_settings 里、读的时候盖到模板上;现在直接写模板底表。
+// 所以这里全部走真实接口验证,不再有"往缓存里塞一份配置"那种测法 ——
+// 那种测法证明不了保存这条路是通的。
+//
+// 这一屏最怕两件事:改了不生效(用户以为改了、线上照旧),
 // 以及把不该放开的字段放开了(记录挂不上设备,很久之后对账才发现)。
 
 func findField(tplID, code string) (TemplateField, bool) {
@@ -25,140 +30,123 @@ func findField(tplID, code string) (TemplateField, bool) {
 	return TemplateField{}, false
 }
 
+// saveRules 走真实接口保存一次提交规则。
+func saveRules(t *testing.T, srv *Server, auth *http.Request, tplID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPut,
+		"/api/report/templates/"+tplID+"/fields", strings.NewReader(body))
+	r.Header = auth.Header
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.handleSaveTemplateFields(w, r, tplID)
+	return w
+}
+
+// 准备一个模板已经入库的服务端 —— 保存要写库,库里没有就无从改起。
+func rulesTestServer(t *testing.T) (*Server, *http.Request) {
+	t.Helper()
+	isolateTemplateCache(t)
+	srv, auth := newScopeRequest(t, roleAdmin, "")
+	if err := loadReportTemplates(srv.store); err != nil {
+		t.Fatalf("模板入库失败: %v", err)
+	}
+	return srv, auth
+}
+
 // 【asset_no 必须锁死】它是台账认归属的字段。放开成选填之后,提交时不填,
 // 这条记录就挂不到任何设备上 —— 台账里既看不到这次巡检,也不知道少了谁。
 func TestAssetNoCannotBeMadeOptional(t *testing.T) {
-	isolateTemplateCache(t)
-	setTemplateRules(nil, nil)
-	t.Cleanup(func() { setTemplateRules(nil, nil) })
+	srv, auth := rulesTestServer(t)
 
-	// 就算配置里硬塞一条,也不能生效
-	setTemplateRules(map[string]map[string]bool{
-		"escalator": {"asset_no": false},
-	}, nil)
+	// 接口层面要当场拒绝
+	w := saveRules(t, srv, auth, "escalator", `{"required":{"asset_no":false}}`)
+	if w.Code == http.StatusOK {
+		t.Error("接口接受了把 asset_no 改成选填 —— 必须当场拒绝")
+	}
+	// 而且不管怎么绕,模板里它永远是必填
 	f, ok := findField("escalator", "asset_no")
 	if !ok {
 		t.Fatal("扶梯模板里应该有 asset_no")
 	}
 	if !f.Required {
-		t.Fatal("asset_no 被改成选填了 —— 记录会挂不到设备上,而且很久之后才发现")
-	}
-
-	// 接口层也要拒绝,并且说清为什么。
-	// 【必须用真管理员发】用裸请求会被 403 挡在门外,那样这条用例就变成
-	// 在验鉴权,而不是在验锁定字段 —— 通过了也证明不了任何事。
-	srv, auth := newScopeRequest(t, roleAdmin, "")
-	body := `{"required":{"asset_no":false}}`
-	r := httptest.NewRequest(http.MethodPut, "/api/report/templates/escalator/fields", strings.NewReader(body))
-	r.Header = auth.Header
-	r.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.handleSaveTemplateFields(w, r, "escalator")
-	if w.Code == http.StatusOK {
-		t.Fatal("接口允许把 asset_no 改成选填了")
-	}
-	if !strings.Contains(w.Body.String(), "归属") {
-		t.Errorf("拒绝时要说清为什么,得到:%s", w.Body.String())
+		t.Fatal("asset_no 变成选填了 —— 记录会挂不到设备上,而且很久之后才发现")
 	}
 }
 
-// 覆盖要真的生效:改了之后 templateByID 拿到的就是新值。
-func TestTemplateRuleOverridesRequired(t *testing.T) {
-	setTemplateRules(nil, nil)
-	t.Cleanup(func() { setTemplateRules(nil, nil) })
+// 保存之后必须【立刻生效】。
+//
+// 【漏了刷缓存的表现是"我改了没用"】人会反复点保存、反复确认自己填对了,
+// 而问题在别处,要重启才行。
+func TestSaveTemplateFieldsTakesEffectImmediately(t *testing.T) {
+	srv, auth := rulesTestServer(t)
 
 	before, ok := findField("zihan_energy", "z1_reading")
 	if !ok {
 		t.Fatal("能耗抄表里应该有 z1_reading")
 	}
 	if before.Required {
-		t.Fatal("这条用例假设 z1_reading 默认是选填,模板改了就要跟着改用例")
+		t.Fatal("前置条件不成立:这个字段本来就是必填,断言看不出变化")
 	}
 
-	setTemplateRules(map[string]map[string]bool{
-		"zihan_energy": {"z1_reading": true},
-	}, nil)
-	after, _ := findField("zihan_energy", "z1_reading")
-	if !after.Required {
-		t.Fatal("配置了必填却没生效 —— 用户会以为改了,而线上照旧")
+	if w := saveRules(t, srv, auth, "zihan_energy", `{"required":{"z1_reading":true}}`); w.Code != http.StatusOK {
+		t.Fatalf("保存失败:%d %s", w.Code, w.Body.String())
+	}
+	if f, _ := findField("zihan_energy", "z1_reading"); !f.Required {
+		t.Fatal("保存成功但没生效 —— 表现是「我改了没用」")
 	}
 
-	// 【别误伤同名字段的其他模板】各模板的字段编码会重复(比如 site、note)
-	other, ok := findField("zihan_daily", "site")
-	if ok && other.Required != true {
-		// zihan_daily 的 site 本来就是必填,这里只是确认没被上面那条配置改动
-		t.Errorf("别的模板的字段被改到了")
+	// 改回去也要立刻生效(单向生效等于半个 bug)
+	if w := saveRules(t, srv, auth, "zihan_energy", `{"required":{"z1_reading":false}}`); w.Code != http.StatusOK {
+		t.Fatalf("改回失败:%d %s", w.Code, w.Body.String())
 	}
-
-	// 清掉配置就回到代码默认值 —— "改回默认"必须真的能改回去
-	setTemplateRules(nil, nil)
-	back, _ := findField("zihan_energy", "z1_reading")
-	if back.Required {
-		t.Fatal("清掉配置后没回到默认值 —— 改错了就回不去")
+	if f, _ := findField("zihan_energy", "z1_reading"); f.Required {
+		t.Fatal("改回选填没生效")
 	}
 }
 
-// 保存之后必须【立刻】生效,不能等重启。
-func TestSaveTemplateFieldsTakesEffectImmediately(t *testing.T) {
-	isolateTemplateCache(t)
-	setTemplateRules(nil, nil)
-	t.Cleanup(func() { setTemplateRules(nil, nil) })
-	srv, auth := newScopeRequest(t, roleAdmin, "")
+// 请求里没提到的字段保持原样。
+//
+// 【语义随覆盖层一起变了】以前空请求 = 全部回退到代码默认值(那是覆盖层的
+// 语义:清掉覆盖就露出底下的默认)。现在底表就是唯一的值,没有"底下那层"
+// 可以露出来 —— 空请求只能是"什么都不改"。
+// 要是仍按老语义清空,一次只想调一个字段的保存会把整份配置抹掉。
+func TestUnmentionedFieldsAreLeftAlone(t *testing.T) {
+	srv, auth := rulesTestServer(t)
 
-	body := `{"required":{"z1_reading":true,"note":true}}`
-	r := httptest.NewRequest(http.MethodPut, "/api/report/templates/zihan_energy/fields", strings.NewReader(body))
-	r.Header = auth.Header
-	r.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.handleSaveTemplateFields(w, r, "zihan_energy")
-	if w.Code != http.StatusOK {
+	// 先把两个字段设成必填
+	if w := saveRules(t, srv, auth, "zihan_energy",
+		`{"required":{"z1_reading":true,"note":true}}`); w.Code != http.StatusOK {
+		t.Fatalf("准备失败:%d %s", w.Code, w.Body.String())
+	}
+	// 再只改其中一个
+	if w := saveRules(t, srv, auth, "zihan_energy",
+		`{"required":{"z1_reading":false}}`); w.Code != http.StatusOK {
 		t.Fatalf("保存失败:%d %s", w.Code, w.Body.String())
 	}
-	f, _ := findField("zihan_energy", "z1_reading")
-	if !f.Required {
-		t.Fatal("保存成功但没生效 —— 表现是「我改了没用」,要重启才行")
+	if f, _ := findField("zihan_energy", "note"); !f.Required {
+		t.Error("没提到的字段被改掉了 —— 一次只想调一个字段会把别的配置抹掉")
 	}
-
-	// 再保存一次空的:等于全部改回默认
-	r2 := httptest.NewRequest(http.MethodPut, "/api/report/templates/zihan_energy/fields",
-		strings.NewReader(`{"required":{}}`))
-	r2.Header = auth.Header
-	r2.Header.Set("Content-Type", "application/json")
-	w2 := httptest.NewRecorder()
-	srv.handleSaveTemplateFields(w2, r2, "zihan_energy")
-	if w2.Code != http.StatusOK {
-		t.Fatalf("清空失败:%d %s", w2.Code, w2.Body.String())
-	}
-	if back, _ := findField("zihan_energy", "z1_reading"); back.Required {
-		t.Fatal("清空之后仍是必填 —— 留下了幽灵配置")
+	if f, _ := findField("zihan_energy", "z1_reading"); f.Required {
+		t.Error("提到的字段没改成")
 	}
 }
 
 // 模板里没有的字段要当场拒绝。存下去也永远不生效,而后台会显示"已保存"。
 func TestSaveTemplateFieldsRejectsUnknownField(t *testing.T) {
-	isolateTemplateCache(t)
-	setTemplateRules(nil, nil)
-	t.Cleanup(func() { setTemplateRules(nil, nil) })
-	srv, auth := newScopeRequest(t, roleAdmin, "")
-	r := httptest.NewRequest(http.MethodPut, "/api/report/templates/zihan_energy/fields",
-		strings.NewReader(`{"required":{"根本没有这个字段":true}}`))
-	r.Header = auth.Header
-	r.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.handleSaveTemplateFields(w, r, "zihan_energy")
+	srv, auth := rulesTestServer(t)
+	w := saveRules(t, srv, auth, "zihan_energy", `{"required":{"根本没有这个字段":true}}`)
 	if w.Code == http.StatusOK {
 		t.Fatal("接受了模板里不存在的字段 —— 会存下一份永远不生效的配置")
 	}
 }
 
-// 每单最少几张照片。
+// 每单最少几张照片:改完立刻生效。
 //
 // 【这条规则会影响线上正在填的草稿】上线那一刻,已经存在但不足张数的草稿
 // 会突然提交不了。所以移动端必须在【拍照那一步】就说清还差几张,
 // 而不是让人填完一整张表、点提交才被打回来。
-func TestMinImagesEnforcedOnSubmit(t *testing.T) {
-	setTemplateRules(nil, nil)
-	t.Cleanup(func() { setTemplateRules(nil, nil) })
+func TestMinImagesTakesEffect(t *testing.T) {
+	srv, auth := rulesTestServer(t)
 
 	tpl, ok := templateByID("zihan_energy")
 	if !ok {
@@ -168,36 +156,24 @@ func TestMinImagesEnforcedOnSubmit(t *testing.T) {
 		t.Fatalf("默认应为 5 张,得到 %d —— 周计划的要求是每单不少于五张", tpl.MinImages)
 	}
 
-	// 后台调成 2 张之后,模板立刻跟着变
-	setTemplateRules(nil, map[string]int{"zihan_energy": 2})
+	if w := saveRules(t, srv, auth, "zihan_energy",
+		`{"required":{},"minImages":2}`); w.Code != http.StatusOK {
+		t.Fatalf("保存失败:%d %s", w.Code, w.Body.String())
+	}
 	if got, _ := templateByID("zihan_energy"); got.MinImages != 2 {
 		t.Fatalf("配置没生效,仍是 %d", got.MinImages)
-	}
-
-	// 【0 表示没配过,不是"不限"】库里留下一行 0 不该把要求整个抹掉
-	setTemplateRules(nil, map[string]int{"zihan_energy": 0})
-	if got, _ := templateByID("zihan_energy"); got.MinImages != 5 {
-		t.Fatalf("配置里的 0 被当成了「不限」,得到 %d —— 应回落模板默认值", got.MinImages)
 	}
 }
 
 // 最少张数不能超过单次上传上限 —— 超过就永远提交不了,
 // 而巡检员在现场只看到「还差 N 张」,拍到死也够不着。
 func TestMinImagesCannotExceedMax(t *testing.T) {
-	isolateTemplateCache(t)
-	setTemplateRules(nil, nil)
-	t.Cleanup(func() { setTemplateRules(nil, nil) })
-	srv, auth := newScopeRequest(t, roleAdmin, "")
+	srv, auth := rulesTestServer(t)
 
 	tpl, _ := templateByID("zihan_energy")
 	tooMany := tpl.MaxImages + 1
-	body := `{"required":{},"minImages":` + itoaSafe(tooMany) + `}`
-	r := httptest.NewRequest(http.MethodPut, "/api/report/templates/zihan_energy/fields",
-		strings.NewReader(body))
-	r.Header = auth.Header
-	r.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.handleSaveTemplateFields(w, r, "zihan_energy")
+	w := saveRules(t, srv, auth, "zihan_energy",
+		`{"required":{},"minImages":`+itoaSafe(tooMany)+`}`)
 	if w.Code == http.StatusOK {
 		t.Fatalf("允许把最少张数设成 %d,而上限只有 %d —— 这个模板会永远提交不了",
 			tooMany, tpl.MaxImages)

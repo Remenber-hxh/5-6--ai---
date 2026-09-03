@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 // ===== 模板字段的必填/选填配置 =====
@@ -32,65 +31,18 @@ var lockedRequiredFields = map[string]bool{
 	"asset_no": true,
 }
 
-// templateRuleCache 进程内缓存。
+// ===== 覆盖层已撤(迁移 027)=====
 //
-// 【为什么用缓存而不是每次查库】reportTemplates() 是个纯函数,被十几处调用,
-// 其中包括每条记录创建、每次表单渲染。让它去查库要么改十几处签名,
-// 要么每次多一次 IO。照 permCache 的做法:启动时加载,保存后刷新。
-var templateRuleCache = struct {
-	mu sync.RWMutex
-	// templateID -> fieldCode -> required
-	required map[string]map[string]bool
-	// templateID -> 每单最少几张照片(0 或没配 = 用模板代码里的默认值)
-	minImages map[string]int
-}{}
-
-// setTemplateRules 覆盖整份缓存(启动加载 / 保存后刷新)。
-func setTemplateRules(rules map[string]map[string]bool, minImages map[string]int) {
-	templateRuleCache.mu.Lock()
-	templateRuleCache.required = rules
-	templateRuleCache.minImages = minImages
-	templateRuleCache.mu.Unlock()
-}
-
-// applyTemplateRules 把数据库里的必填配置盖到模板上。
+// 这里原来有一套 templateRuleCache / applyTemplateRules / loadTemplateRules:
+// 模板从代码里来,只有 required 和 minImages 允许被数据库里的配置覆写。
 //
-// 没配过的字段保持代码里的默认值 —— 和加这个功能之前完全一样。
-func applyTemplateRules(tpls []ReportTemplate) []ReportTemplate {
-	templateRuleCache.mu.RLock()
-	rules := templateRuleCache.required
-	minImages := templateRuleCache.minImages
-	templateRuleCache.mu.RUnlock()
-	if len(rules) == 0 && len(minImages) == 0 {
-		return tpls
-	}
-	for i := range tpls {
-		// 【0 表示"没配过",不是"不限"】后台不允许存 0(见 handleSaveTemplateSettings),
-		// 所以这里看到 0 一律当没配,保持模板代码里的默认值。
-		if n, ok := minImages[tpls[i].ID]; ok && n > 0 {
-			tpls[i].MinImages = n
-		}
-		byField := rules[tpls[i].ID]
-		if len(byField) == 0 {
-			continue
-		}
-		// 【必须复制一份再改】Fields 是切片,直接改会写回 reportTemplates()
-		// 每次新建的那个底层数组……实际上它每次都新建,但依赖这一点很脆:
-		// 哪天有人给模板加了缓存,这里就变成偷偷改全局状态了。
-		fields := make([]TemplateField, len(tpls[i].Fields))
-		copy(fields, tpls[i].Fields)
-		for j := range fields {
-			if lockedRequiredFields[fields[j].Code] {
-				continue // 锁定字段无视配置,永远保持代码里的值
-			}
-			if want, ok := byField[fields[j].Code]; ok {
-				fields[j].Required = want
-			}
-		}
-		tpls[i].Fields = fields
-	}
-	return tpls
-}
+// 【为什么整套删掉而不是留着不用】它存在的前提是"模板写死在代码里,搬库风险高",
+// 而搬库已经做完(025/026)。留着一段不再被调用的覆盖逻辑,下一个人排查
+// "必填不生效"时很可能顺手把它接回去 —— 而两个存储一旦并存,
+// 覆盖层就会盖住底表,在模板页改的必填被静默盖回去。那个 bug 刚修完。
+//
+// template_field_rules / template_settings 两张表还在写(只为回退时对照),
+// 但【不再有任何读取路径】。
 
 // TemplateFieldRule 一条配置。存库用。
 type TemplateFieldRule struct {
@@ -111,39 +63,6 @@ type TemplateRuleStore interface {
 	ReplaceTemplateFieldRules(templateID string, rules []*TemplateFieldRule) error
 }
 
-// loadTemplateRules 启动/保存后刷新缓存。
-func (s *Server) loadTemplateRules() error {
-	list, err := s.store.ListTemplateFieldRules()
-	if err != nil {
-		return err
-	}
-	next := map[string]map[string]bool{}
-	for _, r := range list {
-		if r == nil || strings.TrimSpace(r.TemplateID) == "" {
-			continue
-		}
-		if lockedRequiredFields[r.FieldCode] {
-			// 库里可能留着历史数据,或者有人直接改库 —— 锁定字段一律忽略
-			continue
-		}
-		if next[r.TemplateID] == nil {
-			next[r.TemplateID] = map[string]bool{}
-		}
-		next[r.TemplateID][r.FieldCode] = r.Required
-	}
-	settings, err := s.store.ListTemplateSettings()
-	if err != nil {
-		return err
-	}
-	mins := map[string]int{}
-	for id, n := range settings {
-		if n > 0 {
-			mins[id] = n
-		}
-	}
-	setTemplateRules(next, mins)
-	return nil
-}
 
 // ===== SQLiteStore =====
 
@@ -257,7 +176,11 @@ func (s *Server) handleSaveTemplateFields(w http.ResponseWriter, r *http.Request
 	}
 	// 只接受这个模板里真实存在的字段。传个不存在的编码进来,存下去也永远不生效,
 	// 而后台会显示"已保存" —— 这种静默不一致最难查。
-	tpl, _ := templateByID(templateID)
+	tpl, tplOK := templateByID(templateID)
+	if !tplOK {
+		writeError(w, http.StatusNotFound, "not_found", "模板不存在")
+		return
+	}
 	known := map[string]bool{}
 	for _, f := range tpl.Fields {
 		known[f.Code] = true
@@ -287,21 +210,35 @@ func (s *Server) handleSaveTemplateFields(w http.ResponseWriter, r *http.Request
 				fmt.Sprintf("最少张数要在 0 到 %d 之间(0 表示不限)", tpl.MaxImages))
 			return
 		}
-		if err := s.store.SetTemplateMinImages(templateID, n, operator); err != nil {
-			writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
-			return
+		tpl.MinImages = n
+	}
+	// 【写底表,不再写覆盖层】覆盖层已经撤了(迁移 027)。
+	// 继续写它的话保存成功但完全不生效 —— 而且不报错。
+	byCode := map[string]bool{}
+	for code, required := range req.Required {
+		byCode[code] = required
+	}
+	fields := make([]TemplateField, len(tpl.Fields))
+	copy(fields, tpl.Fields)
+	for i := range fields {
+		if lockedRequiredFields[fields[i].Code] {
+			fields[i].Required = true // 锁定字段无视配置,永远必填
+			continue
+		}
+		if want, ok := byCode[fields[i].Code]; ok {
+			fields[i].Required = want
 		}
 	}
-	if err := s.store.ReplaceTemplateFieldRules(templateID, rules); err != nil {
+	tpl.Fields = fields
+	if err := s.saveReportTemplate(tpl); err != nil {
 		writeError(w, http.StatusInternalServerError, "save_failed", err.Error())
 		return
 	}
-	// 【存完必须刷缓存】不刷的话保存成功但线上照旧,而且不报错 ——
-	// 表现是"我改了没用",要重启才生效。
-	if err := s.loadTemplateRules(); err != nil {
-		writeError(w, http.StatusInternalServerError, "reload_failed", err.Error())
-		return
-	}
+	// 旧表继续记一份,只为回退时能对照,不再被读取
+	_ = s.store.SetTemplateMinImages(templateID, tpl.MinImages, operator)
+	_ = s.store.ReplaceTemplateFieldRules(templateID, rules)
+	// 缓存由 saveReportTemplate 一并刷了 —— 存完不刷的表现是
+	// "保存成功但线上照旧",而且不报错。
 	s.recordOperation(r, "template.fields", "template", templateID, map[string]any{
 		"count": len(rules),
 	})

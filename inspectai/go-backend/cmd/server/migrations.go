@@ -49,6 +49,83 @@ var migrationList = []migration{
 	{24, "prompt_versions", (*SQLiteStore).migPromptVersions},
 	{25, "report_templates", (*SQLiteStore).migReportTemplates},
 	{26, "merge_prompt_into_template", (*SQLiteStore).migMergePromptIntoTemplate},
+	{27, "merge_field_rules_into_template", (*SQLiteStore).migMergeFieldRulesIntoTemplate},
+}
+
+// 027 — 把「提交规则」的覆盖层并进模板底表。
+//
+// 【为什么这一层可以撤了】它当初存在的理由写在 template_rules.go 的注释里:
+// "整体搬库要动字段类型、选项、AI 提示词、顺序……是一次大改,风险高。
+// 所以做一层薄薄的覆盖:模板照旧从代码里来,只有 required 允许被覆写。"
+// 而那次大改已经做完(迁移 025/026),底表现在可写 —— 这一层就只剩坏处:
+// 同一份数据两个存储,覆盖层盖底表,于是在模板页改必填会被静默盖回去。
+//
+// 【覆盖层的值赢】它是【当前正在生效】的那份 —— 底表里可能还是代码默认值。
+// 反过来搬的话,所有人在后台配过的必填和张数会一次性回退到出厂设置,
+// 而且没有任何提示。
+//
+// 【旧表不删】留着以便回退时对照原始配置。撤掉的是"读它",不是"存过它"。
+func (s *SQLiteStore) migMergeFieldRulesIntoTemplate() error {
+	// 必填
+	rows, err := s.db.Query(`SELECT template_id, field_code, required FROM template_field_rules`)
+	if err != nil {
+		return nil // 表不存在(全新部署)= 没有要搬的
+	}
+	type rule struct {
+		tpl, code string
+		required  int
+	}
+	var rules []rule
+	for rows.Next() {
+		var r rule
+		if err := rows.Scan(&r.tpl, &r.code, &r.required); err != nil {
+			rows.Close()
+			return err
+		}
+		rules = append(rules, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range rules {
+		if _, err := s.db.Exec(
+			`UPDATE report_template_fields SET required=? WHERE template_id=? AND code=?`,
+			r.required, r.tpl, r.code); err != nil {
+			return fmt.Errorf("搬必填 %s.%s: %w", r.tpl, r.code, err)
+		}
+	}
+
+	// 每单最少照片。【0 一律跳过】0 的含义是"没配过",不是"不限" ——
+	// 当成配置搬过去会把模板自带的默认张数清成 0,现场从此一张照片就能提交。
+	mRows, err := s.db.Query(`SELECT template_id, min_images FROM template_settings WHERE min_images > 0`)
+	if err != nil {
+		return nil
+	}
+	type setting struct {
+		tpl string
+		min int
+	}
+	var settings []setting
+	for mRows.Next() {
+		var x setting
+		if err := mRows.Scan(&x.tpl, &x.min); err != nil {
+			mRows.Close()
+			return err
+		}
+		settings = append(settings, x)
+	}
+	mRows.Close()
+	if err := mRows.Err(); err != nil {
+		return err
+	}
+	for _, x := range settings {
+		if _, err := s.db.Exec(
+			`UPDATE report_templates SET min_images=? WHERE id=?`, x.min, x.tpl); err != nil {
+			return fmt.Errorf("搬最少张数 %s: %w", x.tpl, err)
+		}
+	}
+	return nil
 }
 
 // 026 — 把提示词那张表并进模板字段表。
