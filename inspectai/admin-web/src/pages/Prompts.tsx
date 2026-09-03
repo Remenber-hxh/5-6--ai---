@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import PromptVersions from "../components/PromptVersions";
+import TemplateEditor from "../components/TemplateEditor";
 import TemplateFieldRules from "../components/TemplateFieldRules";
 import {
   PromptField,
@@ -51,7 +52,8 @@ export default function Prompts() {
   // 用 replace 不用 push:切 Tab 不该往浏览器历史里堆 —— 否则连切五下,
   // 想退出这个页面要按五次返回。刷新保持和链接可分享这两个好处不受影响。
   const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "rules" ? "rules" : "prompt";
+  const raw = params.get("tab") || "";
+  const tab = raw === "rules" || raw === "template" ? raw : "prompt";
   const setTab = (k: string) => {
     const next = new URLSearchParams(params);
     if (k === "prompt") next.delete("tab");
@@ -476,6 +478,9 @@ export default function Prompts() {
       onChange={setTab}
       items={[
         { key: "prompt", label: "提示词", children: promptPane },
+        // 【模板排在提交规则前面】提交规则是给模板里的字段配必填,
+        // 先有字段才谈得上配它 —— 顺序反了人会先打开一个空的配置页。
+        { key: "template", label: "巡检模板", children: <TemplateEditor /> },
         { key: "rules", label: "提交规则", children: <TemplateFieldRules /> },
       ]}
     />

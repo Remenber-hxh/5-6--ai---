@@ -1064,6 +1064,40 @@ export function listReportTemplates() {
   );
 }
 
+/**
+ * 取一份模板用于编辑。
+ *
+ * recordCount 是关键:有记录之后字段标识不能再改、也不能删 ——
+ * 界面拿它【提前】把那些地方锁掉,而不是等人改完点保存才被拒。
+ */
+export function getReportTemplate(id: string) {
+  return api<{
+    template: ReportTemplateDTO;
+    recordCount: number;
+    assetByBuilder: boolean;
+  }>(`/api/report/templates/${encodeURIComponent(id)}`);
+}
+
+export function saveReportTemplate(t: ReportTemplateDTO) {
+  return api<{ template: ReportTemplateDTO }>(
+    `/api/report/templates/${encodeURIComponent(t.id)}`,
+    { method: "PUT", body: JSON.stringify(t) },
+  );
+}
+
+export function createReportTemplate(t: ReportTemplateDTO) {
+  return api<{ template: ReportTemplateDTO }>("/api/report/templates", {
+    method: "POST",
+    body: JSON.stringify(t),
+  });
+}
+
+export function deleteReportTemplate(id: string) {
+  return api<void>(`/api/report/templates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 /** 覆盖某个模板的必填配置。只传要改的字段;传空对象 = 全部改回代码默认值。 */
 export function saveTemplateFields(
   id: string,
