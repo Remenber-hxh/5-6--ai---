@@ -226,6 +226,7 @@ type Store interface {
 	EngineeringStore
 	SubmissionStore
 	PromptTemplateStore
+	ReportTemplateStore
 	PermissionStore
 	ProjectStore
 	TemplateRuleStore
@@ -276,6 +277,10 @@ type MemStore struct {
 	engTasks          map[string]*EngineeringTask
 	promptTpls        map[string]PromptTemplate
 	promptVers        []PromptVersion
+	// 巡检模板。order 单独存:模板有展示顺序,map 是无序的 ——
+	// 不记顺序的话每次启动模板列表的排列都不一样。
+	reportTemplates     map[string]ReportTemplate
+	reportTemplateOrder []string
 	rolePerms         map[string][]string
 	roles             map[string]*Role
 	regCodes          map[string]*RegistrationCode // key = code 本身
@@ -308,7 +313,8 @@ func NewMemStore() *MemStore {
 		operationLogs:  map[string]*OperationLog{},
 		engPlans:       map[string]*EngineeringPlanItem{},
 		engTasks:       map[string]*EngineeringTask{},
-		promptTpls:     map[string]PromptTemplate{},
+		promptTpls:      map[string]PromptTemplate{},
+		reportTemplates: map[string]ReportTemplate{},
 		projects:       map[string]*Project{},
 		// 默认部门:和 SQLiteStore 的种子对齐 —— 新建用户没指定部门时落在这里
 		departments: map[string]*Department{

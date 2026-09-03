@@ -46,6 +46,96 @@ var migrationList = []migration{
 	{22, "push_log", (*SQLiteStore).migPushLog},
 	{23, "asset_profile_fields", (*SQLiteStore).migAssetProfileFields},
 	{24, "prompt_versions", (*SQLiteStore).migPromptVersions},
+	{25, "report_templates", (*SQLiteStore).migReportTemplates},
+}
+
+// 025 — 巡检模板搬进数据库。
+//
+// 【为什么要搬】10 个模板 120 个字段写死在 templates.go 里,加一个模板、
+// 改一个字段的中文标签,都要改代码重新部署。而这些是业务定义,不是程序逻辑。
+//
+// 【表建好不等于立刻生效】这一步只建表并把代码里那 10 个作为种子灌进去,
+// 读取仍由 reportTemplates() 统一收口 —— 库里没有(或读失败)时回退到代码。
+// 【模板列表绝不能为空】空列表 = 全系统建不了记录,所以回退是硬要求,
+// 不是"顺手加的保险"。
+//
+// tenant_id 现在只占位:模板今天是全局的(代码里那份对所有租户一样),
+// 要做成按租户隔离得把租户串进 reportTemplates(),而它有十几处调用 ——
+// 那是另一次改动,不混在这一次里。
+func (s *SQLiteStore) migReportTemplates() error {
+	tplStmt := `CREATE TABLE IF NOT EXISTS report_templates (
+		id          TEXT PRIMARY KEY,
+		tenant_id   TEXT NOT NULL DEFAULT '` + defaultTenantID + `',
+		name        TEXT NOT NULL DEFAULT '',
+		project     TEXT NOT NULL DEFAULT '',
+		asset_type  TEXT NOT NULL DEFAULT '',
+		max_images  INTEGER NOT NULL DEFAULT 0,
+		min_images  INTEGER NOT NULL DEFAULT 0,
+		featured    INTEGER NOT NULL DEFAULT 0,
+		has_ai      INTEGER NOT NULL DEFAULT 0,
+		ai_prompt   TEXT NOT NULL DEFAULT '',
+		disabled    INTEGER NOT NULL DEFAULT 0,
+		sort_no     INTEGER NOT NULL DEFAULT 0,
+		updated_at  TEXT NOT NULL DEFAULT ''
+	)`
+	fieldStmt := `CREATE TABLE IF NOT EXISTS report_template_fields (
+		id          TEXT PRIMARY KEY,
+		template_id TEXT NOT NULL DEFAULT '',
+		code        TEXT NOT NULL DEFAULT '',
+		label       TEXT NOT NULL DEFAULT '',
+		kind        TEXT NOT NULL DEFAULT 'text',
+		required    INTEGER NOT NULL DEFAULT 0,
+		source      TEXT NOT NULL DEFAULT 'manual',
+		options     TEXT NOT NULL DEFAULT '',
+		default_val TEXT NOT NULL DEFAULT '',
+		manual_only INTEGER NOT NULL DEFAULT 0,
+		sort_no     INTEGER NOT NULL DEFAULT 0
+	)`
+	if s.dialect == "mysql" {
+		tplStmt = `CREATE TABLE IF NOT EXISTS report_templates (
+			id          VARCHAR(64) PRIMARY KEY,
+			tenant_id   VARCHAR(64) NOT NULL DEFAULT '` + defaultTenantID + `',
+			name        VARCHAR(128) NOT NULL DEFAULT '',
+			project     VARCHAR(128) NOT NULL DEFAULT '',
+			asset_type  VARCHAR(128) NOT NULL DEFAULT '',
+			max_images  INT NOT NULL DEFAULT 0,
+			min_images  INT NOT NULL DEFAULT 0,
+			featured    TINYINT NOT NULL DEFAULT 0,
+			has_ai      TINYINT NOT NULL DEFAULT 0,
+			ai_prompt   VARCHAR(64) NOT NULL DEFAULT '',
+			disabled    TINYINT NOT NULL DEFAULT 0,
+			sort_no     INT NOT NULL DEFAULT 0,
+			updated_at  VARCHAR(40) NOT NULL DEFAULT ''
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+		fieldStmt = `CREATE TABLE IF NOT EXISTS report_template_fields (
+			id          VARCHAR(64) PRIMARY KEY,
+			template_id VARCHAR(64) NOT NULL DEFAULT '',
+			code        VARCHAR(64) NOT NULL DEFAULT '',
+			label       VARCHAR(128) NOT NULL DEFAULT '',
+			kind        VARCHAR(32) NOT NULL DEFAULT 'text',
+			required    TINYINT NOT NULL DEFAULT 0,
+			source      VARCHAR(32) NOT NULL DEFAULT 'manual',
+			options     TEXT,
+			default_val VARCHAR(255) NOT NULL DEFAULT '',
+			manual_only TINYINT NOT NULL DEFAULT 0,
+			sort_no     INT NOT NULL DEFAULT 0,
+			KEY idx_rtf_tpl (template_id, sort_no)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+	}
+	if _, err := s.db.Exec(tplStmt); err != nil {
+		return fmt.Errorf("ensure report_templates: %w", err)
+	}
+	if _, err := s.db.Exec(fieldStmt); err != nil {
+		return fmt.Errorf("ensure report_template_fields: %w", err)
+	}
+	if s.dialect != "mysql" {
+		if _, err := s.db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_rtf_tpl ON report_template_fields (template_id, sort_no)`,
+		); err != nil {
+			return fmt.Errorf("index report_template_fields: %w", err)
+		}
+	}
+	return nil
 }
 
 // 024 — 提示词版本留痕。

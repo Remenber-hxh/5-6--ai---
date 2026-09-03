@@ -132,6 +132,12 @@ func main() {
 	if err := ensurePromptTemplateSeeds(store); err != nil {
 		log.Printf("WARN: prompt template seed failed: %v", err)
 	}
+	// 巡检模板:库里空就用代码里那 10 个灌种子,之后以库为准。
+	// 【失败只警告不退出】读不到就继续用代码里那份 —— 模板加载不上而直接
+	// 起不来的话,现场是整个停工;而回退到代码里那份至少能照常巡检。
+	if err := loadReportTemplates(store); err != nil {
+		log.Printf("WARN: 巡检模板加载失败,本次继续使用代码内置的模板: %v", err)
+	}
 
 	server := &Server{
 		store:              store,

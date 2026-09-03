@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,7 +16,70 @@ import (
 // 就全局生效:表单渲染、建记录、提交校验、AI 提示词……十几处调用一处不用改,
 // 也就不会漏。散着改必然漏,而漏掉的那处不报错 —— 权限那一轮的教训。
 func reportTemplates() []ReportTemplate {
-	return applyTemplateRules(baseReportTemplates())
+	return applyTemplateRules(currentReportTemplates())
+}
+
+// templateCache 库里的模板。启动时加载,保存后刷新 —— 和 templateRuleCache
+// 同一套做法(reportTemplates() 是纯函数,被十几处调用,不能每次查库)。
+var templateCache = struct {
+	mu   sync.RWMutex
+	tpls []ReportTemplate
+}{}
+
+// setReportTemplateCache 覆盖整份缓存。
+//
+// 【空的一律不接受】模板列表为空 = 全系统建不了记录、表单渲染不出来、
+// 移动端一个模板都选不到。这种时候宁可继续用代码里那份也不能清空 ——
+// 一次误删或一次读库失败就会让现场停工,而且症状是"什么都点不了",
+// 没人会想到是模板表空了。
+func setReportTemplateCache(tpls []ReportTemplate) {
+	if len(tpls) == 0 {
+		return
+	}
+	templateCache.mu.Lock()
+	templateCache.tpls = tpls
+	templateCache.mu.Unlock()
+}
+
+// currentReportTemplates 库里有就用库里的,否则用代码里那份。
+func currentReportTemplates() []ReportTemplate {
+	templateCache.mu.RLock()
+	cached := templateCache.tpls
+	templateCache.mu.RUnlock()
+	if len(cached) == 0 {
+		return baseReportTemplates()
+	}
+	// 【必须给副本】调用方(applyTemplateRules)会就地改 MinImages 和 Fields。
+	// 直接把缓存交出去的话,一次请求的改动会写回全局缓存,而且是悄悄地 ——
+	// 下一次请求看到的就是被上一次污染过的模板。
+	out := make([]ReportTemplate, len(cached))
+	copy(out, cached)
+	return out
+}
+
+// loadReportTemplates 启动 / 保存后刷新缓存。
+//
+// 库里是空的(首次升级)就把代码里那 10 个灌进去当种子,之后以库为准。
+func loadReportTemplates(store Store) error {
+	if store == nil {
+		return nil
+	}
+	tpls, err := store.ListReportTemplates()
+	if err != nil {
+		return err
+	}
+	if len(tpls) == 0 {
+		for _, t := range baseReportTemplates() {
+			if err := store.UpsertReportTemplate(t); err != nil {
+				return fmt.Errorf("种子模板 %s 写入失败: %w", t.ID, err)
+			}
+		}
+		if tpls, err = store.ListReportTemplates(); err != nil {
+			return err
+		}
+	}
+	setReportTemplateCache(tpls)
+	return nil
 }
 
 // baseReportTemplates 写死在代码里的模板定义。【不要直接调用】—— 它不带
