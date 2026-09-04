@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -237,4 +238,41 @@ func saveMultipartFile(targetDir string, header *multipart.FileHeader, maxSize i
 		Size:      int64(len(data)),
 		CreatedAt: time.Now(),
 	}, nil
+}
+
+// DraftFields — 需求文字 → 字段表(调 ai-service 的 /prompt/draft-fields)。
+//
+// 【只在后台点"生成"时调,不在识别链路上】它挂了顶多是这一次生成不出来,
+// 现场巡检照常。
+func (c *AIClient) DraftFields(requirement, templateName, assetType string) ([]map[string]any, string, error) {
+	payload := map[string]any{
+		"requirement":  requirement,
+		"templateName": templateName,
+		"assetType":    assetType,
+	}
+	body, _ := json.Marshal(payload)
+	// 生成要跑一次大模型,比识别还慢一些 —— 超时给足,否则人点了"生成"
+	// 转半天最后告诉他超时,他只会以为功能坏了。
+	client := &http.Client{Timeout: 90 * time.Second}
+	resp, err := client.Post(c.baseURL+"/prompt/draft-fields", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Fields  []map[string]any `json:"fields"`
+		Model   string           `json:"model"`
+		Error   string           `json:"error"`
+		Message string           `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, "", fmt.Errorf("解析生成结果失败: %w", err)
+	}
+	if out.Error != "" {
+		// ai-service 那边的话已经是人话,直接往上传 —— 换成"生成失败"
+		// 会让人完全不知道是没配密钥、还是需求写得太含糊。
+		return nil, "", errors.New(firstNonEmpty(out.Message, out.Error))
+	}
+	return out.Fields, out.Model, nil
 }

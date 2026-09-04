@@ -771,6 +771,47 @@ func (s *Server) applyPromptToTemplate(p PromptTemplate) error {
 		fields[i].SkipWhen = r.SkipWhen
 		fields[i].JudgeNote = r.Note
 	}
+	// 【提示词里有、模板里还没有的 = 新检查项,要加进去】
+	//
+	// "需求 → 字段表"生成的就是一批全新的 code。只按 code 匹配已有字段的话,
+	// 新生成的检查项会被静默丢掉 —— 界面上显示"已保存",而字段表一条没多,
+	// 人会以为生成功能坏了。
+	//
+	// 【新字段的表单定义给默认值,不算越权】所有权规则说的是"不覆盖模板页
+	// 配好的东西";新字段本来就不存在,没有可覆盖的。类型/选项之后到模板页
+	// 去细调。
+	have := map[string]bool{}
+	for _, f := range fields {
+		have[f.Code] = true
+	}
+	for _, r := range p.Fields {
+		if have[r.Code] || strings.TrimSpace(r.Code) == "" {
+			continue
+		}
+		nf := TemplateField{
+			Code: r.Code, Label: r.Label, Kind: "choice", Source: "ai",
+			Options:    []string{"是", "否"},
+			JudgeMode:  r.Mode,
+			JudgeGroup: r.Group,
+			YesWhen:    r.YesWhen,
+			NoWhen:     r.NoWhen,
+			SkipWhen:   r.SkipWhen,
+			JudgeNote:  r.Note,
+		}
+		switch r.Code {
+		case assetNoFieldCode:
+			// 设备编号:台账认归属的字段,必填且不让 AI 代填
+			nf.Kind, nf.Required, nf.ManualOnly, nf.Source = "text", true, true, "manual"
+		case "nonconformity":
+			nf.Kind, nf.Options = "text", nil
+		}
+		if r.Mode == ModeSystem || r.Mode == ModeReadText || r.Mode == ModeSummary {
+			// 这几种不是"判是否",别给它们套上是/否选项
+			nf.Kind, nf.Options = "text", nil
+		}
+		fields = append(fields, nf)
+	}
+
 	tpl.Fields = fields
 	return s.saveReportTemplate(tpl)
 }

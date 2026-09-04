@@ -1045,6 +1045,14 @@ export interface TemplateFieldDTO {
   source: string;
   options?: string[];
   manualOnly?: boolean;
+  // ===== 判定规则(和表单定义存在同一张字段表上,见迁移 026)=====
+  // 提示词页编这几列,模板页编上面那几列 —— 同一份数据的两个视角。
+  judgeMode?: string;
+  judgeGroup?: string;
+  yesWhen?: string;
+  noWhen?: string;
+  skipWhen?: string;
+  judgeNote?: string;
 }
 
 export interface ReportTemplateDTO {
@@ -1090,6 +1098,23 @@ export function createReportTemplate(t: ReportTemplateDTO) {
     method: "POST",
     body: JSON.stringify(t),
   });
+}
+
+/**
+ * 一段需求描述 → 一份字段表。
+ *
+ * 【只生成不保存】人看过之后再决定采不采用 —— 直接落库的话,
+ * 一次手滑的需求描述会把整份字段表冲掉。
+ */
+export function draftTemplateFields(input: {
+  requirement: string;
+  templateName?: string;
+  assetType?: string;
+}) {
+  return api<{ fields: TemplateFieldDTO[]; model: string }>(
+    "/api/report/templates/draft",
+    { method: "POST", body: JSON.stringify(input) },
+  );
 }
 
 export function deleteReportTemplate(id: string) {

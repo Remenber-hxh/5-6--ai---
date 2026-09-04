@@ -1562,6 +1562,8 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(self, 200, management_chat(payload))
             elif self.path == "/management/chat-tools":
                 write_json(self, 200, management_chat_tools(payload))
+            elif self.path == "/prompt/draft-fields":
+                write_json(self, 200, draft_fields(payload))
             elif self.path == "/management/analyze":
                 write_json(self, 200, management_analyze(payload))
             else:
@@ -1571,6 +1573,114 @@ class Handler(BaseHTTPRequestHandler):
             import traceback
             traceback.print_exc()
             write_json(self, 500, {"error": "internal", "message": str(exc)[:200]})
+
+
+
+# ===== 需求文字 → 字段表 =====
+#
+# 【为什么产出的是字段表,不是一整段提示词】
+# 系统里已经有"字段表 → 标准提示词"的渲染器(Go 侧 renderPromptText),
+# 它就是那份 skill 的代码化:总则 / 字段映射 / 输出 / 置信度。
+# 让模型直接写整段提示词的话,要再解析回字段表才能编辑 —— 而自然语言
+# 解析回结构化数据是有损的,解析不出来的部分会静默丢掉。
+# 反过来先出字段表、再由渲染器生成提示词,两边都是无损的,
+# 而且人看到的提示词和模型将来收到的一字不差。
+
+DRAFT_FIELDS_SYSTEM = """你在为一套设备巡检系统设计"检查项字段表"。用户会用一段话描述他要检查什么,你把它拆成结构化的检查项。
+
+只输出 JSON,不要任何解释文字、不要 markdown 代码块。格式:
+{"fields":[{"code":"...","label":"...","kind":"choice","judgeMode":"visual","yesWhen":"...","noWhen":"...","skipWhen":"...","note":""}]}
+
+每一项的规矩:
+
+- code:英文小写+下划线,见名知意(door_sign / room_clean / water_pressure)。
+  【必须稳定】同一个含义在不同模板里要用同一个 code —— 温度一律 temperature,
+  不要一会儿 temp 一会儿 temperature。读数趋势是按 code 归集的,不一致就断成两截。
+- label:中文,就是巡检员在表单上看到的那一行字。
+- kind:choice(是/否判断)/ number(读数)/ text(文字记录)。绝大多数检查项是 choice。
+- judgeMode 从这几个里选,不要自创:
+    visual          看外观/状态判是否 —— 最常用
+    visual_lenient  主观项,少量瑕疵不算异常(卫生、整洁这类)
+    read_text       读取铭牌/编号上的文字
+    number          读数值(kind=number 时用)
+    objective_date  读日期和当前日期比对(有效期、检验日期)
+    functional_test 需要现场测试动作的照片(防夹、急停)
+    sensory         靠听/闻,照片判不了 —— 留人工
+    summary         汇总不符合项(每个模板末尾一条)
+- yesWhen:判"是"时照片上应该看到什么,具体到能对着照片核对。
+- noWhen:判"否"时看到什么。
+- skipWhen:什么情况不返回、留给人工(通常是"没拍到该部位")。
+
+硬要求:
+1. 【第一项固定是设备编号】{"code":"asset_no","label":"设备编号","kind":"text","judgeMode":"read_text","yesWhen":"编号牌/铭牌上的编号清晰可读"}
+   —— 没有它,提交的记录挂不到任何设备上。
+2. 【最后一项固定是不符合项汇总】{"code":"nonconformity","label":"不符合项处理情况记录","kind":"text","judgeMode":"summary"}
+3. 靠听觉嗅觉判断的(异响、异味、焦糊味)judgeMode 一律 sensory —— 照片判不了这些,
+   让 AI 假装判得了,现场就会把"没证据"记成"正常"。
+4. 检查项控制在 6-15 条。太少覆盖不住,太多现场没人拍得全,最后变成随便点。
+5. 不要编用户没提到的检查项。宁可少,让人自己加。"""
+
+
+def draft_fields(payload: dict) -> dict:
+    """把一段需求描述拆成字段表。失败时返回 error,不编造。"""
+    key = get_deepseek_key()
+    requirement = (payload.get("requirement") or "").strip()
+    if not requirement:
+        return {"error": "requirement_empty", "message": "请先写一段需求描述"}
+    if not key:
+        # 【不给兜底字段表】编一份出来的话,人会以为 AI 读懂了他的需求,
+        # 而实际拿到的是一份和需求无关的模板 —— 比直接说"没配密钥"糟得多。
+        return {"error": "no_key", "message": "管理 AI 未配置密钥,无法生成"}
+
+    parts = [f"要检查的内容:\n{requirement}"]
+    if payload.get("templateName"):
+        parts.append(f"模板名称:{payload['templateName']}")
+    if payload.get("assetType"):
+        parts.append(f"设备类型:{payload['assetType']}")
+
+    model = os.environ.get("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
+    timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "30") or "30")
+    try:
+        reply, actual_model = call_deepseek_chat(
+            model=model, system=DRAFT_FIELDS_SYSTEM,
+            user_content="\n\n".join(parts), api_key=key, timeout=timeout,
+        )
+    except Exception as exc:
+        chat_account_error_of(exc)
+        print(f"[prompt/draft-fields] deepseek failed: {exc}", file=sys.stderr)
+        return {"error": "ai_failed", "message": str(exc)[:160]}
+
+    fields = _parse_draft_fields(reply)
+    if not fields:
+        # 解析不出来就说实话。返回空字段表的话,界面上是"生成成功但一条都没有",
+        # 人只会反复点生成。
+        return {"error": "bad_output", "message": "AI 返回的内容解析不出字段表,请把需求写得更具体些再试"}
+    return {"fields": fields, "model": actual_model}
+
+
+def _parse_draft_fields(reply: str) -> list:
+    """从模型回复里抠出字段表。模型可能裹 ```json,也可能前后带话。"""
+    text = (reply or "").strip()
+    if "```" in text:
+        # 取第一个代码块里的内容
+        parts = text.split("```")
+        for p in parts:
+            p = p.strip()
+            if p.startswith("json"):
+                p = p[4:].strip()
+            if p.startswith("{"):
+                text = p
+                break
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return []
+    try:
+        data = json.loads(text[start:end + 1])
+    except Exception:
+        return []
+    fields = data.get("fields")
+    return fields if isinstance(fields, list) else []
 
 
 if __name__ == "__main__":

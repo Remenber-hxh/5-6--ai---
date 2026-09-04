@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import PromptDraft from "../components/PromptDraft";
 import PromptVersions from "../components/PromptVersions";
 import TemplateEditor from "../components/TemplateEditor";
 import TemplateFieldRules from "../components/TemplateFieldRules";
@@ -336,6 +337,31 @@ export default function Prompts() {
                   : "直接写整段提示词。这个模板还没有字段表"}
             </span>
           </div>
+          {/* 【输入端口】写一段需求,AI 拆成检查项。
+              产出的是字段表而不是整段提示词 —— 提示词由字段表渲染出来,
+              两边无损;反过来从提示词解析回字段表是有损的。 */}
+          {!isRaw && (
+            <PromptDraft
+              templateName={current.name}
+              onAdopt={(fields) =>
+                patch({
+                  ...current,
+                  // 只取判定那几列 —— 表单定义(类型/选项/必填)归模板页管,
+                  // 从这里一并覆盖的话会把那边配好的东西冲掉。
+                  fields: fields.map((f) => ({
+                    code: f.code,
+                    label: f.label,
+                    group: f.judgeGroup || "",
+                    mode: f.judgeMode || "",
+                    yesWhen: f.yesWhen || "",
+                    noWhen: f.noWhen || "",
+                    skipWhen: f.skipWhen || "",
+                    note: f.judgeNote || "",
+                  })),
+                })
+              }
+            />
+          )}
           {isRaw ? (
             rawPane
           ) : (
