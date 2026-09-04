@@ -1,6 +1,6 @@
 import { SaveOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, InputNumber, Space, Switch, Table, Tabs, Tag, Tooltip, Typography, message } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { Alert, Button, Card, InputNumber, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ReportTemplateDTO, listReportTemplates, saveTemplateFields } from "../api/mgmt";
 
@@ -14,20 +14,34 @@ import { ReportTemplateDTO, listReportTemplates, saveTemplateFields } from "../a
  * 这条记录就挂不到任何设备上——台账里既看不到这次巡检，也不知道少了谁，
  * 而且要过很久对账时才发现。后端也会拒绝，这里一并锁住是为了不让人白点一次。
  */
-export default function TemplateFieldRules() {
+export default function TemplateFieldRules({
+  templateId,
+  onTemplateChange,
+}: {
+  /** 三个页签共用的"当前模板"。传了就用它,没传/对不上就退回第一个。 */
+  templateId?: string;
+  onTemplateChange?: (id: string) => void;
+} = {}) {
   const [templates, setTemplates] = useState<ReportTemplateDTO[]>([]);
   const [current, setCurrent] = useState<string>("");
   const [draft, setDraft] = useState<Record<string, boolean>>({});
   const [minImages, setMinImages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // dirty 是在下面算出来的,而"跟随换模板"的 effect 写在它前面
+  // (读起来更顺)。用 ref 取当前值,避免为了顺序把逻辑拆散。
+  const dirtyRef = useRef(false);
 
   async function load() {
     setLoading(true);
     try {
       const list = await listReportTemplates();
       setTemplates(list);
-      if (list.length && !current) setCurrent(list[0].id);
+      if (list.length && !current) {
+        const want = list.find((t) => t.id === templateId) || list[0];
+        setCurrent(want.id);
+        if (want.id !== templateId) onTemplateChange?.(want.id);
+      }
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载失败");
     } finally {
@@ -52,11 +66,23 @@ export default function TemplateFieldRules() {
     setMinImages(tpl.minImages ?? 0);
   }, [tpl]);
 
+  // 【跟随另外两个页签换模板】理由同 TemplateEditor:页签切走后组件还在,
+  // 不跟的话回来看到的是上一个模板的必填开关。改了一半(dirty)就不跟,
+  // 未保存的改动优先。
+  useEffect(() => {
+    if (!templateId || templateId === current) return;
+    if (!templates.some((t) => t.id === templateId)) return;
+    if (dirtyRef.current) return;
+    setCurrent(templateId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, current, templates]);
+
   const dirty = useMemo(() => {
     if (!tpl) return false;
     if (minImages !== (tpl.minImages ?? 0)) return true;
     return tpl.fields.some((f) => draft[f.code] !== undefined && draft[f.code] !== f.required);
   }, [tpl, draft, minImages]);
+  dirtyRef.current = dirty;
 
   const requiredCount = useMemo(
     () => (tpl ? tpl.fields.filter((f) => draft[f.code] ?? f.required).length : 0),
@@ -100,18 +126,23 @@ export default function TemplateFieldRules() {
       }
     >
       <Space direction="vertical" size={14} style={{ width: "100%" }}>
-        {/* 【用 Tabs 不用 Segmented】Segmented 不换行也不滚动:十个模板名
-            在 1400px 上就已经顶到边,窄一点直接被裁掉,后面几个模板
-            连点都点不到 —— 而且模板还要能自定义,以后只会更多。
-            Tabs 自带溢出滚动和"更多"下拉,加多少个都不会丢。 */}
+        {/* 【改成下拉,和另外两个页签一致】原来是一排 Tab。它自己没问题
+            (会溢出滚动),但这一页外面已经套了一层 Tab(提示词/巡检模板/
+            提交规则)—— 两排 Tab 叠着,人分不清哪一排是页签、哪一排是模板,
+            点错一排就跳到别的页去了。另外两页选模板用的都是下拉,统一。 */}
         {templates.length > 0 && (
-          <Tabs
-            size="small"
-            activeKey={current}
-            onChange={setCurrent}
-            items={templates.map((t) => ({ key: t.id, label: t.name }))}
-            style={{ marginBottom: -6 }}
-          />
+          <Space>
+            <span style={{ color: "#666" }}>模板</span>
+            <Select
+              style={{ width: 260 }}
+              value={current}
+              onChange={(id) => {
+                setCurrent(id);
+                onTemplateChange?.(id);
+              }}
+              options={templates.map((t) => ({ value: t.id, label: t.name }))}
+            />
+          </Space>
         )}
 
         {tpl && (
@@ -142,6 +173,10 @@ export default function TemplateFieldRules() {
                 0 = 不限；上限 {tpl.maxImages || 20} 张
               </Typography.Text>
             </Space>
+            {/* 【限宽】这张表只有四列,铺满 1400px 的话字段名在最左、
+                必填开关在最右,中间隔着一大片空白,一行要横着扫完整屏 —— 
+                很容易看错行,把 A 字段的开关当成 B 字段的。 */}
+            <div style={{ maxWidth: 860 }}>
             <Table<ReportTemplateDTO["fields"][number]>
               rowKey="code"
               size="middle"
@@ -198,6 +233,7 @@ export default function TemplateFieldRules() {
                 },
               ]}
             />
+            </div>
           </>
         )}
       </Space>

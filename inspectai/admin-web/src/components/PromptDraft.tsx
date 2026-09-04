@@ -1,3 +1,4 @@
+import { ThunderboltOutlined } from "@ant-design/icons";
 import { Button, Input, Modal, Table, Tag, message } from "antd";
 import { useState } from "react";
 
@@ -39,6 +40,7 @@ export default function PromptDraft({
   /** 采用之后由调用方决定怎么合并进当前模板 */
   onAdopt: (fields: TemplateFieldDTO[]) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [requirement, setRequirement] = useState("");
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<TemplateFieldDTO[] | null>(null);
@@ -54,6 +56,7 @@ export default function PromptDraft({
       const d = await draftTemplateFields({ requirement, templateName, assetType });
       setDraft(d.fields || []);
       setModel(d.model || "");
+      setOpen(false); // 结果弹窗接管,两层弹窗叠着看不清
     } catch (e) {
       // 后端的理由已经是人话(没配密钥 / 需求太含糊 / 账户欠费),
       // 换成"生成失败"人不知道该改什么。
@@ -65,17 +68,33 @@ export default function PromptDraft({
 
   return (
     <>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 14 }}>
+      {/* 【入口是一个按钮,不是常驻的输入框】生成是偶尔做一次的事
+          (建模板时用一次),而改判定依据是天天做的。把偶尔用的东西
+          常驻在页面顶上,天天做的那件事就被推下去一屏。 */}
+      <Button icon={<ThunderboltOutlined />} onClick={() => setOpen(true)}>
+        AI 生成检查项
+      </Button>
+
+      <Modal
+        open={open}
+        title="描述要检查什么"
+        okText="生成"
+        cancelText="取消"
+        confirmLoading={busy}
+        onCancel={() => setOpen(false)}
+        onOk={generate}
+        width={620}
+      >
         <Input.TextArea
           value={requirement}
           onChange={(e) => setRequirement(e.target.value)}
-          autoSize={{ minRows: 2, maxRows: 6 }}
-          placeholder="用一句话说要检查什么。例:电梯机房巡检,看机房门有没有关好、警示标识齐不齐、地面有没有堆杂物、照明空调正不正常、灭火器有没有过期、设备有没有异响异味"
+          autoSize={{ minRows: 4, maxRows: 10 }}
+          placeholder="用大白话说就行。例:电梯机房巡检,看机房门有没有关好、警示标识齐不齐、地面有没有堆杂物、照明空调正不正常、灭火器有没有过期、设备有没有异响异味"
         />
-        <Button type="primary" loading={busy} onClick={generate} style={{ flex: "none" }}>
-          生成检查项
-        </Button>
-      </div>
+        <div style={{ marginTop: 8, fontSize: 12.5, color: C.textFaint }}>
+          生成之后会先摆出来给你过一遍,确认了才替换当前字段表
+        </div>
+      </Modal>
 
       <Modal
         open={!!draft}

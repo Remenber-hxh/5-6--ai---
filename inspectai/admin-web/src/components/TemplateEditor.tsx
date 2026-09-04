@@ -67,7 +67,14 @@ function emptyTemplate(): ReportTemplateDTO {
   };
 }
 
-export default function TemplateEditor() {
+export default function TemplateEditor({
+  templateId,
+  onTemplateChange,
+}: {
+  /** 三个页签共用的"当前模板"。传了就用它,没传/对不上就退回第一个。 */
+  templateId?: string;
+  onTemplateChange?: (id: string) => void;
+} = {}) {
   const [list, setList] = useState<ReportTemplateDTO[]>([]);
   const [current, setCurrent] = useState<ReportTemplateDTO | null>(null);
   const [recordCount, setRecordCount] = useState(0);
@@ -111,10 +118,33 @@ export default function TemplateEditor() {
       // 项目拉不到不该拖垮整页 —— 它只是个下拉的候选
       listProjects().then(setProjects).catch(() => setProjects([]));
       const tpls = await reloadList();
-      if (tpls.length) await select(tpls[0].id);
+      const want = tpls.find((t) => t.id === templateId) || tpls[0];
+      if (want) {
+        // 地址栏里的 id 这一页没有(比如刚被删掉),退回第一个 ——
+        // 但要把地址栏也纠正过来,否则另外两页还指着那个不存在的 id。
+        if (want.id !== templateId) onTemplateChange?.(want.id);
+        await select(want.id);
+      }
       setLoading(false);
     })();
+    // 只在挂载时定位一次。把 templateId 放进依赖的话,选完模板 → 通知父级 →
+    // 参数变 → 这个 effect 重跑 → 把编辑中的内容重新拉一遍,改到一半会被冲掉。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadList, select]);
+
+  // 【跟随另外两个页签换模板】页签切走之后这个组件还留在内存里,
+  // 只在挂载时读一次 templateId 的话:在提示词页换了模板,回到这一页
+  // 看到的还是上一个 —— 而标题栏的模板名会显示成新的那个,人会照着
+  // 一个错的表编辑。
+  //
+  // 【改了一半就不跟】未保存的改动比"两页同步"重要得多。这时候留在原地,
+  // 标题栏的「未保存」标签还在,保存或放弃之后自然会跟上。
+  useEffect(() => {
+    if (!templateId || creating || dirty) return;
+    if (current?.id === templateId) return;
+    if (!list.some((t) => t.id === templateId)) return;
+    void select(templateId);
+  }, [templateId, creating, dirty, current?.id, list, select]);
 
   // 有记录 = 字段标识锁死。改了它历史记录里那一项就查不出来了。
   const codeLocked = recordCount > 0 && !creating;
@@ -149,6 +179,7 @@ export default function TemplateEditor() {
   }
 
   function switchTemplate(id: string) {
+    onTemplateChange?.(id); // 让另外两个页签跟着切到同一份模板
     if (!dirty) return void select(id);
     Modal.confirm({
       title: "当前模板有未保存的修改",

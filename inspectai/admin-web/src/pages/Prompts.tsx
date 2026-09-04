@@ -61,6 +61,19 @@ export default function Prompts() {
     else next.set("tab", k);
     setParams(next, { replace: true });
   };
+
+  // 【三个页签共用一个"当前模板"】原来每一页各有一个选择器,各选各的:
+  // 在提示词页选好「电梯巡检(有机房)」,切到巡检模板页是另一个模板,
+  // 切到提交规则页又是第三个 —— 人以为自己一直在配同一份,
+  // 实际上改的是三份不同的东西,而且界面上没有任何地方提示。
+  // 把它提到地址栏上,三页读同一个值。
+  const tplId = params.get("tpl") || "";
+  const setTplId = (id: string) => {
+    const next = new URLSearchParams(params);
+    if (id) next.set("tpl", id);
+    else next.delete("tpl");
+    setParams(next, { replace: true });
+  };
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -68,7 +81,11 @@ export default function Prompts() {
       .then((d) => {
         setTemplates(d.templates || []);
         setModes(d.modes || []);
-        if (d.templates?.length) void select(d.templates[0].id);
+        // 地址栏带了模板就用它(从别的页签切过来的情况);带的是个
+        // 这一页没有的 id 就退回第一个,而不是留一张空白页。
+        const list = d.templates || [];
+        const want = list.find((t) => t.id === tplId) || list[0];
+        if (want) void select(want.id);
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,6 +93,7 @@ export default function Prompts() {
 
   async function select(id: string) {
     const t = await getPromptTemplate(id);
+    if (id !== tplId) setTplId(id);
     setCurrent(t);
     setDirty(false);
     setBuiltin(null);
@@ -92,6 +110,7 @@ export default function Prompts() {
 
   // 切换模板前拦未保存改动(判定规则改一半丢了会直接影响识别)
   function switchTemplate(id: string) {
+    setTplId(id);
     if (!dirty) return void select(id);
     Modal.confirm({
       title: "当前模板有未保存的修改",
@@ -336,11 +355,14 @@ export default function Prompts() {
                   ? "直接写整段提示词,写什么模型就收到什么"
                   : "直接写整段提示词。这个模板还没有字段表"}
             </span>
-          </div>
-          {/* 【输入端口】写一段需求,AI 拆成检查项。
-              产出的是字段表而不是整段提示词 —— 提示词由字段表渲染出来,
-              两边无损;反过来从提示词解析回字段表是有损的。 */}
-          {!isRaw && (
+            {/* 【输入端口:一个按钮,不占版面】写一段需求,AI 拆成检查项。
+                产出的是字段表而不是整段提示词 —— 提示词由字段表渲染出来,
+                两边无损;反过来从提示词解析回字段表是有损的。
+                放在工具条右端而不是卡片标题栏:它改的是下面这张字段表,
+                和标题栏那几个(切模板/历史/预览/保存 —— 管的是整份文档)
+                不是一类动作。 */}
+            {!isRaw && (
+              <span style={{ marginLeft: "auto" }}>
             <PromptDraft
               templateName={current.name}
               onAdopt={(fields) =>
@@ -361,18 +383,28 @@ export default function Prompts() {
                 })
               }
             />
-          )}
+              </span>
+            )}
+          </div>
           {isRaw ? (
             rawPane
           ) : (
           <>
           <Row gutter={12} style={{ marginBottom: 12 }}>
-            <Col span={14}>
+            {/* 【两栏等宽等高】原来是 14/6:左边一个单行框、右边一个带滚动条的
+                三行框,右侧还空出 4 栏。两个同级的东西长得完全不一样,
+                看上去像右边那个出了问题。 */}
+            <Col span={12}>
               <div style={lbl}>场景描述</div>
-              <Input value={current.scene} onChange={(e) => patch({ ...current, scene: e.target.value })} />
+              <Input.TextArea
+                autoSize={{ minRows: 2, maxRows: 5 }}
+                value={current.scene}
+                onChange={(e) => patch({ ...current, scene: e.target.value })}
+                placeholder="这个场景长什么样、拍的时候站在哪"
+              />
             </Col>
-            <Col span={6}>
-              <div style={lbl}>必拍照片要求</div>
+            <Col span={12}>
+              <div style={lbl}>必拍照片要求(一行一条)</div>
               {/* 后端是字符串数组,一行一条。以前这里当成单个字符串,
                   一旦编辑就提交出一个类型对不上的值,保存直接失败。 */}
               <Input.TextArea
@@ -392,27 +424,40 @@ export default function Prompts() {
             size="small"
             dataSource={current.fields}
             pagination={false}
-            scroll={{ x: 1100 }}
+            scroll={{ x: 1210 }}
+            /* 一个模板有十几到二十几个字段。表头滚没了之后,中间那几列
+               四个输入框长得一模一样,人分不清哪一列是"判否"哪一列是
+               "不返回" —— 填错列 AI 就按反的规则判。 */
+            sticky={{ offsetHeader: 0 }}
             columns={[
               {
                 title: "字段",
                 dataIndex: "code",
-                width: 150,
+                width: 170,
                 fixed: "left",
                 render: (v, f) => (
                   <div>
                     <div style={{ fontWeight: 600 }}>{f.label}</div>
-                    <div style={{ color: "#8aa0b0", fontSize: 12 }}>{v}</div>
+                    <div style={{ color: C.textFaint, fontSize: 12 }}>
+                      {v}
+                      {/* 分组本来就存在数据里(头部/机房/轿厢层站/汇总),
+                          界面上不显示的话,二十几行看上去是一锅平的。 */}
+                      {f.group && <span style={{ marginLeft: 6 }}>· {f.group}</span>}
+                    </div>
                   </div>
                 ),
               },
               {
                 title: "判定模式",
-                width: 150,
+                width: 200,
                 render: (_, f, i) => (
                   <Select
                     size="small"
-                    style={{ width: 140 }}
+                    /* 【实测原来 124px 每一项都被截断】"系统注入(不识别)"
+                       显示成"系统注入(不识…" —— 而这一列决定这个字段
+                       到底走不走 AI,看不全就等于没标。最长的一项是
+                       "读取文本(清晰才返回)",按它定宽。 */
+                    style={{ width: 188 }}
                     value={f.mode}
                     options={modes}
                     onChange={(v) => patchField(i, "mode", v)}
@@ -424,7 +469,10 @@ export default function Prompts() {
                 render: (_, f, i) => (
                   <Input.TextArea
                     size="small"
-                    autoSize
+                    /* 【封顶 6 行】不封顶的话,一条写长了的依据能把整行撑到
+                       十几行高,同一屏就只剩两个字段。 */
+                    autoSize={{ minRows: 1, maxRows: 6 }}
+                    placeholder="符合要求时照片上是什么样"
                     value={f.yesWhen}
                     onChange={(e) => patchField(i, "yesWhen", e.target.value)}
                   />
@@ -435,7 +483,10 @@ export default function Prompts() {
                 render: (_, f, i) => (
                   <Input.TextArea
                     size="small"
-                    autoSize
+                    /* 【封顶 6 行】不封顶的话,一条写长了的依据能把整行撑到
+                       十几行高,同一屏就只剩两个字段。 */
+                    autoSize={{ minRows: 1, maxRows: 6 }}
+                    placeholder="不符合时是什么样"
                     value={f.noWhen}
                     onChange={(e) => patchField(i, "noWhen", e.target.value)}
                   />
@@ -446,7 +497,10 @@ export default function Prompts() {
                 render: (_, f, i) => (
                   <Input.TextArea
                     size="small"
-                    autoSize
+                    /* 【封顶 6 行】不封顶的话,一条写长了的依据能把整行撑到
+                       十几行高,同一屏就只剩两个字段。 */
+                    autoSize={{ minRows: 1, maxRows: 6 }}
+                    placeholder="什么情况下不下结论、留给人工"
                     value={f.skipWhen}
                     onChange={(e) => patchField(i, "skipWhen", e.target.value)}
                   />
@@ -502,8 +556,12 @@ export default function Prompts() {
         { key: "prompt", label: "提示词", children: promptPane },
         // 【模板排在提交规则前面】提交规则是给模板里的字段配必填,
         // 先有字段才谈得上配它 —— 顺序反了人会先打开一个空的配置页。
-        { key: "template", label: "巡检模板", children: <TemplateEditor /> },
-        { key: "rules", label: "提交规则", children: <TemplateFieldRules /> },
+        {
+          key: "template",
+          label: "巡检模板",
+          children: <TemplateEditor templateId={tplId} onTemplateChange={setTplId} />,
+        },
+        { key: "rules", label: "提交规则", children: <TemplateFieldRules templateId={tplId} onTemplateChange={setTplId} /> },
       ]}
     />
   );
