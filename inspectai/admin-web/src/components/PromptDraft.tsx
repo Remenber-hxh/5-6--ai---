@@ -2,11 +2,16 @@ import { ThunderboltOutlined } from "@ant-design/icons";
 import { Button, Input, Modal, Table, Tag, message } from "antd";
 import { useState } from "react";
 
-import { TemplateFieldDTO, draftTemplateFields } from "../api/mgmt";
+import { TemplateFieldDTO, createReportTemplate, draftTemplateFields } from "../api/mgmt";
 import { C } from "../styles/tokens";
 
 /**
- * 一段需求描述 → 一份检查项字段表。
+ * 一段需求描述 → 一份【新模板】。
+ *
+ * 【它是新增,不是修改】生成的检查项直接建成一个新模板入库,当场出现在
+ * 模板下拉里。早先的做法是把生成结果覆盖到当前选中的模板上 —— 那等于
+ * "想加一种巡检"的动作,做出来的是"把已有的那种改掉",而被改掉的那份
+ * 判定规则已经在给现场的照片打分了。
  *
  * 【为什么产出的是字段表,不是一整段提示词】
  * "字段表 → 标准提示词"的渲染早就有(总则/字段映射/输出/置信度 那套格式)。
@@ -15,8 +20,9 @@ import { C } from "../styles/tokens";
  * 反过来先出字段表、再渲染成提示词,两边无损,而且预览里看到的提示词
  * 和模型将来收到的一字不差。
  *
- * 【生成完不直接落库】先摆出来让人过一遍再决定采不采用。
- * 直接覆盖的话,一次没写清楚的需求会把已经调好的字段表冲掉。
+ * 【生成完不直接入库】先摆出来让人过一遍再决定采不采用。
+ * 直接建的话,一次没写清楚的需求会在模板列表里留下一份垃圾模板 ——
+ * 而模板一旦有记录就删不掉了。
  */
 
 const MODE_LABEL: Record<string, string> = {
@@ -31,31 +37,31 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 export default function PromptDraft({
-  templateName,
-  assetType,
-  onAdopt,
+  onCreated,
 }: {
-  templateName?: string;
-  assetType?: string;
-  /** 采用之后由调用方决定怎么合并进当前模板 */
-  onAdopt: (fields: TemplateFieldDTO[]) => void;
+  /** 新模板已经入库,把它的 id 交给调用方去选中 */
+  onCreated: (templateId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
   const [requirement, setRequirement] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<TemplateFieldDTO[] | null>(null);
-  const [model, setModel] = useState("");
 
   async function generate() {
+    if (!name.trim()) {
+      message.warning("先给这个模板起个名字");
+      return;
+    }
     if (!requirement.trim()) {
       message.warning("先写一段要检查什么");
       return;
     }
     setBusy(true);
     try {
-      const d = await draftTemplateFields({ requirement, templateName, assetType });
+      const d = await draftTemplateFields({ requirement, templateName: name });
       setDraft(d.fields || []);
-      setModel(d.model || "");
       setOpen(false); // 结果弹窗接管,两层弹窗叠着看不清
     } catch (e) {
       // 后端的理由已经是人话(没配密钥 / 需求太含糊 / 账户欠费),
@@ -66,18 +72,46 @@ export default function PromptDraft({
     }
   }
 
+  // 采用 = 建库。
+  //
+  // 【项目和设备类型这里不填】设备类型要求全局唯一,填错会和别的模板撞车,
+  // 而撞车的后果(后台建的设备认错模板)要到很久以后才暴露。留空是安全的,
+  // 建完到「巡检模板」页配 —— 那一页有唯一性校验和现成的项目下拉。
+  async function adopt() {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      const d = await createReportTemplate({
+        id: "", // 后端生成,不让人手填一个永久且改不了的键
+        name: name.trim(),
+        project: "",
+        assetType: "",
+        maxImages: 20,
+        minImages: 5,
+        fields: draft,
+      });
+      const id = d.template?.id || "";
+      message.success("已建好,可以逐条改判定依据了");
+      setDraft(null);
+      setName("");
+      setRequirement("");
+      if (id) onCreated(id);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "建立失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <>
-      {/* 【入口是一个按钮,不是常驻的输入框】生成是偶尔做一次的事
-          (建模板时用一次),而改判定依据是天天做的。把偶尔用的东西
-          常驻在页面顶上,天天做的那件事就被推下去一屏。 */}
       <Button icon={<ThunderboltOutlined />} onClick={() => setOpen(true)}>
-        AI 生成检查项
+        AI 新建模板
       </Button>
 
       <Modal
         open={open}
-        title="描述要检查什么"
+        title="新建模板"
         okText="生成"
         cancelText="取消"
         confirmLoading={busy}
@@ -85,15 +119,18 @@ export default function PromptDraft({
         onOk={generate}
         width={620}
       >
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="模板名称,如 电梯机房巡检"
+          style={{ marginBottom: 10 }}
+        />
         <Input.TextArea
           value={requirement}
           onChange={(e) => setRequirement(e.target.value)}
           autoSize={{ minRows: 4, maxRows: 10 }}
-          placeholder="用大白话说就行。例:电梯机房巡检,看机房门有没有关好、警示标识齐不齐、地面有没有堆杂物、照明空调正不正常、灭火器有没有过期、设备有没有异响异味"
+          placeholder="要检查什么,用大白话说。例:看机房门有没有关好、警示标识齐不齐、地面有没有堆杂物、灭火器有没有过期"
         />
-        <div style={{ marginTop: 8, fontSize: 12.5, color: C.textFaint }}>
-          生成之后会先摆出来给你过一遍,确认了才替换当前字段表
-        </div>
       </Modal>
 
       <Modal
@@ -101,20 +138,13 @@ export default function PromptDraft({
         title={`生成了 ${draft?.length || 0} 个检查项`}
         width={860}
         onCancel={() => setDraft(null)}
-        okText="采用这份"
+        okText="建立模板"
         cancelText="重来"
-        onOk={() => {
-          if (draft) onAdopt(draft);
-          setDraft(null);
-          setRequirement("");
-        }}
+        confirmLoading={saving}
+        onOk={adopt}
       >
-        {/* 【先看再采用】这一步决定所有巡检员将来填什么、AI 判什么,
+        {/* 【先看再入库】这一步决定所有巡检员将来填什么、AI 判什么,
             扫一眼就点确定的话,一条判错的检查项会跟着每一次巡检。 */}
-        <div style={{ fontSize: 12.5, color: C.textFaint, marginBottom: 10 }}>
-          采用后会替换当前模板的字段表,保存前还能逐条改
-          {model && ` · 由 ${model} 生成`}
-        </div>
         <Table<TemplateFieldDTO>
           rowKey="code"
           size="small"

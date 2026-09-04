@@ -118,16 +118,33 @@ export default function Prompts() {
     }
   }
 
+  // AI 新建的模板:入库已经完成了,这里只负责让界面跟上 ——
+  // 【不跟上的话人会以为没建成】列表里没有、下拉里也选不中,
+  // 他会再点一次生成,于是库里多出第二份一模一样的模板。
+  async function adoptNewTemplate(id: string) {
+    const d = await listPromptTemplates().catch(() => null);
+    if (d) setTemplates(d.templates || []);
+    setSavedByPrompt((n) => n + 1); // 另外两页也要重拉列表,否则看不到新模板
+    switchTemplate(id);
+  }
+
   // 切换模板前拦未保存改动(判定规则改一半丢了会直接影响识别)
   function switchTemplate(id: string) {
-    setTplId(id);
-    if (!dirty) return void select(id);
+    if (!dirty) {
+      setTplId(id);
+      return void select(id);
+    }
+    // 【确认之前不写地址栏】写了的话,人点"留在本页"之后本页还是旧模板,
+    // 而另外两个页签已经按地址栏跳到新模板去了 —— 三页又对不上了。
     Modal.confirm({
       title: "当前模板有未保存的修改",
       content: "切换后未保存的判定规则修改会丢失,确认切换?",
       okText: "放弃修改并切换",
       cancelText: "留在本页",
-      onOk: () => void select(id),
+      onOk: () => {
+        setTplId(id);
+        void select(id);
+      },
     });
   }
 
@@ -310,21 +327,12 @@ export default function Prompts() {
           <Select
             style={{ width: 240 }}
             value={current?.id}
-            options={templates.map((t) => ({
-              value: t.id,
-              label: (
-                <span>
-                  {t.name || t.id}
-                  {/* 【没自定义过的要标出来】不标的话,十个模板看上去
-                      一模一样,人认不出哪些其实还在用内置的那份。 */}
-                  {!t.customized && (
-                    <span style={{ color: C.textFaint, fontSize: 12, marginLeft: 6 }}>内置</span>
-                  )}
-                </span>
-              ),
-            }))}
+            options={templates.map((t) => ({ value: t.id, label: t.name || t.id }))}
             onChange={switchTemplate}
           />
+          {/* 【入口在这一排】它建的是一份新模板,和旁边的模板下拉是一件事;
+              放在下面字段表上方的话,看上去像在对当前这份模板做什么。 */}
+          <PromptDraft onCreated={adoptNewTemplate} />
           <Button type="text" onClick={() => setShowVersions(true)}>
             历史
           </Button>
@@ -366,36 +374,6 @@ export default function Prompts() {
                   ? "直接写整段提示词,写什么模型就收到什么"
                   : "直接写整段提示词。这个模板还没有字段表"}
             </span>
-            {/* 【输入端口:一个按钮,不占版面】写一段需求,AI 拆成检查项。
-                产出的是字段表而不是整段提示词 —— 提示词由字段表渲染出来,
-                两边无损;反过来从提示词解析回字段表是有损的。
-                放在工具条右端而不是卡片标题栏:它改的是下面这张字段表,
-                和标题栏那几个(切模板/历史/预览/保存 —— 管的是整份文档)
-                不是一类动作。 */}
-            {!isRaw && (
-              <span style={{ marginLeft: "auto" }}>
-            <PromptDraft
-              templateName={current.name}
-              onAdopt={(fields) =>
-                patch({
-                  ...current,
-                  // 只取判定那几列 —— 表单定义(类型/选项/必填)归模板页管,
-                  // 从这里一并覆盖的话会把那边配好的东西冲掉。
-                  fields: fields.map((f) => ({
-                    code: f.code,
-                    label: f.label,
-                    group: f.judgeGroup || "",
-                    mode: f.judgeMode || "",
-                    yesWhen: f.yesWhen || "",
-                    noWhen: f.noWhen || "",
-                    skipWhen: f.skipWhen || "",
-                    note: f.judgeNote || "",
-                  })),
-                })
-              }
-            />
-              </span>
-            )}
           </div>
           {isRaw ? (
             rawPane
