@@ -70,10 +70,16 @@ function emptyTemplate(): ReportTemplateDTO {
 export default function TemplateEditor({
   templateId,
   onTemplateChange,
+  reloadKey,
+  onSaved,
 }: {
   /** 三个页签共用的"当前模板"。传了就用它,没传/对不上就退回第一个。 */
   templateId?: string;
   onTemplateChange?: (id: string) => void;
+  /** 别的页签存过盘就 +1,这里跟着重读一次(改了一半的不动)。 */
+  reloadKey?: number;
+  /** 这一页存盘后通知别的页签重读。 */
+  onSaved?: () => void;
 } = {}) {
   const [list, setList] = useState<ReportTemplateDTO[]>([]);
   const [current, setCurrent] = useState<ReportTemplateDTO | null>(null);
@@ -145,6 +151,16 @@ export default function TemplateEditor({
     if (!list.some((t) => t.id === templateId)) return;
     void select(templateId);
   }, [templateId, creating, dirty, current?.id, list, select]);
+
+  // 【别的页签存过盘,这里重读】不重读的话,手里这一版是它存之前的,
+  // 再点保存就把它刚存的判定规则按旧值写回去 —— 两边都显示"已保存",
+  // 而其中一边的改动没了。
+  useEffect(() => {
+    if (!reloadKey || dirty || creating || !current?.id) return;
+    void reloadList();
+    void select(current.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
 
   // 有记录 = 字段标识锁死。改了它历史记录里那一项就查不出来了。
   const codeLocked = recordCount > 0 && !creating;
@@ -218,7 +234,12 @@ export default function TemplateEditor({
         : await saveReportTemplate(current);
       message.success(creating ? "已创建" : "已保存,移动端下次打开即生效");
       await reloadList();
-      await select(saved.template?.id || current.id);
+      const id = saved.template?.id || current.id;
+      await select(id);
+      // 新建的模板要让另外两页也切到它 —— 否则人刚建完,切过去配提交规则
+      // 看到的还是上一个模板,而他以为自己配的是新建的这个。
+      if (creating) onTemplateChange?.(id);
+      onSaved?.();
     } catch (e) {
       // 后端的拒绝理由都写成了人话,直接给出来 ——
       // 换成"保存失败"会让人完全不知道该改哪里。

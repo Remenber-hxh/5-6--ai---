@@ -17,10 +17,16 @@ import { ReportTemplateDTO, listReportTemplates, saveTemplateFields } from "../a
 export default function TemplateFieldRules({
   templateId,
   onTemplateChange,
+  reloadKey,
+  onSaved,
 }: {
   /** 三个页签共用的"当前模板"。传了就用它,没传/对不上就退回第一个。 */
   templateId?: string;
   onTemplateChange?: (id: string) => void;
+  /** 别的页签存过盘就 +1,这里跟着重读一次(改了一半的不动)。 */
+  reloadKey?: number;
+  /** 这一页存盘后通知别的页签重读。 */
+  onSaved?: () => void;
 } = {}) {
   const [templates, setTemplates] = useState<ReportTemplateDTO[]>([]);
   const [current, setCurrent] = useState<string>("");
@@ -77,6 +83,14 @@ export default function TemplateFieldRules({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, current, templates]);
 
+  // 【别的页签存过盘,这里重读】不重读的话,必填开关拿的是它存之前的值,
+  // 再点保存就把它刚存的东西按旧值写回去。
+  useEffect(() => {
+    if (!reloadKey || dirtyRef.current) return;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
+
   const dirty = useMemo(() => {
     if (!tpl) return false;
     if (minImages !== (tpl.minImages ?? 0)) return true;
@@ -102,6 +116,7 @@ export default function TemplateFieldRules({
       await saveTemplateFields(tpl.id, payload, minImages);
       message.success("已保存，巡检端立即生效");
       await load();
+      onSaved?.();
     } catch (e) {
       message.error(e instanceof Error ? e.message : "保存失败");
     } finally {

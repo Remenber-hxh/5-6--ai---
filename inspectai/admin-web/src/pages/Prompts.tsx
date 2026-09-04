@@ -68,6 +68,16 @@ export default function Prompts() {
   // 实际上改的是三份不同的东西,而且界面上没有任何地方提示。
   // 把它提到地址栏上,三页读同一个值。
   const tplId = params.get("tpl") || "";
+  // 【一页存盘,另外两页要重读】三个页签编的是同一份模板的不同侧面,
+  // 但保存写的都是整份。已经打开的页签手里是保存前那一版 —— 拿它去存,
+  // 会把别的页刚存进去的东西按旧值写回来,而且两边都提示"已保存"。
+  // 存盘成功后把这个数一加,另外两页重新拉一次(改了一半的不动)。
+  //
+  // 【每页一个计数,自己存盘不触发自己】共用一个计数的话,存完盘的那一页
+  // 会被自己的计数触发,刚拉过的数据再拉一遍。
+  const [savedByPrompt, setSavedByPrompt] = useState(0);
+  const [savedByEditor, setSavedByEditor] = useState(0);
+  const [savedByRules, setSavedByRules] = useState(0);
   const setTplId = (id: string) => {
     const next = new URLSearchParams(params);
     if (id) next.set("tpl", id);
@@ -149,6 +159,7 @@ export default function Prompts() {
       await savePromptTemplate(current, autoNote(current));
       setDirty(false);
       setBuiltin(null);
+      setSavedByPrompt((n) => n + 1);
       message.success("已保存,下一次识别开始生效");
       // 列表上的"已自定义"标记要跟着变,否则界面还说它在用内置
       listPromptTemplates()
@@ -559,9 +570,31 @@ export default function Prompts() {
         {
           key: "template",
           label: "巡检模板",
-          children: <TemplateEditor templateId={tplId} onTemplateChange={setTplId} />,
+          children: (
+            <TemplateEditor
+              templateId={tplId}
+              onTemplateChange={setTplId}
+              reloadKey={savedByPrompt + savedByRules}
+              onSaved={() => {
+                setSavedByEditor((n) => n + 1);
+                // 提示词页改了一半就别动它 —— 未保存的判定规则比同步重要
+                if (!dirty && tplId) void select(tplId);
+              }}
+            />
+          ),
         },
-        { key: "rules", label: "提交规则", children: <TemplateFieldRules templateId={tplId} onTemplateChange={setTplId} /> },
+        {
+          key: "rules",
+          label: "提交规则",
+          children: (
+            <TemplateFieldRules
+              templateId={tplId}
+              onTemplateChange={setTplId}
+              reloadKey={savedByPrompt + savedByEditor}
+              onSaved={() => setSavedByRules((n) => n + 1)}
+            />
+          ),
+        },
       ]}
     />
   );
