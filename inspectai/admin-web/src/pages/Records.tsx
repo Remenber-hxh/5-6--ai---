@@ -15,9 +15,9 @@ import { useUi } from "../store/ui";
 
 const STATUS_OPTIONS = ["异常", "待复核", "需补图", "人工填写", "已完成", "正常"];
 
-// 列表每页条数。定位逻辑要按它算目标在第几页,所以必须是常量 ——
-// 两处各写一个数,改一处就会错位。
-const PAGE_SIZE = 15;
+// 每页条数的默认值。实际值是状态(用户能在分页器上改),
+// 取数和定位都要用那个状态,不能用这个常量 —— 用了就等于"改了没反应"。
+const DEFAULT_PAGE_SIZE = 15;
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -39,6 +39,10 @@ export default function Records() {
   const { project, setProject } = useUi();
   const [selId, setSelId] = useState("");
   const [page, setPage] = useState(1);
+  // 【每页条数必须是状态】原来这里写死成常量传给 antd 的 pagination,
+  // 于是分页器上那个「条/页」下拉点了没有任何反应 —— 组件重渲染之后
+  // 又被同一个常量覆盖回去。而且它不报错,人只会以为控件坏了。
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   // 跳转定位后闪一下的那一行。只闪一次,之后回到普通选中态。
   const [flashId, setFlashId] = useState("");
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
@@ -68,9 +72,9 @@ export default function Records() {
     let alive = true;
     setLoading(true);
     listRecords({
-      limit: PAGE_SIZE,
+      limit: pageSize,
       // 有待定的深链目标时不传 offset,让后端决定翻到哪一页
-      offset: pending ? undefined : (page - 1) * PAGE_SIZE,
+      offset: pending ? undefined : (page - 1) * pageSize,
       project,
       template: tpl,
       status,
@@ -90,7 +94,7 @@ export default function Records() {
           // 想省掉它就得记住"当前这批对应哪个查询"再跳过 —— 那个判断
           // 一旦写错就是"页面该刷新却不刷新",比多发一次请求糟得多。
           // 而且它只在从深链进来时发生一次。
-          setPage(Math.floor(d.offset / PAGE_SIZE) + 1);
+          setPage(Math.floor(d.offset / pageSize) + 1);
           const hit = d.records.find(
             (r) => r.id === pending.focus || (pending.focusNo && r.recordNo === pending.focusNo),
           );
@@ -128,7 +132,7 @@ export default function Records() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, project, tpl, status, kw, pending]);
+  }, [page, pageSize, project, tpl, status, kw, pending]);
 
   // 筛选一变就回第 1 页 —— 留在第 7 页的话,筛完多半是一片空白,
   // 而人看到的是"没有结果",不是"你还停在第 7 页"。
@@ -268,12 +272,23 @@ export default function Records() {
           }}
           dataSource={rows}
           pagination={{
-            pageSize: PAGE_SIZE,
+            pageSize,
             current: page,
             // 【总数由后端给】原来这里数的是前端手里那个数组的长度 ——
             // 于是"共 100 条"看上去就是"这个系统只存了 100 条巡检记录"。
             total,
-            onChange: setPage,
+            // antd 的 onChange 在"翻页"和"改每页条数"时都会触发,靠 size 区分。
+            onChange: (p, size) => {
+              if (size !== pageSize) {
+                // 【改条数时把当前看的这条留在视野里】直接跳回第 1 页的话,
+                // 人翻到第 17 页想"一屏多看点",结果被踢回开头,还得重新翻。
+                const firstIdx = (page - 1) * pageSize;
+                setPageSize(size);
+                setPage(Math.floor(firstIdx / size) + 1);
+                return;
+              }
+              setPage(p);
+            },
             showTotal: (t) => `共 ${t} 条`,
           }}
           rowClassName={(r) =>
