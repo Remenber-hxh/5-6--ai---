@@ -168,10 +168,23 @@ export function getRecord(id: string) {
   );
 }
 
-export function listRecords() {
-  return api<{ records: InspectionRecord[] }>("/api/inspection/records").then(
-    (d) => d.records || [],
-  );
+/** 后端 recordListMaxLimit。传更大的值会被后端压回来,不是报错。 */
+export const RECORD_LIST_MAX = 500;
+
+/**
+ * 巡检记录列表。
+ *
+ * 【必须显式传 limit】不传的话后端给默认 100 条 —— 而界面上"共 100 条"
+ * 是前端数自己手里数组的长度,看上去像"库里只有 100 条巡检记录"。
+ * 后端 2026-08-10 就支持 ?limit= 了(c4ccffd),当时前端没跟上。
+ *
+ * 【truncated 要往上传】后端明说了这次有没有被截断。丢掉它的话,
+ * 到了 500 条又会撞上同一堵墙,而且和上次一样:界面不说,人看不出来。
+ */
+export function listRecords(limit = RECORD_LIST_MAX) {
+  return api<{ records: InspectionRecord[]; truncated?: boolean }>(
+    `/api/inspection/records?limit=${limit}`,
+  ).then((d) => ({ records: d.records || [], truncated: !!d.truncated }));
 }
 
 export function listChangeRequests() {

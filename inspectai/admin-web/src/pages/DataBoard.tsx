@@ -3,7 +3,14 @@ import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { AttentionItem, InspectorQualityRow, RepeatedIssue, listAttention, listRecords } from "../api/mgmt";
+import {
+  AttentionItem,
+  InspectorQualityRow,
+  RECORD_LIST_MAX,
+  RepeatedIssue,
+  listAttention,
+  listRecords,
+} from "../api/mgmt";
 import { useUi } from "../store/ui";
 import { api } from "../api/client";
 import CountUp from "../components/CountUp";
@@ -51,6 +58,10 @@ export default function DataBoard() {
   const [ov, setOv] = useState<Overview>({});
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [records, setRecords] = useState<InspectionRecord[]>([]);
+  // 【下面两张图是拿明细在前端聚合出来的】记录被截断 = 更早的那些天全算成 0,
+  // 图会画成一条漂亮的下降线,而且不报错。在根治(改后端聚合)之前,
+  // 至少得让人知道这张图现在不完整。
+  const [truncated, setTruncated] = useState(false);
   const [drifts, setDrifts] = useState<DriftEntry[]>([]);
   const [summary, setSummary] = useState("");
   const [repeated, setRepeated] = useState<RepeatedIssue[]>([]);
@@ -79,7 +90,12 @@ export default function DataBoard() {
         setSummary(d.summary);
       })
       .catch(() => void 0);
-    listRecords().then(setRecords).catch(() => void 0);
+    listRecords()
+      .then((d) => {
+        setRecords(d.records);
+        setTruncated(d.truncated);
+      })
+      .catch(() => void 0);
   }, [project]);
 
   // 状态热力图:近 30 天每日格,按当日最差业务状态着色
@@ -147,7 +163,18 @@ export default function DataBoard() {
           </Col>
         ))}
       </Row>
-      <Card title="近 30 天巡检趋势" style={{ marginBottom: 16 }} size="small">
+      <Card
+        title="近 30 天巡检趋势"
+        extra={
+          truncated ? (
+            <span style={{ fontSize: 12, color: "#d46b08" }}>
+              仅统计最近 {RECORD_LIST_MAX} 条记录,更早的未计入
+            </span>
+          ) : undefined
+        }
+        style={{ marginBottom: 16 }}
+        size="small"
+      >
         <ReactECharts option={trendOption} style={{ height: 260 }} notMerge />
       </Card>
       <Row gutter={16} style={{ marginBottom: 16 }}>

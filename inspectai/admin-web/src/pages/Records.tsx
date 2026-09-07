@@ -3,7 +3,7 @@ import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag,
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { ConfirmLog, listConfirmLogs, listRecords } from "../api/mgmt";
+import { ConfirmLog, RECORD_LIST_MAX, listConfirmLogs, listRecords } from "../api/mgmt";
 import { exportCsv } from "../lib/csv";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
 import { useUi } from "../store/ui";
@@ -36,12 +36,17 @@ export default function Records() {
   const [flashId, setFlashId] = useState("");
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
   const [loading, setLoading] = useState(true);
+  // 后端说这次被截断了。【必须说出来】下面的项目/状态/关键词筛选是在
+  // 已经载入的这批里做的客户端过滤 —— 搜一台设备搜不到时,界面说的是
+  // "没有结果",而真相是"更早的那些根本没载进来"。这两件事人分不出来。
+  const [truncated, setTruncated] = useState(false);
   const [params] = useSearchParams();
 
   useEffect(() => {
     listRecords()
-      .then((list) => {
+      .then(({ records: list, truncated: cut }) => {
         setRecords(list);
+        setTruncated(cut);
         const focus = params.get("focus");
         const focusNo = params.get("focusNo");
         const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
@@ -222,7 +227,10 @@ export default function Records() {
             pageSize: PAGE_SIZE,
             current: page,
             onChange: setPage,
-            showTotal: (t) => `共 ${t} 条`,
+            showTotal: (t) =>
+              truncated
+                ? `共 ${t} 条 · 仅最近 ${RECORD_LIST_MAX} 条,更早的记录搜不到`
+                : `共 ${t} 条`,
           }}
           rowClassName={(r) =>
             [r.id === selId ? "row-selected" : "", r.id === flashId ? "row-focus-flash" : ""]
