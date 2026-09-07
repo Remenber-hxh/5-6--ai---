@@ -194,19 +194,27 @@ func (s *Server) toolGetOverview(project projectScope, rangeKey string) (*Overvi
 			out.AssetDanger++
 		}
 	}
+	// 【异常数、待复核数都按统一后的业务状态算】这里以前是两条自己写的
+	// 判断:异常 = 字段值命中异常词、待复核 = manual_required 或有待复核字段。
+	// 于是同一份日报里「异常」出现两次、算法不一样 —— conclusion 那个用
+	// 状态分布,metrics 这个用裸判断,两个数对不上。
+	//
+	// 具体差在哪:裸判断不看 ManualRequired(标了人工填写、字段里又有
+	// 异常词的会被算成异常),也不看 Submitted(已经复核完的还留在待复核里)。
 	for _, r := range ctx.records {
 		t := recordTimestamp(r)
+		st := sanitizeRecordForCurrentTemplate(r).BusinessStatus
 		if !t.Before(ctx.rangeStart) && !t.After(ctx.rangeEnd) {
 			out.RecordRecent++
-			if recordIsAbnormal(r) {
+			if st == "异常" {
 				out.AbnormalRecent++
 			}
-			if r.RecognitionStatus == "manual_required" || hasNeedsReview(r) {
+			if st == "待复核" {
 				out.PendingReviews++
 			}
 		} else if !t.Before(ctx.prevStart) && t.Before(ctx.prevEnd) {
 			out.RecordPrev++
-			if recordIsAbnormal(r) {
+			if st == "异常" {
 				out.AbnormalPrev++
 			}
 		}
@@ -246,39 +254,10 @@ func recordTimestamp(r *Record) time.Time {
 	return r.CreatedAt
 }
 
-var abnormalValueRE = stringMatcher{
-	"异常", "告警", "故障", "离线", "不合格", "超标", "漏水", "渗漏",
-	"报警", "破损", "损坏", "缺失", "跳闸", "烧毁",
-}
-
-type stringMatcher []string
-
-func (m stringMatcher) Match(s string) bool {
-	for _, kw := range m {
-		if strings.Contains(s, kw) {
-			return true
-		}
-	}
-	return false
-}
-
-func recordIsAbnormal(r *Record) bool {
-	for _, f := range r.Fields {
-		if abnormalValueRE.Match(f.Value) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasNeedsReview(r *Record) bool {
-	for _, f := range r.Fields {
-		if f.NeedsReview {
-			return true
-		}
-	}
-	return false
-}
+// 异常关键词只有一份:abnormalValueRe(record_status.go)。
+//
+// 【这里以前另有一份一模一样的词表】两份词表加词时只会有人记得改一处 ——
+// 于是"页面上判为异常、日报里判为正常"的记录会凭空出现,而且找不到原因。
 
 func lazyConfirmRate(logs []*FieldConfirmLog) float64 {
 	if len(logs) == 0 {
@@ -492,7 +471,7 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 			// 翻 record 找当时哪些字段异常,做"同字段重复"加分
 			if rec, ok := ctx.recordsByID[sn.RecordID]; ok {
 				for _, f := range rec.Fields {
-					if abnormalValueRE.Match(f.Value) {
+					if abnormalValueRe.MatchString(f.Value) {
 						fieldAbnormal[f.Code]++
 					}
 				}
@@ -704,7 +683,7 @@ func (s *Server) toolListRepeatedIssues(project projectScope, limit int) ([]*Rep
 				continue
 			}
 			for _, f := range rec.Fields {
-				if !abnormalValueRE.Match(f.Value) {
+				if !abnormalValueRe.MatchString(f.Value) {
 					continue
 				}
 				k := key{a.ID, a.AssetName, f.Code, f.Label}
@@ -758,7 +737,13 @@ func (s *Server) toolListPendingReviews(project projectScope, limit int) (*Pendi
 		if r.Submitted {
 			continue
 		}
-		if r.RecognitionStatus == "manual_required" || hasNeedsReview(r) {
+		// 【按统一后的业务状态挑】这里以前是内联判断
+		// (manual_required 或有待复核字段),是最后一处自己算状态的地方。
+		//
+		// 「需补图」不进这个列表:那要现场重拍,回到巡检员手上,
+		// 不是主管在后台点一下能解决的。
+		st := sanitizeRecordForCurrentTemplate(r).BusinessStatus
+		if st == "待复核" || st == "人工填写" {
 			out.NeedsReview = append(out.NeedsReview, map[string]any{
 				"recordId":  r.ID,
 				"pointName": r.PointName,
@@ -915,7 +900,7 @@ func (s *Server) toolGetStatusEvents(assetID, rangeKey string) (*StatusEventStat
 			continue
 		}
 		for _, f := range rec.Fields {
-			if !abnormalValueRE.Match(f.Value) {
+			if !abnormalValueRe.MatchString(f.Value) {
 				continue
 			}
 			ent, ok := fieldFreq[f.Code]
@@ -1330,7 +1315,10 @@ func (s *Server) handleWeeklyReport(w http.ResponseWriter, project projectScope)
 		if !inRecent {
 			continue
 		}
-		st := recordDailyReportStatus(r)
+		// 【和页面同一口径,并且同一份数据】sanitize 会剔掉已从模板删除的
+		// 字段并算出业务状态。不 sanitize 的话,一个已经删掉的字段还能让
+		// 这条记录在日报里算成「异常」—— 而页面上它显示的是正常。
+		st := sanitizeRecordForCurrentTemplate(r).BusinessStatus
 		statusCount[st]++
 		if r.RecognitionStatus == "recognized" {
 			aiSuccess++
@@ -1595,28 +1583,31 @@ func weeklySummaryFallback(o *OverviewSummary, attention []*AttentionItem) strin
 	return strings.Join(parts, ";") + "。"
 }
 
-// 记录的业务状态(【日报口径】,和界面口径不是一回事)。
+// 业务状态只有一份实现:recordBusinessStatus(record_status.go)。
 //
-// 优先级:异常 > 需补图 > 待复核 > 人工填写 > 正常。
+// 【这里以前另有一份"日报口径"】和界面那套同名不同义,同一条记录页面说
+// 「待复核」、日报说「正常」,而两处都写着"业务状态"。差得最狠的一条是
+// 空记录 —— 一个字段都没填的记录被日报算进「正常」,读日报的人以为
+// 这里巡过了没问题。2026-09-07 统一到界面口径。
+
+// splitStatusCounts 把状态分布拆成三个数:已巡检 / 有问题 / 没问题。
 //
-// 【为什么改名】它以前和界面那套同名,同名不同义 —— 同一条记录,
-// 这里说「正常」、页面上说「待复核」,而两处都写着"业务状态"。
-// 名字一样是最难发现的那种分歧:看代码的人根本不会想到还有第二份。
-// 界面口径见 record_status.go,两者的具体差异见 record_status_test.go。
-func recordDailyReportStatus(r *Record) string {
-	if recordIsAbnormal(r) {
-		return "异常"
+// 【为什么是"总数减去有问题的",不是把状态一个个加起来】原来日报里写的是
+//
+//	正常 + 异常 + 待复核 + 需补图 + 人工填写
+//
+// 统一口径之后多出了「已完成」,这个和式就少列了一项 —— 已巡检数静默偏小,
+// 而且不会有任何地方报错。状态是会增加的,加法式子每加一个状态就得记得
+// 改一处;减法式子只关心"哪几种算有问题",新状态自动落进"没问题"那边。
+//
+// 「人工填写」算没问题:它只是说 AI 没接手,不是说这台设备有毛病。
+// 这和 normalList 的口径一致 —— 那个列表收的就是不属于异常三类的记录。
+func splitStatusCounts(statusCount map[string]int) (inspected, troubled, ok int) {
+	for _, n := range statusCount {
+		inspected += n
 	}
-	if r.RecognitionStatus == "retake_required" {
-		return "需补图"
-	}
-	if r.RecognitionStatus == "manual_required" || hasNeedsReview(r) {
-		return "待复核"
-	}
-	if r.ManualRequired {
-		return "人工填写"
-	}
-	return "正常"
+	troubled = statusCount["异常"] + statusCount["待复核"] + statusCount["需补图"]
+	return inspected, troubled, inspected - troubled
 }
 
 func statusRisk(st string) string {
@@ -1632,7 +1623,7 @@ func statusRisk(st string) string {
 // 取记录里最能代表问题的字段(优先异常值字段,其次待复核字段)
 func primaryAbnormalField(r *Record) (string, string) {
 	for _, f := range r.Fields {
-		if abnormalValueRE.Match(f.Value) {
+		if abnormalValueRe.MatchString(f.Value) {
 			return firstNonEmpty(f.Label, f.Code), f.Value
 		}
 	}
@@ -1688,7 +1679,9 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project projectScope) 
 		if t.Before(ctx.rangeStart) || t.After(ctx.rangeEnd) {
 			continue
 		}
-		st := recordDailyReportStatus(r)
+		// 见上:口径和数据都要和页面一致
+		clean := sanitizeRecordForCurrentTemplate(r)
+		st := clean.BusinessStatus
 		statusCount[st]++
 		if r.RecognitionStatus == "recognized" {
 			aiSuccess++
@@ -1700,7 +1693,7 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project projectScope) 
 			manualFill++
 		}
 		if st == "异常" || st == "待复核" || st == "需补图" {
-			field, value := primaryAbnormalField(r)
+			field, value := primaryAbnormalField(clean)
 			assignee := r.Inspector
 			dueAt := ""
 			if r.EngineeringTaskID != "" {
@@ -1773,6 +1766,8 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project projectScope) 
 	}
 
 	abnormalToday := statusCount["异常"]
+
+	inspectedTotal, _, okCount := splitStatusCounts(statusCount)
 	focus := make([]string, 0, 3)
 	for _, a := range attention {
 		focus = append(focus, a.AssetName)
@@ -1799,15 +1794,18 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project projectScope) 
 			"notStarted": todoN, "overdue": overdueN, "completeRate": completeRate,
 		},
 		"assetStatus": map[string]any{
-			"inspected":     statusCount["正常"] + statusCount["异常"] + statusCount["待复核"] + statusCount["需补图"] + statusCount["人工填写"],
-			"normal":        statusCount["正常"],
+			"inspected":     inspectedTotal,
+			"normal":        okCount,
 			"abnormal":      statusCount["异常"],
 			"pendingReview": statusCount["待复核"],
 			"needRetake":    statusCount["需补图"],
 			"manualFill":    manualFill,
 		},
-		"abnormalList":  abnormalList,
-		"normalSummary": map[string]any{"count": statusCount["正常"], "items": normalList},
+		"abnormalList": abnormalList,
+		// 【count 要和 items 同口径】items 收的是"不属于异常三类"的记录,
+		// count 原来只数「正常」—— 统一口径后大部分记录变成「已完成」,
+		// 那个数字会塌成接近 0,而下面的列表照常有内容。
+		"normalSummary": map[string]any{"count": okCount, "items": normalList},
 		"reviewQuality": map[string]any{
 			"aiSuccess": aiSuccess, "manualEdits": manualEdits, "lowConf": lowConf,
 			"retakes": retakes, "noPhotoConfirm": noPhotoConfirm, "needSupervisor": statusCount["待复核"],

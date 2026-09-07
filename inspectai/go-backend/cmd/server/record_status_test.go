@@ -97,77 +97,57 @@ func TestRecordBusinessStatusUIRule(t *testing.T) {
 	}
 }
 
-// ===== 两套口径的差异 =====
+// ===== 口径统一(2026-09-07)=====
 //
-// 后端一直另有一份 recordDailyReportStatus(管理 AI 的日报/周报和重点关注
-// 都用它),口径和界面那份【不一样】,而且以前两个函数同名。
+// 后端曾经另有一份"日报口径"(management_ai.go 里),和界面那套【同名不同义】,
+// 给管理 AI 的日报/周报和「重点关注」供数。同一条记录,后台页面上写着一个
+// 状态、AI 日报里说的是另一个,而两处都叫"业务状态" —— 没人会去查代码,
+// 只会当成数据出错。
 //
-// 后果是:同一条记录,后台页面上写着一个状态,AI 日报里说的是另一个 ——
-// 而两处都叫"业务状态"。这种分歧没人会去查代码,只会当成数据出错。
+// 现在已经统一到界面口径,那份实现删掉了。这个测试钉住当年差得最狠的
+// 五种情形:它们现在只有一个答案。
 //
-// 【这个测试不是在批准这种分歧,是把它摆到明面上】现在它是有意为之的
-// (统一口径会让日报里的历史数字集体变一遍,那是产品决定,不该夹在一次
-// 重构里做掉)。谁将来去统一,这个测试会失败,逼他先看清楚差在哪几条。
-func TestTwoStatusRulesDisagreeOnPurpose(t *testing.T) {
+// 【为什么选界面口径而不是反过来】最要命的是空记录那条 —— 一个字段都没填
+// 的记录,日报口径算进「正常」,读日报的人以为这里巡过了没问题。
+func TestStatusRuleUnifiedToUIRule(t *testing.T) {
 	cases := []struct {
-		name         string
-		rec          Record
-		wantUI       string
-		wantDaily    string
-		whyItMatters string
+		name     string
+		rec      Record
+		want     string
+		wasDaily string // 统一之前日报会算成什么
 	}{
 		{
-			name:         "空记录",
-			rec:          Record{RecognitionStatus: "not_started"},
-			wantUI:       "待复核",
-			wantDaily:    "正常",
-			whyItMatters: "日报会把一条都没填的记录算进「正常」,读日报的人以为这里巡过了",
+			name: "空记录", rec: Record{RecognitionStatus: "not_started"},
+			want: "待复核", wasDaily: "正常",
 		},
 		{
-			name:         "已提交且正常",
-			rec:          Record{Submitted: true, RecognitionStatus: "recognized", Fields: fieldsWith("正常")},
-			wantUI:       "已完成",
-			wantDaily:    "正常",
-			whyItMatters: "日报没有「已完成」这个状态,分不出「巡完并认可」和「还没人看过」",
+			name: "已提交且正常",
+			rec:  Record{Submitted: true, RecognitionStatus: "recognized", Fields: fieldsWith("正常")},
+			want: "已完成", wasDaily: "正常",
 		},
 		{
-			name:         "标了人工填写、字段里又有异常词",
-			rec:          Record{ManualRequired: true, Fields: fieldsWith("阀门破损")},
-			wantUI:       "人工填写",
-			wantDaily:    "异常",
-			whyItMatters: "同一条记录页面说「人工填写」、日报说「异常」,对账时对不上",
+			name: "标了人工填写、字段里又有异常词",
+			rec:  Record{ManualRequired: true, Fields: fieldsWith("阀门破损")},
+			want: "人工填写", wasDaily: "异常",
 		},
 		{
 			name: "已提交但仍有待复核字段",
 			rec: Record{Submitted: true, RecognitionStatus: "recognized", Fields: []FieldValue{
 				{Code: "a", Value: "正常", NeedsReview: true},
 			}},
-			wantUI:       "已完成",
-			wantDaily:    "待复核",
-			whyItMatters: "日报的「待复核」里混进了已经复核完的,数字偏高",
+			want: "已完成", wasDaily: "待复核",
 		},
 		{
-			name:         "识别结果要求人工介入",
-			rec:          Record{RecognitionStatus: "manual_required"},
-			wantUI:       "人工填写",
-			wantDaily:    "待复核",
-			whyItMatters: "同一批记录在两处被归到不同的桶里",
+			name: "识别结果要求人工介入",
+			rec:  Record{RecognitionStatus: "manual_required"},
+			want: "人工填写", wasDaily: "待复核",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := tc.rec
-			ui := recordBusinessStatus(&rec)
-			daily := recordDailyReportStatus(&rec)
-			if ui != tc.wantUI || daily != tc.wantDaily {
-				t.Errorf("两套口径的结果变了(界面 %q→%q,日报 %q→%q)。\n"+
-					"如果这是有意统一口径,请连同这个用例一起改,并确认日报里的历史数字会跟着变。\n"+
-					"这条差异原本的影响:%s",
-					tc.wantUI, ui, tc.wantDaily, daily, tc.whyItMatters)
-			}
-			if ui == daily {
-				t.Errorf("这条用例本来就是用来记录差异的,现在两边一致了 —— "+
-					"要么口径已统一(那就删掉这条用例),要么用例失去意义。影响:%s", tc.whyItMatters)
+			if got := recordBusinessStatus(&rec); got != tc.want {
+				t.Errorf("统一后应是 %q,实际 %q(统一前日报会算成 %q)", tc.want, got, tc.wasDaily)
 			}
 		})
 	}
@@ -187,5 +167,43 @@ func TestSanitizeFillsBusinessStatus(t *testing.T) {
 	// 真在上面赋值的话,写的是 MemStore 里那条记录本身。
 	if rec.BusinessStatus != "" {
 		t.Errorf("序列化不该改动原记录,实际把 BusinessStatus 写成了 %q", rec.BusinessStatus)
+	}
+}
+
+// 日报的"已巡检 / 没问题"两个数,不能因为多出一个状态就静默偏小。
+//
+// 【这正是统一口径时差点踩进去的坑】原来那行写的是
+// 正常+异常+待复核+需补图+人工填写。统一之后多出「已完成」,而绝大多数
+// 已提交的记录都会落到这个状态上 —— 不改的话,日报里的「已巡检」会突然
+// 掉一大截,「正常」几乎归零,而系统一切正常、没有任何报错。
+func TestSplitStatusCountsSurvivesNewStatus(t *testing.T) {
+	counts := map[string]int{
+		"已完成": 40, "正常": 5, "人工填写": 3,
+		"异常": 2, "待复核": 4, "需补图": 1,
+	}
+	inspected, troubled, ok := splitStatusCounts(counts)
+	if inspected != 55 {
+		t.Errorf("已巡检应是全部 55 条,实际 %d", inspected)
+	}
+	if troubled != 7 {
+		t.Errorf("有问题的应是 异常2+待复核4+需补图1=7,实际 %d", troubled)
+	}
+	if ok != 48 {
+		t.Errorf("没问题的应是 55-7=48,实际 %d", ok)
+	}
+
+	// 【关键性质】将来再加一个状态,它必须自动进「已巡检」,
+	// 而不是从总数里消失。
+	counts["某个将来才有的状态"] = 6
+	inspected2, troubled2, ok2 := splitStatusCounts(counts)
+	if inspected2 != 61 {
+		t.Errorf("新增状态必须自动计入已巡检(应 61),实际 %d —— "+
+			"说明这里又变回了'把状态一个个加起来',以后每加一个状态都会漏", inspected2)
+	}
+	if troubled2 != troubled {
+		t.Errorf("新状态不该被算成有问题的,实际 %d", troubled2)
+	}
+	if ok2 != 54 {
+		t.Errorf("没问题的应是 61-7=54,实际 %d", ok2)
 	}
 }
