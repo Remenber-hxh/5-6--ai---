@@ -467,7 +467,11 @@ func (s *MemStore) ListRecordsSince(tenantID string, since time.Time) ([]*Record
 		if r.TenantID != tenantID {
 			continue // 租户隔离
 		}
-		if r.CreatedAt.Before(since) {
+		// 【没有时间戳的一律留下】漏掉一条记录的后果是它从列表里彻底消失,
+		// 而页面上不会有任何提示 —— 人只会以为这条巡检没做过。
+		// 早年的数据、导入进来的数据都可能没有 created_at,不能因为
+		// 时间不全就把它藏起来。按天聚合那边会因为落不进任何一天而自动跳过。
+		if !r.CreatedAt.IsZero() && r.CreatedAt.Before(since) {
 			continue
 		}
 		out = append(out, r)
@@ -1591,7 +1595,11 @@ func (s *SQLiteStore) ListRecordsSince(tenantID string, since time.Time) ([]*Rec
 	// 字符串比较在这里是可靠的:所有值都是同一个时区偏移的 RFC3339,
 	// 字典序等于时间序 —— 现有的 ORDER BY created_at DESC 一直靠的就是这一点。
 	rows, err := s.db.Query(
-		`SELECT `+recordSelectCols+` FROM records WHERE tenant_id=? AND created_at >= ? ORDER BY created_at DESC`,
+		// created_at = '' 的也要出:见 MemStore 那一版的注释 ——
+		// 时间戳缺失不该让一条记录从列表里消失。
+		`SELECT `+recordSelectCols+` FROM records
+		WHERE tenant_id=? AND (created_at = '' OR created_at >= ?)
+		ORDER BY created_at DESC`,
 		tenantID, fmtStamp(since))
 	if err != nil {
 		return nil, err

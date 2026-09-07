@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -42,10 +43,6 @@ var exportBaseHeaders = []string{
 // 人拿到的是一份他以为已经筛过的表。
 func (s *Server) handleExportRecords(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	wantProject := strings.TrimSpace(q.Get("project"))
-	wantTemplate := strings.TrimSpace(q.Get("template"))
-	wantStatus := strings.TrimSpace(q.Get("status"))
-	keyword := strings.TrimSpace(q.Get("keyword"))
 
 	since := exportEpoch
 	if raw := strings.TrimSpace(q.Get("days")); raw != "" {
@@ -56,56 +53,16 @@ func (s *Server) handleExportRecords(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	vis := s.visibilityFor(r)
-	var owner *User
-	if vis.OwnOnly && !vis.Blocked {
-		u, ok := s.userFromSessionToken(s.tokenFromRequest(r))
-		if !ok {
-			// 只能看自己、又认不出是谁 —— 拒绝,不是给全部。
+	// 【和列表用同一个取数函数】导出和列表问的是同一个问题。写成两份的话,
+	// 页面上 12 条、导出的文件里 15 条,两边都不报错,谁也说不清哪个对。
+	records, err := s.selectRecords(r, recordFilterFromQuery(r), since)
+	if err != nil {
+		if errors.Is(err, errRecordScopeUnknown) {
 			writeError(w, http.StatusForbidden, "forbidden", "请使用账号登录后再导出")
 			return
 		}
-		owner = u
-	}
-
-	var records []*Record
-	if !vis.Blocked {
-		all, err := s.store.ListRecordsSince(s.tenantForRequest(r), since)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "export_failed", err.Error())
-			return
-		}
-		allowed := map[string]bool{}
-		for _, p := range vis.Projects {
-			allowed[p] = true
-		}
-		for _, rec := range all {
-			if rec == nil {
-				continue
-			}
-			if !vis.AllData && len(allowed) > 0 && !allowed[rec.Project] {
-				continue
-			}
-			if owner != nil && !recordOwnedBy(rec, owner.ID, owner.DisplayName, owner.Username) {
-				continue
-			}
-			// 【剔掉已删字段之后再判状态和筛选】和页面上看到的是同一份数据。
-			// 不做的话,一个已经从模板里删掉的字段还能让某条记录被筛成「异常」。
-			clean := sanitizeRecordForCurrentTemplate(rec)
-			if wantProject != "" && clean.Project != wantProject {
-				continue
-			}
-			if wantTemplate != "" && clean.TemplateName != wantTemplate {
-				continue
-			}
-			if wantStatus != "" && clean.BusinessStatus != wantStatus {
-				continue
-			}
-			if keyword != "" && !recordMatchesKeyword(clean, keyword) {
-				continue
-			}
-			records = append(records, clean)
-		}
+		writeError(w, http.StatusInternalServerError, "export_failed", err.Error())
+		return
 	}
 
 	// 【一份模板就把字段摊成列】挤在一格里的"字段明细"在 Excel 里没法用:

@@ -1978,66 +1978,60 @@ const (
 )
 
 func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
-	// 【原来这里写死 100,而且完全不读查询参数】前端传 ?limit= 是摆设 ——
-	// admin-web 拿到的永远是最新 100 条、654 KB,想翻更早的记录没有任何办法。
+	q := r.URL.Query()
 	limit := recordListDefaultLimit
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 			limit = min(n, recordListMaxLimit)
 		}
 	}
-
-	var records []*Record
-	var err error
-	vis := s.visibilityFor(r)
-	switch {
-	// 数据范围:能看全部的人取整个租户
-	case vis.AllData:
-		records, err = s.store.ListRecords(s.tenantForRequest(r), limit)
-	// 配了项目范围却一个项目都没分到 —— 给空,不给全部(见 dataVisibility.Blocked)
-	case vis.Blocked:
-		records = nil
-	// 限定项目且能看组内其他人的:【必须在 SQL 里按项目过滤】。
-	// 先取 limit 条再在内存里筛,会变成"从最新 100 条里挑出本项目的",
-	// 本项目稍微冷清一点就一条都不剩 —— 这个坑这个项目已经踩过好几次了。
-	case len(vis.Projects) > 0 && !vis.OwnOnly:
-		records, err = s.store.ListRecordsInProjects(s.tenantForRequest(r), vis.Projects, limit)
-	default:
-		records, err = s.listOwnRecords(w, r, limit)
-		if records == nil && err == nil {
-			return // listOwnRecords 已经写过响应
+	offset := 0
+	if raw := strings.TrimSpace(q.Get("offset")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			offset = n
 		}
 	}
+
+	records, err := s.selectRecords(r, recordFilterFromQuery(r), exportEpoch)
 	if err != nil {
+		if errors.Is(err, errRecordScopeUnknown) {
+			writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "list_records_failed", err.Error())
 		return
 	}
-	out := sanitizeRecordsForCurrentTemplates(records)
-	// 把口径回给调用方:拿到 limit 条时无从判断"是正好这么多,还是被截断了"。
-	writeJSON(w, http.StatusOK, map[string]any{
-		"records":   out,
-		"limit":     limit,
-		"truncated": len(out) >= limit,
-	})
-}
+	total := len(records)
 
-// listOwnRecords 只取自己提交的。返回 (nil, nil) 表示已经写过错误响应。
-func (s *Server) listOwnRecords(w http.ResponseWriter, r *http.Request, limit int) ([]*Record, error) {
-	var records []*Record
-	var err error
-	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
-		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), user.ID, user.DisplayName, user.Username, limit)
-	} else if s.localNoAuthAllowed(r) {
-		records, err = s.store.ListRecordsByOwner(s.tenantForRequest(r), "", userName(r), "", limit)
-	} else {
-		writeError(w, http.StatusForbidden, "forbidden", "请使用巡检员账号登录")
-		return nil, nil
+	// 【带 focus 时,直接翻到它所在的那一页】从台账 / 审批 / AI 洞察点进来
+	// 带的是某条具体记录。服务端分页之后它可能在第 7 页,而前端手里只有
+	// 当前这一页 —— 自己算不出来。找不到就回 -1,前端据此清掉筛选再来一次。
+	focusIndex := findRecordIndex(records, strings.TrimSpace(q.Get("focus")), strings.TrimSpace(q.Get("focusNo")))
+	if focusIndex >= 0 && strings.TrimSpace(q.Get("offset")) == "" {
+		offset = (focusIndex / limit) * limit
 	}
-	if records == nil && err == nil {
-		// 一条都没有和"已写响应"要区分得开,否则外层会以为响应写过了
-		records = []*Record{}
+
+	if offset > total {
+		offset = total
 	}
-	return records, err
+	end := min(offset+limit, total)
+	page := records[offset:end]
+	if page == nil {
+		page = []*Record{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"records": page,
+		// 【total 是筛选后的总数,不是这一页的条数】页面底下"共 N 条"
+		// 靠它。原来前端数自己手里那个数组的长度,于是"共 100 条"看上去
+		// 就是"这个系统只存了 100 条巡检记录"。
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+		// 还有没有下一页。留着是为了让调用方不用自己算 offset+len < total。
+		"hasMore":    end < total,
+		"focusIndex": focusIndex,
+	})
 }
 
 func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {

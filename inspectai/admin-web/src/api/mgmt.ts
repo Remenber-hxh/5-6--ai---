@@ -168,23 +168,54 @@ export function getRecord(id: string) {
   );
 }
 
-/** 后端 recordListMaxLimit。传更大的值会被后端压回来,不是报错。 */
+/** 后端 recordListMaxLimit:单页最多能要多少条。传更大会被压回来,不是报错。 */
 export const RECORD_LIST_MAX = 500;
 
+export interface RecordPage {
+  records: InspectionRecord[];
+  /** 【筛选后的总数,不是这一页的条数】页面底下"共 N 条"靠它 */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  /** 目标记录排在第几位;-1 = 当前筛选条件下找不到它 */
+  focusIndex: number;
+}
+
 /**
- * 巡检记录列表。
+ * 巡检记录:一页。
  *
- * 【必须显式传 limit】不传的话后端给默认 100 条 —— 而界面上"共 100 条"
- * 是前端数自己手里数组的长度,看上去像"库里只有 100 条巡检记录"。
- * 后端 2026-08-10 就支持 ?limit= 了(c4ccffd),当时前端没跟上。
+ * 【筛选和翻页都在后端做】原来是把最新一批全拉下来、在浏览器里筛和翻。
+ * 那批数据有条数上限,于是:页面底下"共 N 条"是数组长度(看上去像
+ * "这个系统只存了 N 条"),搜一台设备搜不到时界面说"没有结果"
+ * (真相是"更早的那些根本没载进来")。两个都不报错。
  *
- * 【truncated 要往上传】后端明说了这次有没有被截断。丢掉它的话,
- * 到了 500 条又会撞上同一堵墙,而且和上次一样:界面不说,人看不出来。
+ * focus / focusNo:从台账、审批、AI 洞察点进来时带的目标记录。后端会直接
+ * 把它所在的那一页返回,并给出 focusIndex —— 前端手里只有当前这一页,
+ * 自己算不出它在第几页。
  */
-export function listRecords(limit = RECORD_LIST_MAX) {
-  return api<{ records: InspectionRecord[]; truncated?: boolean }>(
-    `/api/inspection/records?limit=${limit}`,
-  ).then((d) => ({ records: d.records || [], truncated: !!d.truncated }));
+export function listRecords(opts: {
+  limit?: number;
+  offset?: number;
+  project?: string;
+  template?: string;
+  status?: string;
+  keyword?: string;
+  focus?: string;
+  focusNo?: string;
+} = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(opts)) {
+    if (v !== undefined && v !== "" && v !== null) q.set(k, String(v));
+  }
+  return api<RecordPage>(`/api/inspection/records?${q.toString()}`).then((d) => ({
+    records: d.records || [],
+    total: d.total || 0,
+    limit: d.limit || 0,
+    offset: d.offset || 0,
+    hasMore: !!d.hasMore,
+    focusIndex: typeof d.focusIndex === "number" ? d.focusIndex : -1,
+  }));
 }
 
 /**

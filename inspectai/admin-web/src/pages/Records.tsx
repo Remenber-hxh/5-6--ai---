@@ -1,14 +1,14 @@
 import { DownloadOutlined } from "@ant-design/icons";
 import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag, message } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
   ConfirmLog,
-  RECORD_LIST_MAX,
   downloadRecordsCsv,
   listConfirmLogs,
   listRecords,
+  listReportTemplates,
 } from "../api/mgmt";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
 import { useUi } from "../store/ui";
@@ -31,6 +31,8 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 // 巡检记录:旧版双栏——左列表 + 右侧常驻记录详情面板(照片/字段/复核留痕)
 export default function Records() {
   const [records, setRecords] = useState<InspectionRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [templateNames, setTemplateNames] = useState<string[]>([]);
   const [status, setStatus] = useState<string>("");
   const [kw, setKw] = useState("");
   const [tpl, setTpl] = useState("");
@@ -41,84 +43,124 @@ export default function Records() {
   const [flashId, setFlashId] = useState("");
   const [logs, setLogs] = useState<ConfirmLog[]>([]);
   const [loading, setLoading] = useState(true);
-  // 后端说这次被截断了。【必须说出来】下面的项目/状态/关键词筛选是在
-  // 已经载入的这批里做的客户端过滤 —— 搜一台设备搜不到时,界面说的是
-  // "没有结果",而真相是"更早的那些根本没载进来"。这两件事人分不出来。
-  const [truncated, setTruncated] = useState(false);
   const [params] = useSearchParams();
 
+  // 深链带来的目标记录。【只认一次】消费掉就清空 —— 不清的话,之后每次
+  // 翻页都会被拽回目标那一页,人根本翻不动。
+  const [pending, setPending] = useState<{ focus: string; focusNo: string } | null>(() => {
+    const focus = params.get("focus") || "";
+    const focusNo = params.get("focusNo") || "";
+    return focus || focusNo ? { focus, focusNo } : null;
+  });
+
+  // 模板下拉的选项。
+  //
+  // 【不能再从当前这批记录里推】服务端分页之后"这批"只有 15 条,
+  // 下拉里就只剩这 15 条用到的模板 —— 人会以为别的模板没有记录。
   useEffect(() => {
-    listRecords()
-      .then(({ records: list, truncated: cut }) => {
-        setRecords(list);
-        setTruncated(cut);
-        const focus = params.get("focus");
-        const focusNo = params.get("focusNo");
-        const hit = list.find((r) => r.id === focus || (focusNo && r.recordNo === focusNo));
-        if (hit) {
-          setSelId(hit.id);
-          setFlashId(hit.id);
-          // 【筛选可能把目标藏起来】项目/状态/关键词是跨页面留存的,从台账的
-          // 巡检轨迹点进来时,它们未必匹配这一条。藏起来的后果不是"看不到",
-          // 而是【看到错的那条】—— 下面"首行自动选中"那个兜底会把选中改成
-          // 列表第一条,右侧详情显示的是完全另一次巡检,而且没有任何提示。
-          const hidden =
-            (!!status && recordBusinessStatus(hit) !== status) ||
-            (!!tpl && hit.templateName !== tpl) ||
-            (!!kw &&
-              !(hit.pointName || "").includes(kw) &&
-              !(hit.recordNo || "").includes(kw) &&
-              !(hit.inspector || "").includes(kw)) ||
-            (!!project && hit.project !== project);
-          if (hidden) {
-            setStatus("");
-            setKw("");
-            setTpl("");
-            if (project && hit.project !== project) setProject("");
-            // 悄悄改掉用户的筛选是不礼貌的,至少要说一声为什么
-            message.info("已清除筛选，以显示你要看的那条记录");
-          }
-        }
-      })
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    listReportTemplates()
+      .then((list) => setTemplateNames(list.map((t) => t.name).filter(Boolean)))
+      .catch(() => setTemplateNames([]));
   }, []);
 
-  const rows = useMemo(
-    () =>
-      records.filter(
-        (r) =>
-          (!project || r.project === project) &&
-          (!tpl || r.templateName === tpl) &&
-          (!status || recordBusinessStatus(r) === status) &&
-          (!kw ||
-            (r.pointName || "").includes(kw) ||
-            (r.recordNo || "").includes(kw) ||
-            (r.inspector || "").includes(kw)),
-      ),
-    [records, status, kw, tpl, project],
-  );
+  // 取当前这一页。筛选变了就回到第 1 页(留在第 7 页多半是空的)。
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    listRecords({
+      limit: PAGE_SIZE,
+      // 有待定的深链目标时不传 offset,让后端决定翻到哪一页
+      offset: pending ? undefined : (page - 1) * PAGE_SIZE,
+      project,
+      template: tpl,
+      status,
+      keyword: kw,
+      focus: pending?.focus,
+      focusNo: pending?.focusNo,
+    })
+      .then((d) => {
+        if (!alive) return;
+        setRecords(d.records);
+        setTotal(d.total);
+        if (!pending) return;
+
+        if (d.focusIndex >= 0) {
+          // 【这里会多发一次请求,是有意接受的】setPage 之后 effect 会
+          // 再拉一次同一页,拿到的数据一模一样,不闪也不错。
+          // 想省掉它就得记住"当前这批对应哪个查询"再跳过 —— 那个判断
+          // 一旦写错就是"页面该刷新却不刷新",比多发一次请求糟得多。
+          // 而且它只在从深链进来时发生一次。
+          setPage(Math.floor(d.offset / PAGE_SIZE) + 1);
+          const hit = d.records.find(
+            (r) => r.id === pending.focus || (pending.focusNo && r.recordNo === pending.focusNo),
+          );
+          if (hit) {
+            setSelId(hit.id);
+            setFlashId(hit.id);
+          }
+          setPending(null);
+          return;
+        }
+        // 找不到 = 被筛选挡住了。
+        //
+        // 【不能就这么算了】列表会照常显示第一页,右侧详情显示的是完全
+        // 另一次巡检,而人以为那就是他点进来的那一条 —— 没有任何提示。
+        if (status || tpl || kw || project) {
+          setStatus("");
+          setKw("");
+          setTpl("");
+          setProject("");
+          // 悄悄改掉用户的筛选是不礼貌的,至少要说一声为什么
+          message.info("已清除筛选,以显示你要看的那条记录");
+          return; // 筛选清空会重新触发这个 effect,pending 留着下一轮再用
+        }
+        // 筛选本来就是空的还找不到:这条记录真的不在(被删了 / 没权限看)
+        message.warning("没有找到你要看的那条记录,它可能已被删除或不在你的可见范围内");
+        setPending(null);
+      })
+      .catch(() => {
+        if (alive) setRecords([]);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, project, tpl, status, kw, pending]);
+
+  // 筛选一变就回第 1 页 —— 留在第 7 页的话,筛完多半是一片空白,
+  // 而人看到的是"没有结果",不是"你还停在第 7 页"。
+  //
+  // 【和筛选写在同一个事件里,不用 effect】用 effect 的话是两次渲染:
+  // 先带着旧页码请求一次(第 3 页 + 新筛选,多半是空的),再回到第 1 页
+  // 请求第二次 —— 白跑一趟,中间还会闪一下错的内容。
+  // 写在一起 React 会合批,只发一次请求。
+  const changeFilter = (apply: () => void) => {
+    apply();
+    setPage(1);
+  };
+
+  // 项目是全局状态(侧栏切的),不经过上面那个函数,只能靠 effect 兜。
+  // page 已经是 1 时 setPage(1) 不会触发重渲染,所以不会多发请求。
+  useEffect(() => {
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project]);
+
+  // 服务端已经筛过了,这里不再二次过滤 —— 再筛一次的话,后端给的 total
+  // 和页面上实际显示的行数会对不上。
+  const rows = records;
 
   // 首行自动选中(右侧面板不留白,与计划页一致)
   useEffect(() => {
+    if (pending) return; // 深链定位还没落定,别抢走选中
     if (!selId || !rows.some((r) => r.id === selId)) setSelId(rows[0]?.id || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
   const current = rows.find((r) => r.id === selId) || null;
-
-  // 让选中的那条【一定看得见】:算出它在第几页 → 翻过去 → 滚进视野。
-  //
-  // 【为什么必须做】从台账的巡检轨迹点进来带的是某条具体记录,而列表默认停在
-  // 第 1 页。目标在第 3 页时,右侧详情面板是对的,但左边高亮的那一行在屏幕外 ——
-  // 人对不上"到底是哪一条",等于没定位。
-  useEffect(() => {
-    if (!selId) return;
-    const idx = rows.findIndex((r) => r.id === selId);
-    if (idx < 0) return;
-    const target = Math.floor(idx / PAGE_SIZE) + 1;
-    setPage((p) => (p === target ? p : target));
-  }, [rows, selId]);
 
   useEffect(() => {
     if (!selId) return;
@@ -189,20 +231,17 @@ export default function Records() {
             placeholder="按状态筛选"
             style={{ width: 130 }}
             options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
-            onChange={(v) => setStatus(v || "")}
+            onChange={(v) => changeFilter(() => setStatus(v || ""))}
           />
           <Select
             allowClear
             showSearch
             placeholder="按模板筛选"
             style={{ width: 160 }}
-            options={Array.from(new Set(records.map((r) => r.templateName).filter(Boolean))).map((t) => ({
-              value: t,
-              label: t,
-            }))}
-            onChange={(v) => setTpl(v || "")}
+            options={templateNames.map((t) => ({ value: t, label: t }))}
+            onChange={(v) => changeFilter(() => setTpl(v || ""))}
           />
-          <Input.Search allowClear placeholder="搜点位 / 编号 / 巡检员" style={{ width: 200 }} onSearch={setKw} />
+          <Input.Search allowClear placeholder="搜点位 / 编号 / 巡检员" style={{ width: 200 }} onSearch={(v) => changeFilter(() => setKw(v))} />
           <Button icon={<DownloadOutlined />} loading={exporting} onClick={doExport}>
             导出
           </Button>
@@ -231,11 +270,11 @@ export default function Records() {
           pagination={{
             pageSize: PAGE_SIZE,
             current: page,
+            // 【总数由后端给】原来这里数的是前端手里那个数组的长度 ——
+            // 于是"共 100 条"看上去就是"这个系统只存了 100 条巡检记录"。
+            total,
             onChange: setPage,
-            showTotal: (t) =>
-              truncated
-                ? `共 ${t} 条 · 仅最近 ${RECORD_LIST_MAX} 条,更早的记录搜不到`
-                : `共 ${t} 条`,
+            showTotal: (t) => `共 ${t} 条`,
           }}
           rowClassName={(r) =>
             [r.id === selId ? "row-selected" : "", r.id === flashId ? "row-focus-flash" : ""]

@@ -8,122 +8,243 @@ import (
 	"time"
 )
 
-// 记录列表的条数契约。
-//
-// 【为什么值得钉住】这个 bug 活了将近一个月,而且没人看得出来:
-// 后端 2026-08-10 就支持 ?limit= 了,前端却一直裸调用,于是永远只拿到
-// 最新 100 条。后台「巡检记录」页底下显示「共 100 条」—— 那个数是前端
-// 数自己手里数组的长度,看上去就是"这个系统只存了 100 条巡检记录"。
-//
-// 静默是关键:接口没报错、页面没报错、数据也没丢,只是少了一大半,
-// 而且更早的记录连搜都搜不到(筛选是在已载入的这批里做的客户端过滤)。
-// 更糟的是数据看板的近 30 天趋势图是拿这批明细在前端聚合的 —— 截断之后
-// 较早的日子全画成 0,图是错的却很好看。
-//
-// 所以这里钉三件事:默认多少、能不能加、加到天上会不会被压回来。
-func TestRecordListLimitContract(t *testing.T) {
-	server, tokens := newRecordAccessTestServer(t)
+type listResp struct {
+	Records []struct {
+		ID       string `json:"id"`
+		RecordNo string `json:"recordNo"`
+	} `json:"records"`
+	Total      int  `json:"total"`
+	Limit      int  `json:"limit"`
+	Offset     int  `json:"offset"`
+	HasMore    bool `json:"hasMore"`
+	FocusIndex int  `json:"focusIndex"`
+}
 
-	// helper 里自带 3 条。补到 500 以上,才试得出"上限会不会真的封顶" ——
-	// 只造 120 条的话,limit=999999 一样返回全部,测试会假绿。
-	now := time.Now()
-	const bulk = 600
-	for i := 0; i < bulk; i++ {
+func listRecordsAPI(t *testing.T, server *Server, token, query string) listResp {
+	t.Helper()
+	res := requestWithToken(server, http.MethodGet, "/api/inspection/records"+query, token)
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET records%s: code=%d body=%s", query, res.Code, res.Body.String())
+	}
+	var out listResp
+	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return out
+}
+
+// 造 n 条记录,时间依次往前推,便于按顺序核对分页。
+func seedListRecords(t *testing.T, server *Server, n int) {
+	t.Helper()
+	now := time.Now().In(cnLoc)
+	for i := 0; i < n; i++ {
 		rec := &Record{
-			ID:              fmt.Sprintf("rec_bulk_%04d", i),
-			Inspector:       "巡检员A",
-			InspectorUserID: "user_a",
-			TemplateID:      "zihan_energy",
-			CreatedAt:       now.Add(-time.Duration(i) * time.Minute),
+			ID:                fmt.Sprintf("rec_bulk_%04d", i),
+			RecordNo:          fmt.Sprintf("ZX-BULK-%04d", i),
+			Inspector:         "巡检员A",
+			InspectorUserID:   "user_a",
+			TemplateID:        "zihan_energy",
+			TemplateName:      "能耗抄表",
+			RecognitionStatus: "recognized",
+			Fields:            []FieldValue{{Code: "site", Label: "巡检地点", Value: "正常"}},
+			// 每条差一分钟:i 越小越新,所以倒序列表里 0000 排最前
+			CreatedAt: now.Add(-time.Duration(i) * time.Minute),
 		}
 		if err := server.store.CreateRecord(rec); err != nil {
-			t.Fatalf("CreateRecord(%s): %v", rec.ID, err)
+			t.Fatalf("CreateRecord: %v", err)
 		}
 	}
-	total := bulk + 3
+}
 
-	get := func(t *testing.T, query string) (count, limit int, truncated bool) {
-		t.Helper()
-		res := requestWithToken(server, http.MethodGet, "/api/inspection/records"+query, tokens["admin"])
-		if res.Code != http.StatusOK {
-			t.Fatalf("GET %s: code=%d body=%s", query, res.Code, res.Body.String())
+// 记录列表的分页契约。
+//
+// 【这里钉的是一个活了将近一个月、没人看得出来的 bug】后端默认只回 100 条,
+// 前端又从来不传 limit,于是后台「巡检记录」页底下永远写着"共 100 条" ——
+// 而那个数是前端数自己手里数组的长度,看上去就是"这个系统只存了 100 条"。
+//
+// 现在 total 由后端给,是【筛选后的真实总数】,和这一页有多少条无关。
+func TestRecordListPagingContract(t *testing.T) {
+	server, tokens := newRecordAccessTestServer(t)
+	const bulk = 600
+	seedListRecords(t, server, bulk)
+	total := bulk + 3 // 夹具自带 3 条
+
+	t.Run("total 是总数,不是这一页的条数", func(t *testing.T) {
+		got := listRecordsAPI(t, server, tokens["admin"], "?limit=15")
+		if len(got.Records) != 15 {
+			t.Errorf("这一页应有 15 条,实际 %d", len(got.Records))
 		}
-		var out struct {
-			Records   []json.RawMessage `json:"records"`
-			Limit     int               `json:"limit"`
-			Truncated bool              `json:"truncated"`
+		if got.Total != total {
+			t.Errorf("total 应是筛选后的总数 %d,实际 %d —— 页面底下的「共 N 条」靠它", total, got.Total)
 		}
-		if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
-			t.Fatalf("decode %s: %v", query, err)
+		if !got.HasMore {
+			t.Error("后面还有几百条,hasMore 应为 true")
 		}
-		return len(out.Records), out.Limit, out.Truncated
+	})
+
+	t.Run("offset 真的翻页,不重复不跳条", func(t *testing.T) {
+		p1 := listRecordsAPI(t, server, tokens["admin"], "?limit=15&offset=0")
+		p2 := listRecordsAPI(t, server, tokens["admin"], "?limit=15&offset=15")
+		if len(p1.Records) != 15 || len(p2.Records) != 15 {
+			t.Fatalf("两页都该是 15 条,实际 %d / %d", len(p1.Records), len(p2.Records))
+		}
+		seen := map[string]bool{}
+		for _, r := range p1.Records {
+			seen[r.ID] = true
+		}
+		for _, r := range p2.Records {
+			if seen[r.ID] {
+				t.Errorf("第 2 页重复了第 1 页的记录 %s —— 翻页时看到重复条目,人会以为数据错了", r.ID)
+			}
+		}
+		if p2.Offset != 15 {
+			t.Errorf("响应里的 offset 应回显 15,实际 %d", p2.Offset)
+		}
+	})
+
+	t.Run("最后一页不越界", func(t *testing.T) {
+		got := listRecordsAPI(t, server, tokens["admin"], fmt.Sprintf("?limit=15&offset=%d", total-2))
+		if len(got.Records) != 2 {
+			t.Errorf("最后一页应剩 2 条,实际 %d", len(got.Records))
+		}
+		if got.HasMore {
+			t.Error("已经是最后一页,hasMore 应为 false")
+		}
+	})
+
+	t.Run("offset 超过总数时给空页,不报错也不回绕", func(t *testing.T) {
+		// 【不能回绕到第一页】人手改地址栏或数据刚被删时会走到这里。
+		// 回绕的话他看到的是第一页却以为是最后一页。
+		got := listRecordsAPI(t, server, tokens["admin"], "?limit=15&offset=999999")
+		if len(got.Records) != 0 {
+			t.Errorf("越界应给空页,实际 %d 条", len(got.Records))
+		}
+		if got.Total != total {
+			t.Errorf("越界时 total 仍应是 %d,实际 %d", total, got.Total)
+		}
+	})
+
+	t.Run("单页条数超过上限会被压回来,而不是报错", func(t *testing.T) {
+		// 一条记录带 fields_json / images_json,线上实测全量 654 KB。
+		// ?limit=999999 照单全收的话,一个请求就能让后端序列化整库。
+		// 但直接 400 也不对 —— 调用方只是想"多要点",封顶给它就是了。
+		got := listRecordsAPI(t, server, tokens["admin"], "?limit=999999")
+		if got.Limit != recordListMaxLimit {
+			t.Errorf("超过上限应压回 %d,实际 %d", recordListMaxLimit, got.Limit)
+		}
+		if len(got.Records) != recordListMaxLimit {
+			t.Errorf("超过上限时应给 %d 条,实际 %d", recordListMaxLimit, len(got.Records))
+		}
+	})
+
+	t.Run("不传 limit 时给默认值", func(t *testing.T) {
+		got := listRecordsAPI(t, server, tokens["admin"], "")
+		if got.Limit != recordListDefaultLimit {
+			t.Errorf("不传 limit 应给 %d,实际 %d", recordListDefaultLimit, got.Limit)
+		}
+	})
+}
+
+// 深链定位:后端要把目标记录所在的那一页直接给出来。
+//
+// 【为什么这件事非后端做不可】从台账 / 审批 / AI 洞察点进来带的是某条具体
+// 记录。服务端分页之后它可能在第 7 页,而前端手里只有当前这一页 ——
+// 自己算不出它在第几页。算不出来的后果不是"看不到",而是【看到错的那条】:
+// 右侧详情面板会退回列表第一条,显示的是完全另一次巡检,且没有任何提示。
+func TestRecordListFocusJumpsToItsPage(t *testing.T) {
+	server, tokens := newRecordAccessTestServer(t)
+	seedListRecords(t, server, 200)
+
+	// 第 100 条(0 基),按倒序它排在第 100 位
+	const targetNo = "ZX-BULK-0100"
+	got := listRecordsAPI(t, server, tokens["admin"], "?limit=15&focusNo="+targetNo)
+	if got.FocusIndex < 0 {
+		t.Fatalf("应能定位到 %s,实际 focusIndex=%d", targetNo, got.FocusIndex)
+	}
+	if got.Offset != (got.FocusIndex/15)*15 {
+		t.Errorf("应直接翻到目标所在的那一页:focusIndex=%d 时 offset 应是 %d,实际 %d",
+			got.FocusIndex, (got.FocusIndex/15)*15, got.Offset)
+	}
+	found := false
+	for _, r := range got.Records {
+		if r.RecordNo == targetNo {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("返回的这一页里应该就有 %s(offset=%d)", targetNo, got.Offset)
 	}
 
-	t.Run("不传 limit 时给默认值,并明说被截断了", func(t *testing.T) {
-		count, limit, truncated := get(t, "")
-		if count != recordListDefaultLimit {
-			t.Errorf("不传 limit 应给 %d 条,实际 %d", recordListDefaultLimit, count)
-		}
-		if limit != recordListDefaultLimit {
-			t.Errorf("响应里的 limit 应回 %d,实际 %d", recordListDefaultLimit, limit)
-		}
-		// 【这一条最重要】库里有 603 条却只回 100 条时,必须自己说出来。
-		// 不说的话,调用方只能看到一个 100,而 100 既可能是"就这么多"
-		// 也可能是"被砍了" —— 前端上次正是把它当成了前者。
-		if !truncated {
-			t.Error("库里远不止 100 条,truncated 必须为 true —— 否则调用方无从知道自己拿到的是残缺数据")
+	t.Run("按 id 也能定位", func(t *testing.T) {
+		got := listRecordsAPI(t, server, tokens["admin"], "?limit=15&focus=rec_bulk_0100")
+		if got.FocusIndex < 0 {
+			t.Errorf("按 id 也应能定位,实际 focusIndex=%d", got.FocusIndex)
 		}
 	})
 
-	t.Run("传了 limit 就按它给", func(t *testing.T) {
-		count, limit, truncated := get(t, "?limit=500")
-		if count != 500 {
-			t.Errorf("limit=500 应给 500 条,实际 %d", count)
-		}
-		if limit != 500 {
-			t.Errorf("响应里的 limit 应回 500,实际 %d", limit)
-		}
-		if !truncated {
-			t.Errorf("库里 %d 条 > 500,仍应标记截断", total)
+	t.Run("被筛选挡住时回 -1,让前端去清筛选", func(t *testing.T) {
+		// 【不能装作找到了】找不到时如果照常返回第一页,人看到的是
+		// 另一条记录的详情,而他以为那就是他点的那条。
+		got := listRecordsAPI(t, server, tokens["admin"],
+			"?limit=15&focusNo="+targetNo+"&status=%E5%BC%82%E5%B8%B8")
+		if got.FocusIndex != -1 {
+			t.Errorf("目标被状态筛选挡住时应回 -1,实际 %d", got.FocusIndex)
 		}
 	})
+}
 
-	t.Run("超过上限会被压回来,而不是报错", func(t *testing.T) {
-		// 【故意不报错】一条记录带 fields_json / images_json,线上实测全量
-		// 654 KB。?limit=999999 要是照单全收,一个请求就能让后端序列化整库。
-		// 但直接 400 也不对 —— 调用方只是想"要全部",封顶给它就是了。
-		count, limit, _ := get(t, "?limit=999999")
-		if limit != recordListMaxLimit {
-			t.Errorf("超过上限应压回 %d,实际 %d", recordListMaxLimit, limit)
-		}
-		if count != recordListMaxLimit {
-			t.Errorf("超过上限时应给 %d 条,实际 %d", recordListMaxLimit, count)
-		}
-	})
+// 筛选要在后端做,而且 total 要跟着筛选走。
+//
+// 原来筛选是在"已载入的那批"里做的客户端过滤:搜一台设备搜不到时,
+// 界面说的是"没有结果",而真相是"更早的那些根本没载进来"。
+func TestRecordListFiltersOnServer(t *testing.T) {
+	server, tokens := newRecordAccessTestServer(t)
+	seedListRecords(t, server, 300)
+	// 造一条排在很后面、只有靠服务端筛选才找得到的记录
+	rec := &Record{
+		ID: "needle", RecordNo: "ZX-NEEDLE", PointName: "针尖点位",
+		Inspector: "巡检员A", InspectorUserID: "user_a",
+		TemplateID: "zihan_energy", TemplateName: "能耗抄表",
+		RecognitionStatus: "recognized",
+		Fields:            []FieldValue{{Code: "site", Label: "巡检地点", Value: "正常"}},
+		CreatedAt:         time.Now().In(cnLoc).Add(-500 * time.Minute), // 排在 300 条之后
+	}
+	if err := server.store.CreateRecord(rec); err != nil {
+		t.Fatalf("CreateRecord: %v", err)
+	}
 
-	t.Run("没被截断时不能谎报截断", func(t *testing.T) {
-		// truncated 的定义是 len(records) >= limit。要是这里判错,
-		// 界面会常年挂着"数据不完整"的提示,人很快就不看它了 ——
-		// 等真截断的那天,提示还在那儿,已经没人当回事。
-		count, _, truncated := get(t, "?limit=5")
-		if count != 5 || !truncated {
-			t.Fatalf("前置条件不成立:count=%d truncated=%v", count, truncated)
-		}
-		// 用一个比库里总数还大、又没超上限的值:应当拿到全部且不标截断
-		server2, tokens2 := newRecordAccessTestServer(t)
-		res := requestWithToken(server2, http.MethodGet, "/api/inspection/records?limit=100", tokens2["admin"])
-		var out struct {
-			Records   []json.RawMessage `json:"records"`
-			Truncated bool              `json:"truncated"`
-		}
-		if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if len(out.Records) >= 100 {
-			t.Fatalf("前置条件不成立:干净的测试服务器不该有 100 条记录,实际 %d", len(out.Records))
-		}
-		if out.Truncated {
-			t.Errorf("只有 %d 条、上限 100 时不该标记截断", len(out.Records))
-		}
-	})
+	got := listRecordsAPI(t, server, tokens["admin"], "?limit=15&keyword=%E9%92%88%E5%B0%96")
+	if got.Total != 1 {
+		t.Errorf("按关键词筛选后 total 应是 1,实际 %d —— 说明筛选没在服务端做,"+
+			"或者只在已载入的那批里筛", got.Total)
+	}
+	if len(got.Records) != 1 || got.Records[0].RecordNo != "ZX-NEEDLE" {
+		t.Errorf("应只返回那一条,实际 %+v", got.Records)
+	}
+}
+
+// 没有时间戳的记录也必须出现在列表里。
+//
+// 【为什么单独钉一条】列表现在按"某个时间点之后"取数。零值时间早于任何
+// 起点,一不小心就会被过滤掉 —— 而后果是这条记录【从列表里彻底消失】,
+// 页面上没有任何提示,人只会以为这次巡检没做过。
+// 早年的数据、外部导入的数据都可能缺 created_at。
+func TestRecordListKeepsRecordsWithoutTimestamp(t *testing.T) {
+	server, tokens := newRecordAccessTestServer(t)
+	rec := &Record{
+		ID: "no_time", RecordNo: "ZX-NOTIME",
+		Inspector: "巡检员A", InspectorUserID: "user_a",
+		TemplateID: "zihan_energy", TemplateName: "能耗抄表",
+		// CreatedAt 故意留零值
+	}
+	if err := server.store.CreateRecord(rec); err != nil {
+		t.Fatalf("CreateRecord: %v", err)
+	}
+	got := listRecordsAPI(t, server, tokens["admin"], "?limit=100&keyword=ZX-NOTIME")
+	if got.Total != 1 || len(got.Records) != 1 {
+		t.Fatalf("缺时间戳的记录也该能查到,实际 total=%d 条数=%d", got.Total, len(got.Records))
+	}
+	if got.Records[0].RecordNo != "ZX-NOTIME" {
+		t.Errorf("拿错了记录:%+v", got.Records[0])
+	}
 }
