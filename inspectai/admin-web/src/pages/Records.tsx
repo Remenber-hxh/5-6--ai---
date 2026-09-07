@@ -1,10 +1,15 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Image, Input, Modal, Select, Skeleton, Space, Table, Tag, message } from "antd";
+import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { ConfirmLog, RECORD_LIST_MAX, listConfirmLogs, listRecords } from "../api/mgmt";
-import { exportCsv } from "../lib/csv";
+import {
+  ConfirmLog,
+  RECORD_LIST_MAX,
+  downloadRecordsCsv,
+  listConfirmLogs,
+  listRecords,
+} from "../api/mgmt";
 import { InspectionRecord, fmtTime, mediaUrl, recordBusinessStatus, statusTagColor } from "../lib/status";
 import { useUi } from "../store/ui";
 
@@ -139,41 +144,24 @@ export default function Records() {
     if (selId) listConfirmLogs(selId).then(setLogs).catch(() => void 0);
   }, [selId]);
 
-  function doExport() {
-    // 【数据不全就必须先说】导出的 CSV 会离开这个系统 —— 发给别人、
-    // 贴进汇报。而文件里没有任何地方写着"这只是最近 500 条",
-    // 拿到它的人只会当成全量。页面上还有分页能看出来,文件里没有。
-    if (truncated) {
-      Modal.confirm({
-        title: "这份导出不是全部记录",
-        content: `当前只载入了最近 ${RECORD_LIST_MAX} 条,导出的也只有这些(筛选后 ${rows.length} 条)。更早的记录不在里面,文件里也不会有任何提示。`,
-        okText: "知道了,仍然导出",
-        cancelText: "取消",
-        onOk: writeCsv,
-      });
-      return;
-    }
-    writeCsv();
-  }
+  const [exporting, setExporting] = useState(false);
 
-  function writeCsv() {
-    exportCsv(
-      `智巡-巡检记录-${new Date().toISOString().slice(0, 10)}`,
-      ["序号", "记录编号", "巡检时间", "所属项目", "巡检点位", "模板", "巡检人", "业务状态", "拍照次数", "字段明细", "AI 总结"],
-      rows.map((r, i) => [
-        i + 1,
-        r.recordNo || r.id,
-        fmtTime(r.createdAt, true),
-        r.project || "",
-        r.pointName || "",
-        r.templateName || "",
-        r.inspector || "",
-        recordBusinessStatus(r),
-        r.captureAttempts ?? "",
-        (r.fields || []).map((f) => (f.label || f.code) + "=" + (f.value || f.aiValue || "")).join(";"),
-        (r.aiSummary || r.report || "").slice(0, 200),
-      ]),
-    );
+  // 导出交给后端。
+  //
+  // 【为什么不再用页面手里那批数据】它有条数上限,导出的文件跟着少 ——
+  // 而文件里没有任何地方写着"这只是最近 N 条"。页面上还有分页能看出来,
+  // 文件发出去之后只会被当成全量:贴进汇报、发给甲方、拿去对账。
+  //
+  // 筛选条件原样带给后端,导出的范围就等于你在页面上筛出来的那一批。
+  async function doExport() {
+    setExporting(true);
+    try {
+      await downloadRecordsCsv({ project, template: tpl, status, keyword: kw });
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "导出失败");
+    } finally {
+      setExporting(false);
+    }
   }
 
   if (loading && records.length === 0) {
@@ -215,7 +203,7 @@ export default function Records() {
             onChange={(v) => setTpl(v || "")}
           />
           <Input.Search allowClear placeholder="搜点位 / 编号 / 巡检员" style={{ width: 200 }} onSearch={setKw} />
-          <Button icon={<DownloadOutlined />} onClick={doExport}>
+          <Button icon={<DownloadOutlined />} loading={exporting} onClick={doExport}>
             导出
           </Button>
         </Space>

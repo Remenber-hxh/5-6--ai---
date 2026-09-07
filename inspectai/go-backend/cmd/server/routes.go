@@ -113,6 +113,9 @@ var apiRoutes = []apiRoute{
 	// 批量删除未成单的离线照片(已并入记录的不在此删)
 	{http.MethodPost, "/api/inspection/offline-shots/delete", guardNone, "", (*Server).handleDeleteOfflineShots},
 	{http.MethodGet, "/api/inspection/records", guardNone, "", (*Server).handleListRecords},
+	// 导出 CSV。和列表同档(guardNone + 数据范围过滤)—— 导出的范围
+	// 必须等于这个人本来就能看见的范围,不能因为换了个出口就放宽。
+	{http.MethodGet, "/api/inspection/records/export", guardNone, "", (*Server).handleExportRecords},
 	// 按天聚合(看板的趋势图/热力图)。管理角色才看得到看板,这里同档。
 	{http.MethodGet, "/api/inspection/stats/daily", guardSupervisor, "", (*Server).handleRecordDailyStats},
 	{http.MethodPost, "/api/inspection/records", guardNone, "", (*Server).handleCreateRecord},

@@ -1,5 +1,5 @@
 // 管理域 API:与 Go 后端既有契约一一对应(勿改字段名)
-import { api } from "./client";
+import { api, getToken } from "./client";
 import type { InspectionRecord } from "../lib/status";
 
 export interface ChatSource {
@@ -185,6 +185,45 @@ export function listRecords(limit = RECORD_LIST_MAX) {
   return api<{ records: InspectionRecord[]; truncated?: boolean }>(
     `/api/inspection/records?limit=${limit}`,
   ).then((d) => ({ records: d.records || [], truncated: !!d.truncated }));
+}
+
+/**
+ * 下载巡检记录 CSV。
+ *
+ * 【为什么不在前端拼 CSV】原来是把页面手里那个数组写成文件,而那个数组
+ * 有条数上限 —— 导出的文件也就只有那么多,【而文件里没有任何地方说它
+ * 不完整】。页面上还有分页能看出来,文件发出去只会被当成全量。
+ *
+ * 【为什么不用 <a href> 直接下载】鉴权走的是 X-InspectAI-Token 请求头,
+ * 不是 Cookie。浏览器发起的导航带不上这个头,会被当成未登录。
+ * 所以走 fetch 拿 blob 再触发下载。
+ */
+export async function downloadRecordsCsv(filters: {
+  project?: string;
+  template?: string;
+  status?: string;
+  keyword?: string;
+}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v) q.set(k, v);
+  }
+  const res = await fetch(`/api/inspection/records/export?${q.toString()}`, {
+    headers: { "X-InspectAI-Token": getToken() },
+  });
+  if (!res.ok) {
+    throw new Error(`导出失败(${res.status})`);
+  }
+  // 文件名以后端下发的为准 —— 它知道导出的是哪一天、哪个口径
+  const cd = res.headers.get("Content-Disposition") || "";
+  const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
+  const name = m ? decodeURIComponent(m[1]) : "智巡-巡检记录.csv";
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 /** 某一天的巡检量与状态分布。后端按东八区分桶,见 record_stats.go */
