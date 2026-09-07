@@ -26,34 +26,28 @@ export interface InspectionRecord {
   report?: string;
   fields?: RecordField[];
   images?: { url?: string; path?: string }[];
+  /** 后端算好的业务状态。见 go-backend/cmd/server/record_status.go */
+  businessStatus?: string;
 }
 
-const ABNORMAL_VALUE_RE =
-  /异常|告警|故障|离线|不合格|超标|漏水|渗漏|报警|破损|损坏|缺失|跳闸|烧毁/;
+// 业务状态不再由前端计算 —— 见下。
 
-function recordLevel(r: InspectionRecord): "danger" | "warning" | "normal" {
-  const valueText = (r.fields || []).map((f) => String(f.value || "")).join(" ");
-  if (ABNORMAL_VALUE_RE.test(valueText)) return "danger";
-  if (r.submitted) return "normal";
-  if ((r.fields || []).some((f) => f.needsReview)) return "warning";
-  if (r.recognitionStatus === "retake_required") return "warning";
-  return "normal";
-}
-
-function hasInspectionResult(r: InspectionRecord): boolean {
-  if (r.submitted || r.recognitionStatus === "recognized") return true;
-  return (r.fields || []).some((f) => String(f.value || "").trim());
-}
-
+/**
+ * 记录的业务状态。
+ *
+ * 【规则搬到后端了】原来这里有一份完整实现(异常词表 + 优先级判断)。
+ * 搬走的原因不是嫌前端算得慢,而是后端也需要它 —— 按状态导出、看板按
+ * 状态聚合,都得知道什么叫"异常"。留两份实现的话,迟早出现【导出里的
+ * 状态和页面上显示的不一样】,而没人会想到是两套代码在算同一件事。
+ *
+ * 现在唯一实现在 go-backend/cmd/server/record_status.go,规则由
+ * record_status_test.go 逐条钉住。前端只负责显示。
+ *
+ * (顺带查出来的:后端另有一份"日报口径"在跑,和界面口径有 5 处不一样。
+ * 那是已知的、有意保留的分歧,同样钉在那个测试里。)
+ */
 export function recordBusinessStatus(r: InspectionRecord): string {
-  if (r.manualRequired || r.recognitionStatus === "manual_required") return "人工填写";
-  if (r.recognitionStatus === "retake_required") return "需补图";
-  const level = recordLevel(r);
-  if (level === "danger") return "异常";
-  if (level === "warning") return "待复核";
-  if (r.submitted) return "已完成";
-  if (hasInspectionResult(r)) return "正常";
-  return "待复核";
+  return r.businessStatus || "";
 }
 
 // 图片地址口径与旧版 mediaUrl 一致:后端以 /storage/ 提供上传文件

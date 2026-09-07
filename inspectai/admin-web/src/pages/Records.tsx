@@ -1,5 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Image, Input, Select, Skeleton, Space, Table, Tag, message } from "antd";
+import { Button, Card, Empty, Image, Input, Modal, Select, Skeleton, Space, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -140,6 +140,23 @@ export default function Records() {
   }, [selId]);
 
   function doExport() {
+    // 【数据不全就必须先说】导出的 CSV 会离开这个系统 —— 发给别人、
+    // 贴进汇报。而文件里没有任何地方写着"这只是最近 500 条",
+    // 拿到它的人只会当成全量。页面上还有分页能看出来,文件里没有。
+    if (truncated) {
+      Modal.confirm({
+        title: "这份导出不是全部记录",
+        content: `当前只载入了最近 ${RECORD_LIST_MAX} 条,导出的也只有这些(筛选后 ${rows.length} 条)。更早的记录不在里面,文件里也不会有任何提示。`,
+        okText: "知道了,仍然导出",
+        cancelText: "取消",
+        onOk: writeCsv,
+      });
+      return;
+    }
+    writeCsv();
+  }
+
+  function writeCsv() {
     exportCsv(
       `智巡-巡检记录-${new Date().toISOString().slice(0, 10)}`,
       ["序号", "记录编号", "巡检时间", "所属项目", "巡检点位", "模板", "巡检人", "业务状态", "拍照次数", "字段明细", "AI 总结"],

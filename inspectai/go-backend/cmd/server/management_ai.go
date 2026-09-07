@@ -1330,7 +1330,7 @@ func (s *Server) handleWeeklyReport(w http.ResponseWriter, project projectScope)
 		if !inRecent {
 			continue
 		}
-		st := recordBusinessStatus(r)
+		st := recordDailyReportStatus(r)
 		statusCount[st]++
 		if r.RecognitionStatus == "recognized" {
 			aiSuccess++
@@ -1595,8 +1595,15 @@ func weeklySummaryFallback(o *OverviewSummary, attention []*AttentionItem) strin
 	return strings.Join(parts, ";") + "。"
 }
 
-// 记录的业务状态(日报口径):异常 > 需补图 > 待复核 > 人工填写 > 正常
-func recordBusinessStatus(r *Record) string {
+// 记录的业务状态(【日报口径】,和界面口径不是一回事)。
+//
+// 优先级:异常 > 需补图 > 待复核 > 人工填写 > 正常。
+//
+// 【为什么改名】它以前和界面那套同名,同名不同义 —— 同一条记录,
+// 这里说「正常」、页面上说「待复核」,而两处都写着"业务状态"。
+// 名字一样是最难发现的那种分歧:看代码的人根本不会想到还有第二份。
+// 界面口径见 record_status.go,两者的具体差异见 record_status_test.go。
+func recordDailyReportStatus(r *Record) string {
 	if recordIsAbnormal(r) {
 		return "异常"
 	}
@@ -1681,7 +1688,7 @@ func (s *Server) handleDailyReport(w http.ResponseWriter, project projectScope) 
 		if t.Before(ctx.rangeStart) || t.After(ctx.rangeEnd) {
 			continue
 		}
-		st := recordBusinessStatus(r)
+		st := recordDailyReportStatus(r)
 		statusCount[st]++
 		if r.RecognitionStatus == "recognized" {
 			aiSuccess++

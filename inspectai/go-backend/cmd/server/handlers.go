@@ -1914,7 +1914,12 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 	}
 	tpl, ok := templateByID(rec.TemplateID)
 	if !ok {
-		return rec
+		// 【这里必须拷贝】原来直接把入参还回去了。加上 BusinessStatus
+		// 之后再这么做,等于往 MemStore 里那条记录上写字段 —— 单机跑
+		// 看不出来,而它已经不是"只读的序列化"了。
+		clean := *rec
+		clean.BusinessStatus = recordBusinessStatus(rec)
+		return &clean
 	}
 	allowed := map[string]bool{}
 	allowedLabels := []string{}
@@ -1953,6 +1958,13 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 		}
 		clean.AIRecommendations = filtered
 	}
+	// 【在收口处算一次】所有记录出站都经过这里(列表、单条、上传后回显、
+	// 草稿),填在这儿就不会有哪条漏掉状态。
+	//
+	// 用 clean 而不是 rec:上面刚把已删字段剔掉了,状态要按"界面真正
+	// 会看到的那些字段"来算 —— 否则一个已经从模板里删掉的字段,
+	// 还能让这条记录显示成异常。
+	clean.BusinessStatus = recordBusinessStatus(&clean)
 	return &clean
 }
 

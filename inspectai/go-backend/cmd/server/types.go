@@ -124,7 +124,8 @@ type Record struct {
 	InspectorUserID   string           `json:"inspectorUserId,omitempty"`
 	CaptureAttempts   int              `json:"captureAttempts"`
 	ManualRequired    bool             `json:"manualRequired"`
-	RecognitionStatus string           `json:"recognitionStatus"` // not_started / processing / recognized / retake_required / manual_required
+	RecognitionStatus string           `json:"recognitionStatus"`        // not_started / processing / recognized / retake_required / manual_required
+	BusinessStatus    string           `json:"businessStatus,omitempty"` // 出站时算,不入库。见 record_status.go
 	RetakeReason      string           `json:"retakeReason,omitempty"`
 	TaskID            string           `json:"taskId,omitempty"`
 	EngineeringTaskID string           `json:"engineeringTaskId,omitempty"`
