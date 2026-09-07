@@ -187,6 +187,30 @@ export function listRecords(limit = RECORD_LIST_MAX) {
   ).then((d) => ({ records: d.records || [], truncated: !!d.truncated }));
 }
 
+/** 某一天的巡检量与状态分布。后端按东八区分桶,见 record_stats.go */
+export interface DailyStat {
+  /** YYYY-MM-DD(本地日期) */
+  date: string;
+  total: number;
+  byStatus: Record<string, number>;
+}
+
+/**
+ * 近 N 天按天聚合。
+ *
+ * 【为什么不再前端自己数】看板的两张图原来是拉记录明细、在浏览器里
+ * 一天一天数出来的,而那个明细列表有条数上限 —— 记录一超过上限,较早的
+ * 日子就全数成 0,图画成一条漂亮的下降线,而且不报错。
+ * 现在由数据库那侧数:有多少数多少,回来的只是 30 行数字。
+ */
+export function listDailyStats(days = 30, project?: string) {
+  const q = new URLSearchParams({ days: String(days) });
+  if (project) q.set("project", project);
+  return api<{ days: DailyStat[]; from: string; to: string }>(
+    `/api/inspection/stats/daily?${q.toString()}`,
+  ).then((d) => d.days || []);
+}
+
 export function listChangeRequests() {
   return api<{ requests: ChangeRequest[] }>("/api/change-requests").then(
     (d) => d.requests || [],

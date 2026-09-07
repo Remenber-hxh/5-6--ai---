@@ -113,6 +113,8 @@ var apiRoutes = []apiRoute{
 	// 批量删除未成单的离线照片(已并入记录的不在此删)
 	{http.MethodPost, "/api/inspection/offline-shots/delete", guardNone, "", (*Server).handleDeleteOfflineShots},
 	{http.MethodGet, "/api/inspection/records", guardNone, "", (*Server).handleListRecords},
+	// 按天聚合(看板的趋势图/热力图)。管理角色才看得到看板,这里同档。
+	{http.MethodGet, "/api/inspection/stats/daily", guardSupervisor, "", (*Server).handleRecordDailyStats},
 	{http.MethodPost, "/api/inspection/records", guardNone, "", (*Server).handleCreateRecord},
 	// 没提交完的记录。单开一条路径而不是给 records 加参数:它只列自己的,
 	// 不走那边的数据范围分支,混在一起两套口径迟早会串。

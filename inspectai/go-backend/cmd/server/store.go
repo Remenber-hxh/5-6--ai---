@@ -45,6 +45,16 @@ type RecordStore interface {
 	// 挑本项目的",冷清一点的项目会直接筛空。projects 为空返回空结果,
 	// 不返回全部 —— 空的语义是"没有可见项目",放行就成了越权。
 	ListRecordsInProjects(tenantID string, projects []string, limit int) ([]*Record, error)
+
+	// ListRecordsSince 取某个时间点之后的全部记录,【不设条数上限】。
+	//
+	// 【为什么这个不能有 limit】它是给按天聚合用的(看板的趋势图/热力图)。
+	// 上限会让较早的那些天少算记录,而图照样画得出来 —— 一条平滑的下降线,
+	// 看不出是数据被砍了。列表少几条人一眼看得见,图错了看不见。
+	//
+	// 边界由时间窗口兜着:窗口是 30 天,取回来的量由这段时间的巡检量决定,
+	// 不会因为库里历史多就无限增长。
+	ListRecordsSince(tenantID string, since time.Time) ([]*Record, error)
 	// CountSnapshotsByAsset 每台设备有多少条巡检快照,一次查全租户。
 	//
 	// 【为什么要"现算"而不是读 assets.inspection_count】那一列是个计数器:
@@ -446,6 +456,25 @@ func (s *MemStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
+	return out, nil
+}
+
+func (s *MemStore) ListRecordsSince(tenantID string, since time.Time) ([]*Record, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Record, 0, len(s.records))
+	for _, r := range s.records {
+		if r.TenantID != tenantID {
+			continue // 租户隔离
+		}
+		if r.CreatedAt.Before(since) {
+			continue
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
@@ -1538,6 +1567,32 @@ func (s *SQLiteStore) ListRecords(tenantID string, limit int) ([]*Record, error)
 	rows, err := s.db.Query(
 		`SELECT `+recordSelectCols+` FROM records WHERE tenant_id=? ORDER BY created_at DESC LIMIT ?`,
 		tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListRecordsSince(tenantID string, since time.Time) ([]*Record, error) {
+	// 【必须传 fmtStamp 格式的字符串,不能直接传 time.Time】created_at 是
+	// TEXT/VARCHAR 列,存的是 fmtStamp 出来的 RFC3339Nano(东八区)。
+	// 直接把 time.Time 交给驱动,它会按自己的格式序列化 —— 和列里的值
+	// 对不上,比较结果恒为假,接口返回空列表【而且不报错】。
+	//
+	// 字符串比较在这里是可靠的:所有值都是同一个时区偏移的 RFC3339,
+	// 字典序等于时间序 —— 现有的 ORDER BY created_at DESC 一直靠的就是这一点。
+	rows, err := s.db.Query(
+		`SELECT `+recordSelectCols+` FROM records WHERE tenant_id=? AND created_at >= ? ORDER BY created_at DESC`,
+		tenantID, fmtStamp(since))
 	if err != nil {
 		return nil, err
 	}

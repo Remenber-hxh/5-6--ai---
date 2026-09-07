@@ -5,16 +5,16 @@ import { useNavigate } from "react-router-dom";
 
 import {
   AttentionItem,
+  DailyStat,
   InspectorQualityRow,
-  RECORD_LIST_MAX,
   RepeatedIssue,
   listAttention,
-  listRecords,
+  listDailyStats,
 } from "../api/mgmt";
 import { useUi } from "../store/ui";
 import { api } from "../api/client";
 import CountUp from "../components/CountUp";
-import { InspectionRecord, fmtTime, recordBusinessStatus } from "../lib/status";
+import { fmtTime } from "../lib/status";
 
 interface Overview {
   assetTotal?: number;
@@ -57,11 +57,7 @@ export default function DataBoard() {
   const nav = useNavigate();
   const [ov, setOv] = useState<Overview>({});
   const [attention, setAttention] = useState<AttentionItem[]>([]);
-  const [records, setRecords] = useState<InspectionRecord[]>([]);
-  // 【下面两张图是拿明细在前端聚合出来的】记录被截断 = 更早的那些天全算成 0,
-  // 图会画成一条漂亮的下降线,而且不报错。在根治(改后端聚合)之前,
-  // 至少得让人知道这张图现在不完整。
-  const [truncated, setTruncated] = useState(false);
+  const [stats, setStats] = useState<DailyStat[]>([]);
   const [drifts, setDrifts] = useState<DriftEntry[]>([]);
   const [summary, setSummary] = useState("");
   const [repeated, setRepeated] = useState<RepeatedIssue[]>([]);
@@ -90,45 +86,29 @@ export default function DataBoard() {
         setSummary(d.summary);
       })
       .catch(() => void 0);
-    listRecords()
-      .then((d) => {
-        setRecords(d.records);
-        setTruncated(d.truncated);
-      })
+    listDailyStats(30, project)
+      .then(setStats)
       .catch(() => void 0);
   }, [project]);
 
-  // 状态热力图:近 30 天每日格,按当日最差业务状态着色
-  const heatCells = useMemo(() => {
-    const cells: { day: string; count: number; level: 0 | 1 | 2 | 3 }[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const daily = records.filter((r) => (!project || r.project === project) && (r.createdAt || "").slice(0, 10) === key);
-      let level: 0 | 1 | 2 | 3 = daily.length ? 1 : 0;
-      const statuses = daily.map(recordBusinessStatus);
-      if (statuses.some((s) => s === "待复核" || s === "需补图")) level = 2;
-      if (statuses.some((s) => s === "异常")) level = 3;
-      cells.push({ day: key.slice(5), count: daily.length, level });
-    }
-    return cells;
-  }, [records, project]);
+  // 状态热力图:近 30 天每日格,按当日最差业务状态着色。
+  // 数由后端给(含没有记录的空日子),这里只做"计数 → 颜色"的映射。
+  const heatCells = useMemo(
+    () =>
+      stats.map((d) => {
+        let level: 0 | 1 | 2 | 3 = d.total ? 1 : 0;
+        if ((d.byStatus["待复核"] || 0) + (d.byStatus["需补图"] || 0) > 0) level = 2;
+        if ((d.byStatus["异常"] || 0) > 0) level = 3;
+        return { day: d.date.slice(5), count: d.total, level };
+      }),
+    [stats],
+  );
 
-  // 近 30 天按日聚合:巡检量 / 异常量(客户端聚合,与旧版口径一致)
+  // 近 30 天:巡检量 / 异常量。同样只做映射,不再自己数。
   const trendOption = useMemo(() => {
-    const days: string[] = [];
-    const total: number[] = [];
-    const abnormal: number[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      days.push(key.slice(5));
-      const daily = records.filter((r) => (!project || r.project === project) && (r.createdAt || "").slice(0, 10) === key);
-      total.push(daily.length);
-      abnormal.push(daily.filter((r) => recordBusinessStatus(r) === "异常").length);
-    }
+    const days = stats.map((d) => d.date.slice(5));
+    const total = stats.map((d) => d.total);
+    const abnormal = stats.map((d) => d.byStatus["异常"] || 0);
     return {
       tooltip: { trigger: "axis" },
       legend: { data: ["巡检量", "异常量"], top: 4, right: 8 },
@@ -140,7 +120,7 @@ export default function DataBoard() {
         { name: "异常量", type: "line", smooth: true, data: abnormal, color: "#ef4444" },
       ],
     };
-  }, [records, project]);
+  }, [stats]);
 
   const cards: { title: string; num?: number; text?: string }[] = [
     { title: "资产总数", num: ov.assetTotal },
@@ -163,18 +143,7 @@ export default function DataBoard() {
           </Col>
         ))}
       </Row>
-      <Card
-        title="近 30 天巡检趋势"
-        extra={
-          truncated ? (
-            <span style={{ fontSize: 12, color: "#d46b08" }}>
-              仅统计最近 {RECORD_LIST_MAX} 条记录,更早的未计入
-            </span>
-          ) : undefined
-        }
-        style={{ marginBottom: 16 }}
-        size="small"
-      >
+      <Card title="近 30 天巡检趋势" style={{ marginBottom: 16 }} size="small">
         <ReactECharts option={trendOption} style={{ height: 260 }} notMerge />
       </Card>
       <Row gutter={16} style={{ marginBottom: 16 }}>
