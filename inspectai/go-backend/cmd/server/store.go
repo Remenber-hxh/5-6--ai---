@@ -65,10 +65,13 @@ type RecordStore interface {
 	// CountSnapshotsForAsset 单台设备的快照数(详情页用)。
 	CountSnapshotsForAsset(tenantID, assetID string) (int, error)
 
-	// DeleteDraftRecord 删除【未提交】的记录及其关联行,并把当初认领的离线照片
-	// 放回待处理。已提交的记录是台账证据,这里一律拒绝 —— 要撤销走审批流。
-	// 记录已提交时返回 errRecordSubmitted,不存在/跨租户返回 sql.ErrNoRows。
-	DeleteDraftRecord(tenantID, id string) error
+	// DeleteDraftRecord 删除【未提交】的记录及其关联行,连同当初认领的离线照片
+	// 一起真删掉,返回还需要从磁盘上删除的图片路径。
+	//
+	// 【为什么文件删除不在这里做】仓储层只管数据库。文件删除要做路径校验
+	// (只许删 storage 子树内的),那是 Server 才有的上下文;而且事务回滚
+	// 之后文件删不回来 —— 必须等事务提交成功了再动磁盘。
+	DeleteDraftRecord(tenantID, id string) (imagePaths []string, err error)
 }
 
 // TenantStore — 客户租户(仅平台超管可写)
@@ -513,15 +516,15 @@ func (s *MemStore) CountSnapshotsForAsset(tenantID, assetID string) (int, error)
 	return n, nil
 }
 
-func (s *MemStore) DeleteDraftRecord(tenantID, id string) error {
+func (s *MemStore) DeleteDraftRecord(tenantID, id string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rec, ok := s.records[id]
 	if !ok || rec.TenantID != tenantID {
-		return sql.ErrNoRows // 跨租户等同不存在,不泄露"这条 id 存在"
+		return nil, sql.ErrNoRows // 跨租户等同不存在,不泄露"这条 id 存在"
 	}
 	if rec.Submitted {
-		return errRecordSubmitted
+		return nil, errRecordSubmitted
 	}
 	delete(s.records, id)
 	for tid, t := range s.tasks {
@@ -529,16 +532,18 @@ func (s *MemStore) DeleteDraftRecord(tenantID, id string) error {
 			delete(s.tasks, tid)
 		}
 	}
-	// 照片当初是【复制】进记录目录的,原始离线照片还在 —— 放回待处理,
-	// 不销毁。现场拍的东西不能因为草稿被删就没了。
-	for _, shot := range s.offlineShots {
+	// 【和 SQLite 那版必须一致】删草稿 = 连照片一起真删掉,
+	// 文件路径交给上层去删磁盘。
+	var paths []string
+	for sid, shot := range s.offlineShots {
 		if shot != nil && shot.RecordID == id {
-			// 【和 SQLite 那版必须一致】删掉就是删掉了,照片不回「待处理」。
-			// 只标状态、保留 record_id —— 待处理只看 record_id 是否为空。
-			shot.Status = "discarded"
+			if strings.TrimSpace(shot.ImagePath) != "" {
+				paths = append(paths, shot.ImagePath)
+			}
+			delete(s.offlineShots, sid)
 		}
 	}
-	return nil
+	return paths, nil
 }
 
 func (s *MemStore) ListRecordsInProjects(tenantID string, projects []string, limit int) ([]*Record, error) {
@@ -1653,10 +1658,10 @@ func (s *SQLiteStore) CountSnapshotsForAsset(tenantID, assetID string) (int, err
 	return n, err
 }
 
-func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) error {
+func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) ([]string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 
@@ -1665,37 +1670,61 @@ func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) error {
 	// 那会删掉一条已经进了台账的记录。
 	row := tx.QueryRow(`SELECT submitted FROM records WHERE id=? AND tenant_id=?`, id, tenantID)
 	if err := row.Scan(&submitted); err != nil {
-		return err // 包含 sql.ErrNoRows:不存在或跨租户
+		return nil, err // 包含 sql.ErrNoRows:不存在或跨租户
 	}
 	if submitted != 0 {
-		return errRecordSubmitted
+		return nil, errRecordSubmitted
 	}
 
 	if _, err := tx.Exec(`DELETE FROM records WHERE id=? AND tenant_id=?`, id, tenantID); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.Exec(`DELETE FROM ai_tasks WHERE record_id=?`, id); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.Exec(`DELETE FROM submission_idempotency WHERE record_id=?`, id); err != nil {
-		return err
+		return nil, err
+	}
+
+	// 【删草稿 = 连照片一起真删掉】删掉就是删掉了。
+	//
+	// 这里前后翻过两版,都因为"删了但东西还在"而返工:
+	//   一版把照片退回「待处理」—— 它们重新堆在列表里,人以为没删干净;
+	//   二版只标 discarded 留着 —— 行和文件继续占地方,越攒越多。
+	// 现在按人点下删除时真正的意思来:这一趟不要了,连照片一起清掉。
+	//
+	// 先把路径查出来:行删掉之后就再也不知道该删哪些文件了。
+	rows, err := tx.Query(
+		`SELECT image_path FROM offline_shots WHERE record_id=? AND tenant_id=?`,
+		id, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list shot paths: %w", err)
+	}
+	var paths []string
+	for rows.Next() {
+		var p sql.NullString
+		if err := rows.Scan(&p); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if strings.TrimSpace(p.String) != "" {
+			paths = append(paths, p.String)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	if _, err := tx.Exec(
-		// 【删草稿不把照片放回「待处理」】删掉就是删掉了。
-		//
-		// 原来这里会把照片解绑退回待处理,理由是"现场拍的东西不能因为删一条
-		// 草稿就没了"。可实际用下来,退回去的照片会重新堆在待处理列表里,
-		// 人以为没删干净、又去删一遍 —— 而他本来的意思就是这一趟不要了。
-		//
-		// 现在只把状态标成 discarded,record_id 保持指向那条已删的记录:
-		//   - record_id 非空 = 不在「待处理」里(待处理只看这一个条件)
-		//   - 文件和行都还在,真要找回来还能查
-		// 说到底,"删了但东西还在别处冒出来"比"删了就没了"更让人困惑。
-		`UPDATE offline_shots SET status='discarded' WHERE record_id=? AND tenant_id=?`,
+		`DELETE FROM offline_shots WHERE record_id=? AND tenant_id=?`,
 		id, tenantID); err != nil {
-		return fmt.Errorf("mark shots discarded: %w", err)
+		return nil, fmt.Errorf("delete shots of %s: %w", id, err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	// 【文件在事务提交之后才删】提交失败还能回滚,文件删了可回不来。
+	return paths, nil
 }
 
 func (s *SQLiteStore) ListRecordsInProjects(tenantID string, projects []string, limit int) ([]*Record, error) {

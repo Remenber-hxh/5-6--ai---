@@ -32,7 +32,7 @@ func TestDeleteDraftRecordBoundaries(t *testing.T) {
 	mk("t_b", "other", false)
 
 	// 已提交的不能删 —— 它进了台账,还写了资产快照和字段观测
-	if err := store.DeleteDraftRecord("t_a", "done"); !errors.Is(err, errRecordSubmitted) {
+	if _, err := store.DeleteDraftRecord("t_a", "done"); !errors.Is(err, errRecordSubmitted) {
 		t.Fatalf("删已提交记录应当被拒,得到 %v", err)
 	}
 	if rec, err := store.GetRecord("t_a", "done"); err != nil || rec == nil {
@@ -40,7 +40,7 @@ func TestDeleteDraftRecordBoundaries(t *testing.T) {
 	}
 
 	// 跨租户等同不存在 —— 不能因为知道 id 就能删别家的
-	if err := store.DeleteDraftRecord("t_a", "other"); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.DeleteDraftRecord("t_a", "other"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("跨租户删除应当 ErrNoRows,得到 %v", err)
 	}
 	if rec, err := store.GetRecord("t_b", "other"); err != nil || rec == nil {
@@ -48,12 +48,12 @@ func TestDeleteDraftRecordBoundaries(t *testing.T) {
 	}
 
 	// 不存在的 id
-	if err := store.DeleteDraftRecord("t_a", "nope"); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.DeleteDraftRecord("t_a", "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("删不存在的记录应当 ErrNoRows,得到 %v", err)
 	}
 
 	// 正常路径
-	if err := store.DeleteDraftRecord("t_a", "draft"); err != nil {
+	if _, err := store.DeleteDraftRecord("t_a", "draft"); err != nil {
 		t.Fatalf("删草稿失败: %v", err)
 	}
 	if _, err := store.GetRecord("t_a", "draft"); err == nil {
@@ -61,17 +61,16 @@ func TestDeleteDraftRecordBoundaries(t *testing.T) {
 	}
 }
 
-// 删草稿【不】把照片放回待处理 —— 删掉就是删掉了。
+// 删草稿 = 连照片一起真删掉。
 //
-// 【为什么反过来了】原来是放回去的,理由是"照片是复制进记录目录的,原件
-// 还在,不能因为删了草稿就让现场拍的东西消失"。听起来合理,用起来不是:
-// 退回去的照片重新堆在待处理列表里,人以为没删干净、又去删一遍 ——
-// 而他点删除时本来的意思就是"这一趟不要了"。
+// 【这条前后翻过两次,都是因为"删了但东西还在"】
 //
-// 现在只把状态标成 discarded、record_id 保持指向那条已删的记录:
-// 待处理只看 record_id 是否为空,所以它不会再冒出来;行和文件都还在,
-// 真要找回来还能查。
-func TestDeleteDraftDoesNotReturnShotsToPending(t *testing.T) {
+//	一版把照片退回「待处理」—— 它们重新堆在列表里,人以为没删干净,
+//	  又去删一遍,而他点删除时的意思就是"这一趟不要了";
+//	二版只标 discarded 留着 —— 行和文件继续占地方,越攒越多。
+//
+// 现在按人真正的意思来:行删掉,文件路径交给上层去删磁盘。
+func TestDeleteDraftReallyDeletesShots(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "rec_del_shots.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
@@ -86,7 +85,7 @@ func TestDeleteDraftDoesNotReturnShotsToPending(t *testing.T) {
 	}
 	shot := &OfflineShot{
 		ID: "s1", TenantID: "t_a", UserID: "u1", Inspector: "巡检",
-		IdempotencyKey: "k1", ImagePath: "/tmp/s1.jpg", FileName: "s1.jpg",
+		IdempotencyKey: "k1", ImagePath: "/srv/storage/offline/t_a/s1.jpg", FileName: "s1.jpg",
 		ReceivedAt: time.Now().Format(time.RFC3339),
 	}
 	if _, _, err := store.CreateOfflineShot(shot); err != nil {
@@ -96,44 +95,57 @@ func TestDeleteDraftDoesNotReturnShotsToPending(t *testing.T) {
 		t.Fatalf("MarkOfflineShotConsumed: %v", err)
 	}
 
-	all := func() []*OfflineShot {
-		t.Helper()
-		got, err := store.ListOfflineShots("t_a", nil, 0)
-		if err != nil {
-			t.Fatalf("ListOfflineShots: %v", err)
-		}
-		return got
-	}
-	pendingCount := func() int {
-		t.Helper()
-		n := 0
-		for _, s := range all() {
-			if shotIsPending(s) {
-				n++
-			}
-		}
-		return n
-	}
-
-	if got := pendingCount(); got != 0 {
-		t.Fatalf("成单后待处理应为空,得到 %d 条", got)
-	}
-
-	if err := store.DeleteDraftRecord("t_a", "r1"); err != nil {
+	paths, err := store.DeleteDraftRecord("t_a", "r1")
+	if err != nil {
 		t.Fatalf("删草稿失败: %v", err)
 	}
 
-	if got := pendingCount(); got != 0 {
-		t.Fatalf("删草稿后照片【不该】回到待处理,实际有 %d 条 —— "+
-			"回去的话人会以为没删干净,又去删一遍", got)
+	// 【路径必须回出来】行删掉之后就再也不知道该删哪些文件了 ——
+	// 漏了的话磁盘上的照片永远留着,而库里查不到,谁也不会去清。
+	if len(paths) != 1 || paths[0] != "/srv/storage/offline/t_a/s1.jpg" {
+		t.Fatalf("应返回待删的图片路径,实际 %v", paths)
 	}
-	// 【但也不能凭空消失】行还在、文件还在,只是标成了 discarded。
-	// 真删掉的话,万一是误删就再也找不回来了。
-	list := all()
-	if len(list) != 1 || list[0].ID != "s1" {
-		t.Fatalf("照片行不该被删,实际 %d 条", len(list))
+
+	left, err := store.ListOfflineShots("t_a", nil, 0)
+	if err != nil {
+		t.Fatalf("ListOfflineShots: %v", err)
 	}
-	if list[0].Status != "discarded" {
-		t.Errorf("状态应标成 discarded(便于日后查证),实际 %q", list[0].Status)
+	if len(left) != 0 {
+		t.Fatalf("照片行应被真删掉,实际还剩 %d 条(状态 %q)", len(left), left[0].Status)
+	}
+}
+
+// 内存版和 SQLite 版必须一致 —— 两边行为不同的话,测试里跑通的路
+// 到线上是另一回事。
+func TestMemStoreDeleteDraftMatchesSQLite(t *testing.T) {
+	store := NewMemStore()
+	if err := store.CreateRecord(&Record{
+		ID: "r1", TenantID: defaultTenantID, Inspector: "巡检", InspectorUserID: "u1",
+		TemplateID: "zihan_energy", CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("CreateRecord: %v", err)
+	}
+	shot := &OfflineShot{
+		ID: "s1", TenantID: defaultTenantID, UserID: "u1", Inspector: "巡检",
+		IdempotencyKey: "k1", ImagePath: "/srv/storage/offline/x/s1.jpg", FileName: "s1.jpg",
+		ReceivedAt: time.Now().Format(time.RFC3339),
+	}
+	if _, _, err := store.CreateOfflineShot(shot); err != nil {
+		t.Fatalf("CreateOfflineShot: %v", err)
+	}
+	if err := store.MarkOfflineShotConsumed(defaultTenantID, "s1", "r1"); err != nil {
+		t.Fatalf("MarkOfflineShotConsumed: %v", err)
+	}
+
+	paths, err := store.DeleteDraftRecord(defaultTenantID, "r1")
+	if err != nil {
+		t.Fatalf("删草稿失败: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("内存版也要返回待删路径,实际 %v", paths)
+	}
+	left, _ := store.ListOfflineShots(defaultTenantID, nil, 0)
+	if len(left) != 0 {
+		t.Fatalf("内存版照片行也该真删掉,实际还剩 %d 条", len(left))
 	}
 }

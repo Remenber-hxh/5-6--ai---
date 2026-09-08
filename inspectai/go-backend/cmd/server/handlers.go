@@ -2210,14 +2210,15 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 //   - 只删未提交的。已提交的记录进了台账、写了资产快照和字段观测,删掉会让
 //     台账对不上账 —— 要撤销走审批流(change-requests)。
 //   - 归属校验复用 requireRecordAccess(write=true),巡检员只能删自己的。
-//   - 当初认领的离线照片【不放回待处理】,只标成 discarded。删掉就是删掉了 ——
-//     退回去的话它们会重新堆在待处理里,人以为没删干净又去删一遍,
-//     而他本来的意思就是这一趟不要了。行和文件都还在,真要找回来还能查。
+//   - 当初认领的离线照片【连行带文件一起真删掉】。删掉就是删掉了 ——
+//     退回待处理的话它们会重新堆在列表里,人以为没删干净又去删一遍;
+//     只标个状态留着的话,行和文件继续占地方,越攒越多。
 //   - 记录目录里的照片副本删掉;删不掉只记日志,不让整个请求失败:
 //     库里已经没这条记录了,残留几个文件比返回"删除失败"要好收拾。
 func (s *Server) handleDeleteDraftRecord(w http.ResponseWriter, r *http.Request, id string) {
 	tenantID := s.tenantForRequest(r)
-	if err := s.store.DeleteDraftRecord(tenantID, id); err != nil {
+	shotPaths, err := s.store.DeleteDraftRecord(tenantID, id)
+	if err != nil {
 		switch {
 		case errors.Is(err, errRecordSubmitted):
 			writeError(w, http.StatusConflict, "record_submitted", "已提交的记录不能删除，请走数据修改申请")
@@ -2231,6 +2232,24 @@ func (s *Server) handleDeleteDraftRecord(w http.ResponseWriter, r *http.Request,
 	dir := filepath.Join(s.storageDir, "uploads", id)
 	if err := os.RemoveAll(dir); err != nil {
 		log.Printf("WARN: 删除记录 %s 的图片目录失败: %v", id, err)
+	}
+	// 原始离线照片的文件。
+	//
+	// 【必须做路径校验再删】image_path 是库里的值。不校验的话,一条被改过的
+	// 脏数据就能让这里去删 storage 之外的文件 —— 而这是个删除操作,
+	// 错了没有回头路。只允许 storage 子树内的,和图片出口那边同一条规矩。
+	root := filepath.Clean(s.storageDir)
+	for _, p := range shotPaths {
+		clean := filepath.Clean(p)
+		if !strings.HasPrefix(clean, root+string(filepath.Separator)) {
+			log.Printf("WARN: 跳过 storage 之外的照片路径 %q(记录 %s)", p, id)
+			continue
+		}
+		// 【删不掉只记日志,不让请求失败】库里已经没这条记录了,
+		// 残留几个文件比返回"删除失败"好收拾 —— 后者会让人反复点删除。
+		if err := os.Remove(clean); err != nil && !os.IsNotExist(err) {
+			log.Printf("WARN: 删除照片文件失败 %q: %v", clean, err)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
