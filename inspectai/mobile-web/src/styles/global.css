@@ -1092,6 +1092,43 @@
 .flow-body {
   padding: 12px 0 18px;
 }
+
+/* 浅色流程页里的空态:把深色皮的字色压回来。
+ *
+ * .screen-title / .screen-sub / .screen-hint / .btn-ghost 那一套是给
+ * 【深色屏】写的(登录、注册、无权限那种):白字 + 白色描边。原样出现在
+ * .flow-screen 这种浅底页上,就是白字压浅灰 —— 框在、字看不见,
+ * 而且不报错、不告警,只有人打开那一屏才发现。
+ *
+ * 【这个坑在本项目是第四次】前三次(表单、卡片、备案号、扫码页按钮)
+ * 每次都是就地补一条一次性覆盖,于是下一处照样再犯。这次压在
+ * .flow-screen 这一层:凡是进了浅色流程页的空态,字色自动跟着页面走,
+ * 以后新加空态不用再记着补。
+ *
+ * 深色屏不受影响 —— 它们没有 .flow-screen 这个容器。 */
+.flow-screen .screen-title {
+  /* 空态标题不是整屏主标题:页面顶上已经有「待处理」了,
+     28px 会把它盖过去。降到和卡片标题一个量级。 */
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--lt-fg);
+}
+.flow-screen .screen-sub {
+  color: var(--lt-fg-2);
+}
+.flow-screen .screen-hint {
+  color: var(--lt-fg-3);
+}
+/* 空态里的次要按钮。.flow-foot 那条在后面,页脚按钮仍归它管。 */
+.flow-screen .btn-ghost.arco-button {
+  background: var(--lt-card);
+  border: 1px solid var(--lt-border);
+  color: var(--lt-fg);
+}
+.flow-screen .btn-ghost.arco-button:active {
+  background: var(--lt-fill);
+}
 /* 顶栏只放标题(对齐旧版),原先塞在头部的计数/说明降到内容区首行 */
 .flow-caption {
   margin: 0 0 10px;
