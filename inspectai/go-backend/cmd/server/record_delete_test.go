@@ -61,9 +61,17 @@ func TestDeleteDraftRecordBoundaries(t *testing.T) {
 	}
 }
 
-// 删草稿要把当初认领的离线照片放回待处理 —— 照片是【复制】进记录目录的,
-// 原件还在,不能因为删了草稿就让现场拍的东西消失。
-func TestDeleteDraftReleasesOfflineShots(t *testing.T) {
+// 删草稿【不】把照片放回待处理 —— 删掉就是删掉了。
+//
+// 【为什么反过来了】原来是放回去的,理由是"照片是复制进记录目录的,原件
+// 还在,不能因为删了草稿就让现场拍的东西消失"。听起来合理,用起来不是:
+// 退回去的照片重新堆在待处理列表里,人以为没删干净、又去删一遍 ——
+// 而他点删除时本来的意思就是"这一趟不要了"。
+//
+// 现在只把状态标成 discarded、record_id 保持指向那条已删的记录:
+// 待处理只看 record_id 是否为空,所以它不会再冒出来;行和文件都还在,
+// 真要找回来还能查。
+func TestDeleteDraftDoesNotReturnShotsToPending(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "rec_del_shots.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
@@ -88,35 +96,44 @@ func TestDeleteDraftReleasesOfflineShots(t *testing.T) {
 		t.Fatalf("MarkOfflineShotConsumed: %v", err)
 	}
 
-	pending := func() []*OfflineShot {
+	all := func() []*OfflineShot {
 		t.Helper()
-		all, err := store.ListOfflineShots("t_a", nil, 0)
+		got, err := store.ListOfflineShots("t_a", nil, 0)
 		if err != nil {
 			t.Fatalf("ListOfflineShots: %v", err)
 		}
-		out := make([]*OfflineShot, 0, len(all))
-		for _, s := range all {
+		return got
+	}
+	pendingCount := func() int {
+		t.Helper()
+		n := 0
+		for _, s := range all() {
 			if shotIsPending(s) {
-				out = append(out, s)
+				n++
 			}
 		}
-		return out
+		return n
 	}
 
-	// 成单后不该算在待处理里
-	if got := pending(); len(got) != 0 {
-		t.Fatalf("成单后待处理应为空,得到 %d 条", len(got))
+	if got := pendingCount(); got != 0 {
+		t.Fatalf("成单后待处理应为空,得到 %d 条", got)
 	}
 
 	if err := store.DeleteDraftRecord("t_a", "r1"); err != nil {
 		t.Fatalf("删草稿失败: %v", err)
 	}
 
-	list := pending()
-	if len(list) != 1 || list[0].ID != "s1" {
-		t.Fatalf("照片没有放回待处理,得到 %d 条", len(list))
+	if got := pendingCount(); got != 0 {
+		t.Fatalf("删草稿后照片【不该】回到待处理,实际有 %d 条 —— "+
+			"回去的话人会以为没删干净,又去删一遍", got)
 	}
-	if list[0].RecordID != "" {
-		t.Fatalf("照片还挂着已删记录的 id: %q", list[0].RecordID)
+	// 【但也不能凭空消失】行还在、文件还在,只是标成了 discarded。
+	// 真删掉的话,万一是误删就再也找不回来了。
+	list := all()
+	if len(list) != 1 || list[0].ID != "s1" {
+		t.Fatalf("照片行不该被删,实际 %d 条", len(list))
+	}
+	if list[0].Status != "discarded" {
+		t.Errorf("状态应标成 discarded(便于日后查证),实际 %q", list[0].Status)
 	}
 }

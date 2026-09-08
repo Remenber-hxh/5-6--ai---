@@ -533,8 +533,9 @@ func (s *MemStore) DeleteDraftRecord(tenantID, id string) error {
 	// 不销毁。现场拍的东西不能因为草稿被删就没了。
 	for _, shot := range s.offlineShots {
 		if shot != nil && shot.RecordID == id {
-			shot.RecordID = ""
-			shot.Status = "uploaded"
+			// 【和 SQLite 那版必须一致】删掉就是删掉了,照片不回「待处理」。
+			// 只标状态、保留 record_id —— 待处理只看 record_id 是否为空。
+			shot.Status = "discarded"
 		}
 	}
 	return nil
@@ -1679,12 +1680,20 @@ func (s *SQLiteStore) DeleteDraftRecord(tenantID, id string) error {
 	if _, err := tx.Exec(`DELETE FROM submission_idempotency WHERE record_id=?`, id); err != nil {
 		return err
 	}
-	// 照片当初是【复制】进记录目录的,原始离线照片还在 —— 放回待处理,不销毁。
-	// 现场拍的东西不能因为草稿被删就没了。
 	if _, err := tx.Exec(
-		`UPDATE offline_shots SET record_id='', status='uploaded' WHERE record_id=? AND tenant_id=?`,
+		// 【删草稿不把照片放回「待处理」】删掉就是删掉了。
+		//
+		// 原来这里会把照片解绑退回待处理,理由是"现场拍的东西不能因为删一条
+		// 草稿就没了"。可实际用下来,退回去的照片会重新堆在待处理列表里,
+		// 人以为没删干净、又去删一遍 —— 而他本来的意思就是这一趟不要了。
+		//
+		// 现在只把状态标成 discarded,record_id 保持指向那条已删的记录:
+		//   - record_id 非空 = 不在「待处理」里(待处理只看这一个条件)
+		//   - 文件和行都还在,真要找回来还能查
+		// 说到底,"删了但东西还在别处冒出来"比"删了就没了"更让人困惑。
+		`UPDATE offline_shots SET status='discarded' WHERE record_id=? AND tenant_id=?`,
 		id, tenantID); err != nil {
-		return err
+		return fmt.Errorf("mark shots discarded: %w", err)
 	}
 	return tx.Commit()
 }

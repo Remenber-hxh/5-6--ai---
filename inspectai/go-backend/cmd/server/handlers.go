@@ -2210,7 +2210,9 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 //   - 只删未提交的。已提交的记录进了台账、写了资产快照和字段观测,删掉会让
 //     台账对不上账 —— 要撤销走审批流(change-requests)。
 //   - 归属校验复用 requireRecordAccess(write=true),巡检员只能删自己的。
-//   - 当初认领的离线照片放回待处理,不销毁 —— 现场拍的东西不能因为删草稿就没了。
+//   - 当初认领的离线照片【不放回待处理】,只标成 discarded。删掉就是删掉了 ——
+//     退回去的话它们会重新堆在待处理里,人以为没删干净又去删一遍,
+//     而他本来的意思就是这一趟不要了。行和文件都还在,真要找回来还能查。
 //   - 记录目录里的照片副本删掉;删不掉只记日志,不让整个请求失败:
 //     库里已经没这条记录了,残留几个文件比返回"删除失败"要好收拾。
 func (s *Server) handleDeleteDraftRecord(w http.ResponseWriter, r *http.Request, id string) {

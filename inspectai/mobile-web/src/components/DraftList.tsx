@@ -15,8 +15,11 @@ import { DraftBrief, deleteDraftRecord, listDrafts } from "@/api/inspection";
  * 所以人既回不到那条记录,也拿不回照片重做一次 —— 现场白跑一趟。
  *
  * 给两条出路,都由本人决定:接着提交,或者直接删掉。
- * 【删掉不销毁照片】后端会把当初认领的照片放回「待处理」—— 现场拍的东西
- * 不能因为删一条草稿就没了。
+ *
+ * 【删掉就是删掉了】不承诺"照片能拿回来"、也不提"可以重新来一次"。
+ * 早先的做法是把照片退回「待处理」并在文案里说明 —— 结果那些照片重新堆在
+ * 待处理列表里,人以为没删干净、又去删一遍,而他点删除时本来的意思就是
+ * "这一趟不要了"。多说一句反而让人不确定到底删没删。
  */
 export default function DraftList() {
   const nav = useNavigate();
@@ -40,8 +43,10 @@ export default function DraftList() {
   async function remove(d: DraftBrief) {
     const ok = await Dialog.confirm({
       title: "删除这条没提交的记录?",
-      // 【说清照片的去向】不说的话没人敢点 —— 谁也不想把现场拍的东西删没了。
-      content: "记录会删掉,当初用的照片会放回「待处理」,可以重新来一次。",
+      // 【只说后果,不做承诺】组件要求必须有 content。
+      // 这里唯一该说的是"删了就没了" —— 那是人按下去之前需要知道的;
+      // "照片能拿回来""可以重新来一次"都是给自己找麻烦的承诺。
+      content: "删除后不可恢复。",
       confirmText: "删除",
       cancelText: "取消",
     });
@@ -49,7 +54,7 @@ export default function DraftList() {
     setBusy(d.id);
     try {
       await deleteDraftRecord(d.id);
-      Toast.show({ content: "已删除,照片已放回待处理" });
+      Toast.show({ content: "已删除" });
       await load();
     } catch (err) {
       Toast.show({ content: err instanceof Error ? err.message : "删除失败" });
