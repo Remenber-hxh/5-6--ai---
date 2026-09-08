@@ -558,7 +558,8 @@ func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Reque
 		paths = append(paths, shot.ImagePath)
 	}
 
-	result, err := s.aiClient.Classify(paths)
+	candidates := sceneCandidates()
+	result, err := s.aiClient.Classify(paths, candidates)
 	if err != nil {
 		// 识别失败不阻断流程:转人工选模板,照片仍在服务器上不会丢
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -570,12 +571,8 @@ func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Reque
 		})
 		return
 	}
-	if tpl, ok := templateByID(result.TemplateID); ok {
-		result.TemplateName = tpl.Name
-	} else {
-		result.TemplateName = "无法识别"
-		result.NeedsManualPick = true
-	}
+	// 只认这次下发过的候选,理由同 handleClassify
+	resolveSceneResult(result, candidates)
 	writeJSON(w, http.StatusOK, map[string]any{"classify": result, "shots": shots})
 }
 

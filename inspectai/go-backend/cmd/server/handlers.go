@@ -2884,7 +2884,8 @@ func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 		saved = append(saved, img)
 	}
 
-	result, err := s.aiClient.Classify(paths)
+	candidates := sceneCandidates()
+	result, err := s.aiClient.Classify(paths, candidates)
 	if err != nil {
 		result := &SceneClassifyResult{
 			TemplateID:      "unknown",
@@ -2901,13 +2902,9 @@ func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result.TmpDir = tmpDir
-	// 把候选模板名补全
-	if tpl, ok := templateByID(result.TemplateID); ok {
-		result.TemplateName = tpl.Name
-	} else if result.TemplateID == "unknown" || result.TemplateID == "" {
-		result.TemplateName = "无法识别"
-		result.NeedsManualPick = true
-	}
+	// 【只认这次下发过的候选】原来是拿 id 去库里查名字,查得到就认 ——
+	// 模型凭记忆吐一个存在但没给它的 id 也会被当成有效结果。
+	resolveSceneResult(result, candidates)
 	// 把 saved images 也带回去（前端创建记录时 adopt）
 	writeJSON(w, http.StatusOK, map[string]any{
 		"classify": result,

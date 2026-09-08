@@ -380,6 +380,26 @@ export default function Prompts() {
           ) : (
           <>
           <Row gutter={12} style={{ marginBottom: 12 }}>
+            {/* 【识别特征单独一行】它决定"拍完照能不能自动认出这个场景",
+                和下面两个(写给 AI 判定用的)不是一件事,混在一行里
+                人会以为它也是提示词的一部分。 */}
+            <Col span={24} style={{ marginBottom: 12 }}>
+              <div style={lbl}>
+                识别特征 —— 现场拍完照靠它自动认出是这个场景
+              </div>
+              <Input
+                value={current.sceneFeatures || ""}
+                onChange={(e) => patch({ ...current, sceneFeatures: e.target.value })}
+                placeholder="写照片上一眼能看到的实物和颜色,如:红色消防泵 + 不锈钢水箱 + 绿色环氧地坪"
+              />
+              {!(current.sceneFeatures || "").trim() && (
+                // 【空着要说后果】不说的话,人只会觉得"这个模板 AI 不好使",
+                // 想不到是这里少了一句话。
+                <div style={{ fontSize: 12.5, color: "#d46b08", marginTop: 4 }}>
+                  没填 —— 这个模板不参与自动匹配(会退而用下面的场景描述;两个都空的话现场只能手动选模板)
+                </div>
+              )}
+            </Col>
             {/* 【两栏等宽等高】原来是 14/6:左边一个单行框、右边一个带滚动条的
                 三行框,右侧还空出 4 栏。两个同级的东西长得完全不一样,
                 看上去像右边那个出了问题。 */}

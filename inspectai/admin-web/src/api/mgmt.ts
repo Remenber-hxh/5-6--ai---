@@ -816,6 +816,13 @@ export interface PromptTemplate {
   // 【和后端一致的数组】以前这里写成 string,一旦编辑这个字段,
   // 提交上去后端解不了 JSON,保存直接 400。
   expectedPhotos?: string[];
+  /**
+   * 识别特征:照片上一眼能认出这个场景的东西,给「拍完自动认场景」用。
+   *
+   * 【和场景描述不是一回事】那个写"要去哪、查什么",这个写"照片长什么样"。
+   * 留空的模板不参与自动匹配 —— 现场得手动选模板。
+   */
+  sceneFeatures?: string;
   fields: PromptField[];
 }
 
@@ -1170,6 +1177,8 @@ export interface ReportTemplateDTO {
   maxImages?: number;
   /** 每单最少几张照片。0 = 不限 */
   minImages?: number;
+  /** 照片上一眼能认出这个场景的东西,给「拍完自动认场景」用 */
+  sceneFeatures?: string;
   fields: TemplateFieldDTO[];
 }
 
@@ -1218,7 +1227,7 @@ export function draftTemplateFields(input: {
   templateName?: string;
   assetType?: string;
 }) {
-  return api<{ fields: TemplateFieldDTO[]; model: string }>(
+  return api<{ fields: TemplateFieldDTO[]; sceneFeatures?: string; model: string }>(
     "/api/report/templates/draft",
     { method: "POST", body: JSON.stringify(input) },
   );

@@ -43,6 +43,17 @@ type ReportTemplate struct {
 	PromptMode string `json:"promptMode,omitempty"`
 	// RawText 仅 raw 模式使用。留空 = 没配,运行时回退内置 .md。
 	RawText string `json:"rawText,omitempty"`
+
+	// SceneFeatures 照片上一眼能认出这个场景的东西,给「拍完自动认场景」用。
+	//
+	// 【为什么不能拿场景描述或必拍照片顶替】那两个写的是"要去哪、要拍到什么",
+	// 而分类要的是"照片长什么样":消防泵房和生活水泵房要拍的东西几乎一样
+	// (泵、水箱、压力表),真正能一眼分开的是颜色组合 ——
+	// 红泵+绿地坪 vs 蓝压力罐+银管道。
+	//
+	// 【留空 = 不参与自动匹配】没有描述,模型就没有依据挑它;硬塞进候选
+	// 只会让它抢走别的场景。空的时候退而用场景描述,两个都空就不进候选。
+	SceneFeatures string `json:"sceneFeatures,omitempty"`
 }
 
 // TemplateField — 字段定义（模板里写死的）

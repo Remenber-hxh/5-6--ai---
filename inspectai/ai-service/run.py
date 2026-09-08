@@ -1116,6 +1116,57 @@ def fallback_summarize(payload: dict) -> dict:
 # ===== /classify =====
 
 
+def render_scene_prompt(candidates: list) -> str:
+    """把后端下发的候选表拼进场景分类提示词。
+
+    【为什么候选表要由后端下发】以前它写死在 prompts/scene_classifier.md 里,
+    提示词还明写着"必须从这个清单选一个" —— 后台新建的模板不在清单里,
+    模型返回不了它的 id。更糟的不是认不出,是认错:模型被要求必须选一个,
+    于是挑一个最像的旧模板返回,界面显示"识别成功",现场按另一套规则巡检。
+
+    【下发为空就回退用内置那份】和 promptText 一样的灰度策略:下发出问题时
+    退回到今天这个能跑的状态,而不是一个场景都认不出来。
+    """
+    rows = []
+    for c in candidates:
+        if not isinstance(c, dict):
+            continue
+        tid = str(c.get("templateId") or "").strip()
+        if not tid:
+            continue
+        name = str(c.get("templateName") or "").strip()
+        # 竖线会把表格切错列,换行会把一行拆成两行 —— 两者都会让这一行
+        # 变成模型读不懂的噪音,而它恰恰是这个场景唯一的判断依据。
+        feat = str(c.get("features") or "").strip()
+        feat = feat.replace("|", "/").replace("\n", " ").replace("\r", " ")
+        rows.append("| `%s` | %s | %s |" % (tid, name, feat))
+    if not rows:
+        return SCENE_PROMPT
+
+    table = "\n".join(
+        ["| templateId | 描述 | 图片特征 |", "| --- | --- | --- |"]
+        + rows
+        # unknown 必须留着:没有"我不知道"这个出口,模型只能在几个都不像的
+        # 场景里硬挑一个,而挑错不会报错。
+        + ["| `unknown` | 无法判断 | 拍到墙、地、天花板、人手、与巡检无关的物体 |"]
+    )
+
+    marker = "## 候选模板（必须从这个清单选一个）"
+    head, sep, tail = SCENE_PROMPT.partition(marker)
+    if not sep:
+        # 提示词里找不到那一节 —— md 被改过。此时【不能静默回退到内置表】,
+        # 那会让新建的模板继续认不出来,而且没人知道为什么。
+        # 把候选表接在最后,并明说以它为准。
+        return SCENE_PROMPT + "\n\n## 候选模板（以下表为准,必须从中选一个）\n\n" + table
+
+    # 原表格一直到下一节标题之间的内容整段换掉
+    rest = tail.split("\n## ", 1)
+    out = head + marker + "\n\n" + table + "\n"
+    if len(rest) == 2:
+        out += "\n## " + rest[1]
+    return out
+
+
 def classify(payload: dict) -> dict:
     api_key = get_api_key()
     paths = payload.get("imagePaths") or []
@@ -1138,7 +1189,9 @@ def classify(payload: dict) -> dict:
             "needsManualPick": True,
         }
 
-    content: list = [{"type": "text", "text": SCENE_PROMPT}]
+    # 候选表由后端按库里的模板生成,随请求下发
+    scene_prompt = render_scene_prompt(payload.get("candidates") or [])
+    content: list = [{"type": "text", "text": scene_prompt}]
     # 多看几张:电梯有机房/无机房只差机房那几张,只看前 3 张会漏掉机房照
     # 压图仅用于缓解跨区(美国→中国)上传延迟,默认关;同区服务器全分辨率更准。
     # 场景分类只看大特征,压了不影响精度;由 QWEN_VISION_COMPRESS 控制
@@ -1589,7 +1642,17 @@ class Handler(BaseHTTPRequestHandler):
 DRAFT_FIELDS_SYSTEM = """你在为一套设备巡检系统设计"检查项字段表"。用户会用一段话描述他要检查什么,你把它拆成结构化的检查项。
 
 只输出 JSON,不要任何解释文字、不要 markdown 代码块。格式:
-{"fields":[{"code":"...","label":"...","kind":"choice","judgeMode":"visual","yesWhen":"...","noWhen":"...","skipWhen":"...","note":""}]}
+{"sceneFeatures":"...","fields":[{"code":"...","label":"...","kind":"choice","judgeMode":"visual","yesWhen":"...","noWhen":"...","skipWhen":"...","note":""}]}
+
+sceneFeatures —— 一句话说清"这个场景的照片长什么样",让人拍完照能一眼认出是这里。
+写【看得见的实物和颜色组合】,不要写要检查什么。一句话,30 字左右。
+  好:红色消防泵 + 不锈钢水箱 + 绿色环氧地坪
+  好:灰白机房 + UPS 主机柜(带显示屏)+ 电池组排列 + 防静电地板
+  差:检查消防泵是否正常运行(这是要检查什么,不是照片长什么样)
+  差:泵房(太笼统,和别的泵房分不开)
+【要能和相近场景分开】消防泵房和生活水泵房要拍的东西几乎一样(泵、水箱、
+压力表),真正能一眼分开的是颜色:红泵+绿地坪 vs 蓝压力罐+银管道。
+写不出区分点的话,这个场景会去抢别人的照片,而抢错了不会报错。
 
 每一项的规矩:
 
@@ -1650,16 +1713,18 @@ def draft_fields(payload: dict) -> dict:
         print(f"[prompt/draft-fields] deepseek failed: {exc}", file=sys.stderr)
         return {"error": "ai_failed", "message": str(exc)[:160]}
 
-    fields = _parse_draft_fields(reply)
+    fields, scene_features = _parse_draft_output(reply)
     if not fields:
         # 解析不出来就说实话。返回空字段表的话,界面上是"生成成功但一条都没有",
         # 人只会反复点生成。
         return {"error": "bad_output", "message": "AI 返回的内容解析不出字段表,请把需求写得更具体些再试"}
-    return {"fields": fields, "model": actual_model}
+    # 【识别特征生成不出来不算失败】它只影响"拍完自动认场景"这一步,
+    # 字段表本身照常可用;后台还能手工补一句。为它整个报错太重了。
+    return {"fields": fields, "sceneFeatures": scene_features, "model": actual_model}
 
 
-def _parse_draft_fields(reply: str) -> list:
-    """从模型回复里抠出字段表。模型可能裹 ```json,也可能前后带话。"""
+def _parse_draft_output(reply: str) -> tuple:
+    """从模型回复里抠出 (字段表, 识别特征)。模型可能裹 ```json,也可能前后带话。"""
     text = (reply or "").strip()
     if "```" in text:
         # 取第一个代码块里的内容
@@ -1674,13 +1739,17 @@ def _parse_draft_fields(reply: str) -> list:
     start = text.find("{")
     end = text.rfind("}")
     if start < 0 or end <= start:
-        return []
+        return [], ""
     try:
         data = json.loads(text[start:end + 1])
     except Exception:
-        return []
+        return [], ""
     fields = data.get("fields")
-    return fields if isinstance(fields, list) else []
+    feats = data.get("sceneFeatures")
+    return (
+        fields if isinstance(fields, list) else [],
+        str(feats).strip() if isinstance(feats, str) else "",
+    )
 
 
 if __name__ == "__main__":

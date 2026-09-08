@@ -163,7 +163,7 @@ func (s *Server) handleDraftTemplateFields(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	raw, model, err := s.aiClient.DraftFields(
+	raw, sceneFeatures, model, err := s.aiClient.DraftFields(
 		req.Requirement, req.TemplateName, req.AssetType)
 	if err != nil {
 		// ai-service 那边的理由已经是人话(没配密钥 / 需求太含糊 / 账户欠费),
@@ -178,5 +178,12 @@ func (s *Server) handleDraftTemplateFields(w http.ResponseWriter, r *http.Reques
 			"没能从这段描述里拆出检查项,把要检查什么写得具体些再试")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"fields": fields, "model": model})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"fields": fields,
+		// 【识别特征一并给出来】没有它,新建的模板现场拍完照自动匹配不到 ——
+		// 模板建好了、字段也对,唯独"自动认场景"这一步认不出来,
+		// 而界面上看不出缺了什么。
+		"sceneFeatures": strings.TrimSpace(sceneFeatures),
+		"model":         model,
+	})
 }

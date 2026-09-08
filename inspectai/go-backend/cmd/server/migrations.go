@@ -50,6 +50,7 @@ var migrationList = []migration{
 	{25, "report_templates", (*SQLiteStore).migReportTemplates},
 	{26, "merge_prompt_into_template", (*SQLiteStore).migMergePromptIntoTemplate},
 	{27, "merge_field_rules_into_template", (*SQLiteStore).migMergeFieldRulesIntoTemplate},
+	{28, "template_scene_features", (*SQLiteStore).migTemplateSceneFeatures},
 }
 
 // 027 — 把「提交规则」的覆盖层并进模板底表。
@@ -170,6 +171,54 @@ func (s *SQLiteStore) migMergePromptIntoTemplate() error {
 		return err
 	}
 	return s.backfillPromptIntoTemplates()
+}
+
+// 028 — 模板加「识别特征」,并把写死在 ai-service 里的那张候选表搬进库。
+//
+// 【这是"新建的模板 AI 认不出来"的根因】场景分类的候选清单一直写死在
+// ai-service/prompts/scene_classifier.md 里,提示词还明写着"必须从这个清单
+// 选一个"。后台新建的模板不在清单里,模型没法返回它的 id ——
+// 【更糟的不是认不出,是认错】:模型被要求必须选一个,于是挑一个最像的
+// 旧模板返回,界面显示"识别成功",用的却是另一套判定规则。
+//
+// 搬进库之后,后台建模板 = 现场立刻能被认出来,不用改代码、不用发版。
+//
+// 【原文照搬,不趁机改写】这十条特征是线上正在用的口径,改一个字都可能
+// 让某一类照片开始认错。要调是另一件事,单独调、单独验。
+func (s *SQLiteStore) migTemplateSceneFeatures() error {
+	if err := s.addColumns("report_templates", []assetColumnMigration{
+		{"scene_features", `TEXT`, `TEXT`},
+	}); err != nil {
+		return err
+	}
+	// 只回填还没填过的,重跑不会覆盖人后来改的
+	for id, feat := range builtinSceneFeatures {
+		if _, err := s.db.Exec(
+			`UPDATE report_templates SET scene_features=?
+			 WHERE id=? AND (scene_features IS NULL OR scene_features='')`,
+			feat, id); err != nil {
+			return fmt.Errorf("backfill scene_features %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// builtinSceneFeatures 迁移前写死在 scene_classifier.md 那张表里的图片特征。
+//
+// 【为什么留在代码里而不是只写进迁移】全新部署时模板是按代码里的默认值
+// 种进库的(见 loadReportTemplates),那条路也要能带上特征 ——
+// 否则新装的环境一台设备都认不出来,而老环境是好的,极难想到是这个原因。
+var builtinSceneFeatures = map[string]string{
+	"zihan_energy":          "LCD 电表(蓝底显示 EP/ΣEP/kWh/Wh)或机械字轮水表(黑色字轮读数)",
+	"zihan_daily":           "强电井 / 配电箱 / 除湿机屏 / 消防泵房环境",
+	"hot_water_room":        "控制柜 LCD 显示温度(如金锴 Keader)+ 大型水箱 + 水温管",
+	"fire_pump":             "红色消防泵 + 不锈钢水箱 + 绿色地坪(典型颜色组合)",
+	"water_pump":            "蓝色压力罐 + 不锈钢水箱 + 银色管道 + 压力表",
+	"ups_room":              "灰白机房 + UPS 主机柜(带显示屏)+ 电池组排列 + 防静电地板",
+	"power_room":            "高压柜/低压柜阵列、黄黑警示带、有电危险标识、变压器",
+	"escalator":             "扶梯梯级、扶手带、梳齿板、急停按钮、安全警示牌",
+	"elevator_no_room":      "轿厢/层站现场:轿厢内按钮面板、楼层显示屏、轿厢照明、电梯使用登记标志、层门;全程无独立机房设备",
+	"elevator_machine_room": "独立机房:曳引机、控制柜/控制屏、限速器、盘车手轮、松闸扳手、「盘车手轮/松闸扳手/救援说明」标识牌、「电梯机房 / ELEVATOR MACHINE ROOM」门牌",
 }
 
 // addColumns 逐列加,已存在就跳过。

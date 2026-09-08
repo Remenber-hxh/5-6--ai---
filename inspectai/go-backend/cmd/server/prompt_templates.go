@@ -67,10 +67,13 @@ type PromptTemplate struct {
 	// 默认必须落在"和以前一样"那一边。
 	Mode string `json:"mode"`
 	// RawText 仅 raw 模式使用。留空 = 没配,运行时回退内置提示词。
-	RawText        string        `json:"rawText"`
-	Scene          string        `json:"scene"`          // 场景一句话
-	ExpectedPhotos []string      `json:"expectedPhotos"` // 期望拍到哪些照片
-	Fields         []PromptField `json:"fields"`
+	RawText        string   `json:"rawText"`
+	Scene          string   `json:"scene"`          // 场景一句话
+	ExpectedPhotos []string `json:"expectedPhotos"` // 期望拍到哪些照片
+	// SceneFeatures 照片上一眼能认出这个场景的东西,给「拍完自动认场景」用。
+	// 和场景描述不是一回事:那个写"要去哪、查什么",这个写"照片长什么样"。
+	SceneFeatures string        `json:"sceneFeatures"`
+	Fields        []PromptField `json:"fields"`
 }
 
 // isRaw 老数据没有 Mode 字段,空值算 structured。
@@ -340,6 +343,7 @@ func promptViewOfTemplate(t ReportTemplate) PromptTemplate {
 	out := PromptTemplate{
 		ID: t.ID, Name: t.Name, Scene: t.Scene,
 		ExpectedPhotos: t.ExpectedPhotos,
+		SceneFeatures:  t.SceneFeatures,
 		Mode:           t.PromptMode, RawText: t.RawText,
 	}
 	for _, f := range t.Fields {
@@ -738,6 +742,7 @@ func (s *Server) applyPromptToTemplate(p PromptTemplate) error {
 	// 谁后保存谁赢,而界面上看不出来发生过覆盖。
 	tpl.Scene = p.Scene
 	tpl.ExpectedPhotos = p.ExpectedPhotos
+	tpl.SceneFeatures = p.SceneFeatures
 	tpl.PromptMode = p.Mode
 	tpl.RawText = p.RawText
 

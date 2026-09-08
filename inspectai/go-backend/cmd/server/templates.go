@@ -495,6 +495,11 @@ func withPromptSeeds(tpls []ReportTemplate) []ReportTemplate {
 	out := make([]ReportTemplate, len(tpls))
 	copy(out, tpls)
 	for i := range out {
+		// 【识别特征要在 continue 之前设】它和判定规则没关系:消防泵房、
+		// UPS 机房这几个连提示词都还没写,但照片一样认得出来。
+		// 放在下面的话,恰恰是这几个模板永远拿不到特征、永远匹配不上。
+		out[i].SceneFeatures = builtinSceneFeatures[out[i].ID]
+
 		head, ok := heads[out[i].ID]
 		if !ok {
 			continue // 这个模板还没有结构化判定规则,保持原样

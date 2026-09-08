@@ -39,7 +39,7 @@ type ReportTemplateStore interface {
 func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 	rows, err := s.db.Query(`SELECT id, name, project, asset_type, max_images,
 		min_images, featured, has_ai, ai_prompt, scene, expected_photos,
-		prompt_mode, raw_text FROM report_templates
+		prompt_mode, raw_text, scene_features FROM report_templates
 		WHERE disabled = 0 ORDER BY sort_no ASC, id ASC`)
 	if err != nil {
 		return nil, err
@@ -55,15 +55,16 @@ func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 		// 直接扫进 string 会报 "converting NULL to string is unsupported",
 		// 整份模板加载失败 —— 表现是启动 WARN + 全系统退回代码里那份,
 		// 而后台改的模板全部不生效。
-		var photosJSON, scene, promptMode, rawText sql.NullString
+		var photosJSON, scene, promptMode, rawText, sceneFeatures sql.NullString
 		if err := rows.Scan(&t.ID, &t.Name, &t.Project, &t.AssetType, &t.MaxImages,
 			&t.MinImages, &featured, &hasAI, &t.AIPrompt, &scene, &photosJSON,
-			&promptMode, &rawText); err != nil {
+			&promptMode, &rawText, &sceneFeatures); err != nil {
 			return nil, err
 		}
 		t.Scene = scene.String
 		t.PromptMode = promptMode.String
 		t.RawText = rawText.String
+		t.SceneFeatures = sceneFeatures.String
 		t.Featured = featured != 0
 		t.HasAI = hasAI != 0
 		if strings.TrimSpace(photosJSON.String) != "" {
@@ -132,24 +133,26 @@ func (s *SQLiteStore) UpsertReportTemplate(t ReportTemplate) error {
 	defer func() { _ = tx.Rollback() }()
 
 	stmt := `INSERT INTO report_templates
-		(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at,scene,expected_photos,prompt_mode,raw_text)
-		VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,?)
+		(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at,scene,expected_photos,prompt_mode,raw_text,scene_features)
+		VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, project=excluded.project,
 		asset_type=excluded.asset_type, max_images=excluded.max_images,
 		min_images=excluded.min_images, featured=excluded.featured,
 		has_ai=excluded.has_ai, ai_prompt=excluded.ai_prompt, updated_at=excluded.updated_at,
 		scene=excluded.scene, expected_photos=excluded.expected_photos,
-		prompt_mode=excluded.prompt_mode, raw_text=excluded.raw_text`
+		prompt_mode=excluded.prompt_mode, raw_text=excluded.raw_text,
+		scene_features=excluded.scene_features`
 	if s.dialect == "mysql" {
 		stmt = `INSERT INTO report_templates
-			(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at,scene,expected_photos,prompt_mode,raw_text)
-			VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,?)
+			(id,tenant_id,name,project,asset_type,max_images,min_images,featured,has_ai,ai_prompt,disabled,sort_no,updated_at,scene,expected_photos,prompt_mode,raw_text,scene_features)
+			VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,?,?)
 			ON DUPLICATE KEY UPDATE name=VALUES(name), project=VALUES(project),
 			asset_type=VALUES(asset_type), max_images=VALUES(max_images),
 			min_images=VALUES(min_images), featured=VALUES(featured),
 			has_ai=VALUES(has_ai), ai_prompt=VALUES(ai_prompt), updated_at=VALUES(updated_at),
 			scene=VALUES(scene), expected_photos=VALUES(expected_photos),
-			prompt_mode=VALUES(prompt_mode), raw_text=VALUES(raw_text)`
+			prompt_mode=VALUES(prompt_mode), raw_text=VALUES(raw_text),
+			scene_features=VALUES(scene_features)`
 	}
 	photosJSON := ""
 	if len(t.ExpectedPhotos) > 0 {
@@ -159,7 +162,8 @@ func (s *SQLiteStore) UpsertReportTemplate(t ReportTemplate) error {
 	}
 	if _, err := tx.Exec(stmt, t.ID, defaultTenantID, t.Name, t.Project, t.AssetType,
 		t.MaxImages, t.MinImages, boolToInt(t.Featured), boolToInt(t.HasAI),
-		t.AIPrompt, nowStamp(), t.Scene, photosJSON, t.PromptMode, t.RawText); err != nil {
+		t.AIPrompt, nowStamp(), t.Scene, photosJSON, t.PromptMode, t.RawText,
+		t.SceneFeatures); err != nil {
 		return fmt.Errorf("upsert report_template %s: %w", t.ID, err)
 	}
 

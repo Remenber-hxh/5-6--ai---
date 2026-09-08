@@ -48,6 +48,10 @@ export default function PromptDraft({
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<TemplateFieldDTO[] | null>(null);
+  // AI 顺手给的「识别特征」——现场拍完照靠它自动认出是这个场景。
+  // 【生成不出来不拦着建模板】没有它只是自动匹配这一步用不上,
+  // 模板本身照常能用,后台还能手工补一句。
+  const [features, setFeatures] = useState("");
 
   async function generate() {
     if (!name.trim()) {
@@ -62,6 +66,7 @@ export default function PromptDraft({
     try {
       const d = await draftTemplateFields({ requirement, templateName: name });
       setDraft(d.fields || []);
+      setFeatures((d.sceneFeatures || "").trim());
       setOpen(false); // 结果弹窗接管,两层弹窗叠着看不清
     } catch (e) {
       // 后端的理由已经是人话(没配密钥 / 需求太含糊 / 账户欠费),
@@ -86,6 +91,7 @@ export default function PromptDraft({
         name: name.trim(),
         project: "",
         assetType: "",
+        sceneFeatures: features,
         maxImages: 20,
         minImages: 5,
         fields: draft,
@@ -95,6 +101,7 @@ export default function PromptDraft({
       setDraft(null);
       setName("");
       setRequirement("");
+      setFeatures("");
       if (id) onCreated(id);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "建立失败");
@@ -143,6 +150,20 @@ export default function PromptDraft({
         confirmLoading={saving}
         onOk={adopt}
       >
+        {/* 【识别特征要摆出来】它决定现场拍完照能不能自动认出这个场景。
+            藏起来的话,写得太笼统("泵房")没人会发现,而后果是这个模板
+            去抢别的场景的照片 —— 抢错了不报错。 */}
+        <div style={{ marginBottom: 12, fontSize: 13 }}>
+          <span style={{ color: C.textFaint }}>识别特征(现场拍完照靠它认出这个场景):</span>{" "}
+          {features ? (
+            <span>{features}</span>
+          ) : (
+            <span style={{ color: "#d46b08" }}>
+              没生成出来 —— 建好后到「提示词」页补一句,否则现场要手动选模板
+            </span>
+          )}
+        </div>
+
         {/* 【先看再入库】这一步决定所有巡检员将来填什么、AI 判什么,
             扫一眼就点确定的话,一条判错的检查项会跟着每一次巡检。 */}
         <Table<TemplateFieldDTO>

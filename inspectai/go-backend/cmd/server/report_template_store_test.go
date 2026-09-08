@@ -419,7 +419,7 @@ func TestMigrationIsRepeatable(t *testing.T) {
 // 系统退回代码里那份,于是【后台改的模板全部不生效】,而界面上只有
 // 一行启动日志能看出来。
 //
-// 之前测不出来是因为测试只跑 SQLite,而那边我给了 NOT NULL DEFAULT ''。
+// 之前测不出来是因为测试只跑 SQLite,而那边我给了 NOT NULL DEFAULT ”。
 // 这里显式把列置成 NULL 来复现。
 func TestNullColumnsDoNotBreakLoading(t *testing.T) {
 	isolateTemplateCache(t)
@@ -434,7 +434,7 @@ func TestNullColumnsDoNotBreakLoading(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 模拟 MySQL 升级后的样子:后加的列全是 NULL
-	for _, col := range []string{"scene", "expected_photos", "prompt_mode", "raw_text"} {
+	for _, col := range []string{"scene", "expected_photos", "prompt_mode", "raw_text", "scene_features"} {
 		if _, err := store.db.Exec(`UPDATE report_templates SET ` + col + `=NULL`); err != nil {
 			t.Fatalf("置 NULL 失败 %s: %v", col, err)
 		}
@@ -456,8 +456,88 @@ func TestNullColumnsDoNotBreakLoading(t *testing.T) {
 		t.Errorf("字段数对不上:期望 %d,实际 %d", len(src.Fields), len(got[0].Fields))
 	}
 	// NULL 读成空串,不是让整份加载失败
-	if got[0].Scene != "" || got[0].RawText != "" {
-		t.Errorf("NULL 应读成空串,实际 scene=%q raw=%q", got[0].Scene, got[0].RawText)
+	if got[0].Scene != "" || got[0].RawText != "" || got[0].SceneFeatures != "" {
+		t.Errorf("NULL 应读成空串,实际 scene=%q raw=%q features=%q",
+			got[0].Scene, got[0].RawText, got[0].SceneFeatures)
+	}
+}
+
+// ===== 迁移 028:识别特征 =====
+
+// 识别特征要能存进去、读回来。
+//
+// 【为什么单独测落库往返】它是「拍完自动认场景」的唯一依据。存丢了不会
+// 报错:模板照常能用、字段照常能填,只有"自动认场景"这一步悄悄退回
+// 手动选模板 —— 而现场只会觉得"AI 今天不太灵",没人会想到是一列没存上。
+func TestSceneFeaturesRoundTrip(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "feat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	src, _ := templateByID("fire_pump")
+	src.SceneFeatures = "红色消防泵 + 不锈钢水箱 + 绿色环氧地坪"
+	if err := store.UpsertReportTemplate(src); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.ListReportTemplates()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("读回失败:%v(%d 个)", err, len(got))
+	}
+	if got[0].SceneFeatures != src.SceneFeatures {
+		t.Errorf("识别特征没存住:期望 %q,实际 %q", src.SceneFeatures, got[0].SceneFeatures)
+	}
+
+	// 改了要能覆盖 —— 后台改完特征,现场下一次拍照就该按新的认
+	src.SceneFeatures = "改过的特征"
+	if err := store.UpsertReportTemplate(src); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.ListReportTemplates()
+	if got[0].SceneFeatures != "改过的特征" {
+		t.Errorf("改动没生效,实际 %q", got[0].SceneFeatures)
+	}
+}
+
+// 迁移要把写死在 ai-service 提示词里的那十条特征回填进库,
+// 【但不能覆盖人后来改过的】—— 重跑迁移把人工调好的特征冲掉,
+// 而且不会有任何提示。
+func TestMigrationBackfillsFeaturesWithoutOverwriting(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "backfill.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	// 造两条:一条特征为空(等回填),一条已经被人改过
+	empty, _ := templateByID("fire_pump")
+	empty.SceneFeatures = ""
+	edited, _ := templateByID("ups_room")
+	edited.SceneFeatures = "人工调过的特征"
+	for _, tpl := range []ReportTemplate{empty, edited} {
+		if err := store.UpsertReportTemplate(tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.migTemplateSceneFeatures(); err != nil {
+		t.Fatalf("重跑迁移失败: %v", err)
+	}
+
+	got, _ := store.ListReportTemplates()
+	byID := map[string]string{}
+	for _, g := range got {
+		byID[g.ID] = g.SceneFeatures
+	}
+	if byID["fire_pump"] != builtinSceneFeatures["fire_pump"] {
+		t.Errorf("空的应被回填成内置特征,实际 %q", byID["fire_pump"])
+	}
+	if byID["ups_room"] != "人工调过的特征" {
+		t.Errorf("人工改过的不能被覆盖,实际 %q —— 重跑迁移会把调好的特征冲掉",
+			byID["ups_room"])
 	}
 }
 

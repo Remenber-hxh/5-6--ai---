@@ -142,11 +142,26 @@ func (c *AIClient) BuiltinPrompt(templateID string) (string, error) {
 	return out.Prompt, nil
 }
 
-// Classify — 调 /classify（场景分类，multipart 上传图）
-func (c *AIClient) Classify(imagePaths []string) (*SceneClassifyResult, error) {
+// SceneCandidate 一个可供选择的场景。
+//
+// 【候选表从库里来,不再写死在 ai-service 里】以前那张表写死在
+// prompts/scene_classifier.md,提示词还明写着"必须从这个清单选一个" ——
+// 后台新建的模板不在清单里,模型返回不了它的 id。
+type SceneCandidate struct {
+	TemplateID   string `json:"templateId"`
+	TemplateName string `json:"templateName"`
+	Features     string `json:"features"` // 照片上一眼能认出来的东西
+}
+
+// Classify — 调 /classify（场景分类）
+//
+// candidates 为空时 ai-service 会回退用内置的那张表 —— 和 promptText 一样的
+// 灰度策略:下发出问题时,退回到今天这个能跑的状态,而不是一个都认不出来。
+func (c *AIClient) Classify(imagePaths []string, candidates []SceneCandidate) (*SceneClassifyResult, error) {
 	// 内部调用走 JSON（ai-service 收到 paths 自己读图），不用 multipart
 	payload := map[string]any{
 		"imagePaths": imagePaths,
+		"candidates": candidates,
 	}
 	body, _ := json.Marshal(payload)
 	client := &http.Client{Timeout: 35 * time.Second}
@@ -244,7 +259,9 @@ func saveMultipartFile(targetDir string, header *multipart.FileHeader, maxSize i
 //
 // 【只在后台点"生成"时调,不在识别链路上】它挂了顶多是这一次生成不出来,
 // 现场巡检照常。
-func (c *AIClient) DraftFields(requirement, templateName, assetType string) ([]map[string]any, string, error) {
+func (c *AIClient) DraftFields(requirement, templateName, assetType string) (
+	fields []map[string]any, sceneFeatures, model string, err error,
+) {
 	payload := map[string]any{
 		"requirement":  requirement,
 		"templateName": templateName,
@@ -256,23 +273,24 @@ func (c *AIClient) DraftFields(requirement, templateName, assetType string) ([]m
 	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Post(c.baseURL+"/prompt/draft-fields", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	var out struct {
-		Fields  []map[string]any `json:"fields"`
-		Model   string           `json:"model"`
-		Error   string           `json:"error"`
-		Message string           `json:"message"`
+		Fields        []map[string]any `json:"fields"`
+		SceneFeatures string           `json:"sceneFeatures"`
+		Model         string           `json:"model"`
+		Error         string           `json:"error"`
+		Message       string           `json:"message"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, "", fmt.Errorf("解析生成结果失败: %w", err)
+		return nil, "", "", fmt.Errorf("解析生成结果失败: %w", err)
 	}
 	if out.Error != "" {
 		// ai-service 那边的话已经是人话,直接往上传 —— 换成"生成失败"
 		// 会让人完全不知道是没配密钥、还是需求写得太含糊。
-		return nil, "", errors.New(firstNonEmpty(out.Message, out.Error))
+		return nil, "", "", errors.New(firstNonEmpty(out.Message, out.Error))
 	}
-	return out.Fields, out.Model, nil
+	return out.Fields, out.SceneFeatures, out.Model, nil
 }
