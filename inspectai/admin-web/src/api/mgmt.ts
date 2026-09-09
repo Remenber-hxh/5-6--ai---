@@ -823,6 +823,13 @@ export interface PromptTemplate {
    * 留空的模板不参与自动匹配 —— 现场得手动选模板。
    */
   sceneFeatures?: string;
+  /**
+   * 本场景补充说明:渲染时追加在「总则」之后。
+   *
+   * 【和字段表共存,不是二选一】字段表管"每个字段怎么判",这里管
+   * "这个场景整体要注意什么" —— 后者落不进任何一个字段格子。
+   */
+  extraNotes?: string;
   fields: PromptField[];
 }
 

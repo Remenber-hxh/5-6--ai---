@@ -72,8 +72,16 @@ type PromptTemplate struct {
 	ExpectedPhotos []string `json:"expectedPhotos"` // 期望拍到哪些照片
 	// SceneFeatures 照片上一眼能认出这个场景的东西,给「拍完自动认场景」用。
 	// 和场景描述不是一回事:那个写"要去哪、查什么",这个写"照片长什么样"。
-	SceneFeatures string        `json:"sceneFeatures"`
-	Fields        []PromptField `json:"fields"`
+	SceneFeatures string `json:"sceneFeatures"`
+	// ExtraNotes 本场景补充说明,渲染时追加在「总则」之后。
+	//
+	// 【和字段表共存,不是二选一】字段表管「每个字段怎么判」,这里管
+	// 「这个场景整体要注意什么」—— 后者落不进任何一个字段格子里,
+	// 比如"防夹/开关门是现场测试项,拍到测试动作就判,别一律留空"。
+	// 没有这个口子的话,想说这句话只能切「整段文本」自己写整封信,
+	// 等于为了加一句话放弃全部结构化配置。
+	ExtraNotes string        `json:"extraNotes"`
+	Fields     []PromptField `json:"fields"`
 }
 
 // isRaw 老数据没有 Mode 字段,空值算 structured。
@@ -127,8 +135,13 @@ func fieldGroupElevatorMachineRoom() []PromptField {
 			YesWhen: "机房照明明亮,且空调/温控器在运行(亮屏显示温度、制冷标志,室温约 18-27℃)",
 			NoWhen:  "明显无照明、空调黑屏/不工作/温度明显异常偏高", SkipWhen: "未拍到该区域"},
 		{Code: "extinguisher_valid", Label: "灭火器材未过期", Group: "机房", Mode: ModeObjectiveDate,
-			YesWhen:  "年检标签/合格证上「有效期」或「下次检验/维修日期」晚于 current_date,且压力表指针在绿区",
-			NoWhen:   "有效期早于 current_date(已过期)、压力表指针在红区(欠压/超压)、或检查记录卡长期空缺",
+			// 【三个条件缺一不可,尤其是记录卡那条】早先只写了"有效期 + 压力表",
+			// 判「否」那边也只写"记录卡长期空缺" —— 而现场真实的情况是
+			// 记录卡【有】记录、只是停在几个月前。那不叫空缺,于是被放过。
+			// 拿真实照片实测过:内置 .md 判「否」(记录卡停在 6 月),
+			// 字段表这版判「是」,漏掉了一次真实的超期未检。
+			YesWhen:  "年检标签/合格证上「有效期」或「下次检验/维修日期」晚于 current_date,压力表指针在绿区,且检查记录卡最近一次打勾距 current_date 在 1 个月左右以内",
+			NoWhen:   "有效期早于 current_date(已过期)、压力表指针在红区(欠压/超压)、检查记录卡长期空缺、或最近一次记录距今已数月(比如仍停留在几个月前那一格)",
 			SkipWhen: "只拍到瓶体、看不清压力表/日期/记录卡",
 			Note:     "生产日期 ≠ 有效期,绝不能拿\"生产日期看着不旧\"当未过期依据;只有生产日期且距 current_date 已超 5 年(到强制维修/报废年限)→ 否"},
 		{Code: "noise_smell", Label: "设备无异响、异味", Group: "机房", Mode: ModeSensory,
@@ -215,7 +228,9 @@ func promptTemplateSeeds() []PromptTemplate {
 		[]PromptField{fieldSummaryNonconformity()},
 	)
 
-	return []PromptTemplate{elevatorMachineRoom, elevatorNoRoom}
+	// 其余 8 个场景在 prompt_seeds_scenes.go —— 那边内容多,单独一个文件,
+	// 免得这里被几百行判定文案埋掉。
+	return append([]PromptTemplate{elevatorMachineRoom, elevatorNoRoom}, sceneTemplateSeeds()...)
 }
 
 func concatFields(groups ...[]PromptField) []PromptField {
@@ -340,15 +355,34 @@ func templateHasJudgeRules(t ReportTemplate) bool {
 // "怎么判",不关心类型/选项/必填。让它继续只看见判定那几列,
 // 加表单字段时就不会牵动提示词的渲染。
 func promptViewOfTemplate(t ReportTemplate) PromptTemplate {
+	return promptViewFiltered(t, true)
+}
+
+// promptEditViewOfTemplate 后台「提示词」页要编辑的那个视角。
+//
+// 【和渲染视角的唯一区别:把还没配判定规则的字段也带上】
+// 原来两边共用一份,只收已经配过 judgeMode 的字段 —— 于是出现死路:
+// 字段要配过才出现在表里,而配置的唯一入口就是这张表。
+// 结果是模板明明有 13 个字段,提示词页却说"这个模板还没有字段表",
+// 人只能改用整段文本手写,而手写的那份和字段表是两套东西。
+//
+// 【渲染器那边不能跟着改】没配 judgeMode 的字段渲染出来是"只有字段名、
+// 没有判断依据"的一行,模型照跑、结果随机。所以渲染仍走过滤版。
+func promptEditViewOfTemplate(t ReportTemplate) PromptTemplate {
+	return promptViewFiltered(t, false)
+}
+
+func promptViewFiltered(t ReportTemplate, onlyJudged bool) PromptTemplate {
 	out := PromptTemplate{
 		ID: t.ID, Name: t.Name, Scene: t.Scene,
 		ExpectedPhotos: t.ExpectedPhotos,
 		SceneFeatures:  t.SceneFeatures,
+		ExtraNotes:     t.ExtraNotes,
 		Mode:           t.PromptMode, RawText: t.RawText,
 	}
 	for _, f := range t.Fields {
-		if strings.TrimSpace(f.JudgeMode) == "" {
-			continue // 没配判定规则的字段不进提示词
+		if onlyJudged && strings.TrimSpace(f.JudgeMode) == "" {
+			continue // 渲染时:没配判定规则的字段不进提示词
 		}
 		out.Fields = append(out.Fields, PromptField{
 			Code: f.Code, Label: f.Label, Group: f.JudgeGroup, Mode: f.JudgeMode,
@@ -400,6 +434,19 @@ func renderPromptText(t PromptTemplate) string {
 	for _, r := range c.GeneralRules {
 		b.WriteString("- " + r + "\n")
 	}
+	// 【本场景补充说明拼在总则之后】总则是所有模板共用的、后台改不了;
+	// 这一段是这个场景自己的。顺序不能反 —— 先立通用规矩,再说本场景的
+	// 例外和重点,否则通用那几条会把场景交代盖过去。
+	//
+	// 逐行前面补 "- ",和上面的总则排版一致:混着两种格式,模型更容易漏读。
+	// 人已经写了 "- " 的就不重复加。
+	if notes := strings.TrimSpace(t.ExtraNotes); notes != "" {
+		for _, line := range strings.Split(notes, "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				b.WriteString("- " + strings.TrimPrefix(line, "- ") + "\n")
+			}
+		}
+	}
 	b.WriteString("\n")
 
 	b.WriteString("## 字段映射\n")
@@ -447,7 +494,7 @@ func promptTemplateOrDraft(store Store, id string) (PromptTemplate, bool) {
 	if !ok {
 		return PromptTemplate{}, false
 	}
-	view := promptViewOfTemplate(tpl)
+	view := promptEditViewOfTemplate(tpl)
 	if len(view.Fields) == 0 && strings.TrimSpace(view.RawText) == "" {
 		// 还没配过判定规则:给一份 raw 空草稿。
 		// 空正文 = 运行时仍走内置 .md,所以"打开看看没保存"不改变任何行为。
@@ -509,7 +556,9 @@ func (s *Server) handleListPromptTemplates(w http.ResponseWriter, r *http.Reques
 				mode = PromptModeStructured
 			}
 			row["mode"] = mode
-			row["fieldCount"] = len(promptViewOfTemplate(t).Fields)
+			// 【按可编辑的字段数算】显示"0 项"而点进去有 13 行,
+			// 或者反过来,都会让人以为列表是坏的。
+			row["fieldCount"] = len(promptEditViewOfTemplate(t).Fields)
 			if t.Name != "" {
 				row["name"] = t.Name
 			}
@@ -743,6 +792,7 @@ func (s *Server) applyPromptToTemplate(p PromptTemplate) error {
 	tpl.Scene = p.Scene
 	tpl.ExpectedPhotos = p.ExpectedPhotos
 	tpl.SceneFeatures = p.SceneFeatures
+	tpl.ExtraNotes = p.ExtraNotes
 	tpl.PromptMode = p.Mode
 	tpl.RawText = p.RawText
 

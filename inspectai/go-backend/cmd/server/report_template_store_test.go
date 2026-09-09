@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -630,6 +631,139 @@ func TestZeroMinImagesIsNotMigrated(t *testing.T) {
 	for _, tpl := range after {
 		if tpl.ID == "zihan_energy" && tpl.MinImages == 0 {
 			t.Error("配置里的 0 被当成了「不限」搬进底表 —— 五张照片的要求悄悄消失了")
+		}
+	}
+}
+
+// ===== 迁移 029:补灭火器「检查记录卡」那条 =====
+
+// 只改没人动过的行。
+//
+// 【为什么这一条必须钉】迁移覆盖用户改过的配置,是"改了又被系统改回去"——
+// 人第二天发现自己的修改没了,而日志里什么都没有,最难查的一类。
+func TestMigFixExtinguisherOnlyTouchesUneditedRows(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "ext.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	const oldYes = "年检标签/合格证上「有效期」或「下次检验/维修日期」晚于 current_date,且压力表指针在绿区"
+
+	// 甲:还是当初种下去那份(该被修)
+	// 乙:人工改过(不该动)
+	seed := func(id, yes string) {
+		tpl := ReportTemplate{
+			ID: id, Name: id,
+			Fields: []TemplateField{
+				{Code: "asset_no", Label: "设备编号", Kind: "text", Required: true, Source: "manual"},
+				{Code: "extinguisher_valid", Label: "灭火器材未过期", Kind: "choice",
+					Options: []string{"是", "否"}, Source: "ai",
+					JudgeMode: ModeObjectiveDate, YesWhen: yes},
+			},
+		}
+		if err := store.UpsertReportTemplate(tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("tpl_untouched", oldYes)
+	seed("tpl_edited", "我们自己定的口径:只看压力表")
+
+	if err := store.migFixExtinguisherRecordCard(); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+
+	got, err := store.ListReportTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	yesOf := map[string]string{}
+	for _, tpl := range got {
+		for _, f := range tpl.Fields {
+			if f.Code == "extinguisher_valid" {
+				yesOf[tpl.ID] = f.YesWhen
+			}
+		}
+	}
+	if !strings.Contains(yesOf["tpl_untouched"], "检查记录卡") {
+		t.Errorf("没人动过的那条应该被补上记录卡判定,实际 %q", yesOf["tpl_untouched"])
+	}
+	if yesOf["tpl_edited"] != "我们自己定的口径:只看压力表" {
+		t.Errorf("人工改过的不该被迁移覆盖,实际 %q —— "+
+			"覆盖了的话人第二天发现自己的修改没了,而且查不出原因", yesOf["tpl_edited"])
+	}
+}
+
+// ===== 迁移 031:把 8 个场景的判定规则回填进库 =====
+
+// 【这条迁移不存在的话,前面写的判定规则一个字都到不了库里】
+// 代码种子只在库为空时灌一次;升级环境库里早有这些模板,只是判定规则为空。
+// 光改种子的现象是"我明明写了判定依据,AI 还在读内置 .md"——而且不报错。
+func TestMigBackfillSceneJudgeRules(t *testing.T) {
+	isolateTemplateCache(t)
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "backfill_rules.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	// 模拟升级前的样子:模板和字段都在,但判定规则全空
+	base, ok := templateByID("escalator")
+	if !ok {
+		t.Skip("默认模板里没有 escalator")
+	}
+	bare := base
+	bare.ExtraNotes = ""
+	bare.Fields = make([]TemplateField, len(base.Fields))
+	for i, f := range base.Fields {
+		f.JudgeMode, f.JudgeGroup, f.YesWhen, f.NoWhen, f.SkipWhen, f.JudgeNote = "", "", "", "", "", ""
+		if f.Code == "handrail" {
+			// 这一格假装有人在后台配过 —— 迁移不许动它
+			f.JudgeMode, f.YesWhen = ModeVisual, "我们自己定的口径"
+		}
+		bare.Fields[i] = f
+	}
+	if err := store.UpsertReportTemplate(bare); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.migBackfillSceneJudgeRules(); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+
+	got, err := store.ListReportTemplates()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("读回失败:%v(%d 个)", err, len(got))
+	}
+	tpl := got[0]
+
+	if strings.TrimSpace(tpl.ExtraNotes) == "" {
+		t.Error("补充说明没回填 —— 那些场景级交代(比如异响方向相反)就全丢了")
+	}
+	byCode := map[string]TemplateField{}
+	for _, f := range tpl.Fields {
+		byCode[f.Code] = f
+	}
+	// 空的要被填上
+	if byCode["steps"].JudgeMode == "" || byCode["steps"].YesWhen == "" {
+		t.Errorf("空的判定规则应被回填,steps 实际 %+v", byCode["steps"])
+	}
+	// 有人配过的不许动
+	if byCode["handrail"].YesWhen != "我们自己定的口径" {
+		t.Errorf("已配过的字段不该被迁移覆盖,handrail 实际 %q —— "+
+			"覆盖了的话人第二天发现自己的配置没了,而且查不出原因",
+			byCode["handrail"].YesWhen)
+	}
+
+	// 幂等:再跑一次不改变任何东西
+	if err := store.migBackfillSceneJudgeRules(); err != nil {
+		t.Fatalf("重跑失败: %v", err)
+	}
+	again, _ := store.ListReportTemplates()
+	for _, f := range again[0].Fields {
+		if f.Code == "handrail" && f.YesWhen != "我们自己定的口径" {
+			t.Errorf("重跑迁移改动了已配置的行:%q", f.YesWhen)
 		}
 	}
 }

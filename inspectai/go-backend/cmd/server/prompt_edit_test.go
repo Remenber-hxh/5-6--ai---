@@ -55,15 +55,23 @@ func TestStructuredStillRenders(t *testing.T) {
 //
 // 发空提示词的话,模型会自由发挥,返回一堆没人要的字段,而且不报错。
 func TestEmptyRawFallsBackInsteadOfSendingBlank(t *testing.T) {
-	store := NewMemStore()
-	if err := store.UpsertPromptTemplate(PromptTemplate{
-		ID: "hot_water_room", Name: "热水机房", Mode: PromptModeRaw, RawText: "   \n  ",
-	}); err != nil {
-		t.Fatal(err)
+	// 【显式构造这个状态,不要挑一个"碰巧没配过"的模板】
+	// 这条早先是拿 hot_water_room 当"没配过的"来测的 —— 后来那些模板
+	// 都配上了判定规则,测试就变成了在测别的东西,而且是悄悄地。
+	//
+	// 这里连字段表一起给上:raw 模式下正文为空,【也不能偷偷回退去渲染
+	// 字段表】。人明确选了"整段文本",系统改用另一份内容发出去的话,
+	// 他在编辑器里看到的和模型收到的就是两回事。
+	tpl := ReportTemplate{
+		ID: "tpl_raw_blank", Name: "某模板",
+		PromptMode: PromptModeRaw, RawText: "   \n  ",
+		Fields: []TemplateField{
+			{Code: "a", Label: "甲项", JudgeMode: ModeVisual, YesWhen: "看着正常"},
+		},
 	}
-	text, ok := renderPromptViaStore(store, "hot_water_room")
-	if ok {
-		t.Fatalf("正文为空时不该下发 promptText,实际下发了 %q", text)
+	if got := renderTemplatePrompt(tpl); strings.TrimSpace(got) != "" {
+		t.Fatalf("raw 正文为空时应回退内置(返回空),实际渲染出了 %d 字:%q",
+			len([]rune(got)), got)
 	}
 }
 
@@ -194,11 +202,19 @@ func TestBaselineWrittenOnlyOnce(t *testing.T) {
 	}
 }
 
-// 未迁移的模板要能打开编辑器 —— 打不开的话,那八个模板在界面上
-// 根本不存在,人只会以为"提示词就这两个能改"。
+// 每个模板都要能打开编辑器 —— 打不开的话,那些模板在界面上根本不存在,
+// 人只会以为"提示词就这两个能改"。
 func TestDraftForTemplateWithoutDBRow(t *testing.T) {
 	store := promptTestStore(t)
 	for _, id := range []string{"fire_pump", "ups_room", "water_pump", "hot_water_room"} {
+		// 【取草稿这个动作本身不能改变运行时行为】只是打开看看、没点保存,
+		// 下发给 AI 的东西必须一个字不变。
+		//
+		// 早先这里断言的是"不该下发 promptText" —— 那是因为这几个模板
+		// 当时一条判定规则都没配。现在它们配上了,下发是应该的;
+		// 要保的从来不是"不下发",而是"打开前后一模一样"。
+		before, hadBefore := renderPromptViaStore(store, id)
+
 		draft, ok := promptTemplateOrDraft(store, id)
 		if !ok {
 			t.Errorf("%s 应该能打开编辑器(哪怕库里还没有)", id)
@@ -207,13 +223,21 @@ func TestDraftForTemplateWithoutDBRow(t *testing.T) {
 		if draft.Name == "" {
 			t.Errorf("%s 的草稿应带上模板名", id)
 		}
-		if draft.Mode != PromptModeRaw {
-			t.Errorf("%s 的草稿应是 raw 模式,实际 %q", id, draft.Mode)
+		// 【有字段就用字段表打开,不再推去写整段文本】
+		// 这几个模板有表单字段、只是还没配判定规则。原来编辑视图只收
+		// 配过的字段,于是它们看上去"没有字段表",人被迫改用整段文本手写 ——
+		// 而手写那份和字段表是两套东西,以后再想回到字段表更难。
+		if draft.Mode == PromptModeRaw {
+			t.Errorf("%s 有 %d 个字段,不该被当成「没有字段表」而落到 raw 模式",
+				id, len(draft.Fields))
 		}
-		// 【草稿不能改变任何行为】只是打开看看,没保存,
-		// 运行时必须还是走内置 .md。
-		if _, ok := renderPromptViaStore(store, id); ok {
-			t.Errorf("%s 没保存过就不该下发 promptText", id)
+		if len(draft.Fields) == 0 {
+			t.Errorf("%s 的字段表应列出模板里的字段(含还没配判定规则的)", id)
+		}
+		after, hadAfter := renderPromptViaStore(store, id)
+		if hadBefore != hadAfter || before != after {
+			t.Errorf("%s:只是打开了编辑器、没保存,下发给 AI 的提示词却变了 —— "+
+				"那意味着「看一眼」就改了现场的识别行为", id)
 		}
 	}
 }

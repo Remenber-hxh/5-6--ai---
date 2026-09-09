@@ -506,6 +506,9 @@ func withPromptSeeds(tpls []ReportTemplate) []ReportTemplate {
 		}
 		out[i].Scene = head.Scene
 		out[i].ExpectedPhotos = head.ExpectedPhotos
+		// 【补充说明也要带过来】漏了的话种子里写的场景级交代全都不生效,
+		// 而且不报错 —— 只是提示词里少了那几行,没人看得出来。
+		out[i].ExtraNotes = head.ExtraNotes
 		out[i].PromptMode = head.Mode
 		out[i].RawText = head.RawText
 

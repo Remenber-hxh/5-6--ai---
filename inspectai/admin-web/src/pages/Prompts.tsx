@@ -428,6 +428,23 @@ export default function Prompts() {
               />
             </Col>
           </Row>
+          {/* 【补充说明放在字段表【上面】,不是又一个"模式"】它和字段表是
+              共存关系:字段表管每个字段怎么判,这里管这个场景整体注意什么。
+              渲染时它拼在总则后面、字段映射前面 —— 版面顺序和最终提示词
+              的顺序一致,人才对得上"我填的东西去哪了"。 */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={lbl}>本场景补充说明 —— 落不进字段表的话写这里(可留空)</div>
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              value={current.extraNotes || ""}
+              onChange={(e) => patch({ ...current, extraNotes: e.target.value })}
+              placeholder="一行一条。例:防夹/开关门是现场测试项,拍到测试动作就判,别一律留空"
+            />
+            <div style={{ fontSize: 12.5, color: C.textFaint, marginTop: 4 }}>
+              会拼在提示词的「总则」后面,和下面的字段表同时生效 —— 不会互相覆盖
+            </div>
+          </div>
+
           <Table<PromptField>
             rowKey="code"
             size="small"
@@ -446,7 +463,17 @@ export default function Prompts() {
                 fixed: "left",
                 render: (v, f) => (
                   <div>
-                    <div style={{ fontWeight: 600 }}>{f.label}</div>
+                    <div style={{ fontWeight: 600 }}>
+                      {f.label}
+                      {/* 【没配判定模式的要标出来】这张表现在列的是模板里
+                          所有字段,其中一部分 AI 还不判。不标的话,人以为
+                          全都配好了,而实际上现场那几项永远是空的。 */}
+                      {!f.mode && (
+                        <Tag color="orange" style={{ marginLeft: 6, transform: "scale(0.85)" }}>
+                          未配
+                        </Tag>
+                      )}
+                    </div>
                     <div style={{ color: C.textFaint, fontSize: 12 }}>
                       {v}
                       {/* 分组本来就存在数据里(头部/机房/轿厢层站/汇总),
@@ -467,9 +494,15 @@ export default function Prompts() {
                        到底走不走 AI,看不全就等于没标。最长的一项是
                        "读取文本(清晰才返回)",按它定宽。 */
                     style={{ width: 188 }}
-                    value={f.mode}
+                    /* 【空 = 这一项不让 AI 判】现在字段表会把模板里【所有】
+                       字段都列出来,包括还没配判定规则的 —— 那些的模式就是空。
+                       allowClear 让人能把配过的再撤回空,否则一旦选了模式
+                       就再也关不掉这个字段的 AI 判定。 */
+                    allowClear
+                    placeholder="不判(留空)"
+                    value={f.mode || undefined}
                     options={modes}
-                    onChange={(v) => patchField(i, "mode", v)}
+                    onChange={(v) => patchField(i, "mode", v || "")}
                   />
                 ),
               },

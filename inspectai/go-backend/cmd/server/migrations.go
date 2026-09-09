@@ -51,6 +51,9 @@ var migrationList = []migration{
 	{26, "merge_prompt_into_template", (*SQLiteStore).migMergePromptIntoTemplate},
 	{27, "merge_field_rules_into_template", (*SQLiteStore).migMergeFieldRulesIntoTemplate},
 	{28, "template_scene_features", (*SQLiteStore).migTemplateSceneFeatures},
+	{29, "fix_extinguisher_record_card", (*SQLiteStore).migFixExtinguisherRecordCard},
+	{30, "template_extra_notes", (*SQLiteStore).migTemplateExtraNotes},
+	{31, "backfill_scene_judge_rules", (*SQLiteStore).migBackfillSceneJudgeRules},
 }
 
 // 027 — 把「提交规则」的覆盖层并进模板底表。
@@ -171,6 +174,93 @@ func (s *SQLiteStore) migMergePromptIntoTemplate() error {
 		return err
 	}
 	return s.backfillPromptIntoTemplates()
+}
+
+// 031 — 把 8 个场景的判定规则回填进库。
+//
+// 【为什么必须有这一步】代码里的种子只在【库为空】时灌一次(见
+// loadReportTemplates)。升级的环境库里早就有这 10 个模板了,只是它们的
+// judge_mode 全是空的 —— 光改代码种子,库里一个字都不会变,
+// 而现象是"我明明写了判定依据,AI 还在读内置 .md"。
+//
+// 【只填空的,绝不覆盖】谁要是已经在后台配过某一格,那是他的判断,
+// 迁移盖掉就成了"改了又被系统改回去"——最难查的一类。所以逐字段判断:
+// judge_mode 为空才写,补充说明同理。
+//
+// 这也意味着这条迁移是幂等的:重跑不会动任何已经有值的行。
+func (s *SQLiteStore) migBackfillSceneJudgeRules() error {
+	for _, seed := range promptTemplateSeeds() {
+		if notes := strings.TrimSpace(seed.ExtraNotes); notes != "" {
+			if _, err := s.db.Exec(
+				`UPDATE report_templates SET extra_notes=?
+				 WHERE id=? AND (extra_notes IS NULL OR extra_notes='')`,
+				notes, seed.ID); err != nil {
+				return fmt.Errorf("backfill extra_notes %s: %w", seed.ID, err)
+			}
+		}
+		for _, f := range seed.Fields {
+			if strings.TrimSpace(f.Mode) == "" {
+				continue
+			}
+			if _, err := s.db.Exec(
+				`UPDATE report_template_fields
+				 SET judge_mode=?, judge_group=?, yes_when=?, no_when=?, skip_when=?, judge_note=?
+				 WHERE template_id=? AND code=?
+				   AND (judge_mode IS NULL OR judge_mode='')`,
+				f.Mode, f.Group, f.YesWhen, f.NoWhen, f.SkipWhen, f.Note,
+				seed.ID, f.Code); err != nil {
+				return fmt.Errorf("backfill judge rule %s.%s: %w", seed.ID, f.Code, err)
+			}
+		}
+	}
+	return nil
+}
+
+// 030 — 模板加「本场景补充说明」。
+//
+// 【为什么要开这个口子】以前「字段表」和「整段文本」是二选一:想给某个场景
+// 多交代一句(比如"防夹/开关门是现场测试项,拍到测试动作就判,别一律留空"),
+// 字段表里没有它的位置,只能整段接管自己写整封信 —— 而那样字段表就完全
+// 不参与了,为了加一句话放弃全部结构化配置。
+//
+// 现在两者共存:字段表管「每个字段怎么判」,这一列管「这个场景整体注意什么」,
+// 渲染时拼在总则后面。两个写入口写的是两块内容,不会互相覆盖。
+func (s *SQLiteStore) migTemplateExtraNotes() error {
+	return s.addColumns("report_templates", []assetColumnMigration{
+		{"extra_notes", `TEXT`, `TEXT`},
+	})
+}
+
+// 029 — 补上灭火器「检查记录卡」那条判定依据。
+//
+// 【这是一次真实的漏判】拿三条现场记录跑过对照:内置 .md 判「否」(理由是
+// "记录卡仅更新至 6 月,超期未检"),而字段表这版判「是」—— 因为它判「是」
+// 只要求"有效期未到 + 压力表绿区",判「否」只写了"记录卡长期空缺"。
+// 而现场的情况是记录卡【有】记录、只是停在几个月前:那不叫空缺,于是放过。
+//
+// 迁移 026 把判定规则从旧表搬进模板时,这一条被压缩掉了。搬迁有损,
+// 这就是证据 —— 剩下的模板往后迁时都要逐条对一遍。
+//
+// 【只改没人动过的行】如果有人已经在后台改过这一格,说明他有自己的判断,
+// 迁移不该盖掉 —— 那是"改了又被系统改回去",最难查的一类。
+// 所以只在值还等于当初种下去的那份时才更新。
+func (s *SQLiteStore) migFixExtinguisherRecordCard() error {
+	const oldYes = "年检标签/合格证上「有效期」或「下次检验/维修日期」晚于 current_date,且压力表指针在绿区"
+	const oldNo = "有效期早于 current_date(已过期)、压力表指针在红区(欠压/超压)、或检查记录卡长期空缺"
+	const newYes = "年检标签/合格证上「有效期」或「下次检验/维修日期」晚于 current_date,压力表指针在绿区,且检查记录卡最近一次打勾距 current_date 在 1 个月左右以内"
+	const newNo = "有效期早于 current_date(已过期)、压力表指针在红区(欠压/超压)、检查记录卡长期空缺、或最近一次记录距今已数月(比如仍停留在几个月前那一格)"
+
+	if _, err := s.db.Exec(
+		`UPDATE report_template_fields SET yes_when=? WHERE code='extinguisher_valid' AND yes_when=?`,
+		newYes, oldYes); err != nil {
+		return fmt.Errorf("fix extinguisher yes_when: %w", err)
+	}
+	if _, err := s.db.Exec(
+		`UPDATE report_template_fields SET no_when=? WHERE code='extinguisher_valid' AND no_when=?`,
+		newNo, oldNo); err != nil {
+		return fmt.Errorf("fix extinguisher no_when: %w", err)
+	}
+	return nil
 }
 
 // 028 — 模板加「识别特征」,并把写死在 ai-service 里的那张候选表搬进库。

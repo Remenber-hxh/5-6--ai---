@@ -51,11 +51,16 @@ func TestPromptRendersFromMergedTemplate(t *testing.T) {
 	}
 }
 
-// 从提示词字段表里删掉一行 = 这一项不再让 AI 判。
+// 取消一个字段的判定,AI 就必须真的不再判它。
 //
-// 【只覆盖不清除是个静默 bug】人在界面上删了、保存成功了,而 AI 照旧在判 ——
+// 【交互变了,保证没变】以前字段表只列配过的字段,所以"不让 AI 判"是
+// 把那一行删掉。现在表里列的是模板【全部】字段,取消的方式是把判定模式
+// 清空(界面上那个下拉可以清空)。两种做法在接口上是一回事:
+// 提交的 payload 里没有它、或者它的 mode 是空 —— 判定规则都要被清掉。
+//
+// 【只覆盖不清除是个静默 bug】人在界面上取消了、保存成功了,而 AI 照旧在判 ——
 // 界面和实际行为对不上,谁都看不出来。
-func TestRemovingFieldFromPromptStopsAIJudging(t *testing.T) {
+func TestClearingJudgeModeStopsAIJudging(t *testing.T) {
 	isolateTemplateCache(t)
 	store := NewMemStore()
 	if err := loadReportTemplates(store); err != nil {
@@ -64,27 +69,57 @@ func TestRemovingFieldFromPromptStopsAIJudging(t *testing.T) {
 	srv := &Server{store: store}
 
 	view, _ := promptTemplateOrDraft(store, "elevator_machine_room")
-	before := len(view.Fields)
-	if before < 2 {
-		t.Fatalf("前置条件不成立,只有 %d 个判定字段", before)
+	judgedBefore := len(promptViewOfTemplate(mustTemplate(t, "elevator_machine_room")).Fields)
+	if judgedBefore < 2 {
+		t.Fatalf("前置条件不成立,只有 %d 个已配判定的字段", judgedBefore)
 	}
-	dropped := view.Fields[0].Code
-	view.Fields = view.Fields[1:]
+	// 找一个配过的,把它的模式清空 —— 这就是界面上"不让 AI 判这一项"的动作
+	var dropped string
+	for i, f := range view.Fields {
+		if f.Mode != "" {
+			dropped = f.Code
+			view.Fields[i].Mode = ""
+			view.Fields[i].YesWhen = ""
+			view.Fields[i].NoWhen = ""
+			break
+		}
+	}
+	if dropped == "" {
+		t.Fatal("前置条件不成立:没找到配过判定模式的字段")
+	}
 	if err := srv.applyPromptToTemplate(view); err != nil {
 		t.Fatal(err)
 	}
 
-	after, _ := promptTemplateOrDraft(store, "elevator_machine_room")
-	if len(after.Fields) != before-1 {
-		t.Errorf("删掉的字段还在:期望 %d 项,实际 %d 项", before-1, len(after.Fields))
+	tpl := mustTemplate(t, "elevator_machine_room")
+
+	// 【核心】渲染出去的提示词里不能再有它 —— 那才是 AI 实际收到的东西
+	judged := promptViewOfTemplate(tpl)
+	if len(judged.Fields) != judgedBefore-1 {
+		t.Errorf("判定字段数:期望 %d,实际 %d", judgedBefore-1, len(judged.Fields))
 	}
-	for _, f := range after.Fields {
+	for _, f := range judged.Fields {
 		if f.Code == dropped {
-			t.Errorf("字段 %s 已从提示词里删掉,却还带着判定规则", dropped)
+			t.Errorf("字段 %s 的判定已取消,却还出现在渲染视图里 —— AI 会照旧判它", dropped)
 		}
 	}
+
+	// 它仍留在编辑视图里,只是模式为空 —— 否则人再也没法把它配回来
+	edit := promptEditViewOfTemplate(tpl)
+	var seen bool
+	for _, f := range edit.Fields {
+		if f.Code == dropped {
+			seen = true
+			if f.Mode != "" {
+				t.Errorf("模式该被清空,实际 %q", f.Mode)
+			}
+		}
+	}
+	if !seen {
+		t.Errorf("字段 %s 从编辑视图里消失了 —— 那就再也配不回来了", dropped)
+	}
+
 	// 表单定义不能跟着被删 —— 那是模板页在管的,提示词页无权删表单字段
-	tpl, _ := templateByID("elevator_machine_room")
 	var stillInForm bool
 	for _, f := range tpl.Fields {
 		if f.Code == dropped {
@@ -94,6 +129,15 @@ func TestRemovingFieldFromPromptStopsAIJudging(t *testing.T) {
 	if !stillInForm {
 		t.Errorf("字段 %s 连表单定义一起被删了 —— 提示词页不该动表单", dropped)
 	}
+}
+
+func mustTemplate(t *testing.T, id string) ReportTemplate {
+	t.Helper()
+	tpl, ok := templateByID(id)
+	if !ok {
+		t.Fatalf("模板 %s 不存在", id)
+	}
+	return tpl
 }
 
 func TestRenderElevatorTemplates(t *testing.T) {
@@ -224,5 +268,101 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 		if strings.Contains(title, "HYZX") {
 			t.Errorf("未被答案点名的设备不应出现: %v", s6)
 		}
+	}
+}
+
+// 提示词页的字段表要列出模板里【所有】字段,包括还没配判定规则的。
+//
+// 【原来是个死路】编辑视图和渲染视图共用一份,只收配过 judgeMode 的字段:
+// 字段要配过才出现在表里,而配置的唯一入口就是这张表。于是模板明明有
+// 13 个字段,页面上却说"这个模板还没有字段表",人只能改用整段文本手写 ——
+// 而手写的那份和字段表是两套东西,以后再想回到字段表就更难了。
+func TestPromptEditViewListsUnconfiguredFields(t *testing.T) {
+	tpl := ReportTemplate{
+		ID: "tpl_x", Name: "综合巡检",
+		Fields: []TemplateField{
+			{Code: "configured", Label: "配过的", JudgeMode: ModeVisual, YesWhen: "看着正常"},
+			{Code: "bare", Label: "没配过的"},
+			{Code: "bare2", Label: "也没配过", JudgeMode: "   "}, // 只有空白也算没配
+		},
+	}
+
+	edit := promptEditViewOfTemplate(tpl)
+	if len(edit.Fields) != 3 {
+		t.Fatalf("编辑视图要列出全部 3 个字段,实际 %d —— "+
+			"少列的那些就永远配不上判定规则(配置入口就是这张表)", len(edit.Fields))
+	}
+	byCode := map[string]PromptField{}
+	for _, f := range edit.Fields {
+		byCode[f.Code] = f
+	}
+	if byCode["bare"].Label != "没配过的" {
+		t.Errorf("没配过的字段也要带上中文名,实际 %+v", byCode["bare"])
+	}
+	if byCode["bare"].Mode != "" {
+		t.Errorf("没配过的字段模式应为空(空 = 不让 AI 判),实际 %q", byCode["bare"].Mode)
+	}
+	if byCode["configured"].Mode != ModeVisual {
+		t.Errorf("配过的字段规则要原样带出来,实际 %+v", byCode["configured"])
+	}
+
+	// 【渲染那边不能跟着变】没配 judgeMode 的字段渲染出来是"只有字段名、
+	// 没有判断依据"的一行 —— 模型照跑,结果随机。
+	render := promptViewOfTemplate(tpl)
+	if len(render.Fields) != 1 || render.Fields[0].Code != "configured" {
+		t.Errorf("渲染视图只应包含配过的那 1 个,实际 %d 个:%+v",
+			len(render.Fields), render.Fields)
+	}
+}
+
+// 本场景补充说明:和字段表【共存】,不是二选一。
+//
+// 【它存在的理由】有些话落不进字段表的任何一格,比如"防夹/开关门是现场
+// 测试项,拍到测试动作就判,别一律留空"—— 它是对整份提示词的补充。
+// 没有这个口子的话,想说这句话只能切「整段文本」自己写整封信,
+// 等于为了加一句话放弃全部结构化配置。
+func TestExtraNotesRendersAlongsideFieldTable(t *testing.T) {
+	tpl := ReportTemplate{
+		ID: "tpl_n", Name: "测试模板", Scene: "某机房",
+		ExtraNotes: "防夹/开关门是现场测试项,拍到测试动作就判,别一律留空\n- 表盘反光时先判断能不能读清",
+		Fields: []TemplateField{
+			{Code: "a", Label: "甲项", JudgeMode: ModeVisual, YesWhen: "看着正常"},
+		},
+	}
+	out := renderTemplatePrompt(tpl)
+
+	if !strings.Contains(out, "别一律留空") {
+		t.Errorf("补充说明没进提示词 —— 那这个口子等于没开\n%s", out)
+	}
+	// 【必须在总则之后、字段映射之前】先立通用规矩,再说本场景的例外;
+	// 顺序反了通用那几条会把场景交代盖过去。
+	iRule := strings.Index(out, "## 总则")
+	iNote := strings.Index(out, "别一律留空")
+	iField := strings.Index(out, "## 字段映射")
+	if !(iRule < iNote && iNote < iField) {
+		t.Errorf("补充说明的位置不对:总则=%d 补充=%d 字段映射=%d", iRule, iNote, iField)
+	}
+	// 字段表照常渲染 —— 两者共存,不是谁替代谁
+	if !strings.Contains(out, "甲项") || !strings.Contains(out, "看着正常") {
+		t.Errorf("字段表不见了 —— 补充说明不该顶替字段表\n%s", out)
+	}
+	// 人自己写了 "- " 的行不该出现 "- - "
+	if strings.Contains(out, "- - ") {
+		t.Errorf("行首重复加了 '- ':\n%s", out)
+	}
+}
+
+// 【只写补充说明、一条判定都没配 → 仍然回退内置 .md】
+//
+// 渲染出来会是"有交代、没字段",模型不知道该返回哪些 code,结果全空。
+// 与其发一份注定判不出东西的提示词,不如让它继续用内置那份。
+func TestExtraNotesAloneStillFallsBack(t *testing.T) {
+	tpl := ReportTemplate{
+		ID: "tpl_only_notes", Name: "只有补充说明",
+		ExtraNotes: "这个场景要特别注意反光",
+		Fields:     []TemplateField{{Code: "a", Label: "甲项"}}, // 没有 JudgeMode
+	}
+	if got := renderTemplatePrompt(tpl); got != "" {
+		t.Errorf("一条判定规则都没配时应回退内置 .md(返回空),实际渲染出了 %d 字", len(got))
 	}
 }
