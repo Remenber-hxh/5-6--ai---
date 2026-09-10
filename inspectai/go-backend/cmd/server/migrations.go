@@ -61,6 +61,52 @@ var migrationList = []migration{
 	{32, "zihan_daily_off_raw", (*SQLiteStore).migZihanDailyOffRaw},
 	{33, "backfill_scene_and_photos", (*SQLiteStore).migBackfillSceneAndPhotos},
 	{34, "zihan_energy_follow_builtin_md", (*SQLiteStore).migZihanEnergyFollowBuiltinMD},
+	{35, "field_asset_type", (*SQLiteStore).migFieldAssetType},
+}
+
+// 035 — 字段级的「这一格是哪类设备」。
+//
+// 【要解决的是抄表的错位】一条抄表记录抄四块电表加两块水表,而照片上没有
+// Z1/Z2/Z3/Z4 任何标识 —— 模型只能按上传顺序猜。实测:中间夹一张读不出的,
+// 后面就整体错位一格,读数本身全对、全填错了格子,而且不报错。
+//
+// 模板级的 assetType 在这儿帮不上忙:zihan_energy 的模板类型是「能耗表组」,
+// 台账里根本没有这个实体;台账里有的是「电表 / Z1能耗表」这样一台一台的。
+// 所以设备类型得配到字段上:z1~z4_reading → 电表,两个水表字段 → 水表。
+//
+// 配好之后,确认页每个读数行会带一个设备选择器(选项来自台账同类同项目),
+// 现场发现错位就一格一格点开改。
+//
+// 【只填空的】和 031/033 同一条规矩:谁在后台配过就不动。
+func (s *SQLiteStore) migFieldAssetType() error {
+	if err := s.addColumns("report_template_fields", []assetColumnMigration{
+		{"asset_type", `VARCHAR(128)`, `TEXT`},
+	}); err != nil {
+		return err
+	}
+	// 紫菡能耗抄表:四块电表 + 两块水表。台账里这 6 台都已经建好了
+	// (紫菡雅集/电表/Z1~Z4能耗表、紫菡雅集/水表/生活水表·消防水表)。
+	seed := map[string]map[string]string{
+		"zihan_energy": {
+			"z1_reading":           "电表",
+			"z2_reading":           "电表",
+			"z3_reading":           "电表",
+			"z4_reading":           "电表",
+			"living_water_reading": "水表",
+			"fire_water_reading":   "水表",
+		},
+	}
+	for tplID, byCode := range seed {
+		for code, at := range byCode {
+			if _, err := s.db.Exec(
+				`UPDATE report_template_fields SET asset_type=?
+				 WHERE template_id=? AND code=? AND (asset_type IS NULL OR asset_type='')`,
+				at, tplID, code); err != nil {
+				return fmt.Errorf("035 配 %s.%s 的设备类型: %w", tplID, code, err)
+			}
+		}
+	}
+	return nil
 }
 
 // 034 — 紫菡「能耗抄表」的整段提示词交还给内置 .md。

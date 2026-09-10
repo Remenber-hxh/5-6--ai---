@@ -104,6 +104,19 @@ type TemplateField struct {
 	// SkipWhen 什么情况不返回(留给人工)
 	SkipWhen  string `json:"skipWhen,omitempty"`
 	JudgeNote string `json:"judgeNote,omitempty"`
+
+	// AssetType 这一格的读数是哪一类设备的(台账里的 assetType)。
+	//
+	// 【为什么按字段配,不按模板配】模板级的 assetType 回答的是"这次巡检的是
+	// 哪类对象",一条记录一台设备时够用。抄表不是:一条记录抄四块电表加两块
+	// 水表,模板级的「能耗表组」在台账里根本没有对应实体。
+	//
+	// 【它解决的是"哪个读数属于哪块表"】照片上没有 Z1/Z2/Z3/Z4 任何标识,
+	// 模型只能按上传顺序猜 —— 实测中间夹一张读不出的,后面就整体错位一格,
+	// 而错位不报错。配了这一列,现场能在确认页上一格一格点开改。
+	//
+	// 留空 = 这一格不需要选设备(温度、备注这类)。
+	AssetType string `json:"assetType,omitempty"`
 }
 
 // FieldValue — 字段实例（每条记录里的一项）
@@ -120,6 +133,17 @@ type FieldValue struct {
 	NeedsReview bool     `json:"needsReview"`
 	Reason      string   `json:"reason,omitempty"`
 	Version     int      `json:"version"`
+
+	// AssetName 这个读数是哪台设备的(台账里的设备名)。
+	// AssetOptions 现场能选的设备,由后端按字段的 AssetType 从台账取。
+	//
+	// 【和 Value 分开存】Value 是读数,AssetName 是这读数属于谁。
+	// 塞进同一格的话,要么丢掉读数、要么丢掉归属 —— 而丢的那一半不报错。
+	//
+	// AssetOptions 每次读记录时现算,不落库:台账会增删改,存下来的候选
+	// 过几天就和台账对不上,而界面上看不出来它已经过期了。
+	AssetName    string   `json:"assetName,omitempty"`
+	AssetOptions []string `json:"assetOptions,omitempty"`
 }
 
 // ImageInfo — 上传图片元数据

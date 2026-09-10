@@ -102,14 +102,19 @@ func baseReportTemplates() []ReportTemplate {
 			Featured:  true,
 			HasAI:     true,
 			AIPrompt:  "energy_meter",
+			// 【每个读数带自己的设备类型】模板级的 AssetType 是「能耗表组」,
+			// 台账里没有这个实体 —— 台账里是一台一台的「电表/Z1能耗表」。
+			// 照片上又没有 Z1~Z4 任何标识,模型只能按上传顺序猜,中间夹一张
+			// 读不出的就整体错位一格。配上类型,确认页每行才有设备选择器,
+			// 现场能一格一格点开改。
 			Fields: []TemplateField{
 				textField("site", "巡检地点", true, "ai"),
-				numberField("z1_reading", "Z1 能耗表读数", false, "ai"),
-				numberField("z2_reading", "Z2 能耗表读数", false, "ai"),
-				numberField("z3_reading", "Z3 能耗表读数", false, "ai"),
-				numberField("z4_reading", "Z4 能耗表读数", false, "ai"),
-				numberField("living_water_reading", "生活水表读数", false, "ai"),
-				numberField("fire_water_reading", "消防水表读数", false, "ai"),
+				meterField("z1_reading", "Z1 能耗表读数", "电表"),
+				meterField("z2_reading", "Z2 能耗表读数", "电表"),
+				meterField("z3_reading", "Z3 能耗表读数", "电表"),
+				meterField("z4_reading", "Z4 能耗表读数", "电表"),
+				meterField("living_water_reading", "生活水表读数", "水表"),
+				meterField("fire_water_reading", "消防水表读数", "水表"),
 				textField("note", "备注", false, "ai"),
 			},
 		},
@@ -395,6 +400,17 @@ func textFieldDefault(code, label string, required bool, source, def string) Tem
 
 func numberField(code, label string, required bool, source string) TemplateField {
 	return TemplateField{Code: code, Label: label, Kind: "number", Required: required, Source: source}
+}
+
+// meterField — 抄表读数:数字 + 「这一格是哪台设备的」。
+//
+// assetType 指向台账里的设备类型(电表 / 水表 …),确认页据此给这一行
+// 生成设备选择器。一条记录抄多台表时,这是现场纠正错位的唯一入口 ——
+// 照片上没有表号标识,AI 只能按上传顺序猜,而猜错了不报错。
+func meterField(code, label, assetType string) TemplateField {
+	return TemplateField{
+		Code: code, Label: label, Kind: "number", Source: "ai", AssetType: assetType,
+	}
 }
 
 func choiceField(code, label string, required bool, options []string) TemplateField {

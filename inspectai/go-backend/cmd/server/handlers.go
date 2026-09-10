@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2156,6 +2157,9 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	// 所以这里天然带兜底 —— 新点位第一次巡检时台账还没有同类设备,
 	// 选项为空,巡检员照样能手填。不能为了做成下拉就把新设备挡在门外。
 	s.fillAssetNoOptions(rec)
+	// 抄表这类"一条记录抄多台设备"的:每个读数行带一个设备选择器。
+	// 默认按字段名对上台账那台,错位了现场自己改。
+	s.fillReadingAssetOptions(rec)
 
 	if err := s.store.CreateRecord(rec); err != nil {
 		writeError(w, http.StatusInternalServerError, "create_record_failed", err.Error())
@@ -2271,6 +2275,8 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request, id stri
 	// 十几秒的识别期间多几次查询——几十台设备的量级,不值得为此加缓存;
 	// 真到几千台再说,那时该做的是给 ListAssets 加类型过滤而不是缓存。
 	s.fillAssetNoOptions(out)
+	// 同理:读数行的设备候选也每次现算,台账改了立刻生效。
+	s.fillReadingAssetOptions(out)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -2520,11 +2526,15 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, recordID, code string) {
 	var req struct {
-		Value       string `json:"value"`
-		Version     int    `json:"version"`
-		Action      string `json:"action"`      // confirm / correct / uncertain（缺省按值是否变化推断）
-		DurationMs  int    `json:"durationMs"`  // 该字段停留时长（移动端可选上报）
-		ViewedPhoto bool   `json:"viewedPhoto"` // 是否看过原图（移动端可选上报）
+		// 【Value 必须是指针】不然"只改设备、不动读数"这种请求会走进下面的
+		// default 分支,把 req.Value 的零值 "" 写进去 —— 读数被静默清空,
+		// 而请求返回 200。nil = 这次没提交读数;指向 "" = 人真的要清空。
+		Value       *string `json:"value"`
+		AssetName   *string `json:"assetName"` // 这个读数属于哪台设备(抄表类才有)
+		Version     int     `json:"version"`
+		Action      string  `json:"action"`      // confirm / correct / uncertain（缺省按值是否变化推断）
+		DurationMs  int     `json:"durationMs"`  // 该字段停留时长（移动端可选上报）
+		ViewedPhoto bool    `json:"viewedPhoto"` // 是否看过原图（移动端可选上报）
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -2550,21 +2560,53 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 	originalValue := field.Value
 	confidence := field.Confidence
 
+	// 【改设备归属】抄表一条记录抄多台表,照片上又没有表号标识,AI 只能按
+	// 上传顺序猜 —— 中间夹一张读不出的就整体错位。这一步是现场纠正的入口。
+	//
+	// 只认当前候选里的名字:候选是后端按台账现算的,选择器里也只有这些。
+	// 放行任意字符串的话,一个手滑就在台账里对不上任何一台设备,
+	// 而记录看着是填好的 —— 和 asset_no 要防的是同一件事。
+	originalAsset := field.AssetName
+	if req.AssetName != nil {
+		want := strings.TrimSpace(*req.AssetName)
+		if want != "" {
+			probe := *rec
+			probe.Fields = append([]FieldValue{}, rec.Fields...)
+			s.fillReadingAssetOptions(&probe)
+			pf, _ := fieldByCode(probe.Fields, code)
+			if pf == nil || !slices.Contains(pf.AssetOptions, want) {
+				writeError(w, http.StatusBadRequest, "asset_not_in_options",
+					"这台设备不在候选里，请刷新后重选")
+				return
+			}
+		}
+		field.AssetName = want
+	}
+
 	action := req.Action
 	switch {
 	case action == "uncertain":
 		// 人工无法判定：保留待复核交主管抽查，不改值
 		field.Source = "human-uncertain"
 		field.NeedsReview = true
-	case strings.TrimSpace(req.Value) == strings.TrimSpace(originalValue):
+	case req.Value == nil:
+		// 【只改了设备归属,没动读数】不能当成确认,更不能把值清空。
+		// 归属本身也是人做的判断,照样要留痕,但读数的 source 不变。
+		action = "reassign"
+	case strings.TrimSpace(*req.Value) == strings.TrimSpace(originalValue):
 		field.Source = "human-confirmed"
 		field.NeedsReview = false
 		action = "confirm"
 	default:
-		field.Value = req.Value
+		field.Value = *req.Value
 		field.Source = "human-edited"
 		field.NeedsReview = false
 		action = "correct"
+	}
+	if action == "reassign" && field.AssetName == originalAsset {
+		// 什么都没变的空请求,不必写库也不必留痕
+		writeJSON(w, http.StatusOK, field)
+		return
 	}
 	field.Version++
 	rec.Report = buildDailyPreview(rec)
@@ -2582,13 +2624,20 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 			operator = u.Username
 		}
 	}
+	// 改归属也要留痕:它决定这个读数记到哪台设备名下,和改数值一样重要。
+	// 复用同一条日志,把"从哪台改到哪台"写进值里 —— 不为它新开一张表。
+	logOriginal, logFinal := originalValue, field.Value
+	if action == "reassign" {
+		logOriginal = originalValue + "(" + orNone(originalAsset) + ")"
+		logFinal = field.Value + "(" + orNone(field.AssetName) + ")"
+	}
 	_ = s.store.CreateFieldConfirmLog(&FieldConfirmLog{
 		RecordID:      recordID,
 		FieldKey:      field.Code,
 		FieldLabel:    field.Label,
 		AIValue:       aiValue,
-		OriginalValue: originalValue,
-		FinalValue:    field.Value,
+		OriginalValue: logOriginal,
+		FinalValue:    logFinal,
 		AIConfidence:  confidence,
 		Action:        action,
 		Operator:      operator,

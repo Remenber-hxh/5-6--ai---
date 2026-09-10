@@ -89,7 +89,7 @@ func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 	// 和每次保存后都要跑的路径。
 	fRows, err := s.db.Query(`SELECT template_id, code, label, kind, required,
 		source, options, default_val, manual_only, judge_mode, judge_group,
-		yes_when, no_when, skip_when, judge_note FROM report_template_fields
+		yes_when, no_when, skip_when, judge_note, asset_type FROM report_template_fields
 		ORDER BY template_id ASC, sort_no ASC`)
 	if err != nil {
 		return nil, err
@@ -100,10 +100,10 @@ func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 		var f TemplateField
 		var required, manualOnly int
 		// 同上:判定那几列也是后加的,存量行为 NULL
-		var optionsJSON, judgeMode, judgeGroup, yesWhen, noWhen, skipWhen, judgeNote sql.NullString
+		var optionsJSON, judgeMode, judgeGroup, yesWhen, noWhen, skipWhen, judgeNote, assetType sql.NullString
 		if err := fRows.Scan(&tplID, &f.Code, &f.Label, &f.Kind, &required,
 			&f.Source, &optionsJSON, &f.Default, &manualOnly, &judgeMode,
-			&judgeGroup, &yesWhen, &noWhen, &skipWhen, &judgeNote); err != nil {
+			&judgeGroup, &yesWhen, &noWhen, &skipWhen, &judgeNote, &assetType); err != nil {
 			return nil, err
 		}
 		f.JudgeMode = judgeMode.String
@@ -112,6 +112,7 @@ func (s *SQLiteStore) ListReportTemplates() ([]ReportTemplate, error) {
 		f.NoWhen = noWhen.String
 		f.SkipWhen = skipWhen.String
 		f.JudgeNote = judgeNote.String
+		f.AssetType = assetType.String
 		f.Required = required != 0
 		f.ManualOnly = manualOnly != 0
 		if strings.TrimSpace(optionsJSON.String) != "" {
@@ -179,11 +180,12 @@ func (s *SQLiteStore) UpsertReportTemplate(t ReportTemplate) error {
 		}
 		if _, err := tx.Exec(`INSERT INTO report_template_fields
 			(id,template_id,code,label,kind,required,source,options,default_val,manual_only,sort_no,
-			 judge_mode,judge_group,yes_when,no_when,skip_when,judge_note)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 judge_mode,judge_group,yes_when,no_when,skip_when,judge_note,asset_type)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			t.ID+"__"+f.Code, t.ID, f.Code, f.Label, f.Kind, boolToInt(f.Required),
 			f.Source, optionsJSON, f.Default, boolToInt(f.ManualOnly), i,
-			f.JudgeMode, f.JudgeGroup, f.YesWhen, f.NoWhen, f.SkipWhen, f.JudgeNote); err != nil {
+			f.JudgeMode, f.JudgeGroup, f.YesWhen, f.NoWhen, f.SkipWhen, f.JudgeNote,
+			f.AssetType); err != nil {
 			return fmt.Errorf("insert field %s.%s: %w", t.ID, f.Code, err)
 		}
 	}

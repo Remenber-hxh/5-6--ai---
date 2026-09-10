@@ -1313,6 +1313,51 @@
   font-size: 13px;
 }
 
+/* 抄表行:标签下面挂一个「这个读数是哪台表的」。
+
+   【为什么单起一行,不并排】.fld-label 是固定 104px 的一列,塞进去会把
+   标签挤成两行。而且设备和读数不是一回事 —— 并排摆着,现场会以为
+   这一格要填两个数。
+
+   【为什么要有它】一条抄表记录抄四块电表加两块水表,照片上没有 Z1~Z4
+   任何标识,AI 只能按上传顺序猜。实测中间夹一张读不出的,后面就整体
+   错位一格:读数一个不差,全填错了格子,而且哪儿都不报错。 */
+.fld-meter .fld-label {
+  flex-basis: 132px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.fld-label-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.fld-asset {
+  max-width: 100%;
+}
+/* 比读数低一档:它是这一行的注脚,不该跟主数值抢眼 */
+.fld-asset .dd {
+  min-width: 0;
+  max-width: 100%;
+}
+.fld-asset .dd-trigger {
+  justify-content: flex-start;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ios-gray);
+}
+.fld-asset .dd-arrow {
+  width: 5px;
+  height: 5px;
+}
+/* 选项列表跟着触发器左对齐,别跑到行尾去 */
+.fld-asset .dd-list {
+  left: 0;
+  right: auto;
+  min-width: 132px;
+}
+
 .fld-value {
   flex: 1;
   min-width: 0;

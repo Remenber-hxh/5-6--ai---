@@ -39,6 +39,15 @@ export interface FieldValue {
   needsReview: boolean;
   reason?: string;
   version: number;
+  /**
+   * 这个读数是哪台设备的(抄表类字段才有)。
+   *
+   * 一条抄表记录抄四块电表加两块水表,而照片上没有 Z1~Z4 任何标识 ——
+   * AI 只能按上传顺序猜,中间夹一张读不出的就整体错位一格,而且不报错。
+   * 所以这一行要能点开改。assetOptions 由后端按台账现算,不落库。
+   */
+  assetName?: string;
+  assetOptions?: string[];
 }
 
 export interface ImageInfo {
@@ -176,6 +185,27 @@ export async function patchField(
     {
       method: "PATCH",
       body: JSON.stringify({ value, version, ...opts }),
+    },
+  );
+}
+
+/**
+ * 只改「这个读数属于哪台设备」,不动读数本身。
+ *
+ * 【必须不带 value】后端的 value 是指针:不传 = 这次没提交读数。
+ * 传个空字符串的话会走进"改值"分支,把读数清空 —— 而请求照样返回 200。
+ */
+export async function patchFieldAsset(
+  recordId: string,
+  code: string,
+  assetName: string,
+  version: number,
+): Promise<FieldValue> {
+  return api<FieldValue>(
+    `/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ assetName, version }),
     },
   );
 }

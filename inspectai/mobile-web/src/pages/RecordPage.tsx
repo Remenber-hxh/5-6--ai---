@@ -13,6 +13,7 @@ import {
   getRecord,
   listTemplates,
   patchField,
+  patchFieldAsset,
   startAnalysis,
 } from "@/api/inspection";
 import { usePolling } from "@/hooks/usePolling";
@@ -82,6 +83,17 @@ function FieldRow({
     }
   }
 
+  // 只改设备归属,不动读数 —— 走的是另一个接口(不带 value),
+  // 否则后端会把没提交的读数当成"改成空"。
+  async function commitAsset(next: string) {
+    if (next === (field.assetName || "")) return;
+    try {
+      onSaved(await patchFieldAsset(recordId, field.code, next, field.version));
+    } catch (err) {
+      Toast.show({ content: err instanceof Error ? err.message : "保存失败" });
+    }
+  }
+
   const pill = pillOf(field);
   const pillEl = pill ? (
     <span className={`ai-pill ${pill.cls}`}>{pill.text}</span>
@@ -106,11 +118,38 @@ function FieldRow({
     );
   }
 
+  const hasAssetPicker = Boolean(field.assetOptions?.length);
+  const rowCls = [
+    "fld",
+    field.needsReview ? "fld-warn" : "",
+    hasAssetPicker ? "fld-meter" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className={field.needsReview ? "fld fld-warn" : "fld"}>
+    <div className={rowCls}>
       <div className="fld-label">
-        {field.label}
-        {field.required && <em className="fld-req">*</em>}
+        <span className="fld-label-text">
+          {field.label}
+          {field.required && <em className="fld-req">*</em>}
+        </span>
+        {/* 【这个读数是哪台表的】抄表一条记录抄六台,照片上没有 Z1~Z4 标识,
+            AI 只能按上传顺序猜 —— 中间夹一张读不出的就整体错位一格,
+            读数一个不差、全填错了格子,而且哪儿都不报错。
+
+            放在标签下面单起一行,不跟读数挤在一起:它说明的是"这一格是谁的",
+            和读数不是一回事;并排摆着人会以为要填两个数。 */}
+        {hasAssetPicker ? (
+          <span className="fld-asset">
+            <Picker
+              options={field.assetOptions ?? []}
+              value={field.assetName || ""}
+              placeholder="选设备"
+              onChange={(v) => void commitAsset(v)}
+            />
+          </span>
+        ) : null}
       </div>
       <div className="fld-value">
         {pillEl}
