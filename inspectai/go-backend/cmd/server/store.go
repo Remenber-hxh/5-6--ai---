@@ -55,6 +55,17 @@ type RecordStore interface {
 	// 边界由时间窗口兜着:窗口是 30 天,取回来的量由这段时间的巡检量决定,
 	// 不会因为库里历史多就无限增长。
 	ListRecordsSince(tenantID string, since time.Time) ([]*Record, error)
+	// ListSubmittedByTemplate 某个模板【已提交】的记录,最新在前。
+	//
+	// 【给抄表读数找基准用】累计读数只能往上走,拿上一次的值一比就知道这次
+	// 是不是读错了数量级 —— 这是唯一不用额外配置就能识破"小数点丢了"的办法。
+	//
+	// 【必须在 SQL 里按模板筛,而且只要已提交的】理由和 ListDraftsByOwner
+	// 那条一样:先取最新 N 条再在内存里挑本模板的,抄表这种一天一条的场景
+	// 会被别的模板挤出窗口,结果是"有历史却找不到基准",而且不报错。
+	// 草稿要排除 —— 草稿里存着没核对过的 AI 原始值,拿它当基准等于用一个
+	// 可能本身就错的数去校验下一个。
+	ListSubmittedByTemplate(tenantID, templateID string, limit int) ([]*Record, error)
 	// CountSnapshotsByAsset 每台设备有多少条巡检快照,一次查全租户。
 	//
 	// 【为什么要"现算"而不是读 assets.inspection_count】那一列是个计数器:
@@ -450,6 +461,25 @@ func (s *MemStore) ListRecords(tenantID string, limit int) ([]*Record, error) {
 	for _, r := range s.records {
 		if r.TenantID != tenantID {
 			continue // 租户隔离
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *MemStore) ListSubmittedByTemplate(tenantID, templateID string, limit int) ([]*Record, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Record, 0, 8)
+	for _, r := range s.records {
+		if r.TenantID != tenantID || r.TemplateID != templateID || !r.Submitted {
+			continue
 		}
 		out = append(out, r)
 	}
@@ -1577,6 +1607,30 @@ func (s *SQLiteStore) ListRecords(tenantID string, limit int) ([]*Record, error)
 	rows, err := s.db.Query(
 		`SELECT `+recordSelectCols+` FROM records WHERE tenant_id=? ORDER BY created_at DESC LIMIT ?`,
 		tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListSubmittedByTemplate(tenantID, templateID string, limit int) ([]*Record, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(
+		`SELECT `+recordSelectCols+` FROM records
+		 WHERE tenant_id=? AND template_id=? AND submitted=1
+		 ORDER BY created_at DESC LIMIT ?`,
+		tenantID, templateID, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -1472,6 +1472,23 @@
 .arco-image-preview .preview-image-wrap-container {
   position: relative;
 }
+/* 竖图在宽窗口下被切掉一半 —— 把「长图模式」那一档拉回整张可见。
+
+   组件默认 fit=preview-y:图片宽高比 < 视口宽高比 时,它给 <img> 打上
+   preview-overflow-y 并写死 inline 的 width=视口宽、height=按比例撑开,
+   意思是"这是张长图,你上下滑着看"。手机竖屏永远命中不了这个分支;
+   电脑浏览器一开(窗口比 >1),509x899 的巡检照就被撑成 1075x1899,
+   屏幕只有 900,上下各切一半 —— 而要看的表盘读数恰恰在底部被切走,
+   界面上还没有任何"能往下滑"的提示。
+
+   巡检照片是相机拍的 3:4 / 9:16,不存在长截图,这个模式对我们没有价值。
+   inline 样式只能用 !important 压过去。看细节靠双指缩放和双击放大,
+   那两个走的是 transform,不受这里影响。 */
+.arco-image-preview img.image-content.preview-overflow-y {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
 /* 工具层整层不吃事件:图上单击关闭、拖动翻页都要能穿过去。 */
 .viewer-ui {
   position: absolute;

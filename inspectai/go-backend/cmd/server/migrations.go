@@ -60,6 +60,56 @@ var migrationList = []migration{
 	{31, "backfill_scene_judge_rules", (*SQLiteStore).migBackfillSceneJudgeRules},
 	{32, "zihan_daily_off_raw", (*SQLiteStore).migZihanDailyOffRaw},
 	{33, "backfill_scene_and_photos", (*SQLiteStore).migBackfillSceneAndPhotos},
+	{34, "zihan_energy_follow_builtin_md", (*SQLiteStore).migZihanEnergyFollowBuiltinMD},
+}
+
+// 034 — 紫菡「能耗抄表」的整段提示词交还给内置 .md。
+//
+// 【问题不是它用整段文本,是同一份正文存了两处】库里 zihan_energy 的
+// raw_text 和 ai-service/prompts/energy_meter.md 逐字节一模一样。raw 模式下
+// 库里那份赢,于是改 .md 完全不生效 —— 而两边都不报错,现象是
+// "我明明改了提示词,AI 还是老样子"。
+//
+// 【清空 raw_text = 恢复内置】renderPromptViaStore 的注释写着这条语义:
+// raw 模式正文为空 → 返回 false → 后端不下发 promptText → ai-service 自己读
+// .md(handlers.go:2431)。所以清掉之后 .md 就是唯一事实来源,
+// 以后改提示词只改文件,不用再写迁移、也不会有两份对不上。
+//
+// 【为什么不是切成字段表】那份 .md 里"先判表型、上下两行不是小数点、
+// 水表只取黑色字轮整数位"这些,字段表的判定格子放不下,现在也追不上。
+//
+// 守卫同 032:只有 raw_text 还是内置那份原样(哈希相符)时才清 ——
+// 谁在后台写过自己的正文,那是他的,不许动。
+func (s *SQLiteStore) migZihanEnergyFollowBuiltinMD() error {
+	const id = "zihan_energy"
+	// energy_meter.md 原样存进库的那份的 sha256(本地 MySQL 实测 9185 字节)
+	const builtinRawSHA = "a756f5bb2318452f336030ad053822b45bc5fc6421f5a5d38b9f988baf91e712"
+
+	var mode, raw string
+	err := s.db.QueryRow(`SELECT prompt_mode, COALESCE(raw_text,'') FROM report_templates WHERE id=?`, id).
+		Scan(&mode, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // 这个库里没有紫菡的模板
+	}
+	if err != nil {
+		return fmt.Errorf("034 读 %s: %w", id, err)
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil // 已经是空的,本来就跟着 .md 走
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256([]byte(raw))); got != builtinRawSHA {
+		log.Printf("迁移 034 跳过:%s 的整段提示词已被改过(sha256=%s),库里那份继续生效", id, got)
+		return nil
+	}
+	// 【保持 prompt_mode=raw,只清正文】raw + 空正文才是"用回内置"这个状态;
+	// 把 mode 也清掉的话会掉进字段表渲染,那是另一份提示词。
+	if _, err := s.db.Exec(
+		`UPDATE report_templates SET prompt_mode=?, raw_text='' WHERE id=?`,
+		PromptModeRaw, id); err != nil {
+		return fmt.Errorf("034 清 %s 的正文: %w", id, err)
+	}
+	log.Printf("迁移 034:%s 的提示词交还给内置 energy_meter.md(库里那份和它一字不差,清掉避免两份并存)", id)
+	return nil
 }
 
 // 033 — 把「场景一句话」和「期望照片」回填进库。

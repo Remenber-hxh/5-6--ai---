@@ -62,6 +62,18 @@ export function ImagePreview({
       // 关掉自带的圆点指示器:它落在左下角,正好压住底部工具栏;
       // 而且十几张照片摊成一排圆点也数不清,不如直接写「3 / 13」。
       showIndicator={false}
+      // fit 保持默认的 preview-y。
+      //
+      // 【为什么不在这里改成 contain】组件的 fit 只声明了 preview-x/preview-y;
+      // 传 contain 虽然运行时能用,但 isPreview 会变 false(image/index.js:74),
+      // 外层就拿不到 .preview 类 —— 而透明底、去边框都挂在那个类上,
+      // 结果是图片后面露出一块灰底。
+      //
+      // preview-y 的真实行为(image/index.js:145):图片宽高比 < 视口宽高比 时,
+      // 宽度铺满、高度按比例撑开、纵向溢出可滑 —— 那是给长截图准备的模式。
+      // 手机竖屏窗口比 ≈0.46、竖图 ≈0.57,走的是 contain 分支,一切正常;
+      // 在电脑浏览器打开(窗口比 >1)才会掉进长图模式,上下各切掉一半。
+      // 只有那一档要纠正,见 global.css 的 img.preview-overflow-y。
       extra={extra}
     />
   );

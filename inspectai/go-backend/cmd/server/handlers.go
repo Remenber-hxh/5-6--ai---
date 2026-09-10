@@ -2474,6 +2474,16 @@ func (s *Server) runAnalysis(tenantID, taskID, recordID string) {
 
 	// 成功路径：把识别字段写回 fields
 	applyRecognizedFields(rec, resp.RecognizedFields)
+	// 【抄表读数再过一道量级检查】提示词里写着"看不到小数点 confidence ≤0.65",
+	// 模型照样给过 0.92 —— 规则给了不等于会执行。拿上一次的读数一比就现形,
+	// 只降级不改值,理由写进字段让确认页看得见。必须在 buildDailyPreview 之前:
+	// 预览是按字段值拼的,顺序反了预览里还是那个没标注的值。
+	if issues := flagImplausibleReadings(s.store, rec); len(issues) > 0 {
+		for _, is := range issues {
+			log.Printf("读数存疑 record=%s %s(%s)=%s: %s",
+				rec.ID, is.Label, is.Code, trimNum(is.Value), is.Reason)
+		}
+	}
 	rec.RecognitionStatus = "recognized"
 	rec.ManualRequired = false
 	rec.RetakeReason = ""
