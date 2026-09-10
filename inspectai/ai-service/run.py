@@ -691,6 +691,28 @@ def collect_crop_targets(payload: dict, parsed: dict, fields: list) -> list:
     return todo
 
 
+def unverified_readings(parsed: dict, fields: list, checked_codes: set) -> list:
+    """填了值、但没能进复核的读数字段(中文名)。"""
+    label_of = {}
+    number_codes = set()
+    for f in fields:
+        code = str(f.get("code", "")).strip()
+        if not code:
+            continue
+        label_of[code] = str(f.get("label", "")).strip() or code
+        if str(f.get("kind", "")).strip() == "number":
+            number_codes.add(code)
+    out = []
+    for item in parsed.get("recognizedFields") or []:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code", "")).strip()
+        if (code in number_codes and code not in checked_codes
+                and str(item.get("value", "")).strip()):
+            out.append(label_of.get(code, code))
+    return out
+
+
 def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenario: str = "") -> dict:
     """对第一遍读出的 number 字段做裁剪复核。任何一步出问题都原样返回 parsed。"""
     if os.environ.get("SECOND_LOOK", "1") != "1":
@@ -698,6 +720,17 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
     if not (parsed.get("recognizedFields") or []):
         return parsed
     todo = collect_crop_targets(payload, parsed, fields)
+    # 【没被复核到的读数要说出来,不能静默放行】
+    #
+    # 能不能复核取决于模型有没有给出合法的 bbox。给不出的话,那个读数
+    # 一次复核都没经过就进了记录 —— 而界面上和经过复核的长得一模一样。
+    # 这种"保护看着在、其实没生效"的状态,比没有保护更危险。
+    unchecked = unverified_readings(parsed, fields, {c for c, _, _ in todo})
+    if unchecked:
+        warns = parsed.setdefault("warnings", [])
+        if isinstance(warns, list):
+            warns.append("未经放大复核，请对照照片核实：" + "、".join(unchecked[:3]))
+        print(f"[second-look] 有 {len(unchecked)} 项没框、未复核: {unchecked}", file=sys.stderr)
     if not todo:
         return parsed
 

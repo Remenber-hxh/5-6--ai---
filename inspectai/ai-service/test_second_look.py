@@ -12,6 +12,7 @@ from run import (
     _valid_bbox,
     collect_crop_targets,
     crop_reading_area,
+    unverified_readings,
 )
 
 
@@ -144,6 +145,53 @@ class TestCollectCropTargets(unittest.TestCase):
     def test_skips_when_template_has_no_number_fields(self):
         only_choice = [{"code": "room_clean", "kind": "choice"}]
         self.assertEqual(collect_crop_targets(self.payload, self._parsed(), only_choice), [])
+
+
+class TestUnverifiedReadings(unittest.TestCase):
+    """没被复核到的读数必须报出来。
+
+    【为什么这条重要】能不能复核取决于模型给不给 bbox。给不出的话那个读数
+    一次复核都没过就进了记录,而界面上和复核过的长得一模一样 ——
+    "保护看着在、其实没生效",比没有保护更危险。
+    """
+
+    fields = [
+        {"code": "z1_reading", "label": "Z1 能耗表读数", "kind": "number"},
+        {"code": "z2_reading", "label": "Z2 能耗表读数", "kind": "number"},
+        {"code": "room_clean", "label": "机房卫生", "kind": "choice"},
+        {"code": "note", "label": "备注", "kind": "text"},
+    ]
+
+    def test_reports_the_ones_that_missed_the_check(self):
+        parsed = {"recognizedFields": [
+            {"code": "z1_reading", "value": "60197.924"},
+            {"code": "z2_reading", "value": "84363.520"},
+        ]}
+        got = unverified_readings(parsed, self.fields, {"z1_reading"})
+        self.assertEqual(got, ["Z2 能耗表读数"])
+
+    def test_silent_when_everything_was_checked(self):
+        parsed = {"recognizedFields": [{"code": "z1_reading", "value": "1"}]}
+        self.assertEqual(unverified_readings(parsed, self.fields, {"z1_reading"}), [])
+
+    def test_ignores_non_number_fields(self):
+        # 选项题和文本本来就不做读数复核,别报出来当噪音
+        parsed = {"recognizedFields": [
+            {"code": "room_clean", "value": "正常"},
+            {"code": "note", "value": "一切正常"},
+        ]}
+        self.assertEqual(unverified_readings(parsed, self.fields, set()), [])
+
+    def test_ignores_empty_values(self):
+        # 本来就没填的不算"未复核"
+        parsed = {"recognizedFields": [{"code": "z1_reading", "value": ""}]}
+        self.assertEqual(unverified_readings(parsed, self.fields, set()), [])
+
+    def test_uses_chinese_label_not_code(self):
+        parsed = {"recognizedFields": [{"code": "z1_reading", "value": "1"}]}
+        got = unverified_readings(parsed, self.fields, set())
+        self.assertEqual(got, ["Z1 能耗表读数"])
+        self.assertNotIn("z1_reading", got)
 
 
 if __name__ == "__main__":
