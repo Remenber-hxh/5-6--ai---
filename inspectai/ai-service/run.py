@@ -532,6 +532,253 @@ MANAGEMENT_DAILY_SYSTEM = """你是「智巡」管理 AI 的日报撰写助手�
 """
 
 
+# ===== 读数复核:把读数区裁出来放大,再读一遍 =====
+#
+# 【为什么要有这一遍】拿 2026-09-10 那条紫菡记录的真照片实测过:
+# 生活水表真值 1992,整张图送进去连着三轮都读成 1998,而且每次都给 0.95 ——
+# 不是"有时候错",是稳定地错、还稳定地自信。这种错没法靠重试或看置信度发现。
+# 同一块表裁出字轮窗口放大后再问,三轮全对。
+#
+# 原因很直白:1200x1600 的现场照里,水表字轮窗口只占 110x30 像素,
+# 黑底白字还压过一道 JPEG。模型看的和人眯着眼看是一样的。
+#
+# 【为什么不是一开始就裁】裁之前得先知道往哪儿裁。所以第一遍照常看整图,
+# 顺便让它报出读数区的框(_common.md 里那条规则),第二遍只看框里那一小块。
+# 两次调用,第二次送的图很小,token 反而比第一次省。
+#
+# 【两次不一致时采信放大那次】它看到的细节更多 —— 这是实测结论,不是猜的。
+# 但一定同时压低 confidence 触发人工复核:采信不等于确信。
+
+SECOND_LOOK_SYSTEM = """你是工程表计读数的复核员。
+
+输入是【已经裁剪并放大过的读数区特写】,每张图对应一个字段。
+你的唯一任务:把每张图里的**完整读数**读出来。
+
+严格输出 JSON,不要 markdown、不要解释:
+
+{"readings": [{"code": "字段编码", "value": "读到的数字", "confidence": 0.0, "note": "不超过10字"}]}
+
+规则:
+1. **只读你确实看清的**。看不清就不要放进 readings —— 漏一个比编一个好。
+2. **读的是整个读数,不是其中一行**。LCD 常把一个读数分成上下两行显示,
+   两行合起来才是一个数;只读其中一行就是错的。下面的场景规则会说清怎么合。
+3. **不要凭空插入小数点**。小数点只能来自屏幕上真实可见的小数点,
+   或来自下面场景规则里明确给出的固定表型格式;换行位置不是小数点。
+4. **机械水表黑色字轮窗口里的数字全是整数位**,包括最后一位;红色字轮才是小数,忽略。
+   前导 0 去掉(000722 读作 722)。
+5. 不要输出单位、设备编号、二维码、型号、时间戳。
+6. confidence 按字符可读性给:笔画完整清晰 >0.9;有反光/毛边/可能混淆(B与8、6与8、2与8)给 0.6-0.85。
+
+**这一遍不需要你判断哪张图是哪块表** —— 每张图对应哪个字段,上面已经写明了。
+你只管把数字读准、读全。
+"""
+
+# 【场景规则必须跟着进第二遍】第一遍之所以能把 6019/7924 读成 60197.924,
+# 靠的就是场景 prompt 里那条"5 位整数 + 3 位小数"。第二遍只给一句
+# "把数字读出来"的话,模型看着放得很清楚的屏,照样只读下半行 7924 ——
+# 实测就是这么翻车的:裁剪把水表从 1998 救成 1992,却把三块电表全读成了下半行。
+SECOND_LOOK_SCENE_HEADER = "\n\n## 本场景的读数规则(和第一遍同一份,必须遵守)\n\n"
+
+
+def _valid_bbox(box) -> bool:
+    if not isinstance(box, (list, tuple)) or len(box) != 4:
+        return False
+    try:
+        x0, y0, x1, y1 = (float(v) for v in box)
+    except (TypeError, ValueError):
+        return False
+    if not all(-0.05 <= v <= 1.05 for v in (x0, y0, x1, y1)):
+        return False
+    # 太小(基本是个点)或几乎整张图(等于没裁)都没有复核价值
+    w, h = abs(x1 - x0), abs(y1 - y0)
+    return 0.005 < w <= 1.0 and 0.005 < h <= 1.0 and w * h < 0.85
+
+
+def crop_reading_area(path: str, box, pad: float = 0.25, target_edge: int = 1400):
+    """按归一化 bbox 裁出读数区并放大。失败一律返回 None —— 复核是加分项,不能变成新的故障点。"""
+    try:
+        from io import BytesIO
+
+        from PIL import Image  # type: ignore[import-not-found]
+
+        img = Image.open(path)
+        img = img.convert("RGB")
+        W, H = img.size
+        x0, y0, x1, y1 = (float(v) for v in box)
+        x0, x1 = min(x0, x1), max(x0, x1)
+        y0, y1 = min(y0, y1), max(y0, y1)
+        # 【往外放一圈】模型给的框常常贴着数字边缘,裁太紧会把首尾字符切掉半个,
+        # 那样放大出来反而更难读。宁可多带一点背景。
+        bw, bh = x1 - x0, y1 - y0
+        x0 -= bw * pad
+        x1 += bw * pad
+        y0 -= bh * pad
+        y1 += bh * pad
+        px0 = max(0, int(x0 * W))
+        py0 = max(0, int(y0 * H))
+        px1 = min(W, int(x1 * W))
+        py1 = min(H, int(y1 * H))
+        if px1 - px0 < 8 or py1 - py0 < 8:
+            return None
+        crop = img.crop((px0, py0, px1, py1))
+        # 放大到长边 target_edge。只放大不缩小 —— 本来就大的框不用动。
+        longest = max(crop.size)
+        if longest < target_edge:
+            ratio = target_edge / longest
+            crop = crop.resize(
+                (max(1, int(crop.size[0] * ratio)), max(1, int(crop.size[1] * ratio))),
+                Image.LANCZOS,
+            )
+        out = BytesIO()
+        crop.save(out, format="JPEG", quality=92, optimize=True)
+        # 【裁歪了是这套东西最难查的失效方式】框偏一点,放大后送进去的就是
+        # 另一块数字,而模型照样自信地读出来 —— 结果比不复核还糟。
+        # 出问题时把裁剪结果落盘,才能一眼看出是框的问题还是读的问题。
+        dump = os.environ.get("SECOND_LOOK_DUMP_DIR", "")
+        if dump:
+            try:
+                os.makedirs(dump, exist_ok=True)
+                name = f"crop_{os.path.basename(path)[:24]}_{px0}_{py0}.jpg"
+                with open(os.path.join(dump, name), "wb") as fh:
+                    fh.write(out.getvalue())
+            except Exception:
+                pass  # 存不下不影响复核
+        return out.getvalue()
+    except ImportError:
+        return None
+    except Exception as exc:
+        print(f"[second-look] crop failed: {exc}", file=sys.stderr)
+        return None
+
+
+def _same_number(a: str, b: str) -> bool:
+    try:
+        return abs(float(a) - float(b)) < 1e-9
+    except (TypeError, ValueError):
+        return a.strip() == b.strip()
+
+
+def collect_crop_targets(payload: dict, parsed: dict, fields: list) -> list:
+    """挑出值得复核的读数:kind=number、给了合法 bbox、图也找得到。返回 [(code, 第一遍的值, jpeg)]"""
+    number_codes = {
+        str(f.get("code", "")).strip()
+        for f in fields
+        if str(f.get("kind", "")).strip() == "number"
+    }
+    number_codes.discard("")
+    if not number_codes:
+        return []
+    images = payload.get("images") or []
+    todo = []
+    for item in parsed.get("recognizedFields") or []:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code", "")).strip()
+        if code not in number_codes or not _valid_bbox(item.get("bbox")):
+            continue
+        try:
+            idx = int(item.get("imageIndex", 0))
+        except (TypeError, ValueError):
+            continue
+        if not (1 <= idx <= len(images)):
+            continue
+        path = (images[idx - 1] or {}).get("path") or ""
+        if not path or not os.path.exists(path):
+            continue
+        blob = crop_reading_area(path, item.get("bbox"))
+        if blob:
+            todo.append((code, str(item.get("value", "")).strip(), blob))
+    return todo
+
+
+def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenario: str = "") -> dict:
+    """对第一遍读出的 number 字段做裁剪复核。任何一步出问题都原样返回 parsed。"""
+    if os.environ.get("SECOND_LOOK", "1") != "1":
+        return parsed
+    if not (parsed.get("recognizedFields") or []):
+        return parsed
+    todo = collect_crop_targets(payload, parsed, fields)
+    if not todo:
+        return parsed
+
+    lines = [f"第 {i + 1} 张 → 字段 {code}" for i, (code, _, _) in enumerate(todo)]
+    content: list = [{
+        "type": "text",
+        "text": "下面每张图都是一个读数区的放大特写,按顺序对应:\n"
+                + "\n".join(lines)
+                + "\n\n把每张图里的数字读出来。",
+    }]
+    for _, _, blob in todo:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(blob).decode("ascii")},
+        })
+
+    system = SECOND_LOOK_SYSTEM
+    if scenario.strip():
+        system += SECOND_LOOK_SCENE_HEADER + scenario.strip()
+    model_name = os.environ.get("QWEN_VISION_MODEL", "qwen-vl-plus")
+    extra = {"enable_thinking": False} if model_name.lower().startswith("qwen3") else None
+    try:
+        raw = call_qwen_chat(
+            model=model_name,
+            system=system,
+            user_content=content,
+            api_key=api_key,
+            timeout=int(os.environ.get("QWEN_VISION_TIMEOUT", "90") or "90"),
+            extra_body=extra,
+        )
+        checked = parse_json_response(raw)
+    except Exception as exc:
+        # 【复核挂了不影响识别】它是加分项,不是业务前提。
+        print(f"[second-look] failed, keeping first pass: {exc}", file=sys.stderr)
+        return parsed
+
+    by_code = {}
+    for r in (checked.get("readings") or []):
+        if isinstance(r, dict) and str(r.get("code", "")).strip():
+            by_code[str(r.get("code")).strip()] = r
+
+    first_values = {code: val for code, val, _ in todo}
+    changed = 0
+    for item in parsed.get("recognizedFields") or []:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code", "")).strip()
+        if code not in first_values:
+            continue
+        r = by_code.get(code)
+        if not r:
+            # 放大后反而读不出:第一遍那个值就更可疑了,压一档留人工
+            try:
+                conf = float(item.get("confidence", 0.7) or 0.7)
+            except (TypeError, ValueError):
+                conf = 0.7
+            item["confidence"] = min(conf, 0.6)
+            item["reason"] = (str(item.get("reason", "")) + ";放大后读不出,请人工核对")[:80]
+            continue
+        new_val = str(r.get("value", "")).strip()
+        if not new_val:
+            continue
+        old_val = first_values[code]
+        if _same_number(new_val, old_val):
+            item["reason"] = (str(item.get("reason", "")) + ";放大复核一致")[:80]
+            continue
+        # 【不一致时采信放大那次】实测:整图稳定读错、裁剪稳定读对。
+        # 但一定压低置信度 —— 采信不等于确信,这一格必须人过一眼。
+        item["value"] = new_val
+        item["confidence"] = 0.55
+        item["reason"] = f"整图读作{old_val},放大后读作{new_val},已采用放大结果,请人工确认"[:80]
+        changed += 1
+
+    if changed:
+        warnings = parsed.setdefault("warnings", [])
+        if isinstance(warnings, list) and len(warnings) < 4:
+            warnings.append(f"{changed} 项读数经放大复核后已修正")
+    print(f"[second-look] 复核 {len(todo)} 项,修正 {changed} 项", file=sys.stderr)
+    return parsed
+
+
 # ===== /analyze =====
 
 
@@ -607,6 +854,11 @@ def analyze(payload: dict) -> dict:
     except Exception as exc:
         print(f"[analyze] parse failed: {exc}\nraw: {raw[:300]}", file=sys.stderr)
         return retake_required("AI 输出无法解析为 JSON，请重拍", payload)
+
+    # 读数区裁出来放大再核一遍。整个过程包在 second_look 里 fail-safe:
+    # 裁不出来、模型没回、解析失败,一律原样返回第一遍的结果。
+    # scenario 必须传进去 —— 第二遍不带场景规则会只读 LCD 的其中一行。
+    parsed = second_look(payload, parsed, fields, api_key, scenario)
 
     return build_analyze_response(payload, parsed, model_name, int((time.time() - started) * 1000))
 
