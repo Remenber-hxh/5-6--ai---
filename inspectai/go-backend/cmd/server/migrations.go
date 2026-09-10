@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -54,6 +58,108 @@ var migrationList = []migration{
 	{29, "fix_extinguisher_record_card", (*SQLiteStore).migFixExtinguisherRecordCard},
 	{30, "template_extra_notes", (*SQLiteStore).migTemplateExtraNotes},
 	{31, "backfill_scene_judge_rules", (*SQLiteStore).migBackfillSceneJudgeRules},
+	{32, "zihan_daily_off_raw", (*SQLiteStore).migZihanDailyOffRaw},
+	{33, "backfill_scene_and_photos", (*SQLiteStore).migBackfillSceneAndPhotos},
+}
+
+// 033 — 把「场景一句话」和「期望照片」回填进库。
+//
+// 【漏的是这两列】迁移 031 补了判定规则和补充说明,但 scene / expected_photos
+// 没管 —— 十个模板里八个这两列都是空的。渲染出来的后果是提示词头部少了
+// "这次要去哪、该拍到什么",只剩一行光秃秃的模板名:模型不知道现场应该
+// 出现哪几张照片,也就无从判断"该拍的没拍到"。
+//
+// 而这个缺口在界面上看不出来 —— 提示词照渲染、AI 照返回,只是质量低一档。
+//
+// 【和 031 同一条规矩:只填空的】谁在后台写过自己的场景描述,那是他的,
+// 迁移不许盖。
+func (s *SQLiteStore) migBackfillSceneAndPhotos() error {
+	for _, seed := range promptTemplateSeeds() {
+		if scene := strings.TrimSpace(seed.Scene); scene != "" {
+			if _, err := s.db.Exec(
+				`UPDATE report_templates SET scene=?
+				 WHERE id=? AND (scene IS NULL OR scene='')`,
+				scene, seed.ID); err != nil {
+				return fmt.Errorf("backfill scene %s: %w", seed.ID, err)
+			}
+		}
+		if len(seed.ExpectedPhotos) == 0 {
+			continue
+		}
+		photos, err := json.Marshal(seed.ExpectedPhotos)
+		if err != nil {
+			return fmt.Errorf("marshal expected_photos %s: %w", seed.ID, err)
+		}
+		// 空 JSON 数组 "[]" 也算没填 —— 建模板时写进去的默认值就是它,
+		// 只判 NULL/'' 的话这批行会被当成"人填过",于是永远补不上。
+		if _, err := s.db.Exec(
+			`UPDATE report_templates SET expected_photos=?
+			 WHERE id=? AND (expected_photos IS NULL OR expected_photos='' OR expected_photos='[]')`,
+			string(photos), seed.ID); err != nil {
+			return fmt.Errorf("backfill expected_photos %s: %w", seed.ID, err)
+		}
+	}
+	return nil
+}
+
+// 032 — 紫菡「综合巡检」从整段文本切回字段表。
+//
+// 【为什么它一直在用整段文本】库里 zihan_daily 的 prompt_mode='raw',
+// raw_text 就是 ai-service/prompts/screen_reading.md 逐字节那一份。
+// renderTemplatePrompt 第一行遇到 raw 就直接返回正文 —— 迁移 031 给它
+// 补的 7 条判定规则一个字都没进过提示词。
+//
+// 【切过去解决的是什么】那份 .md 只讲强电井除湿机和热水机房控制柜,
+// 而 zihan_daily 有 4 个【必填】的分区检查字段(配电箱、配电箱内部、
+// 弱电机房、消防泵房)。模型根本不知道有这几个 code,永远不会返回,
+// 于是现场每天手点 4 下 —— 而界面上只表现为"AI 没填"。
+//
+// 【切过去会丢什么,以及怎么补】.md 里那些"这块屏长什么样、什么时候
+// 该重拍"的话字段表放不下,所以先把它们搬进 extra_notes(见
+// zihanDailyNotes),再切模式。顺序不能反 —— 反了中间那一刻就是
+// "4 个字段能判了,3 个读数项读糊了"。
+//
+// 【两道守卫,都是"人改过就不动"】
+//   - extra_notes 只在还等于 031 种下去那份时才升级
+//   - prompt_mode 只在 raw_text 还是内置 .md 原样(哈希相符)时才切
+//
+// 谁在后台改过自己那份,这条迁移就整个跳过并记一行日志 ——
+// 被系统改回去是最难查的一类故障。
+func (s *SQLiteStore) migZihanDailyOffRaw() error {
+	const id = "zihan_daily"
+	// screen_reading.md 原样存进库的那份的 sha256(本地 MySQL 实测 4298 字节)
+	const builtinRawSHA = "0bd59630711aefcaac3fcaf6e4715d1837a052c7d51e376dc29799a8f37c66ab"
+
+	if _, err := s.db.Exec(
+		`UPDATE report_templates SET extra_notes=? WHERE id=? AND extra_notes=?`,
+		zihanDailyNotes, id, zihanDailyNotesV1); err != nil {
+		return fmt.Errorf("032 升级 extra_notes: %w", err)
+	}
+
+	var mode, raw string
+	err := s.db.QueryRow(`SELECT prompt_mode, COALESCE(raw_text,'') FROM report_templates WHERE id=?`, id).
+		Scan(&mode, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // 这个库里没有紫菡的模板,不关它的事
+	}
+	if err != nil {
+		return fmt.Errorf("032 读 %s: %w", id, err)
+	}
+	if !strings.EqualFold(mode, PromptModeRaw) {
+		return nil // 已经是字段表了
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256([]byte(raw))); got != builtinRawSHA {
+		log.Printf("迁移 032 跳过:%s 的整段提示词已被改过(sha256=%s),保持 raw 不动", id, got)
+		return nil
+	}
+	// 【只改 prompt_mode,raw_text 原样留着】留着才退得回去:在后台把维护
+	// 方式切回「整段文本」,原来那份还在编辑器里。删了就只剩重新粘一遍。
+	if _, err := s.db.Exec(
+		`UPDATE report_templates SET prompt_mode=? WHERE id=?`, PromptModeStructured, id); err != nil {
+		return fmt.Errorf("032 切 %s 到字段表: %w", id, err)
+	}
+	log.Printf("迁移 032:%s 已从整段文本切回字段表(原文保留在 raw_text,可在后台切回)", id)
+	return nil
 }
 
 // 027 — 把「提交规则」的覆盖层并进模板底表。

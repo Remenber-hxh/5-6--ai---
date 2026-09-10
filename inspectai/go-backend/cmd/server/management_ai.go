@@ -1937,6 +1937,7 @@ func (s *Server) buildChatSources(question, reply string, attention []*Attention
 	// 1. 标准模块:问句命中某检查项关键词 → 该字段判定标准(+ 权威来源)
 	tpls, _ := s.store.ListPromptTemplates()
 	for _, t := range tpls {
+		vocab := vocabularyOf(t.Fields) // 判定话术里的"通过/不通过"按这个模板自己的选项说
 		for _, f := range t.Fields {
 			if seen["s:"+f.Code] {
 				continue
@@ -1945,7 +1946,7 @@ func (s *Server) buildChatSources(question, reply string, attention []*Attention
 				seen["s:"+f.Code] = true
 				detail := fieldPlain[f.Code] // 主管看大白话
 				if detail == "" {
-					detail = renderFieldCriteria(f) // 没写大白话的回退到判定标准
+					detail = renderFieldCriteria(f, vocab) // 没写大白话的回退到判定标准
 				}
 				out = append(out, map[string]any{
 					"type": "standard", "title": "标准 · " + f.Label,

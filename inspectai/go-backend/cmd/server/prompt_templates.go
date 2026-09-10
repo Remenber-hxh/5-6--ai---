@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -38,6 +39,14 @@ type PromptField struct {
 	NoWhen   string `json:"noWhen"`   // 判"否"看什么
 	SkipWhen string `json:"skipWhen"` // 什么情况不返回(留人工)
 	Note     string `json:"note"`     // 额外提示
+	// Options 这个字段在表单上的可选值(choice 字段才有),只读 ——
+	// 表单定义归模板页管,提示词页不写它。
+	//
+	// 【渲染器必须知道真实选项】以前渲染器写死"→ 是 / → 否",而表单上
+	// 有 10 个字段的选项是 正常/异常、良好/异常。模型照提示词回"是",
+	// 到 applyAIFields 那步 optionContains 匹配不上,值被清空、标成
+	// "需人工复核" —— AI 每次都跑、每次都白跑,现场只看得到"这项没填"。
+	Options []string `json:"options,omitempty"`
 }
 
 // PromptCommons — 所有模板共享的公共模块(固定一份)
@@ -87,25 +96,114 @@ type PromptTemplate struct {
 // isRaw 老数据没有 Mode 字段,空值算 structured。
 func (t PromptTemplate) isRaw() bool { return t.Mode == PromptModeRaw }
 
-// ---------- 公共模块(固定一份,所有模板共享) ----------
+// ---------- choice 字段的取值:哪个词算通过、哪个词算不通过 ----------
+//
+// 【一处认定,渲染器和总则都用它】选项不能按下标取:库里既有 ["是","否"]
+// 也有 ["否","是"],按位置取会把整个模板的判定反过来。只能按词义认。
+var (
+	choicePassWords = []string{"是", "正常", "良好", "完好", "合格", "有效", "通过"}
+	choiceFailWords = []string{"否", "异常", "破损", "缺失", "过期", "损坏", "故障", "不合格"}
+)
 
-func promptCommons() PromptCommons {
-	return PromptCommons{
-		YesNoSemantics: "选项字段全部是 `[\"是\",\"否\"]`:**是 = 符合要求 / 完好 / 正常**;**否 = 不符合 / 缺失 / 破损 / 异常 / 过期**。",
+// choiceOptionPair 这个字段判"通过 / 不通过"分别该填哪个词。
+//
+// 【认不出来就退回 是/否,不拿 Options[0] 硬猜】三选项、自定义词表这类
+// 情况猜反了比不猜更难发现 —— 提示词看着通顺,判定却是反的。
+func choiceOptionPair(f PromptField) (pass, fail string) {
+	pass, fail = "是", "否"
+	if len(f.Options) == 0 {
+		return
+	}
+	hit := func(words []string) string {
+		for _, w := range words {
+			if slices.Contains(f.Options, w) {
+				return w
+			}
+		}
+		return ""
+	}
+	if p, q := hit(choicePassWords), hit(choiceFailWords); p != "" && q != "" {
+		pass, fail = p, q
+	}
+	return
+}
+
+// choiceVocabulary 一个模板里 choice 字段一共用到几种取值组合。
+//
+// 【总则那句话必须跟着字段表走】原来写死"选项字段全部是 是/否",
+// 而同一个模板里 room_clean 是 正常/异常、别的字段是 是/否 —— 总则
+// 说的和字段表给的对不上,模型只会照总则那句更醒目的来。
+type choiceVocabulary struct {
+	pairs [][2]string // 去重、保序
+}
+
+func vocabularyOf(fields []PromptField) choiceVocabulary {
+	var v choiceVocabulary
+	for _, f := range fields {
+		if len(f.Options) == 0 {
+			continue
+		}
+		p, q := choiceOptionPair(f)
+		if !slices.Contains(v.pairs, [2]string{p, q}) {
+			v.pairs = append(v.pairs, [2]string{p, q})
+		}
+	}
+	return v
+}
+
+// uniform 全模板只有一种取值组合 —— 总则就能把那两个词直接写死。
+func (v choiceVocabulary) uniform() bool { return len(v.pairs) == 1 }
+
+// failWord 汇总项("有任何字段判为 X 就写不符合项")里该用哪个词。
+// 组合不唯一时用中性说法,不能随便挑一个 —— 挑错了会把另一批字段排除掉。
+func (v choiceVocabulary) failWord() string {
+	if v.uniform() {
+		return v.pairs[0][1]
+	}
+	return "不通过"
+}
+
+// ---------- 公共模块(除 choice 取值外固定一份,所有模板共享) ----------
+
+func promptCommons(v choiceVocabulary) PromptCommons {
+	c := PromptCommons{
 		GeneralRules: []string{
-			"**画面里出现的项一律主动给出\"是/否\",不要为\"求稳\"留空**;明显正常/完好就大胆判\"是\"。",
-			"只有照片能明确支持时才给值;真的看不清、没拍到、角度不够 → **不返回该字段**,留人工复核,不要用\"否\"代替\"没拍到\"。",
-			"**凡有任何字段判为「否」,必须同时在 `nonconformity` 里写明问题**(哪一项+什么问题+依据,逐条简述),不能只判否却不写说明。",
+			"", // 占位:这两条按 choice 取值填
+			"",
+			fmt.Sprintf("**凡有任何字段判为「%s」,必须同时在 `nonconformity` 里写明问题**(哪一项+什么问题+依据,逐条简述),不能只判%s却不写说明。", v.failWord(), v.failWord()),
 			"照片**无法感知声音和气味**,涉及异响/异味的项无可见证据时一律不返回。",
 			"关键照片缺失可在 `nonconformity` 写\"建议补拍 XX\",但缺照片 ≠ 设备异常。",
 		},
-		OutputSchema: "严格遵循 `_common.md` 的 JSON schema:`recognitionStatus` / `observations`(按图顺序)/ `recognizedFields`(只放有视觉依据的字段,code 必须完全等于下表,choice 值只能是 `\"是\"`/`\"否\"`)/ `warnings`。",
 		Confidence: []string{
 			"0.90-0.98:标识/装置/读数清晰、证据充分。",
 			"0.70-0.89:可判断但有反光、角度或轻微遮挡,需人工快速复核。",
 			"低于 0.70:不返回该字段。",
 		},
 	}
+	const schemaHead = "严格遵循 `_common.md` 的 JSON schema:`recognitionStatus` / `observations`(按图顺序)/ `recognizedFields`(只放有视觉依据的字段,code 必须完全等于下表"
+	const noShotHead = "只有照片能明确支持时才给值;真的看不清、没拍到、角度不够 → **不返回该字段**,留人工复核"
+	switch {
+	case len(v.pairs) == 0:
+		// 纯读数/抄表类模板,一个 choice 字段都没有 —— 再讲 是/否 只会
+		// 诱导模型往 recognizedFields 里塞它根本不该填的判定值。
+		c.GeneralRules[0] = "**画面里出现的项一律主动给出结果,不要为\"求稳\"留空**;能确认的就大胆填。"
+		c.GeneralRules[1] = noShotHead + "。"
+		c.OutputSchema = schemaHead + ")/ `warnings`。"
+	case v.uniform():
+		pass, fail := v.pairs[0][0], v.pairs[0][1]
+		c.YesNoSemantics = fmt.Sprintf("选项字段全部是 `[\"%s\",\"%s\"]`:**%s = 符合要求 / 完好 / 正常**;**%s = 不符合 / 缺失 / 破损 / 异常 / 过期**。", pass, fail, pass, fail)
+		c.GeneralRules[0] = fmt.Sprintf("**画面里出现的项一律主动给出\"%s/%s\",不要为\"求稳\"留空**;明显正常/完好就大胆判\"%s\"。", pass, fail, pass)
+		c.GeneralRules[1] = fmt.Sprintf("%s,不要用\"%s\"代替\"没拍到\"。", noShotHead, fail)
+		c.OutputSchema = fmt.Sprintf("%s,choice 值只能是 `\"%s\"`/`\"%s\"`)/ `warnings`。", schemaHead, pass, fail)
+	default:
+		// 【同一模板里几种选项并存】不要试图统一成一种说法,直接讲清楚
+		// "以你那一行给的词为准" —— 每行的判断依据里都写着那两个词。
+		c.YesNoSemantics = "选项字段(choice)**各字段的取值不一样**:必须原样使用下表「判断依据」里给出的那两个词,不要改写、不要用同义词、不要自造。表示**符合要求 / 完好 / 正常**的那个 = 通过,表示**不符合 / 缺失 / 破损 / 异常 / 过期**的那个 = 不通过。"
+		c.GeneralRules[0] = "**画面里出现的项一律主动给出判定,不要为\"求稳\"留空**;明显正常/完好就大胆判通过。"
+		c.GeneralRules[1] = noShotHead + ",不要用表示异常的那个词代替\"没拍到\"。"
+		c.OutputSchema = schemaHead + ",choice 值只能原样取该字段在下表「判断依据」里给出的那两个词之一)/ `warnings`。"
+	}
+	return c
 }
 
 // ---------- 可复用字段组(定义一次,多个模板引用) ----------
@@ -253,10 +351,15 @@ func promptTemplateByID(id string) (PromptTemplate, bool) {
 // ---------- 渲染器:结构化数据 → 提示词文本 ----------
 
 // renderFieldCriteria — 按判定模式把一个字段渲染成"判断依据"话术
-func renderFieldCriteria(f PromptField) string {
+//
+// pass/fail 用【这个字段自己的选项】,不是全模板一个说法:同一份提示词里
+// 一行写 "→ 是"、另一行写 "→ 正常" 是对的,因为表单上它们本来就不一样。
+// v 只用在汇总项上 —— 那一项讲的是"别的字段判成什么算不合格"。
+func renderFieldCriteria(f PromptField, v choiceVocabulary) string {
 	yes := f.YesWhen
 	no := f.NoWhen
 	skip := f.SkipWhen
+	pass, fail := choiceOptionPair(f)
 	note := ""
 	if f.Note != "" {
 		note = "（注:" + f.Note + "）"
@@ -269,26 +372,26 @@ func renderFieldCriteria(f PromptField) string {
 	case ModeVisual:
 		parts := []string{}
 		if yes != "" {
-			parts = append(parts, yes+" → 是")
+			parts = append(parts, yes+" → "+pass)
 		}
 		if no != "" {
-			parts = append(parts, no+" → 否")
+			parts = append(parts, no+" → "+fail)
 		}
 		if skip != "" {
 			parts = append(parts, skip+" → 不返回")
 		}
 		return strings.Join(parts, ";") + note
 	case ModeVisualLenient:
-		s := fmt.Sprintf("**拍到就判,别犹豫**:%s → 是;只有%s才 → 否;%s → 不返回", yes, no, skip)
+		s := fmt.Sprintf("**拍到就判,别犹豫**:%s → %s;只有%s才 → %s;%s → 不返回", yes, pass, no, fail, skip)
 		return s + note
 	case ModeFunctionalTest:
-		return fmt.Sprintf("**判定从宽**:%s → 是;%s → 否;%s → 不返回", yes, no, skip) + note
+		return fmt.Sprintf("**判定从宽**:%s → %s;%s → %s;%s → 不返回", yes, pass, no, fail, skip) + note
 	case ModeSensory:
-		return fmt.Sprintf("照片不能感知声音/气味;仅当%s才返回\"否\",否则不返回,留人工", no)
+		return fmt.Sprintf("照片不能感知声音/气味;仅当%s才返回\"%s\",否则不返回,留人工", no, fail)
 	case ModeObjectiveDate:
-		return fmt.Sprintf("用注入的 `current_date` 比对:%s → 是;%s → 否;%s → 不返回", yes, no, skip) + note
+		return fmt.Sprintf("用注入的 `current_date` 比对:%s → %s;%s → %s;%s → 不返回", yes, pass, no, fail, skip) + note
 	case ModeSummary:
-		return "只要有任何字段判为「否」,必须在此逐条写明问题(哪一项+什么问题+依据);全部正常则不返回"
+		return fmt.Sprintf("只要有任何字段判为「%s」,必须在此逐条写明问题(哪一项+什么问题+依据);全部正常则不返回", v.failWord())
 	}
 	return ""
 }
@@ -387,6 +490,9 @@ func promptViewFiltered(t ReportTemplate, onlyJudged bool) PromptTemplate {
 		out.Fields = append(out.Fields, PromptField{
 			Code: f.Code, Label: f.Label, Group: f.JudgeGroup, Mode: f.JudgeMode,
 			YesWhen: f.YesWhen, NoWhen: f.NoWhen, SkipWhen: f.SkipWhen, Note: f.JudgeNote,
+			// 【选项一路带到渲染器】判定话术里的"→ 是 / → 否"要换成这个
+			// 字段表单上真实的那两个词,否则模型答的值落不进选项。
+			Options: f.Options,
 		})
 	}
 	return out
@@ -418,19 +524,28 @@ func renderPromptText(t PromptTemplate) string {
 		return strings.TrimSpace(t.RawText)
 	}
 
-	c := promptCommons()
+	v := vocabularyOf(t.Fields)
+	c := promptCommons(v)
 	var b strings.Builder
 
 	b.WriteString(fmt.Sprintf("# %s（视觉合规检查）\n\n", t.Name))
 	b.WriteString(fmt.Sprintf("> 适用模板:`%s`(%s)\n", t.ID, t.Name))
-	b.WriteString("> " + t.Scene + "\n")
+	// 场景为空时整行不写 —— 否则头部多出一条空的 "> ",模型读到的是
+	// 一句没说完的话,而人在后台看不出这一行是空的。
+	if scene := strings.TrimSpace(t.Scene); scene != "" {
+		b.WriteString("> " + scene + "\n")
+	}
 	if len(t.ExpectedPhotos) > 0 {
 		b.WriteString("> 期望照片:" + strings.Join(t.ExpectedPhotos, "、") + "\n")
 	}
 	b.WriteString("> 任务定位:视觉合规检查,只把照片里**能确认的事实**变成字段,不做维修结论,不默认现场正常。\n\n")
 
 	b.WriteString("## 总则\n")
-	b.WriteString("- " + c.YesNoSemantics + "\n")
+	// 一个 choice 字段都没有时 YesNoSemantics 是空的 —— 这一行整条不写,
+	// 而不是写一条空的 "- "。
+	if c.YesNoSemantics != "" {
+		b.WriteString("- " + c.YesNoSemantics + "\n")
+	}
 	for _, r := range c.GeneralRules {
 		b.WriteString("- " + r + "\n")
 	}
@@ -452,7 +567,7 @@ func renderPromptText(t PromptTemplate) string {
 	b.WriteString("## 字段映射\n")
 	b.WriteString("| code | label | 判断依据 |\n| --- | --- | --- |\n")
 	for _, f := range t.Fields {
-		b.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", f.Code, f.Label, renderFieldCriteria(f)))
+		b.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", f.Code, f.Label, renderFieldCriteria(f, v)))
 	}
 	b.WriteString("\n")
 
