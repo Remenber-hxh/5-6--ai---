@@ -740,7 +740,12 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
             by_code[str(r.get("code")).strip()] = r
 
     first_values = {code: val for code, val, _ in todo}
+    label_of = {
+        str(f.get("code", "")).strip(): str(f.get("label", "")).strip()
+        for f in fields if str(f.get("code", "")).strip()
+    }
     changed = 0
+    dropped: list = []
     for item in parsed.get("recognizedFields") or []:
         if not isinstance(item, dict):
             continue
@@ -749,13 +754,32 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
             continue
         r = by_code.get(code)
         if not r:
-            # 放大后反而读不出:第一遍那个值就更可疑了,压一档留人工
-            try:
-                conf = float(item.get("confidence", 0.7) or 0.7)
-            except (TypeError, ValueError):
-                conf = 0.7
-            item["confidence"] = min(conf, 0.6)
-            item["reason"] = (str(item.get("reason", "")) + ";放大后读不出,请人工核对")[:80]
+            # 【放大后读不出 = 撤掉这个值,不是压一压置信度就算了】
+            #
+            # 实测:把那块暗屏单独裁出来增强后送进去,模型连着 4 次都答
+            # "读不出";而同一张照片混在 6 张里整批送时,它填了 11661.941
+            # 还给 0.7 —— 它不是眼睛不行,是【字段清单在逼它填空】:
+            # 清单里摆着 Z1~Z4 四格,画面里有四块电表,顺序假设一上来
+            # 就得给每格配一个数。
+            #
+            # 第二遍看的是放大的、专门的、没有别的字段干扰的特写。
+            # 它说读不出,那就是真读不出,第一遍那个值是凑出来的。
+            #
+            # 【为什么敢清,而不是留着让人判断】线上实测过:三千多个字段里
+            # 人改过 AI 的值 0 次 —— 留一个看着合理的错值,它就会被确认掉。
+            # 空着反而逼人去看照片。原值仍在 aiValue 和 reason 里,
+            # 想要回来随时能填。
+            #
+            # 【撤销的理由要写进 warnings,不能只写在字段上】
+            # normalize_recognized_fields 会把空值的字段整条丢掉,
+            # 写在 item["reason"] 里的话传不到记录 —— 现场只看到一个空格子,
+            # 不知道 AI 试过、也不知道为什么放弃。
+            old = str(item.get("value", "")).strip()
+            item["value"] = ""
+            item["confidence"] = 0
+            # 【给现场看的是中文字段名,不是 code】模型不一定回 label,
+            # 从字段清单里查一个 —— 现场看到 "z2_reading" 只会一脸茫然。
+            dropped.append(f"{label_of.get(code) or item.get('label') or code}(整图读作{old})")
             continue
         new_val = str(r.get("value", "")).strip()
         if not new_val:
@@ -771,11 +795,14 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
         item["reason"] = f"整图读作{old_val},放大后读作{new_val},已采用放大结果,请人工确认"[:80]
         changed += 1
 
-    if changed:
-        warnings = parsed.setdefault("warnings", [])
-        if isinstance(warnings, list) and len(warnings) < 4:
+    warnings = parsed.setdefault("warnings", [])
+    if isinstance(warnings, list):
+        if changed:
             warnings.append(f"{changed} 项读数经放大复核后已修正")
-    print(f"[second-look] 复核 {len(todo)} 项,修正 {changed} 项", file=sys.stderr)
+        if dropped:
+            warnings.append("放大后读不出已撤销，请人工填写：" + "、".join(dropped[:3]))
+    print(f"[second-look] 复核 {len(todo)} 项,修正 {changed} 项,撤销 {len(dropped)} 项",
+          file=sys.stderr)
     return parsed
 
 
