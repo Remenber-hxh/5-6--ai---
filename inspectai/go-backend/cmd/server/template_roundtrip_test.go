@@ -104,6 +104,28 @@ func TestTemplateRoundTripChangesNothing(t *testing.T) {
 				t.Errorf("照片张数变了:%d/%d → %d/%d",
 					before.MinImages, before.MaxImages, after.MinImages, after.MaxImages)
 			}
+			// 场景头那几列:新编辑器要在同一个界面里编它们,一次存盘写完。
+			// 只加了读没加写的话,人填了场景描述、存完就没了,而且返回 200。
+			if after.Scene != before.Scene {
+				t.Errorf("场景描述变了:%q → %q", before.Scene, after.Scene)
+			}
+			if after.SceneFeatures != before.SceneFeatures {
+				t.Errorf("识别特征变了:%q → %q", before.SceneFeatures, after.SceneFeatures)
+			}
+			if after.ExtraNotes != before.ExtraNotes {
+				t.Errorf("补充说明变了:%d 字 → %d 字", len(before.ExtraNotes), len(after.ExtraNotes))
+			}
+			if len(after.ExpectedPhotos) != len(before.ExpectedPhotos) {
+				t.Errorf("期望照片变了:%v → %v", before.ExpectedPhotos, after.ExpectedPhotos)
+			}
+			if after.PromptMode != before.PromptMode || after.RawText != before.RawText {
+				t.Errorf("提示词维护方式变了:%q/%d字 → %q/%d字",
+					before.PromptMode, len(before.RawText), after.PromptMode, len(after.RawText))
+			}
+			if after.AIPrompt != before.AIPrompt || after.HasAI != before.HasAI {
+				t.Errorf("AI 设置变了:prompt %q→%q hasAI %v→%v",
+					before.AIPrompt, after.AIPrompt, before.HasAI, after.HasAI)
+			}
 			if len(after.Fields) != len(before.Fields) {
 				t.Fatalf("字段数变了:%d → %d", len(before.Fields), len(after.Fields))
 			}

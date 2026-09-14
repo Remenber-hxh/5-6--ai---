@@ -1184,9 +1184,26 @@ export interface ReportTemplateDTO {
   maxImages?: number;
   /** 每单最少几张照片。0 = 不限 */
   minImages?: number;
+  fields: TemplateFieldDTO[];
+  /**
+   * ===== 场景头:这次巡检去哪、该拍到什么、整体注意什么 =====
+   *
+   * 【为什么和字段表放在同一个 DTO 里】它们本来就存在同一行上
+   * (report_templates 的几列),GET 一直在返回、PUT 一直收得下 ——
+   * 只是 TS 这边没声明,于是编辑器拿不到、只能去「提示词」页单独编。
+   * 一份数据被界面拆成两处,人就得来回切。
+   */
+  scene?: string;
+  expectedPhotos?: string[];
   /** 照片上一眼能认出这个场景的东西,给「拍完自动认场景」用 */
   sceneFeatures?: string;
-  fields: TemplateFieldDTO[];
+  /** 落不进任何一个字段格子的话,写这里,渲染时追加进「总则」之后 */
+  extraNotes?: string;
+  /** structured = 字段表渲染;raw = 直接写整段正文(高级用法) */
+  promptMode?: string;
+  rawText?: string;
+  hasAI?: boolean;
+  aiPrompt?: string;
 }
 
 export function listReportTemplates() {
@@ -1246,18 +1263,12 @@ export function deleteReportTemplate(id: string) {
   });
 }
 
-/** 覆盖某个模板的必填配置。只传要改的字段;传空对象 = 全部改回代码默认值。 */
-export function saveTemplateFields(
-  id: string,
-  required: Record<string, boolean>,
-  /** 每单最少几张照片。不传 = 不改这一项 */
-  minImages?: number,
-) {
-  return api(`/api/report/templates/${encodeURIComponent(id)}/fields`, {
-    method: "PUT",
-    body: JSON.stringify(minImages === undefined ? { required } : { required, minImages }),
-  });
-}
+// saveTemplateFields 删了 —— 它是「提交规则」页专用的第二个写入口,
+// 只写必填和最少张数。那一页已经并进模板工作台,必填现在跟着字段一起,
+// 由 saveReportTemplate 一次写完。
+//
+// 【为什么连函数一起删,不只是不调用】留着的话下一个人会照着用,
+// 于是同一张字段表又有了两个写入口 —— 而这正是这次要拆掉的东西。
 
 // ===== 今日应巡 =====
 //
