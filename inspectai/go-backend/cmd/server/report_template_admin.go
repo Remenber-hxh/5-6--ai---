@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -146,11 +147,25 @@ func (s *Server) handleReportTemplateAdmin(w http.ResponseWriter, r *http.Reques
 		})
 
 	case http.MethodPut:
-		var next ReportTemplate
-		if err := decodeJSON(r, &next); err != nil {
+		raw, err := readBody(r)
+		if err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
+		var next ReportTemplate
+		if err := json.Unmarshal(raw, &next); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		// 【这次存盘管不管提交约束,看请求有没有带】必填、张数原来归另一个
+		// 接口(/fields)管,这里一律沿用旧值 —— 因为界面把它们拆在两个页签,
+		// 两个写入口写同一张表,谁后保存谁把对方冲掉,而且不报错。
+		//
+		// 现在编辑器合成一处,一次存盘要写完整份。但不能直接把剥离去掉:
+		// 老编辑器不带这些字段,一去掉它们就会被 Go 的零值(false / 0)
+		// 悄悄写成"都不必填、张数为 0"。所以看【有没有传】而不是【传了什么】
+		// —— 和这一版里 PATCH 那个 value 改成指针是同一个理由。
+		authoritative := bodyHasSubmissionRules(raw)
 		next.ID = id // 【以路径为准】body 里带个别的 id 会存成另一个模板
 		if err := validateReportTemplate(next); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_template", err.Error())
@@ -167,14 +182,11 @@ func (s *Server) handleReportTemplateAdmin(w http.ResponseWriter, r *http.Reques
 				writeError(w, http.StatusConflict, "unsafe_change", err.Error())
 				return
 			}
-			// 【提交约束不归这个接口管】必填和照片张数是「提交规则」页的,
-			// 这里一律沿用原值,不看请求里传了什么。
-			//
-			// 光在界面上把输入框藏起来不够:同一份数据有两个写入口,
-			// 迟早会有一个把另一个的改动冲掉,而且不报错 —— 表现是
-			// "我在那边改好的,过一会儿又变回去了",查起来极难。
-			// 所以这条规则落在接口上。
-			next = keepSubmissionRules(old, next)
+			// 没带提交约束的请求(老编辑器)沿用旧值;带了的(新编辑器)
+			// 以请求为准。判据是"有没有这个键",不是值是不是零。
+			if !authoritative {
+				next = keepSubmissionRules(old, next)
+			}
 		}
 		if err := checkAssetTypeUnique(next); err != nil {
 			writeError(w, http.StatusConflict, "asset_type_taken", err.Error())
@@ -282,6 +294,33 @@ func logTemplateReloadFailure(err error) {
 //
 // 按 code 对应;新加的字段没有原值,保持请求里的样子(新字段默认非必填,
 // 之后到提交规则页去配)。
+// bodyHasSubmissionRules 请求里到底有没有提交约束(必填 / 张数)。
+//
+// 【看键在不在,不看值】Go 解出来的 false 和 0 分不清"人设成了不必填"
+// 和"这个请求根本没提这件事"。按值判的话,老编辑器一存盘就会把所有
+// 必填悄悄清掉 —— 而且返回 200,现场要到下次提交被放行才发现。
+func bodyHasSubmissionRules(raw []byte) bool {
+	var probe struct {
+		MinImages *int `json:"minImages"`
+		MaxImages *int `json:"maxImages"`
+		Fields    []struct {
+			Required *bool `json:"required"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	if probe.MinImages != nil || probe.MaxImages != nil {
+		return true
+	}
+	for _, f := range probe.Fields {
+		if f.Required != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func keepSubmissionRules(old, next ReportTemplate) ReportTemplate {
 	next.MinImages = old.MinImages
 	next.MaxImages = old.MaxImages

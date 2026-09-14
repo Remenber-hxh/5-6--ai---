@@ -212,12 +212,19 @@ func TestCannotDeleteTemplateInUse(t *testing.T) {
 
 // ===== 职责边界:一份数据只有一个写入口 =====
 
-// 【模板页改不动必填和照片张数】它们归「提交规则」页。
+// 【没提到提交约束的存盘,不许动它们】
 //
-// 光在界面上把输入框藏起来不够:同一份数据两个写入口,迟早有一个把另一个
-// 冲掉,而且不报错 —— 表现是"我在那边改好的,过一会儿又变回去了",
-// 查起来极难。所以这条规则落在接口上,界面只是跟着它走。
-func TestTemplatePageCannotChangeSubmissionRules(t *testing.T) {
+// 原来的规矩是"模板页一律改不动必填和张数,它们归提交规则页"。那条规矩
+// 在界面拆成三个页签时是对的:同一份数据两个写入口,迟早有一个把另一个
+// 冲掉,而且不报错 —— 表现是"我在那边改好的,过一会儿又变回去了"。
+//
+// 现在编辑器合成一处,一次存盘要写完整份,那条规矩随之退休。但它保护的
+// 那件事没退休:【没提到】和【设成了零值】必须分得开。老调用方不带
+// required 和 minImages,一旦按值判,Go 的零值就会被当成"都不必填、
+// 张数为 0"悄悄写进去,而且返回 200 —— 要到下次现场提交被放行才发现。
+//
+// 所以这条测试从"一律不许改"改成"没提就不许改"。
+func TestSaveWithoutSubmissionRulesLeavesThemAlone(t *testing.T) {
 	isolateTemplateCache(t)
 	server, tokens := newRecordAccessTestServer(t)
 	if err := loadReportTemplates(server.store); err != nil {
@@ -234,12 +241,10 @@ func TestTemplatePageCannotChangeSubmissionRules(t *testing.T) {
 		}
 	}
 
-	// 请求里把张数和必填都改掉 —— 应该被忽略
+	// 请求里【完全不提】必填和张数 —— 老编辑器就是这么发的
 	body := `{"name":"热水机房巡检","project":"会议中心","assetType":"热水机房",
-		"minImages":1,"maxImages":2,
-		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","required":false},
-		          {"code":"cabinet_temperature","label":"控制柜温度℃","kind":"number","required":` +
-		map[bool]string{true: "false", false: "true"}[requiredBefore] + `}]}`
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text"},
+		          {"code":"cabinet_temperature","label":"控制柜温度℃","kind":"number"}]}`
 	got := putTpl(t, server, "/api/report/templates/hot_water_room", tokens["admin"], body)
 	if got.Code != http.StatusOK {
 		t.Fatalf("保存失败 code=%d body=%s", got.Code, got.Body.String())
@@ -247,12 +252,12 @@ func TestTemplatePageCannotChangeSubmissionRules(t *testing.T) {
 
 	after, _ := templateByID("hot_water_room")
 	if after.MinImages != before.MinImages || after.MaxImages != before.MaxImages {
-		t.Errorf("照片张数被模板页改掉了:%d/%d → %d/%d",
+		t.Errorf("没提张数却被零值冲掉了:%d/%d → %d/%d",
 			before.MinImages, before.MaxImages, after.MinImages, after.MaxImages)
 	}
 	for _, f := range after.Fields {
 		if f.Code == "cabinet_temperature" && f.Required != requiredBefore {
-			t.Errorf("必填被模板页改掉了:%v → %v", requiredBefore, f.Required)
+			t.Errorf("没提必填却被零值冲掉了:%v → %v", requiredBefore, f.Required)
 		}
 	}
 	// 但字段名这类归模板页管的,必须改得动 —— 否则这一页就没用了
@@ -264,6 +269,45 @@ func TestTemplatePageCannotChangeSubmissionRules(t *testing.T) {
 	}
 	if !renamed {
 		t.Error("字段中文名归模板页管,应该改得动")
+	}
+}
+
+// 【明确提了提交约束的存盘,以请求为准】这是编辑器合成一处之后的新契约:
+// 一个检查项的全部设置 —— 叫什么、填什么、必不必填、AI 怎么判 ——
+// 在一个界面上配、一次存盘写完。
+func TestSaveWithSubmissionRulesAppliesThem(t *testing.T) {
+	isolateTemplateCache(t)
+	server, tokens := newRecordAccessTestServer(t)
+	if err := loadReportTemplates(server.store); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := templateByID("hot_water_room")
+	var requiredBefore bool
+	for _, f := range before.Fields {
+		if f.Code == "cabinet_temperature" {
+			requiredBefore = f.Required
+		}
+	}
+	wantRequired := !requiredBefore
+
+	body := `{"name":"热水机房巡检","project":"会议中心","assetType":"热水机房",
+		"minImages":4,"maxImages":12,
+		"fields":[{"code":"asset_no","label":"设备编号","kind":"text","required":false},
+		          {"code":"cabinet_temperature","label":"控制柜温度℃","kind":"number","required":` +
+		map[bool]string{true: "true", false: "false"}[wantRequired] + `}]}`
+	got := putTpl(t, server, "/api/report/templates/hot_water_room", tokens["admin"], body)
+	if got.Code != http.StatusOK {
+		t.Fatalf("保存失败 code=%d body=%s", got.Code, got.Body.String())
+	}
+
+	after, _ := templateByID("hot_water_room")
+	if after.MinImages != 4 || after.MaxImages != 12 {
+		t.Errorf("明确传了张数却没生效:min=%d max=%d", after.MinImages, after.MaxImages)
+	}
+	for _, f := range after.Fields {
+		if f.Code == "cabinet_temperature" && f.Required != wantRequired {
+			t.Errorf("明确传了必填却没生效:期望 %v,得到 %v", wantRequired, f.Required)
+		}
 	}
 }
 

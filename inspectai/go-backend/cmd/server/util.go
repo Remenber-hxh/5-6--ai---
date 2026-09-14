@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -135,6 +136,16 @@ func firstNonEmpty(values ...string) string {
 func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// readBody 把请求体整个读出来,给需要【看原始 JSON 有哪些键】的地方用。
+//
+// 【什么时候需要看原始 JSON】解进结构体之后,没传的字段和传了零值的字段
+// 长得一模一样(false / 0 / "")。"这次存盘要不要改必填"这类问题,
+// 答案恰恰在"键在不在",解完就问不出来了。
+func readBody(r *http.Request) ([]byte, error) {
+	defer r.Body.Close()
+	return io.ReadAll(r.Body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
