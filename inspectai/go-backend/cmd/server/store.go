@@ -737,12 +737,14 @@ func (s *MemStore) upsertAssetLocked(asset *AssetEntry) error {
 		if asset.CoverImagePath != "" {
 			existing.CoverImagePath = asset.CoverImagePath
 		}
-		existing.InspectionCount++
+		// 【不再维护 InspectionCount】巡检次数改成读时现算(数 asset_snapshots,
+		// 见 enrichAssetForDisplay)。SQLite 那边这一列早就不写了,这里再自己
+		// 加一遍的话,MemStore 跑出来的数是对的、生产跑出来的是错的 ——
+		// 测试于是永远发现不了"某条出口忘了现算"。两边一致才测得出来。
 		existing.UpdatedAt = now
 	} else {
 		asset.CreatedAt = now
 		asset.UpdatedAt = now
-		asset.InspectionCount = 1
 		s.assets[asset.ID] = asset
 	}
 	return nil
@@ -849,7 +851,9 @@ func (s *MemStore) CreateAsset(asset *AssetEntry) error {
 	now := time.Now()
 	asset.CreatedAt = now
 	asset.UpdatedAt = now
-	asset.InspectionCount = 0
+	// InspectionCount 不在这里置零 —— 这一列已废弃,巡检次数读时现算。
+	// 手工建档置 0 正是当初三处各写各的其中一处:一台有历史记录的设备
+	// 被人重新建了档,次数就从头开始,而快照一条没少。
 	s.assets[asset.ID] = asset
 	return nil
 }

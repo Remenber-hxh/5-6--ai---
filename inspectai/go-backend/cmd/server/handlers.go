@@ -1873,6 +1873,10 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 	if asset != nil && asset.LastStatus == "正常" {
 		s.onAssetResolvedNormal(id)
 	}
+	// 【出口一律走 enrich】巡检次数是读时现算的,库里那一列是历史遗留值。
+	// 漏掉这一步,这条响应就会把那个陈旧的数发出去 —— 别的接口都是对的,
+	// 只有改完设备信息那一下变了个数,这种不一致最难查。
+	s.enrichAssetForDisplay(asset)
 	writeJSON(w, http.StatusOK, asset)
 }
 
