@@ -3299,10 +3299,34 @@ func applyRecognizedFields(rec *Record, recognized []RecognizedField) {
 		rec.Fields[i].Source = "ai"
 		rec.Fields[i].Confidence = got.Confidence
 		rec.Fields[i].Reason = got.Reason
+		setReadingSource(&rec.Fields[i], got, rec.Images)
 		// 高置信度的 ai 字段不再要求人工复核
 		rec.Fields[i].NeedsReview = got.Confidence < 0.85
 		rec.Fields[i].Version++
 	}
+}
+
+// setReadingSource 记下这个读数是从哪张照片、哪一块读出来的。
+//
+// 【为什么把下标换成图片 ID】模型给的是"第几张",而照片能补拍、能删、能重排。
+// 存下标的话,删掉第 1 张之后原来的 2 就指向了另一张图 —— 确认页会把
+// 另一台设备的特写摆在这一行旁边,而且看不出来是错的,比不摆更糟。
+//
+// 【认不出来就整个清掉,不留半截】只有 bbox 没有图、或者只有图没有 bbox,
+// 都裁不出那一小块。留着半截数据,下游得处处判空,总有一处会漏。
+func setReadingSource(f *FieldValue, got RecognizedField, images []ImageInfo) {
+	f.SourceImageID = ""
+	f.Bbox = nil
+	if len(got.Bbox) != 4 || got.ImageIndex < 1 || got.ImageIndex > len(images) {
+		return
+	}
+	for _, v := range got.Bbox {
+		if v < -0.05 || v > 1.05 {
+			return // 越界的框裁出来是黑边或者整张图,没有参照价值
+		}
+	}
+	f.SourceImageID = images[got.ImageIndex-1].ID
+	f.Bbox = append([]float64(nil), got.Bbox...)
 }
 
 func optionContains(options []string, value string) bool {

@@ -983,13 +983,33 @@ def normalize_recognized_fields(fields: list) -> list:
         reason = str(f.get("reason", ""))
         if normalized_reason:
             reason = f"{reason}；{normalized_reason}" if reason else normalized_reason
-        out.append({
+        item = {
             "code": code,
             "label": str(f.get("label", "")),
             "value": value,
             "confidence": max(0.0, min(confidence, 1.0)),
             "reason": reason[:80],
-        })
+        }
+        # 【这个读数是从哪张图、哪一块读出来的,要一路带到确认页】
+        #
+        # 现场是按顺序拍的:四块电表一字排开挨个拍。AI 也按顺序配,
+        # 中间夹一张读不出的就整体错位一格 —— 读数一个不差、全填错了格子。
+        #
+        # 人要纠正它,前提是能看见"这个数是从哪张图来的"。现在确认页上
+        # 只有一个光秃秃的数字,人没有参照物,只能靠记忆去对六张照片 ——
+        # 所以实际发生的是不对,直接确认(线上三千多个字段,人改过 0 次)。
+        #
+        # bbox 带上之后,界面能直接把那一小块读数区裁出来摆在这一行旁边,
+        # 一眼就知道对不对,不用点开大图再翻页找。
+        if _valid_bbox(f.get("bbox")):
+            try:
+                idx = int(f.get("imageIndex", 0))
+            except (TypeError, ValueError):
+                idx = 0
+            if idx >= 1:
+                item["imageIndex"] = idx
+                item["bbox"] = [round(float(v), 4) for v in f.get("bbox")]
+        out.append(item)
     return out
 
 

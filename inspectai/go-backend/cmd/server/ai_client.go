@@ -37,6 +37,15 @@ type RecognizedField struct {
 	Value      string  `json:"value"`
 	Confidence float64 `json:"confidence"`
 	Reason     string  `json:"reason,omitempty"`
+
+	// ImageIndex 这个读数是从第几张图读出来的(1 开始,按上传顺序)。
+	// Bbox 读数区在那张图里的位置,归一化 [左,上,右,下]。
+	//
+	// 【留着是给现场看的,不只是给二次复核用】确认页上一个光秃秃的数字,
+	// 人没有参照物就只能凭记忆去对六张照片 —— 实际发生的是不对,直接确认。
+	// 有了这两个值,那一行旁边就能摆出读数区的特写,一眼看得出配没配错。
+	ImageIndex int       `json:"imageIndex,omitempty"`
+	Bbox       []float64 `json:"bbox,omitempty"`
 }
 
 // SummarizeResponse — ai-service /summarize 返回

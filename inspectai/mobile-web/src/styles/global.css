@@ -1366,6 +1366,30 @@
   justify-content: flex-end;
   gap: 8px;
 }
+/* 读数区特写:这个数是从哪张图的哪一块读出来的。
+
+   【尺寸怎么定的】表盘读数是一条横向的数字带,88x40 的比例接近它本身的
+   长宽比,裁出来不会上下留一堆空白。高度压在 40:整行 min-height 是 56,
+   再高就把行撑开,一屏看不完六个读数 —— 而抄表恰恰要连着核六行。
+
+   点击区比视觉区大一圈(padding 撑到 44 高),现场是戴着手套点的。 */
+.fld-crop {
+  flex: none;
+  width: 88px;
+  height: 40px;
+  padding: 0;
+  border: 0.5px solid var(--lt-border);
+  border-radius: 6px;
+  background-color: var(--lt-fill, #f2f2f7);
+  background-repeat: no-repeat;
+  /* 图是裁出来的一小块,放大后边缘会有插值糊边 —— 加个内描边压住,
+     否则它看着像"没加载完",现场会以为图坏了又去点一遍。 */
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 6%);
+  cursor: pointer;
+}
+.fld-crop:active {
+  opacity: 0.7;
+}
 /* AI 状态药丸(旧版 .ai-pill 四种态) */
 .ai-pill {
   display: inline-flex;

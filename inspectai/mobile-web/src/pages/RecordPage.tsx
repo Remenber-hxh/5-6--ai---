@@ -6,6 +6,7 @@ import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
+import ReadingCrop from "@/components/ReadingCrop";
 import {
   FieldValue,
   RecordDTO,
@@ -50,10 +51,15 @@ function FieldRow({
   field,
   recordId,
   onSaved,
+  cropUrl,
+  onOpenPhoto,
 }: {
   field: FieldValue;
   recordId: string;
   onSaved: (updated: FieldValue) => void;
+  /** 这个读数来源照片的地址;没有来源就不传 */
+  cropUrl?: string;
+  onOpenPhoto?: () => void;
 }) {
   const [value, setValue] = useState(field.value);
   // 停留时长:后端据此写字段确认留痕,用来识别"秒确认"的惰性操作
@@ -152,6 +158,16 @@ function FieldRow({
         ) : null}
       </div>
       <div className="fld-value">
+        {/* 【读数区特写摆在输入框左边】核对从"记着六张照片的顺序、点开、翻页、
+            退回来"变成扫一眼。放右边会被数字和药丸挤掉,放左边紧贴标签,
+            视线是「这一格 → 这张图 → 这个数」一条线。 */}
+        {cropUrl && field.bbox?.length === 4 ? (
+          <ReadingCrop
+            url={cropUrl}
+            bbox={field.bbox}
+            onOpen={onOpenPhoto}
+          />
+        ) : null}
         {pillEl}
         {/* 选择类统一用 Picker:交互是下拉,但弹的是【底部选择面板】而不是
             系统控件。原生 <select> 的下拉样式完全不受控(灰底高亮、白框、
@@ -445,14 +461,23 @@ export default function RecordPage() {
 
         {/* 「日报字段」标题删了:整页只有这一组字段,标题不起区分作用 */}
         <div className="fld-group">
-          {rec.fields.map((f) => (
-            <FieldRow
-              key={f.code}
-              field={f}
-              recordId={rec.id}
-              onSaved={mergeField}
-            />
-          ))}
+          {rec.fields.map((f) => {
+            // 读数来自哪张照片 —— 按 id 找,不按下标:照片能补拍、能删,
+            // 下标会在删掉一张之后指向另一张图,而界面上看不出指错了。
+            const srcIdx = f.sourceImageId
+              ? rec.images.findIndex((img) => img.id === f.sourceImageId)
+              : -1;
+            return (
+              <FieldRow
+                key={f.code}
+                field={f}
+                recordId={rec.id}
+                onSaved={mergeField}
+                cropUrl={srcIdx >= 0 ? photos[srcIdx]?.url : undefined}
+                onOpenPhoto={srcIdx >= 0 ? () => setViewing(srcIdx) : undefined}
+              />
+            );
+          })}
         </div>
       </div>
 

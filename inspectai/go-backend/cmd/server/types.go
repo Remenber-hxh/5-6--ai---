@@ -144,6 +144,14 @@ type FieldValue struct {
 	// 过几天就和台账对不上,而界面上看不出来它已经过期了。
 	AssetName    string   `json:"assetName,omitempty"`
 	AssetOptions []string `json:"assetOptions,omitempty"`
+
+	// SourceImageID 这个读数是从哪张照片读出来的;Bbox 是读数区在那张图里的
+	// 位置(归一化 [左,上,右,下])。确认页据此把那一小块裁出来摆在这一行旁边。
+	//
+	// 【存图片 ID 不存下标】下标是"第几张",而照片可以补拍、删除、重排 ——
+	// 存 2 的话,删掉第 1 张之后它就指向了另一张图,而且界面上看不出来指错了。
+	SourceImageID string    `json:"sourceImageId,omitempty"`
+	Bbox          []float64 `json:"bbox,omitempty"`
 }
 
 // ImageInfo — 上传图片元数据

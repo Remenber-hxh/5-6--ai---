@@ -48,6 +48,16 @@ export interface FieldValue {
    */
   assetName?: string;
   assetOptions?: string[];
+  /**
+   * 这个读数是从哪张照片、哪一块读出来的。
+   * bbox 是归一化的 [左, 上, 右, 下],确认页据此把那一小块裁出来摆在行旁边。
+   *
+   * 【为什么要摆出来】现场是按顺序拍的,AI 也按顺序配,中间夹一张读不出的
+   * 就整体错位一格。而确认页上只有一个光秃秃的数字,人没有参照物,
+   * 只能凭记忆去对六张照片 —— 所以实际发生的是不对,直接确认。
+   */
+  sourceImageId?: string;
+  bbox?: number[];
 }
 
 export interface ImageInfo {
