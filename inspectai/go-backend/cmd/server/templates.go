@@ -108,7 +108,12 @@ func baseReportTemplates() []ReportTemplate {
 			// 读不出的就整体错位一格。配上类型,确认页每行才有设备选择器,
 			// 现场能一格一格点开改。
 			Fields: []TemplateField{
-				textField("site", "巡检地点", true, "ai"),
+				// 【巡检地点归系统,不归 AI】照片里没有"紫菡雅集"这几个字,
+				// 模型返回它靠的是从提示词正文里拼,时灵时不灵;而它又是这个
+				// 模板里唯一 required+ai 的字段 —— 一次没返回,
+				// checkRecognitionFailure 就判"关键字段全部为空,请重拍",
+				// 把同一次读对的四个表读数一起作废(2026-09-10 17:30 实际发生过)。
+				textField("site", "巡检地点", true, "manual"),
 				meterField("z1_reading", "Z1 能耗表读数", "电表"),
 				meterField("z2_reading", "Z2 能耗表读数", "电表"),
 				meterField("z3_reading", "Z3 能耗表读数", "电表"),
@@ -129,7 +134,8 @@ func baseReportTemplates() []ReportTemplate {
 			HasAI:     true,
 			AIPrompt:  "screen_reading",
 			Fields: []TemplateField{
-				textField("site", "巡检地点", true, "ai"),
+				// 同 zihan_energy:巡检地点由系统按项目名预填,不让 AI 猜
+				textField("site", "巡检地点", true, "manual"),
 				textField("location", "位置", false, "ai"),
 				numberField("temperature", "温度℃", false, "ai"),
 				numberField("humidity", "湿度%", false, "ai"),
@@ -436,7 +442,7 @@ func pointByID(id string) (Point, bool) {
 }
 
 // initialFieldValues — 创建记录时初始化字段值（manual 字段填默认，ai 字段留空）
-func initialFieldValues(tpl ReportTemplate, inspector string) []FieldValue {
+func initialFieldValues(tpl ReportTemplate, inspector string, site ...string) []FieldValue {
 	values := make([]FieldValue, 0, len(tpl.Fields))
 	for _, field := range tpl.Fields {
 		value := ""
@@ -447,6 +453,20 @@ func initialFieldValues(tpl ReportTemplate, inspector string) []FieldValue {
 			value = time.Now().Format("2006-01-02 15:04")
 		case "inspector":
 			value = inspector
+		case "site":
+			// 【巡检地点由系统填,不让 AI 猜】它是"紫菡雅集"这种常量,
+			// 记录上的 Project/点位名早就有,而照片里根本没有这个信息 ——
+			// 模型返回它靠的是从提示词正文里拼出来,时灵时不灵。
+			//
+			// 而它是 zihan_energy 里【唯一】required+source=ai 的字段,
+			// 一次没返回,checkRecognitionFailure 就判"关键字段全部为空,请重拍",
+			// 把同一次读对的四个表读数一起扔掉。2026-09-10 17:30 那条就是这么没的。
+			if len(site) > 0 {
+				value = strings.TrimSpace(site[0])
+			}
+			if value != "" {
+				source = "manual"
+			}
 		}
 		// 模板预设的 default 兜底（任何字段都生效，且优先于自动生成的）
 		if field.Default != "" && value == "" {
@@ -454,8 +474,8 @@ func initialFieldValues(tpl ReportTemplate, inspector string) []FieldValue {
 			filledByDefault = true
 		}
 		// 修 plan/08- S3：manual 自动填好的字段不设 NeedsReview=true
-		needsReview := field.Required && field.Source == "ai"
-		if field.Required && strings.TrimSpace(value) == "" && field.Source != "ai" {
+		needsReview := field.Required && source == "ai"
+		if field.Required && strings.TrimSpace(value) == "" && source != "ai" {
 			needsReview = true
 		}
 		// 由模板默认值填充的字段视为"已确认"，提交时不再要求人工 review

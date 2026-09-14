@@ -2121,7 +2121,8 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		EngineeringTaskID: req.EngTaskID,
 		RecognitionStatus: "not_started",
 		Images:            []ImageInfo{},
-		Fields:            initialFieldValues(tpl, req.Inspector),
+		// 巡检地点用项目名预填 —— 系统已经知道,别让 AI 去猜(见 initialFieldValues)
+		Fields:            initialFieldValues(tpl, req.Inspector, firstNonEmpty(point.Project, point.Name)),
 		AISummaryTags:     []string{},
 		AIRecommendations: []Recommendation{},
 		CreatedAt:         now,

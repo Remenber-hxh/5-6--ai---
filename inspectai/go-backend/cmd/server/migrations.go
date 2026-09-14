@@ -62,6 +62,38 @@ var migrationList = []migration{
 	{33, "backfill_scene_and_photos", (*SQLiteStore).migBackfillSceneAndPhotos},
 	{34, "zihan_energy_follow_builtin_md", (*SQLiteStore).migZihanEnergyFollowBuiltinMD},
 	{35, "field_asset_type", (*SQLiteStore).migFieldAssetType},
+	{36, "site_filled_by_system", (*SQLiteStore).migSiteFilledBySystem},
+}
+
+// 036 — 巡检地点从 AI 手里收回来,交给系统填。
+//
+// 【这一条修的是一次真实事故】2026-09-10 17:30 那条紫菡能耗记录:
+// AI 把四块表都读对了(60197.924 / 84363.520 / 20184.018 / 1992),
+// 但没返回 site,整条记录被判「关键字段全部为空,请重拍」,四个读数全丢。
+//
+// 根子在 checkRecognitionFailure 的判据:
+// "required && source=ai 的字段一个都没返回 → 重拍"。
+// 而 zihan_energy 里这类字段【只有 site 一个】—— 于是这个判据实际问的
+// 不是"照片能不能用",而是"AI 有没有猜中项目名"。
+//
+// 照片里根本没有"紫菡雅集"这几个字,模型返回它靠的是从提示词正文里拼,
+// 时灵时不灵;而系统自己早就知道(记录上有 Project 和点位名)。
+// 让 AI 去猜一个已知常量,本来就不该。
+//
+// 【只改这两个模板的 site】别的模板要么没这个字段、要么它不是必填,
+// 不在这次事故的因果链上 —— 不顺手改。
+func (s *SQLiteStore) migSiteFilledBySystem() error {
+	res, err := s.db.Exec(
+		`UPDATE report_template_fields SET source='manual'
+		 WHERE code='site' AND source='ai'
+		   AND template_id IN ('zihan_energy','zihan_daily')`)
+	if err != nil {
+		return fmt.Errorf("036 巡检地点改由系统填: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n > 0 {
+		log.Printf("迁移 036:%d 个「巡检地点」字段改由系统填,不再依赖 AI 返回", n)
+	}
+	return nil
 }
 
 // 035 — 字段级的「这一格是哪类设备」。
