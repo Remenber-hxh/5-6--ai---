@@ -91,6 +91,36 @@ func validateReportTemplate(t ReportTemplate) error {
 	return nil
 }
 
+// validateTemplateEdit 改一份【已经存在】的模板时用这个。
+//
+// 【和新建的区别:不为存量问题拦人】库里 10 个模板有 5 个没有 asset_no
+// (fire_pump / hot_water_room / water_pump 等),而豁免名单只写了紫菡那两个。
+// 结果是这三个模板读得出来、一点保存就被拒,而且没有任何办法修好 ——
+// 想加 asset_no?那是给有记录的模板加字段,又被另一条规则挡住。
+//
+// 校验器不该拒收它自己已经存着的数据。改动只要没【把事情变得更糟】就该放行:
+// 原来就没有 asset_no,改完还是没有,这一次编辑不是它的错;
+// 而原来有、改完没了,那才是真的在删归属依据,必须拦。
+func validateTemplateEdit(old, next ReportTemplate) error {
+	err := validateReportTemplate(next)
+	if !errors.Is(err, errTplNoAssetNo) {
+		return err
+	}
+	if _, had := fieldByTemplateCode(old, assetNoFieldCode); had {
+		return err // 本来有,这次改没了 —— 拦
+	}
+	return nil // 本来就没有,不是这次编辑造成的 —— 放行
+}
+
+func fieldByTemplateCode(t ReportTemplate, code string) (TemplateField, bool) {
+	for _, f := range t.Fields {
+		if f.Code == code {
+			return f, true
+		}
+	}
+	return TemplateField{}, false
+}
+
 // validateTemplateChange 有历史记录时,哪些改动还允许做。
 //
 // 允许:改中文标签、改必填、改选项、加新字段、调顺序。
@@ -167,11 +197,20 @@ func (s *Server) handleReportTemplateAdmin(w http.ResponseWriter, r *http.Reques
 		// —— 和这一版里 PATCH 那个 value 改成指针是同一个理由。
 		authoritative := bodyHasSubmissionRules(raw)
 		next.ID = id // 【以路径为准】body 里带个别的 id 会存成另一个模板
-		if err := validateReportTemplate(next); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_template", err.Error())
+		old, exists := templateByID(id)
+		// 【改存量模板用 validateTemplateEdit】它只拦"这次改动造成的问题",
+		// 不为模板本来就有的老毛病拦人 —— 否则那几个天生没有 asset_no 的
+		// 模板读得出来、存不回去,而且没有任何办法修好。
+		var vErr error
+		if exists {
+			vErr = validateTemplateEdit(old, next)
+		} else {
+			vErr = validateReportTemplate(next)
+		}
+		if vErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_template", vErr.Error())
 			return
 		}
-		old, exists := templateByID(id)
 		if exists {
 			used, err := s.store.CountRecordsUsingTemplate(id)
 			if err != nil {
