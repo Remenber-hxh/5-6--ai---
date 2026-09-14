@@ -1,6 +1,7 @@
 import { Picker } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 
+import ReadingCrop from "@/components/ReadingCrop";
 import type { FieldValue } from "@/api/inspection";
 
 // ===== 抄表:一张照片 = 一行 =====
@@ -94,10 +95,21 @@ export default function MeterPhotoRow({
           理由写在这儿,人才知道该自己看照片填,而不是以为系统没跑。 */}
       {unread && <div className="mpr-note">{field?.reason}</div>}
 
-      {/* 照片就摆在这一行下面 —— 核对从"记着顺序去翻大图"变成扫一眼 */}
-      <button className="mpr-photo" onClick={onOpenPhoto} aria-label={`看第 ${index} 张大图`}>
-        <img src={photoUrl} alt="" loading="lazy" />
-      </button>
+      {/* 照片摆在这一行下面,但只占一小条。
+
+          【为什么不是整张照片铺满】现场照是竖着拍的,原比例铺开一行就一屏,
+          而抄表恰恰要连着核六行。更要紧的是:整张照片里 LCD 只占一百多像素,
+          缩到一行高之后根本看不清数字 —— 又大又没用。
+
+          有读数区的框就裁出那一小块(数字能看清),没有就退回整张缩略图。
+          两种都是点一下看大图。 */}
+      {field?.bbox?.length === 4 ? (
+        <ReadingCrop url={photoUrl} bbox={field.bbox} onOpen={onOpenPhoto} />
+      ) : (
+        <button className="mpr-photo" onClick={onOpenPhoto} aria-label={`看第 ${index} 张大图`}>
+          <img src={photoUrl} alt="" loading="lazy" />
+        </button>
+      )}
     </div>
   );
 }

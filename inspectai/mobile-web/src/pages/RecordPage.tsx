@@ -338,6 +338,25 @@ export default function RecordPage() {
       (f.confidence || 0) < 0.95,
   );
 
+  // ===== 顶部语境:这份表是谁、在哪填的 =====
+  const siteField = (rec?.fields || []).find((f) => f.code === "site") || null;
+  const [siteDraft, setSiteDraft] = useState("");
+  useEffect(() => setSiteDraft(siteField?.value || ""), [siteField?.value]);
+
+  async function commitSite() {
+    if (!rec || !siteField || siteDraft === siteField.value) return;
+    try {
+      mergeField(
+        await patchField(rec.id, siteField.code, siteDraft, siteField.version, {
+          action: "correct",
+        }),
+      );
+    } catch (err) {
+      Toast.show({ content: err instanceof Error ? err.message : "保存失败" });
+      setSiteDraft(siteField.value); // 存不上就退回原值,别让界面显示一个没存进去的数
+    }
+  }
+
   // ===== 抄表模式:一张照片一行 =====
   //
   // 【判据是"这一格配了设备类型"】不是写死模板 id。配了类型就说明
@@ -468,6 +487,31 @@ export default function RecordPage() {
       />
 
       <div className="scroll-area flow-body">
+        {/* 【巡检地点和巡检人放最上面】这两条回答的是"这份表是谁、在哪填的",
+            是看一眼就该知道的语境,不是要逐项核对的检查项。混在读数中间的话,
+            人往下核表时每次都要跳过它们;而真要改地点,又得从六个读数里把它找出来。
+
+            巡检地点仍然是个可改的字段(系统按项目预填,人能改);
+            巡检人不是字段,是记录本身带的,所以只读。 */}
+        <div className="rec-who">
+          {siteField && (
+            <div className="rec-who-row">
+              <span className="rec-who-k">巡检地点</span>
+              <input
+                className="rec-who-v"
+                value={siteDraft}
+                placeholder="请输入"
+                onChange={(e) => setSiteDraft(e.target.value)}
+                onBlur={() => void commitSite()}
+              />
+            </div>
+          )}
+          <div className="rec-who-row">
+            <span className="rec-who-k">巡检人</span>
+            <span className="rec-who-v is-ro">{rec.inspector || "—"}</span>
+          </div>
+        </div>
+
         {/* 顶部那行「模板 · 项目 · 点位 · N/M 项已填」删了:
             四段信息挤成一行小字,读起来费劲又占地方。
             模板名在顶栏标题里已有语境;填写进度靠字段本身的填/未填状态
@@ -580,7 +624,12 @@ export default function RecordPage() {
 
         {/* 「日报字段」标题删了:整页只有这一组字段,标题不起区分作用 */}
         <div className="fld-group">
-          {rec.fields.filter((f) => !meterMode || !isMeterField(f)).map((f) => {
+          {/* 巡检地点已经提到最上面了,这里不再出现第二遍 ——
+              同一个字段在一屏里出现两处,改了一处另一处不动,人会以为没存上。 */}
+          {rec.fields
+            .filter((f) => f.code !== "site")
+            .filter((f) => !meterMode || !isMeterField(f))
+            .map((f) => {
             // 读数来自哪张照片 —— 按 id 找,不按下标:照片能补拍、能删,
             // 下标会在删掉一张之后指向另一张图,而界面上看不出指错了。
             const srcIdx = f.sourceImageId

@@ -1423,31 +1423,80 @@
   font-size: 12px;
   color: var(--ios-orange, #c77700);
 }
+/* 没有读数区框的那张(AI 没认出来),退回整张缩略图。
+
+   【尺寸和读数特写对齐】两种图在同一列上下排着,大小不一样会看着像
+   两种东西。都按 88x40 走,这一行的高度就是稳定的 —— 六行连着核的时候,
+   视线不用为每一行重新找位置。
+
+   【图没加载出来也要占着位置】现场信号差是常态。不留尺寸的话这一行会
+   塌掉,看上去像"这张照片不存在",而它只是还没到。 */
 .mpr-photo {
   display: block;
-  width: 100%;
-  /* 【图没加载出来也要占着位置】现场信号差是常态。不留高度的话这一行会
-     整个塌掉,看上去像"这张照片不存在" —— 而它只是还没到。
-     留着灰底,人知道是在等,不会跑回去重拍一张。 */
-  min-height: 120px;
-  margin-top: 10px;
+  width: 88px;
+  height: 40px;
+  margin-top: 8px;
+  margin-left: 50px;
   padding: 0;
   border: 0.5px solid var(--lt-border);
-  border-radius: 10px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--lt-fill, #f2f2f7);
 }
-/* 【限高 180】照片竖着拍,原比例铺满会把一行撑到一屏多 ——
-   而抄表恰恰要连着核六行。点开就是大图,这里只要够认出"是哪块表"。 */
 .mpr-photo img {
   display: block;
   width: 100%;
-  max-height: 180px;
+  height: 100%;
   object-fit: cover;
   object-position: center;
 }
 .mpr-photo:active {
   opacity: 0.75;
+}
+/* 抄表行里的读数特写:和上面那张缩略图对齐,别自己单起一套缩进 */
+.mpr .fld-crop {
+  margin-top: 8px;
+  margin-left: 50px;
+}
+
+/* ===== 这份表是谁、在哪填的 =====
+   放在最上面:它是看一眼就该知道的语境,不是要逐项核对的检查项。
+   混在读数中间的话,人往下核表时每次都要跳过它们。 */
+.rec-who {
+  margin: 0 0 10px;
+  padding: 4px 18px;
+  background: var(--lt-card, #fff);
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.rec-who-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+}
+.rec-who-row + .rec-who-row {
+  border-top: 0.5px solid var(--lt-border);
+}
+.rec-who-k {
+  flex: none;
+  width: 72px;
+  font-size: 13px;
+  color: var(--ios-gray);
+}
+.rec-who-v {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  color: var(--lt-ink, #111);
+  text-align: right;
+  padding: 0;
+}
+/* 巡检人是记录本身带的,改不了 —— 用灰色说明它不是输入框,
+   而不是做成一个点了没反应的框。 */
+.rec-who-v.is-ro {
+  color: var(--ios-gray);
 }
 /* 缺哪一台:说名字,不说"有字段为空" —— 后者等于让人自己去数 */
 .mpr-missing {
