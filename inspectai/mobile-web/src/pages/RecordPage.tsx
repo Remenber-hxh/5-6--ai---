@@ -6,6 +6,7 @@ import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
+import MeterPhotoRow, { fieldOfPhoto, missingAssets } from "@/components/MeterPhotoRow";
 import ReadingCrop from "@/components/ReadingCrop";
 import {
   FieldValue,
@@ -13,8 +14,10 @@ import {
   enableManual,
   getRecord,
   listTemplates,
+  moveReading,
   patchField,
   patchFieldAsset,
+  patchFieldSource,
   startAnalysis,
 } from "@/api/inspection";
 import { usePolling } from "@/hooks/usePolling";
@@ -335,6 +338,69 @@ export default function RecordPage() {
       (f.confidence || 0) < 0.95,
   );
 
+  // ===== 抄表模式:一张照片一行 =====
+  //
+  // 【判据是"这一格配了设备类型"】不是写死模板 id。配了类型就说明
+  // "这个读数属于某一台具体的设备",那才谈得上"选是哪台"。
+  // 写死 id 的话,以后后台配出第二个抄表模板,它不会走这条路,而且不报错。
+  const isMeterField = (f: FieldValue) => Boolean(f.assetOptions?.length);
+  const meterMode = (rec?.fields || []).some(isMeterField) && (rec?.images.length || 0) > 0;
+  const missing = rec ? missingAssets(rec.fields) : [];
+
+  /** 这一行还能选哪些设备:已经被别的行占走的不给选 —— 否则日报上会出现两个 Z1 */
+  function availableAssets(self: FieldValue | null): string[] {
+    if (!rec) return [];
+    const all = new Set<string>();
+    for (const f of rec.fields) for (const o of f.assetOptions || []) all.add(o);
+    const taken = new Set(
+      rec.fields
+        .filter((f) => f.code !== self?.code && f.assetName && String(f.value || "").trim())
+        .map((f) => f.assetName as string),
+    );
+    return [...all].filter((a) => !taken.has(a) || a === self?.assetName);
+  }
+
+  /**
+   * 给某张照片指定设备。
+   *
+   * 【三种情况】
+   *   照片还没人认领 → 把它和读数一起写到那台设备的格子上
+   *   已经认领了、选的还是同一台 → 什么都不做
+   *   已经认领了、改选另一台 → 走 move:读数、照片、置信度整组搬过去
+   */
+  async function pickAssetForPhoto(imageId: string, assetName: string) {
+    if (!rec) return;
+    const cur = fieldOfPhoto(rec.fields, imageId);
+    const target = rec.fields.find((f) => f.assetName === assetName);
+    if (!target) {
+      Toast.show({ content: "这台设备在这张表单里没有对应的格子" });
+      return;
+    }
+    if (cur && cur.code === target.code) return;
+    try {
+      if (!cur) {
+        // 还没认领:直接把这张照片挂到目标格上(读数由人接着填)
+        setRec(await patchFieldSource(rec.id, target.code, imageId, target.version));
+      } else {
+        setRec(await moveReading(rec.id, cur.code, target.code));
+      }
+    } catch (err) {
+      Toast.show({
+        content: err instanceof Error ? err.message : "改不了,请重试",
+        duration: 3000,
+      });
+    }
+  }
+
+  async function saveFieldValue(f: FieldValue, v: string) {
+    if (!rec) return;
+    try {
+      mergeField(await patchField(rec.id, f.code, v, f.version, { action: "correct" }));
+    } catch (err) {
+      Toast.show({ content: err instanceof Error ? err.message : "保存失败" });
+    }
+  }
+
   async function confirmAll() {
     if (!rec || confirming) return;
     setConfirming(true);
@@ -459,9 +525,46 @@ export default function RecordPage() {
           </div>
         )}
 
+        {/* ===== 抄表:一张照片一行,照片摆在行下面 =====
+            只给【读数配了设备类型】的模板走这条(现在是紫菡能耗)。
+            电梯巡检那种 17 个字段配 5 张照片,一张照片对不上一行,硬套会很怪。 */}
+        {meterMode && (
+          <>
+            <div className="fld-group-title">按拍照顺序核对</div>
+            {missing.length > 0 && (
+              // 【说清缺的是哪一台,不是"有字段为空"】现场看到 5 行,
+              // 他没法知道缺的是哪一台 —— 而系统知道。不拦提交:漏抄是事实,
+              // 不该卡住交工;但要把该补的那台指出来,顺带给补拍入口。
+              <div className="mpr-missing">
+                <span>还差 {missing.join("、")} 没抄</span>
+                <button className="fld-btn" onClick={() => nav("/")}>
+                  去补拍
+                </button>
+              </div>
+            )}
+            {rec.images.map((img, i) => {
+              const f = fieldOfPhoto(rec.fields, img.id);
+              return (
+                <MeterPhotoRow
+                  key={img.id}
+                  index={i + 1}
+                  photoUrl={photos[i]?.url || ""}
+                  field={f}
+                  options={availableAssets(f)}
+                  assetName={f?.assetName || ""}
+                  onPickAsset={(name) => pickAssetForPhoto(img.id, name)}
+                  onChangeValue={(v) => (f ? saveFieldValue(f, v) : Promise.resolve())}
+                  onOpenPhoto={() => setViewing(i)}
+                />
+              );
+            })}
+            <div className="fld-group-title">其余项</div>
+          </>
+        )}
+
         {/* 「日报字段」标题删了:整页只有这一组字段,标题不起区分作用 */}
         <div className="fld-group">
-          {rec.fields.map((f) => {
+          {rec.fields.filter((f) => !meterMode || !isMeterField(f)).map((f) => {
             // 读数来自哪张照片 —— 按 id 找,不按下标:照片能补拍、能删,
             // 下标会在删掉一张之后指向另一张图,而界面上看不出指错了。
             const srcIdx = f.sourceImageId

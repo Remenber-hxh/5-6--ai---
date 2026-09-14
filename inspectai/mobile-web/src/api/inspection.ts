@@ -205,6 +205,46 @@ export async function patchField(
  * 【必须不带 value】后端的 value 是指针:不传 = 这次没提交读数。
  * 传个空字符串的话会走进"改值"分支,把读数清空 —— 而请求照样返回 200。
  */
+/**
+ * 把一个读数整体挪到另一台设备名下(读数 + 照片 + 置信度 + AI 原值一起搬)。
+ *
+ * 【为什么是一个接口而不是两次 PATCH】搬家要么整个成、要么整个不成。
+ * 拆成"清掉这边"+"写到那边"两次请求,中间断一次就变成读数两边都有、
+ * 或者两边都没有 —— 而两次请求各自都返回 200,现场看不出发生过什么。
+ *
+ * 返回整条记录:搬家动了两格,只回一格的话另一格在界面上还是旧的。
+ */
+export async function moveReading(
+  recordId: string,
+  fromCode: string,
+  toCode: string,
+): Promise<RecordDTO> {
+  return api<RecordDTO>(`/api/inspection/records/${recordId}/fields/move`, {
+    method: "POST",
+    body: JSON.stringify({ fromCode, toCode }),
+  });
+}
+
+/**
+ * 认领一张还没人要的照片:告诉系统"这一格的读数来自这张图"。
+ *
+ * 【为什么要回整条记录,不只回这一格】一张照片只能归一格,后端在挂上去的
+ * 同时会把别的格子对它的引用清掉。只拿这一格的话,那一格在界面上还摆着
+ * 同一张照片 —— 看上去像两台表抄出了两个数。
+ */
+export async function patchFieldSource(
+  recordId: string,
+  code: string,
+  sourceImageId: string,
+  version: number,
+): Promise<RecordDTO> {
+  await api<FieldValue>(
+    `/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`,
+    { method: "PATCH", body: JSON.stringify({ sourceImageId, version }) },
+  );
+  return getRecord(recordId);
+}
+
 export async function patchFieldAsset(
   recordId: string,
   code: string,

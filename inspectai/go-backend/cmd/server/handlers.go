@@ -2193,6 +2193,10 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleStartAnalysis(w, r, recordID)
 	case len(parts) == 3 && parts[1] == "ai" && parts[2] == "latest" && r.Method == http.MethodGet:
 		s.handleGetLatestTask(w, r, recordID)
+	case len(parts) == 3 && parts[1] == "fields" && parts[2] == "move" && r.Method == http.MethodPost:
+		// 【必须排在下面那条 PATCH 之前】两条都是三段、都以 fields 开头,
+		// 顺序反了 "move" 会被当成字段标识走进 handlePatchField。
+		s.handleMoveReading(w, r, recordID)
 	case len(parts) == 3 && parts[1] == "fields" && r.Method == http.MethodPatch:
 		s.handlePatchField(w, r, recordID, parts[2])
 	case len(parts) == 2 && parts[1] == "manual" && r.Method == http.MethodPost:
@@ -2530,9 +2534,13 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		// 【Value 必须是指针】不然"只改设备、不动读数"这种请求会走进下面的
 		// default 分支,把 req.Value 的零值 "" 写进去 —— 读数被静默清空,
 		// 而请求返回 200。nil = 这次没提交读数;指向 "" = 人真的要清空。
-		Value       *string `json:"value"`
-		AssetName   *string `json:"assetName"` // 这个读数属于哪台设备(抄表类才有)
-		Version     int     `json:"version"`
+		Value     *string `json:"value"`
+		AssetName *string `json:"assetName"` // 这个读数属于哪台设备(抄表类才有)
+		// SourceImageID 认领一张还没人要的照片:抄表按拍照顺序排,AI 读不出
+		// 的那张不会被任何一格认领。人在那一行选了设备,就是在说"这张是这台的"
+		// —— 照片先挂上,读数由他接着填。同样用指针:nil = 这次不改归属照片。
+		SourceImageID *string `json:"sourceImageId"`
+		Version       int     `json:"version"`
 		Action      string  `json:"action"`      // confirm / correct / uncertain（缺省按值是否变化推断）
 		DurationMs  int     `json:"durationMs"`  // 该字段停留时长（移动端可选上报）
 		ViewedPhoto bool    `json:"viewedPhoto"` // 是否看过原图（移动端可选上报）
@@ -2584,6 +2592,37 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		field.AssetName = want
 	}
 
+	// 【认领一张没人要的照片】只认这条记录里真实存在的照片 id。
+	// 放行任意字符串的话,确认页那一行会去加载一张不存在的图 ——
+	// 表现是"这一行的照片一直加载不出来",而数据看着是填好的。
+	if req.SourceImageID != nil {
+		want := strings.TrimSpace(*req.SourceImageID)
+		if want != "" {
+			ok := false
+			for _, img := range rec.Images {
+				if img.ID == want {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				writeError(w, http.StatusBadRequest, "image_not_found", "这张照片不在这条记录里")
+				return
+			}
+			// 一张照片只能归一格 —— 两格都指着它的话,人改了一格的读数,
+			// 另一格还摆着同一张照片,看上去像是两台表抄出了两个数。
+			for i := range rec.Fields {
+				if rec.Fields[i].Code != code && rec.Fields[i].SourceImageID == want {
+					rec.Fields[i].SourceImageID = ""
+					rec.Fields[i].Bbox = nil
+					rec.Fields[i].Version++
+				}
+			}
+		}
+		field.SourceImageID = want
+		field.Bbox = nil // 换了照片,原来那个读数区的框就不作数了
+	}
+
 	action := req.Action
 	switch {
 	case action == "uncertain":
@@ -2604,7 +2643,7 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		field.NeedsReview = false
 		action = "correct"
 	}
-	if action == "reassign" && field.AssetName == originalAsset {
+	if action == "reassign" && field.AssetName == originalAsset && req.SourceImageID == nil {
 		// 什么都没变的空请求,不必写库也不必留痕
 		writeJSON(w, http.StatusOK, field)
 		return
