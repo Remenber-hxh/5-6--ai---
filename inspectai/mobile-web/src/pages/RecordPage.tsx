@@ -347,17 +347,32 @@ export default function RecordPage() {
   const meterMode = (rec?.fields || []).some(isMeterField) && (rec?.images.length || 0) > 0;
   const missing = rec ? missingAssets(rec.fields) : [];
 
-  /** 这一行还能选哪些设备:已经被别的行占走的不给选 —— 否则日报上会出现两个 Z1 */
-  function availableAssets(self: FieldValue | null): string[] {
-    if (!rec) return [];
+  /** 这次巡检能选的全部设备(按台账现算,后端已经填在每个读数字段上) */
+  function allAssets(): string[] {
     const all = new Set<string>();
-    for (const f of rec.fields) for (const o of f.assetOptions || []) all.add(o);
-    const taken = new Set(
-      rec.fields
-        .filter((f) => f.code !== self?.code && f.assetName && String(f.value || "").trim())
-        .map((f) => f.assetName as string),
-    );
-    return [...all].filter((a) => !taken.has(a) || a === self?.assetName);
+    for (const f of rec?.fields || []) for (const o of f.assetOptions || []) all.add(o);
+    return [...all];
+  }
+
+  /**
+   * 哪些设备现在选不了,以及为什么 —— 一台设备只能归一行。
+   *
+   * 【为什么是"变灰 + 写明在第几张",不是从列表里去掉】去掉的话人只会觉得
+   * "怎么没有 Z3",不知道它在哪、也不知道该怎么办。写明「第 3 张已选」,
+   * 他才知道要先去把第 3 张那行清掉再回来 —— 少一次困惑,而不是少一个选项。
+   */
+  function takenAssets(self: FieldValue | null): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!rec) return out;
+    for (const f of rec.fields) {
+      if (f.code === self?.code || !f.assetName) continue;
+      // 只有"真占着"才算:选了设备但读数是空的,那一行本来就要人来填,
+      // 不该反过来把别的行也锁住。
+      if (!String(f.value || "").trim()) continue;
+      const idx = rec.images.findIndex((img) => img.id === f.sourceImageId);
+      out[f.assetName] = idx >= 0 ? `第 ${idx + 1} 张已选` : "已被别的项占用";
+    }
+    return out;
   }
 
   /**
@@ -550,7 +565,8 @@ export default function RecordPage() {
                   index={i + 1}
                   photoUrl={photos[i]?.url || ""}
                   field={f}
-                  options={availableAssets(f)}
+                  options={allAssets()}
+                  disabledAssets={takenAssets(f)}
                   assetName={f?.assetName || ""}
                   onPickAsset={(name) => pickAssetForPhoto(img.id, name)}
                   onChangeValue={(v) => (f ? saveFieldValue(f, v) : Promise.resolve())}

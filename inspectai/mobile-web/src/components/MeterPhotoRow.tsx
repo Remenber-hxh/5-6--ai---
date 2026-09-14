@@ -20,8 +20,10 @@ export interface MeterPhotoRowProps {
   photoUrl: string;
   /** 这张照片当前归哪一格读数;没人认领就是 null */
   field: FieldValue | null;
-  /** 还能选的设备(已经被别的行选走的不在里面) */
+  /** 全部候选设备 */
   options: string[];
+  /** 现在选不了的,以及为什么(一台设备只能归一行) */
+  disabledAssets?: Record<string, string>;
   /** 当前这行选中的设备名 */
   assetName: string;
   onPickAsset: (assetName: string) => Promise<void> | void;
@@ -34,6 +36,7 @@ export default function MeterPhotoRow({
   photoUrl,
   field,
   options,
+  disabledAssets,
   assetName,
   onPickAsset,
   onChangeValue,
@@ -66,6 +69,7 @@ export default function MeterPhotoRow({
             没选之前读数框是禁用的 —— 不知道是哪台表,填了也不知道记到哪。 */}
         <Picker
           options={options}
+          disabledOptions={disabledAssets}
           value={assetName}
           placeholder="选一台设备"
           onChange={(v) => {

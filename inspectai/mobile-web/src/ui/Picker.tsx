@@ -19,6 +19,15 @@ export interface PickerProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  /**
+   * 这几项现在选不了,以及为什么。键是选项,值是一句话理由。
+   *
+   * 【为什么是"变灰 + 说明",不是直接从列表里去掉】抄表一条记录抄六台表,
+   * 一台只能归一行。去掉的话人只会觉得"怎么没有 Z3",不知道它在哪、
+   * 也不知道该怎么办。摆在那儿写明「第 3 张已选」,他才知道要先去
+   * 把第 3 张那行清掉 —— 少一次困惑,而不是少一个选项。
+   */
+  disabledOptions?: Record<string, string>;
 }
 
 export function Picker({
@@ -26,6 +35,7 @@ export function Picker({
   value,
   onChange,
   placeholder = "请选择",
+  disabledOptions,
 }: PickerProps) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -54,22 +64,32 @@ export function Picker({
 
       {open && (
         <ul className="dd-list" role="listbox">
-          {options.map((o) => (
-            <li key={o}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={o === value}
-                className={o === value ? "dd-item is-on" : "dd-item"}
-                onClick={() => {
-                  onChange(o);
-                  setOpen(false);
-                }}
-              >
-                {o}
-              </button>
-            </li>
-          ))}
+          {options.map((o) => {
+            // 当前选中的这一项永远可选 —— 否则人打开自己这一行的选择器,
+            // 看到的是自己已经选的那台变灰了,像是出了故障。
+            const why = o === value ? "" : disabledOptions?.[o] || "";
+            return (
+              <li key={o}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={o === value}
+                  aria-disabled={Boolean(why)}
+                  className={
+                    why ? "dd-item is-off" : o === value ? "dd-item is-on" : "dd-item"
+                  }
+                  onClick={() => {
+                    if (why) return; // 理由就写在这一行上,点了不动才对
+                    onChange(o);
+                    setOpen(false);
+                  }}
+                >
+                  <span>{o}</span>
+                  {why && <em className="dd-why">{why}</em>}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
