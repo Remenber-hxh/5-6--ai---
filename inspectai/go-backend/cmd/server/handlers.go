@@ -1012,8 +1012,12 @@ func (s *Server) handleListPoints(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"points": seedPoints()})
 }
 
-func (s *Server) handleListTemplates(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"templates": reportTemplates()})
+func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
+	// 【按可见项目裁】记录的项目跟着模板走 —— 列出别的项目的模板,等于让人
+	// 往一个他自己看不见的项目里提交,提交成功之后那条记录就消失了。
+	writeJSON(w, http.StatusOK, map[string]any{
+		"templates": s.templatesVisibleTo(r, reportTemplates()),
+	})
 }
 
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
@@ -2096,6 +2100,17 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "template_not_found", "未找到日报模板")
 		return
 	}
+	// 【建记录这一步必须自己拦一道】列表裁过了不等于这里安全:客户端能直接
+	// 把 templateID 发过来。不拦的话,只看紫菡的人能建一条落在会议中心名下的
+	// 记录 —— 提交成功,然后他自己就看不见了,而且哪儿都不报错。
+	//
+	// 拦在接口上而不是只藏界面,和模板编辑那边是同一条规矩:
+	// 同一件事有两个入口时,边界要落在最里面那个。
+	if !s.canUseTemplate(r, tpl) {
+		writeError(w, http.StatusForbidden, "template_out_of_scope",
+			"这个模板不属于你负责的项目")
+		return
+	}
 	req.EngTaskID = strings.TrimSpace(req.EngTaskID)
 	if req.EngTaskID != "" {
 		task, err := s.store.GetEngineeringTask(req.EngTaskID)
@@ -3008,7 +3023,9 @@ func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
 		saved = append(saved, img)
 	}
 
-	candidates := sceneCandidates()
+	// 【候选也按可见项目裁】不裁的话紫菡的照片会和会议中心那几个模板一起比对,
+	// 认成别的项目的模板时界面显示"识别成功",现场按另一套判定规则巡检。
+	candidates := s.sceneCandidatesFor(r)
 	result, err := s.aiClient.Classify(paths, candidates)
 	if err != nil {
 		result := &SceneClassifyResult{

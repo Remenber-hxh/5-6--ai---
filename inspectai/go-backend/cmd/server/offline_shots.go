@@ -558,7 +558,9 @@ func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Reque
 		paths = append(paths, shot.ImagePath)
 	}
 
-	candidates := sceneCandidates()
+	// 和在线那条一样按可见项目裁 —— 离线补传这条路如果不裁,
+	// 同一个人换条路进来就能认到别的项目的模板,而两条路看上去一模一样。
+	candidates := s.sceneCandidatesFor(r)
 	result, err := s.aiClient.Classify(paths, candidates)
 	if err != nil {
 		// 识别失败不阻断流程:转人工选模板,照片仍在服务器上不会丢
