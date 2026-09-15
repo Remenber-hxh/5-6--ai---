@@ -222,6 +222,58 @@ curl -fsS https://jadeast.cloud/health
 - 一线提交修改申请后，推送待审批提醒。
 - 主管审批通过或驳回后，推送处理结果。
 
+### 一个项目一个群（每日未巡提醒）
+
+每日未巡提醒最多支持 8 个群机器人，每个自己绑一批项目、各发各的。绑了项目之后，
+这个群看到的总数、完成数、分组**都只算它负责的项目** —— 否则紫菡那个群会收到
+「今天 35 台待巡」，而其中 32 台是会议中心的。
+
+地址走 secret 文件，项目名走 `.env.prod`：
+
+| 第几个群 | Webhook（secret 文件） | 收哪些项目（.env.prod） |
+| --- | --- | --- |
+| 1 | `secrets/wework_bot_webhook` | `WEWORK_BOT_PROJECTS` |
+| 2 | `secrets/wework_bot_2_webhook` | `WEWORK_BOT_2_PROJECTS` |
+| N | `secrets/wework_bot_N_webhook` | `WEWORK_BOT_N_PROJECTS` |
+
+第 1 个沿用原来的键名，不叫 `_1_`：线上那台已经配好了 `WEWORK_BOT_WEBHOOK`，
+改名意味着升级当天推送静默失效，而健康检查照样显示正常。
+项目名留空 = 这个群收全部项目，也就是升级前的行为。
+
+加第 2 个群：
+
+```bash
+cd /opt/inspectai-src/inspectai
+
+# 【别用 echo】webhook 等价于"往这个群发消息的权限"，echo 会把它留在
+# ~/.bash_history 里。read -s 不回显、不入 history。
+read -r -s -p '粘贴第 2 个群的 Webhook URL: ' HOOK && echo
+printf '%s' "$HOOK" > secrets/wework_bot_2_webhook
+unset HOOK
+chmod 600 secrets/wework_bot_2_webhook
+chown 10001:10001 secrets/wework_bot_2_webhook
+
+# .env.prod 里写项目名（这两行是项目名，不是凭证）
+#   WEWORK_BOT_PROJECTS=会议中心
+#   WEWORK_BOT_2_PROJECTS=紫菡雅集
+
+bash scripts/deploy-linux.sh
+```
+
+确认生效（日志里只有项目名，永远不会出现地址）：
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs go-backend | grep 每日推送群机器人
+#   每日推送群机器人: 机器人1(会议中心)
+#   每日推送群机器人: 机器人2(紫菡雅集)
+```
+
+这两行对不上（少一行、或者括号里是「全部项目」）就说明配错了，此时**先别等第二天**——
+括号里写的是什么，那个群就只收什么。
+
+> 还没配第二个群也要有 `secrets/wework_bot_2_webhook` 这个文件（空文件即可）——
+> compose 挂载不存在的文件会直接起不来。`deploy-linux.sh` 会自动补建，不会覆盖已有内容。
+
 发送文本消息：
 
 ```bash
@@ -398,4 +450,5 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | `inspectai_supervisor_token` | go-backend | 主管 token |
 | `inspectai_admin_password` | go-backend | 管理后台登录密码 |
 | `wework_app_secret` | go-backend | 企业微信自建应用 Secret；为空则消息能力禁用 |
-| `wework_bot_webhook` | go-backend | 企业微信群机器人 Webhook；为空则群机器人通知禁用 |
+| `wework_bot_webhook` | go-backend | 第 1 个群机器人 Webhook；为空则群机器人通知禁用 |
+| `wework_bot_2_webhook` | go-backend | 第 2 个群机器人 Webhook；没用也要有这个文件（空的即可） |

@@ -114,5 +114,8 @@ func envOrSecret(key, def string) string {
 	if v := getenvWithSecret(key, ""); strings.TrimSpace(v) != "" {
 		return v
 	}
-	return os.Getenv(key)
+	if v := os.Getenv(key); strings.TrimSpace(v) != "" {
+		return v
+	}
+	return def
 }

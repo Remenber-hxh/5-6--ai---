@@ -12,7 +12,8 @@
 #   ./secrets/inspectai_supervisor_token
 #   ./secrets/inspectai_admin_password
 #   ./secrets/wework_app_secret          # 可选：启用企业微信消息时填写
-#   ./secrets/wework_bot_webhook         # 可选：启用企业微信群机器人时填写
+#   ./secrets/wework_bot_webhook         # 可选：第 1 个群机器人
+#   ./secrets/wework_bot_2_webhook       # 可选：第 2 个群机器人（没用也要有这个文件）
 #
 # 详细操作见 docs/DEPLOY.md（生成 secret + 权限收紧 + 备份策略）。
 
@@ -37,6 +38,11 @@ secrets:
     file: ./secrets/wework_app_secret
   wework_bot_webhook:
     file: ./secrets/wework_bot_webhook
+  # 第 2 个群机器人(一个项目一个群)。
+  # 【为空也要有这个文件】compose 挂载一个不存在的文件会直接起不来,
+  # 而"还没配第二个群"是个完全正常的状态 —— prepare-secrets.sh 会建空文件。
+  wework_bot_2_webhook:
+    file: ./secrets/wework_bot_2_webhook
 
 # 容器日志统一上限:json-file 默认无限增长,跑数月会吃满磁盘
 x-logging: &default-logging
@@ -149,6 +155,12 @@ services:
       WEWORK_AGENT_ID: ${WEWORK_AGENT_ID:-}
       WEWORK_APP_SECRET_FILE: /run/secrets/wework_app_secret
       WEWORK_BOT_WEBHOOK_FILE: /run/secrets/wework_bot_webhook
+      # ===== 每日推送:一个项目一个群 =====
+      # PROJECTS 是项目名,不是凭证,走普通环境变量;webhook 走 secret 文件。
+      # 留空 = 这个群收全部项目(升级前的行为)。
+      WEWORK_BOT_PROJECTS: ${WEWORK_BOT_PROJECTS:-}
+      WEWORK_BOT_2_WEBHOOK_FILE: /run/secrets/wework_bot_2_webhook
+      WEWORK_BOT_2_PROJECTS: ${WEWORK_BOT_2_PROJECTS:-}
     secrets:
       - mysql_dsn
       - inspectai_auth_token
@@ -156,6 +168,7 @@ services:
       - inspectai_admin_password
       - wework_app_secret
       - wework_bot_webhook
+      - wework_bot_2_webhook
     volumes:
       - app_storage:/app/storage
     depends_on:

@@ -47,10 +47,21 @@ write_secret() {
   echo "✔ wrote $path ($(stat -c '%a %u:%g' "$path"))"
 }
 
+# 可选凭据：没给值时创建空文件（compose 挂载不存在的文件会直接起不来）。
+#
+# 【不给值 ≠ 清空已有的】这个脚本会被反复重跑（换了 APP_SECRET、加了新
+# 凭据都要跑一次），而每次不可能把所有可选变量都重新 export 一遍。
+# 无条件覆盖的话，只为了改企业微信 Secret 跑一次，群机器人就哑了 ——
+# 而且没有任何报错，要等到第二天没人收到提醒才发现。
+# 真要清空：`: > secrets/<名字>`，那是个明确动作。
 write_optional_secret() {
   local name="$1"
   local value="$2"
   local path="$SECRETS_DIR/$name"
+  if [[ -z "$value" && -s "$path" ]]; then
+    echo "· kept existing $path（本次没给 $name 的值，保留原内容不动）"
+    return
+  fi
   printf '%s' "$value" > "$path"
   chmod 600 "$path"
   chown "${CONTAINER_UID}:${CONTAINER_GID}" "$path" 2>/dev/null || true
@@ -70,7 +81,10 @@ write_secret inspectai_admin_password "${INSPECTAI_ADMIN_PASSWORD:-}"
 
 # 可选凭据：为空时创建空文件，docker compose 仍可挂载，服务会自动禁用相关能力。
 write_optional_secret wework_app_secret "${WEWORK_APP_SECRET:-}"
-write_optional_secret wework_bot_webhook "${WEWORK_BOT_WEBHOOK:-}"
+# 群机器人 webhook：一个项目一个群，第 1 个沿用原键名。
+# 收哪些项目在 .env.prod 里配 WEWORK_BOT_PROJECTS / WEWORK_BOT_2_PROJECTS（项目名不是凭证）。
+write_optional_secret wework_bot_webhook   "${WEWORK_BOT_WEBHOOK:-}"
+write_optional_secret wework_bot_2_webhook "${WEWORK_BOT_2_WEBHOOK:-}"
 
 # 自动生成 token（若未设）
 gen_token() {

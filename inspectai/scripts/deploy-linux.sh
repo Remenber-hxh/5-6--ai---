@@ -85,18 +85,26 @@ echo "  .env.prod 已就位（不含明文密钥）"
 echo "  secrets/ 下 ${#REQUIRED_SECRETS[@]} 个文件齐全"
 
 # 可选 secret：compose 会挂载该文件；为空代表相关能力未启用。
-if [ ! -e "$SECRETS_DIR/wework_app_secret" ]; then
-  : > "$SECRETS_DIR/wework_app_secret"
-  chmod 600 "$SECRETS_DIR/wework_app_secret"
-  chown "${INSPECTAI_CONTAINER_UID:-10001}:${INSPECTAI_CONTAINER_GID:-10001}" "$SECRETS_DIR/wework_app_secret" 2>/dev/null || true
-  echo "  已创建可选空 secret：secrets/wework_app_secret"
-fi
-if [ ! -e "$SECRETS_DIR/wework_bot_webhook" ]; then
-  : > "$SECRETS_DIR/wework_bot_webhook"
-  chmod 600 "$SECRETS_DIR/wework_bot_webhook"
-  chown "${INSPECTAI_CONTAINER_UID:-10001}:${INSPECTAI_CONTAINER_GID:-10001}" "$SECRETS_DIR/wework_bot_webhook" 2>/dev/null || true
-  echo "  已创建可选空 secret：secrets/wework_bot_webhook"
-fi
+#
+# 【为什么空文件也得建】compose 挂载一个不存在的文件会直接起不来，
+# 而"还没配第二个群"是个完全正常的状态。升级到多机器人那天，如果这里
+# 漏建文件，表现是整站起不来 —— 只为了一个没人用的可选功能。
+#
+# 【只建不覆盖】已经有内容的文件绝不动。线上那个 webhook 是手写进去的。
+OPTIONAL_SECRETS=(
+  wework_app_secret
+  wework_bot_webhook
+  wework_bot_2_webhook
+)
+for name in "${OPTIONAL_SECRETS[@]}"; do
+  path="$SECRETS_DIR/$name"
+  if [ ! -e "$path" ]; then
+    : > "$path"
+    chmod 600 "$path"
+    chown "${INSPECTAI_CONTAINER_UID:-10001}:${INSPECTAI_CONTAINER_GID:-10001}" "$path" 2>/dev/null || true
+    echo "  已创建可选空 secret：secrets/$name"
+  fi
+done
 echo
 
 # 首次部署还没有证书，必须先用 HTTP-only 配置完成 ACME challenge。
