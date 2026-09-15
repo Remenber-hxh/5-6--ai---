@@ -24,6 +24,45 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"projects": list})
 }
 
+// errUnknownProject 项目名不在项目表里。
+var errUnknownProject = errors.New("unknown_project")
+
+// errProjectDisabled 项目存在但已停用。
+var errProjectDisabled = errors.New("project_disabled")
+
+// checkProjectRegistered 这个项目名是不是台账里真实存在的、启用中的项目。
+//
+// 【为什么必须在后端拦】项目名是业务表的关联键 —— assets.project 存的就是
+// 这个字符串,没有外键。打错一个字("紫涵"vs"紫菡")建出来的设备会落进一个
+// 不存在的项目,然后【谁都看不见它】:
+//   - 项目管理页按 projects 表列,列不出这个名字
+//   - 台账按人的项目范围裁(limitAssetsToVisibleProjects),裁掉它
+//   - 项目的"设备数"按名字聚合,也数不到它
+//
+// 全程没有任何报错,只表现成"我明明建了一台设备,它不见了"。
+// 前端把输入框换成下拉能挡住大部分,但挡不住直接调接口的,
+// 所以真正的闸口在这里。
+//
+// 【停用的也拦】停用项目不参与可见范围计算(ListUserProjectNames 只返回启用中的),
+// 往里建设备是同一种"建完就看不见"。
+func (s *Server) checkProjectRegistered(tenantID, name string) error {
+	name = strings.TrimSpace(name)
+	list, err := s.store.ListProjects(tenantID)
+	if err != nil {
+		return err
+	}
+	for _, p := range list {
+		if p == nil || strings.TrimSpace(p.Name) != name {
+			continue
+		}
+		if p.Disabled {
+			return errProjectDisabled
+		}
+		return nil
+	}
+	return errUnknownProject
+}
+
 type projectUpsertRequest struct {
 	Name     string `json:"name"`
 	Note     string `json:"note"`

@@ -1502,6 +1502,22 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "项目 / 编号 / 名称 均不能为空")
 		return
 	}
+	// 【项目必须是真实存在的项目,不能是手打出来的】详见 checkProjectRegistered:
+	// 打错一个字建出来的设备,建完就再也没人看得见,而且不报错。
+	tenantID := s.tenantForRequest(r)
+	switch err := s.checkProjectRegistered(tenantID, req.Project); {
+	case errors.Is(err, errUnknownProject):
+		writeError(w, http.StatusBadRequest, "unknown_project",
+			"没有叫「"+req.Project+"」的项目。请先在「项目管理」里建好这个项目,再回来从下拉里选 —— 手打的项目名会让这台设备建完就谁都看不见。")
+		return
+	case errors.Is(err, errProjectDisabled):
+		writeError(w, http.StatusBadRequest, "project_disabled",
+			"项目「"+req.Project+"」已停用,不能往里建设备。请先在「项目管理」里启用它。")
+		return
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "list_projects_failed", err.Error())
+		return
+	}
 	// 模板段决定这台设备的身份能不能和巡检记录对上。
 	//
 	// 后台的新建表单【没有模板这一项】,所以 req.TemplateID 永远是空。原来这里
@@ -1524,7 +1540,7 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		// 编号必须过 sanitizeAssetIdent —— 巡检路径(assetIDFor)是过的,
 		// 这里不过的话,编号里有空格/斜杠时两边算出的 ID 不一样。
 		ID:          req.Project + "::" + tplPart + "::" + sanitizeAssetIdent(req.AssetKey),
-		TenantID:    s.tenantForRequest(r), // 新资产打上创建者所属租户
+		TenantID:    tenantID, // 新资产打上创建者所属租户
 		Project:     req.Project,
 		ProjectCode: req.Project,
 		PointID:     strings.TrimSpace(req.PointID),

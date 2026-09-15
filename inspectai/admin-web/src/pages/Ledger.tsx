@@ -1,10 +1,10 @@
 import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, PlusOutlined, QrcodeOutlined, UploadOutlined } from "@ant-design/icons";
-import { AutoComplete, Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
+import { Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, AssetSnapshotEntry, EngineeringTask, ReportTemplateDTO, createAsset, deleteAsset, listAssetSnapshots, listAssets, listReportTemplates, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
+import { AssetEntry, AssetSnapshotEntry, EngineeringTask, ReportTemplateDTO, createAsset, deleteAsset, listAssetSnapshots, listAssets, listProjects, listReportTemplates, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
 import AssetQRSheet from "../components/AssetQRSheet";
 import AssetTrend from "../components/AssetTrend";
 import { exportCsv } from "../lib/csv";
@@ -89,13 +89,35 @@ export default function Ledger() {
       .catch(() => setTemplateTypes([]));
   }, []);
 
+  // 建档表单的项目候选。【来自项目表,不是来自已有资产】
+  //
+  // 原来是把已有资产的 project 去重拼出来的,有两个后果:
+  //   1. 新建的项目还没有设备,永远不出现在候选里 —— 而你正要给它建第一台设备
+  //   2. 于是只能手打,打错一个字("紫涵"vs"紫菡")就把设备建进一个不存在的
+  //      项目,然后谁都看不见它:项目页列不出、台账按项目范围裁掉、设备数也数不到,
+  //      全程不报错。线上真发生过。
+  // 后端也拦了(checkProjectRegistered),这里是让人根本打不出错别字。
+  const [projects, setProjects] = useState<string[]>([]);
+  // 【"没建过项目"和"没取到项目"要分开说】两种情况下拉都是空的,但该做的事
+  // 完全相反:前者去建项目,后者去找管理员。混成一句会让人白跑一趟。
+  const [projectsErr, setProjectsErr] = useState("");
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  useEffect(() => {
+    listProjects()
+      .then((ps) => {
+        setProjects(ps.filter((p) => !p.disabled).map((p) => p.name));
+        setProjectsErr("");
+      })
+      .catch((e) => {
+        setProjects([]);
+        setProjectsErr(e instanceof Error ? e.message : "项目列表没取到");
+      })
+      .finally(() => setProjectsLoaded(true));
+  }, []);
+
   // 筛选栏用的类型仍取自已有资产 —— 那里是"筛现有的",不是"定新的"
   const types = useMemo(
     () => Array.from(new Set(assets.map((a) => a.assetType).filter(Boolean))) as string[],
-    [assets],
-  );
-  const projects = useMemo(
-    () => Array.from(new Set(assets.map((a) => a.project).filter(Boolean))) as string[],
     [assets],
   );
 
@@ -570,11 +592,25 @@ export default function Ledger() {
             }
           }}
         >
-          <Form.Item name="project" label="项目" rules={[{ required: true, message: "请输入项目" }]}>
-            <AutoComplete
-              options={projects.map((p) => ({ value: p }))}
-              placeholder="选择或输入项目名"
-              filterOption={(input, opt) => String(opt?.value || "").includes(input)}
+          {/* 【只能选,不能打】手打的项目名会让这台设备建完就谁都看不见 —— 见上面 projects 的注释 */}
+          <Form.Item
+            name="project"
+            label="项目"
+            rules={[{ required: true, message: "请选择项目" }]}
+            extra={
+              projectsErr
+                ? `项目列表没取到(${projectsErr})—— 刷新试试,还不行就是权限问题,找管理员`
+                : projectsLoaded && projects.length === 0
+                  ? "还没有启用中的项目 —— 先去「项目管理」建一个"
+                  : undefined
+            }
+          >
+            <Select
+              showSearch
+              options={projects.map((p) => ({ value: p, label: p }))}
+              placeholder={projects.length === 0 ? "没有可选项目" : "选择项目"}
+              notFoundContent="没有这个项目 —— 请先在「项目管理」里建好"
+              optionFilterProp="label"
             />
           </Form.Item>
           <Form.Item name="assetKey" label="设备编号" rules={[{ required: true, message: "请输入编号" }]}>
