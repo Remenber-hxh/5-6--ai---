@@ -76,10 +76,30 @@ func (s *Server) runDailyPushOnce(now time.Time) {
 	}
 }
 
+// pushOneTenant 这个租户下,每个群机器人各发各的。
+//
+// 【为什么逐个机器人独立走一遍】一个项目一个群。共用一次记账的话,
+// 发完第一个群就记成"今天已发",第二个群永远收不到 —— 而日志显示成功。
+// 一个群失败也不该带走其他群:紫菡那个 webhook 失效,不能让会议中心也收不到。
 func (s *Server) pushOneTenant(tenantID string, cfg dailyPushConfig, now time.Time) {
-	lastDay, err := s.store.LastPushDay(tenantID, pushKindDailyUndone)
+	bots := s.weworkBots
+	if len(bots) == 0 {
+		// 【说清楚是没配,不是没数据】否则运维看到"没推送"会去查计划和设备。
+		// 放在这里只在到点时打一次,不会每分钟刷屏。
+		if ok, _ := shouldFireDailyPush(cfg, now, "", pushCatchUpMinutes); ok {
+			log.Printf("WARN: [%s] 到推送时间但一个群机器人都没配(WEWORK_BOT_WEBHOOK)", tenantID)
+		}
+		return
+	}
+	for _, bot := range bots {
+		s.pushOneBot(tenantID, cfg, now, bot)
+	}
+}
+
+func (s *Server) pushOneBot(tenantID string, cfg dailyPushConfig, now time.Time, bot weworkBotTarget) {
+	lastDay, err := s.store.LastPushDay(tenantID, bot.SlotKind)
 	if err != nil {
-		log.Printf("WARN: [%s] 读推送流水失败: %v", tenantID, err)
+		log.Printf("WARN: [%s] %s 读推送流水失败: %v", tenantID, bot.Name, err)
 		return
 	}
 	if ok, _ := shouldFireDailyPush(cfg, now, lastDay, pushCatchUpMinutes); !ok {
@@ -90,10 +110,10 @@ func (s *Server) pushOneTenant(tenantID string, cfg dailyPushConfig, now time.Ti
 	// 这是正常路径,安静跳过 —— 打成 ERROR 的话日志里全是它,
 	// 真正的失败反而被淹没。
 	day := now.Format("2006-01-02")
-	slot, err := s.store.ClaimPushSlot(tenantID, pushKindDailyUndone, day)
+	slot, err := s.store.ClaimPushSlot(tenantID, bot.SlotKind, day)
 	if err != nil {
 		if !errors.Is(err, errPushAlreadySent) {
-			log.Printf("WARN: [%s] 抢占推送名额失败: %v", tenantID, err)
+			log.Printf("WARN: [%s] %s 抢占推送名额失败: %v", tenantID, bot.Name, err)
 		}
 		return
 	}
@@ -101,9 +121,12 @@ func (s *Server) pushOneTenant(tenantID string, cfg dailyPushConfig, now time.Ti
 	// 【调度器用系统视角算,不是某个人的可见范围】它代表系统本身 ——
 	// 而且它没有请求、没有登录用户。页面上那份是按人裁过的,
 	// 两者用的是同一个内核(buildTodayBoardFor),口径不会分叉。
-	board, err := s.buildTodayBoardFor(tenantID, dataVisibility{AllData: true}, now)
+	// 【按这个机器人负责的项目算,不是全量再裁文案】总数、完成数也要跟着裁 ——
+	// 否则紫菡那个群收到的是"今天 35 台待巡 3 台",而那 35 台里有 32 台是
+	// 会议中心的。数字对不上还在其次,那等于隔着汇总数把别的项目泄露出去。
+	board, err := s.buildTodayBoardFor(tenantID, bot.visibility(), now)
 	if err != nil {
-		log.Printf("ERROR: [%s] 算今日看板失败: %v", tenantID, err)
+		log.Printf("ERROR: [%s] %s 算今日看板失败: %v", tenantID, bot.Name, err)
 		_ = s.store.FinishPushSlot(slot, "failed", "算看板失败: "+err.Error())
 		return
 	}
@@ -115,22 +138,20 @@ func (s *Server) pushOneTenant(tenantID string, cfg dailyPushConfig, now time.Ti
 		return
 	}
 
-	if s.weworkBot == nil || !s.weworkBot.Enabled() {
-		// 【说清楚是没配,不是没数据】否则运维看到"没推送"会去查计划和设备,
-		// 而问题只是 WEWORK_BOT_WEBHOOK 没设。
-		log.Printf("WARN: [%s] 有 %d 台待巡但企微群机器人未配置,提醒发不出去",
-			tenantID, digest.Pending)
-		_ = s.store.FinishPushSlot(slot, "failed", "企业微信群机器人未配置(WEWORK_BOT_WEBHOOK)")
+	if bot.Client == nil || !bot.Client.Enabled() {
+		log.Printf("WARN: [%s] %s 有 %d 台待巡但地址无效,提醒发不出去",
+			tenantID, bot.Name, digest.Pending)
+		_ = s.store.FinishPushSlot(slot, "failed", "群机器人地址无效")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if _, err := s.weworkBot.SendMarkdown(ctx, digest.Text); err != nil {
-		log.Printf("ERROR: [%s] 推送发送失败: %v", tenantID, err)
+	if _, err := bot.Client.SendMarkdown(ctx, digest.Text); err != nil {
+		log.Printf("ERROR: [%s] %s 推送发送失败: %v", tenantID, bot.Name, err)
 		_ = s.store.FinishPushSlot(slot, "failed", err.Error())
 		return
 	}
-	log.Printf("每日未巡提醒已发送 [%s] %s:待巡 %d 台", tenantID, day, digest.Pending)
+	log.Printf("每日未巡提醒已发送 [%s] %s %s:待巡 %d 台", tenantID, bot.Name, day, digest.Pending)
 	_ = s.store.FinishPushSlot(slot, "sent", "")
 }

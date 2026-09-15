@@ -24,7 +24,11 @@ type Server struct {
 	chatCtxMu          sync.Mutex
 	chatCtx            map[string]chatCtxEntry
 	wework             *WeWorkClient
-	weworkBot          *WeWorkBotClient
+	weworkBot          *WeWorkBotClient // 第 1 个群 —— 手动发消息那几个接口还在用
+	// weworkBots 每日推送用的全部群机器人,各绑各的项目(见 push_targets.go)。
+	// 【和上面那个不是二选一】weworkBot 服务的是"手动往群里发一条"这类动作,
+	// 它没有项目概念;每日推送才需要一个项目一个群。
+	weworkBots []weworkBotTarget
 	publicBaseURL      string
 	storageDir         string
 	frontendDir        string // 旧版移动端(挂 /old/)
@@ -72,6 +76,9 @@ func main() {
 		weworkClient = NewDisabledWeWorkClient()
 	}
 	weworkBotClient := NewWeWorkBotClient(getenvWithSecret("WEWORK_BOT_WEBHOOK", ""))
+	// 每日推送的群机器人:一个项目一个群。第 1 个沿用 WEWORK_BOT_WEBHOOK,
+	// 线上那台不用改任何配置就还是原来的行为(全部项目发到同一个群)。
+	weworkBots := loadWeWorkBotTargets(envOrSecret)
 	identitySeed := IdentitySeed{
 		Username:    getenv("INSPECTAI_ADMIN_USER", defaultAdminUser),
 		Password:    getenvWithSecret("INSPECTAI_ADMIN_PASSWORD", defaultAdminPass),
@@ -151,6 +158,7 @@ func main() {
 		supervisorToken:    supervisorToken,
 		wework:             weworkClient,
 		weworkBot:          weworkBotClient,
+		weworkBots:         weworkBots,
 		publicBaseURL:      publicBaseURL,
 		corsAllowedOrigins: corsAllowedOrigins,
 		aiSem:              make(chan struct{}, aiConcurrencyFromEnv()),
@@ -197,6 +205,17 @@ func main() {
 	}
 	log.Printf("  WeCom message: %v", weworkClient.Enabled())
 	log.Printf("  WeCom bot message: %v", weworkBotClient.Enabled())
+	// 【把"哪个群收哪些项目"打出来】配错了项目名是个安静的故障:
+	// 那个群从此收不到任何提醒,而健康检查、发送日志都一切正常。
+	// 启动时说一句,运维扫一眼就能对上。【只打项目名,绝不打 webhook】——
+	// 日志会被复制进工单、截图发到群里,凭证进了日志就等于公开。
+	if len(weworkBots) == 0 {
+		log.Printf("  每日推送群机器人: 未配置")
+	} else {
+		for _, b := range weworkBots {
+			log.Printf("  每日推送群机器人: %s", b.Name)
+		}
+	}
 	log.Printf("  Public base URL: %s", publicBaseURL)
 	log.Printf("  CORS origins: %s", strings.Join(originList(corsAllowedOrigins), ", "))
 
