@@ -78,16 +78,33 @@ export default function Ledger() {
   }, []);
 
   // 建档表单的设备类型候选。【来自模板,不是来自已有资产】—— 见表单里的注释。
+  //
+  // 【模板级和字段级都要给】抄表模板的模板级类型是"能耗表组",那是【一次巡检
+  // 的对象】,台账里根本没有这种实体;台账里有的是一台一台的"电表""水表",
+  // 它们配在【字段】上(z1_reading → 电表)。
+  //
+  // 原来只给模板级的,后果是:给紫菡建表只能选"能耗表组",而确认页要按
+  // "电表"去台账找候选设备,永远找不到 —— 于是抄表那套"每行选是哪台表"的
+  // 界面不启用,退回旧版式。现场看到的是"我明明建了设备,界面还是老样子",
+  // 而两边都不报错。2026-09-16 线上就是这么错的。
   const [templateTypes, setTemplateTypes] = useState<{ assetType: string; name: string }[]>([]);
   useEffect(() => {
     listReportTemplates()
-      .then((tpls: ReportTemplateDTO[]) =>
-        setTemplateTypes(
-          tpls
-            .filter((t) => (t.assetType || "").trim() !== "")
-            .map((t) => ({ assetType: t.assetType as string, name: t.name })),
-        ),
-      )
+      .then((tpls: ReportTemplateDTO[]) => {
+        const seen = new Set<string>();
+        const out: { assetType: string; name: string }[] = [];
+        const add = (at: string | undefined, tplName: string) => {
+          const v = (at || "").trim();
+          if (!v || seen.has(v)) return;
+          seen.add(v);
+          out.push({ assetType: v, name: tplName });
+        };
+        for (const t of tpls) {
+          add(t.assetType, t.name);
+          for (const f of t.fields || []) add(f.assetType, t.name);
+        }
+        setTemplateTypes(out);
+      })
       .catch(() => setTemplateTypes([]));
   }, []);
 

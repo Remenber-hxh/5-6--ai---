@@ -1174,6 +1174,17 @@ export interface TemplateFieldDTO {
   noWhen?: string;
   skipWhen?: string;
   judgeNote?: string;
+  /**
+   * 这一格的读数属于哪一类设备(台账里的 assetType,如「电表」「水表」)。
+   *
+   * 【和模板级的 assetType 不是一回事】模板级的是"这次巡检的对象"(能耗表组),
+   * 台账里没有这种实体;这里是一台一台的表。抄表确认页靠它去台账找候选设备,
+   * 对不上就没有候选,"每行选是哪台表"那套界面不启用。
+   *
+   * 目前工作台不提供编辑,但【必须写在类型里】—— 保存是整表替换,
+   * 类型里漏了它,将来有人改成显式构造字段对象时就会把它悄悄抹掉。
+   */
+  assetType?: string;
 }
 
 export interface ReportTemplateDTO {

@@ -40,7 +40,27 @@ func templateIDForAssetType(assetType string) string {
 			return tpl.ID
 		}
 	}
-	return ""
+	// 【再看字段级的设备类型】抄表模板的模板级类型是"能耗表组"(一次巡检的对象),
+	// 而台账里是一台一台的"电表""水表" —— 后者配在字段上。不看字段级的话,
+	// 建一台电表会落成 manual 段,和它将来被巡检时算出的 ID 对不上。
+	//
+	// 【两个模板都用同一种字段级类型就放弃】那时"这台设备属于哪个模板"没有
+	// 唯一答案,猜一个反而会把设备挂错;落 manual 至少还能靠 resolveAssetIdentity
+	// 按名字回查挂上去。
+	hit := ""
+	for _, tpl := range reportTemplates() {
+		for _, f := range tpl.Fields {
+			if !strings.EqualFold(strings.TrimSpace(f.AssetType), at) {
+				continue
+			}
+			if hit != "" && hit != tpl.ID {
+				return "" // 多个模板共用这种类型,认不出唯一归属
+			}
+			hit = tpl.ID
+			break
+		}
+	}
+	return hit
 }
 
 // resolveAssetIdentity 在建立"这条记录属于哪台设备"时，优先复用已有资产。
