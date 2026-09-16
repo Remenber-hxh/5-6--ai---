@@ -147,6 +147,18 @@ export default function MainLayout() {
                 <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
                   <b style={{ color: "#eef6f4", fontSize: 13 }}>{user?.displayName || user?.username}</b>
                   <small style={{ color: "#8aa3ad", fontSize: 11 }}>{user?.roleName || user?.roleCode}</small>
+                  {/* 【把"我能看到哪几个项目"摆在身份旁边】项目范围把数据裁掉是静默的:
+                      页面上只有一个变小了的数字,没有任何地方说少了什么。人会以为
+                      设备丢了、建档失败,而管理员那边一切正常。
+                      【只说范围,不说被藏了几条】藏起来的条数本身也是那个项目的信息。 */}
+                  {user && user.allProjects === false && (
+                    <small
+                      style={{ color: "#c9a227", fontSize: 11 }}
+                      title="你只能看到这些项目的数据。台账/记录里少了东西,多半是它。要看别的项目请管理员把你加进去。"
+                    >
+                      仅 {(user.visibleProjects || []).join("、") || "无项目"}
+                    </small>
+                  )}
                 </span>
               )}
             </div>

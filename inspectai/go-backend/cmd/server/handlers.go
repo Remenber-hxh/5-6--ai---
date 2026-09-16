@@ -435,10 +435,26 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 		out := map[string]any{"user": user, "perms": s.permsForRole(user.RoleCode)}
+		vis := s.visibilityFor(r)
 		// 【看不到数据时要说清为什么】挂在 /me 上,前端一进来就拿到,
 		// 一处提示覆盖所有页面 —— 否则得在每个列表页各写一遍"为什么是空的"。
-		if notice := dataScopeNotice(s.visibilityFor(r).BlockedReason); notice != "" {
+		if notice := dataScopeNotice(vis.BlockedReason); notice != "" {
 			out["dataScopeNotice"] = notice
+		}
+		// 【把"我能看到哪几个项目"直接说出来】数据被项目范围裁掉是【静默】的:
+		// 页面上只有一个变小了的数字,没有任何地方说少了什么。超管自己都会
+		// 被绕进去(以为设备丢了、以为建档失败),现场的人只会说"系统坏了"。
+		//
+		// 【说范围,不说被藏了几台】藏起来的条数本身也是那个项目的信息 ——
+		// 一个看不到紫菡数据的人,不该从"已隐藏 2 台"里推出紫菡有几台设备。
+		// 说清楚"你现在能看到哪几个项目"就够了:对不上就去找管理员。
+		out["allProjects"] = unrestricted(vis)
+		if !unrestricted(vis) {
+			names := vis.Projects
+			if names == nil {
+				names = []string{}
+			}
+			out["visibleProjects"] = names
 		}
 		writeJSON(w, http.StatusOK, out)
 		return

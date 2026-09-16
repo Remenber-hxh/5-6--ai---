@@ -18,6 +18,16 @@ export interface CurrentUser {
    * 报"系统坏了",而管理员那边一切正常。这句话让他知道该去找谁。
    */
   dataScopeNotice?: string;
+  /** true = 不受项目限制(看全部)。false 时看 visibleProjects。 */
+  allProjects?: boolean;
+  /**
+   * 当前能看到哪几个项目。只在受项目限制时下发。
+   *
+   * 【为什么要显示出来】项目范围把数据裁掉是【静默】的 —— 页面上只有一个
+   * 变小了的数字。人会以为设备丢了、建档失败,而管理员那边一切正常。
+   * 把范围摆在身份旁边,对不上就知道该去找谁。
+   */
+  visibleProjects?: string[];
 }
 
 // 能力检查:admin 全通过,其余看登录时下发的列表
@@ -112,12 +122,22 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
  * 返回 null 表示"不是真会话"(本地免鉴权模式),此时不要覆盖本地用户。
  */
 export async function fetchMe(): Promise<CurrentUser | null> {
-  const body = await api<{ user: CurrentUser; perms?: string[]; dataScopeNotice?: string }>(
-    "/api/auth/me",
-  );
+  const body = await api<{
+    user: CurrentUser;
+    perms?: string[];
+    dataScopeNotice?: string;
+    allProjects?: boolean;
+    visibleProjects?: string[];
+  }>("/api/auth/me");
   const user = body.user;
   if (!user || user.status === "local") return null;
-  return { ...user, perms: body.perms, dataScopeNotice: body.dataScopeNotice };
+  return {
+    ...user,
+    perms: body.perms,
+    dataScopeNotice: body.dataScopeNotice,
+    allProjects: body.allProjects,
+    visibleProjects: body.visibleProjects,
+  };
 }
 
 export interface LoginResult {
