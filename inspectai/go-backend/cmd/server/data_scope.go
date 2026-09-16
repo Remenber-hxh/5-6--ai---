@@ -303,7 +303,7 @@ func (s *Server) assetVisibleToRequest(r *http.Request, assetID string) bool {
 // limitAssetsToVisibleProjects 台账列表按项目范围裁剪。
 func (s *Server) limitAssetsToVisibleProjects(r *http.Request, assets []*AssetEntry) []*AssetEntry {
 	vis := s.visibilityFor(r)
-	if vis.AllData || (len(vis.Projects) == 0 && !vis.Blocked) {
+	if unrestricted(vis) {
 		return assets
 	}
 	out := make([]*AssetEntry, 0, len(assets))
@@ -313,6 +313,38 @@ func (s *Server) limitAssetsToVisibleProjects(r *http.Request, assets []*AssetEn
 		}
 	}
 	return out
+}
+
+// limitProjectsToVisible 项目名单按项目范围裁剪。
+//
+// 【为什么名单本身也要裁】原来只有数据在裁,名单一点不裁 —— 于是只分到
+// 会议中心的人,看不到紫菡的任何一条数据,却在项目管理页看得见"紫菡雅集"
+// 这个项目名、编号、有几台设备、有几个人。台账那边特意写了"隔着汇总数
+// 也不能泄露",名单这边却把同样的东西摆出来,两处口径对不上。
+//
+// 而且这个不一致会直接骗到人:项目页列得出的项目,台账里一台设备都没有,
+// 看着像"设备丢了"。今天就因为这个查了半天。
+func (s *Server) limitProjectsToVisible(r *http.Request, list []*Project) []*Project {
+	vis := s.visibilityFor(r)
+	if unrestricted(vis) {
+		return list
+	}
+	out := make([]*Project, 0, len(list))
+	for _, p := range list {
+		if p != nil && vis.allowsProject(p.Name) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// unrestricted 这次请求要不要按项目裁。
+//
+// 【抽出来是为了两处不会分叉】名单和数据必须用同一个判断:哪天只改了一处,
+// 表现就是"项目页有、台账里没有"(或者反过来),而两边都不报错。
+// 注意"没配项目范围"(Projects 空且没被拦)= 不按项目限,不是"什么都看不到"。
+func unrestricted(vis dataVisibility) bool {
+	return vis.AllData || (len(vis.Projects) == 0 && !vis.Blocked)
 }
 
 // ===== 管理 AI 那一侧的项目范围 =====

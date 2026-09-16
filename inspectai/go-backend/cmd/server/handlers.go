@@ -1518,6 +1518,14 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_projects_failed", err.Error())
 		return
 	}
+	// 【不能往自己看不见的项目里建设备】项目存在,不代表这个人管得着它。
+	// 建了的话这台设备对他自己立刻消失(台账按同一套范围裁),
+	// 表现和"设备丢了"一模一样 —— 而他刚亲手建完。
+	if !s.visibilityFor(r).allowsProject(req.Project) {
+		writeError(w, http.StatusForbidden, "project_not_visible",
+			"你没有项目「"+req.Project+"」的权限,不能往里建设备。需要的话请管理员把你加进这个项目。")
+		return
+	}
 	// 模板段决定这台设备的身份能不能和巡检记录对上。
 	//
 	// 后台的新建表单【没有模板这一项】,所以 req.TemplateID 永远是空。原来这里

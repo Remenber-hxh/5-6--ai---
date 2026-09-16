@@ -18,6 +18,8 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+	// 【名单也按项目范围裁】和台账同一套口径,见 limitProjectsToVisible。
+	list = s.limitProjectsToVisible(r, list)
 	if list == nil {
 		list = []*Project{}
 	}
