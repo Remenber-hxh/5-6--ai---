@@ -3701,6 +3701,7 @@ func buildZihanEnergyAssets(rec *Record, now time.Time) []*AssetEntry {
 			spec.AssetType,
 			readingAssetStatus(field, rec, spec.Name),
 			readingAssetSummary(spec.Name, fieldValue(rec.Fields, spec.FieldCode), field),
+			field,
 		))
 	}
 	return assets
@@ -3725,6 +3726,7 @@ func buildZihanDailyAssets(rec *Record, now time.Time) []*AssetEntry {
 			spec.AssetType,
 			choiceAssetStatus(field, rec, spec.Name),
 			choiceAssetSummary(spec.Name, fieldValue(rec.Fields, spec.FieldCode), field),
+			field,
 		))
 	}
 
@@ -3740,11 +3742,12 @@ func buildZihanDailyAssets(rec *Record, now time.Time) []*AssetEntry {
 		"环境监测",
 		environmentAssetStatus(temp, humidity, tempField, humField, rec),
 		environmentAssetSummary(temp, humidity),
+		tempField,
 	))
 	return assets
 }
 
-func buildAssetEntry(rec *Record, now time.Time, key, name, assetType, status, summary string) *AssetEntry {
+func buildAssetEntry(rec *Record, now time.Time, key, name, assetType, status, summary string, field *FieldValue) *AssetEntry {
 	return &AssetEntry{
 		ID:              assetIDFor(rec, key),
 		ProjectCode:     sanitizeAssetIdent(rec.Project),
@@ -3761,7 +3764,8 @@ func buildAssetEntry(rec *Record, now time.Time, key, name, assetType, status, s
 		LastSummary:     summary,
 		LastInspectedAt: now,
 		LastInspector:   rec.Inspector,
-		LastPhotoPath:   firstImagePath(rec),
+		// 【按字段挑照片,不是一律第一张】见 assetPhotoPath
+		LastPhotoPath:   assetPhotoPath(rec, field),
 	}
 }
 
@@ -3908,6 +3912,26 @@ func firstImagePath(rec *Record) string {
 		return ""
 	}
 	return rec.Images[0].Path
+}
+
+// assetPhotoPath 这台设备在这条记录里该用哪张照片当封面。
+//
+// 【为什么不能一律用第一张】一条抄表记录派生六台设备(四块电表两块水表),
+// 原来六台的封面全是 rec.Images[0] —— 台账里六张卡片长得一模一样,
+// 而且都是水表的图,电表那几台看着就像贴错了。
+//
+// 读数字段上记着它是从哪张照片读出来的(SourceImageID,确认页上人一张一张
+// 认过的那个映射)。有这个就用它,没有才退回第一张 —— 老记录没有这个字段,
+// 退回去至少和现在一样,不会更差。
+func assetPhotoPath(rec *Record, field *FieldValue) string {
+	if field != nil && strings.TrimSpace(field.SourceImageID) != "" {
+		for _, img := range rec.Images {
+			if img.ID == field.SourceImageID {
+				return img.Path
+			}
+		}
+	}
+	return firstImagePath(rec)
 }
 
 func assetLedgerTime(rec *Record) time.Time {

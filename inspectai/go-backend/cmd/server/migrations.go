@@ -63,6 +63,75 @@ var migrationList = []migration{
 	{34, "zihan_energy_follow_builtin_md", (*SQLiteStore).migZihanEnergyFollowBuiltinMD},
 	{35, "field_asset_type", (*SQLiteStore).migFieldAssetType},
 	{36, "site_filled_by_system", (*SQLiteStore).migSiteFilledBySystem},
+	{37, "asset_photo_per_field", (*SQLiteStore).migAssetPhotoPerField},
+}
+
+// 037 — 一条记录派生的多台设备,各自用回自己那张照片。
+//
+// 【现象】台账里紫菡那六台表(四电表两水表)的卡片长得一模一样,全是同一张
+// 水表照片 —— 电表那几台看着像贴错了图。
+//
+// 【原因】buildAssetEntry 原来写死 LastPhotoPath = rec.Images[0]。六台设备是
+// 同一条记录派生的,于是全拿第一张。代码已经改成按字段的 SourceImageID 挑,
+// 但【库里已经写进去的那一份不会自己变】—— 要等下一次巡检提交才覆盖。
+//
+// 这条回填就是补上那个差:只动 last_photo_path 这一列(它是派生数据,不是
+// 人填的),而且只在重算结果确实不同、且非空时才写。
+//
+// 【算不出来就不动】记录被删了、照片被删了、老记录没有 SourceImageID ——
+// 这些情况一律跳过,保持原样。宁可留着一张旧图,也不要把封面弄成空白。
+func (s *SQLiteStore) migAssetPhotoPerField() error {
+	rows, err := s.db.Query(
+		`SELECT id, tenant_id, COALESCE(last_record_id,''), COALESCE(last_photo_path,'')
+		   FROM assets WHERE COALESCE(last_record_id,'') <> ''`)
+	if err != nil {
+		return nil // 表还没建(全新库)= 没有要回填的
+	}
+	type target struct{ id, tenant, recID, photo string }
+	var todo []target
+	for rows.Next() {
+		var t target
+		if err := rows.Scan(&t.id, &t.tenant, &t.recID, &t.photo); err != nil {
+			rows.Close()
+			return fmt.Errorf("037 读台账: %w", err)
+		}
+		todo = append(todo, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("037 读台账: %w", err)
+	}
+
+	// 一条记录派生多台设备,按记录缓存一次重算结果,别对着同一条记录算六遍。
+	cache := map[string]map[string]string{} // recID -> assetID -> photoPath
+	fixed := 0
+	for _, t := range todo {
+		byAsset, ok := cache[t.recID]
+		if !ok {
+			byAsset = map[string]string{}
+			if rec, err := s.GetRecord(t.tenant, t.recID); err == nil && rec != nil {
+				for _, a := range buildAssets(rec, assetLedgerTime(rec)) {
+					if a != nil && a.LastPhotoPath != "" {
+						byAsset[a.ID] = a.LastPhotoPath
+					}
+				}
+			}
+			cache[t.recID] = byAsset
+		}
+		want := byAsset[t.id]
+		if want == "" || want == t.photo {
+			continue
+		}
+		if _, err := s.db.Exec(
+			`UPDATE assets SET last_photo_path=? WHERE id=?`, want, t.id); err != nil {
+			return fmt.Errorf("037 回填 %s 的封面: %w", t.id, err)
+		}
+		fixed++
+	}
+	if fixed > 0 {
+		log.Printf("迁移 037:%d 台设备的封面照改回了自己那一张(原来整条记录共用第一张)", fixed)
+	}
+	return nil
 }
 
 // 036 — 巡检地点从 AI 手里收回来,交给系统填。
