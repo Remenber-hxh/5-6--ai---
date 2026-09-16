@@ -1079,19 +1079,25 @@ func (s *Server) loadAssetsForDisplay(tenantID string) ([]*AssetEntry, error) {
 	if err != nil {
 		counts = nil
 	}
-	visible := make([]*AssetEntry, 0, len(assets))
+	// 【这里不再按名单藏设备】原来有一句 isLegacyZihanAggregateAsset:紫菡雅集
+	// 项目下、模板是 zihan_energy/zihan_daily 的设备,编号不在一份写死的白名单里
+	// 就整条跳过。本意是藏抄表拆分前留下的汇总行。
+	//
+	// 但"不在白名单里就藏"这个方向是错的:白名单是写死的,设备是会一直加的。
+	// 2026-09-16 线上盘点,这条规则藏掉的是【全部 2 台真实设备】(Z1、Z2,都是
+	// 在后台手工建的),历史汇总行一条都没藏到 —— 那种行早就没有了。
+	//
+	// 造成的现象是:建档成功、不报错,然后这台设备谁都看不见,连超管也看不见。
+	// 查了一整天,期间还怀疑过权限、租户、登录态。宁可让历史垃圾露出来让人删,
+	// 也不能让列表悄悄吃掉真实数据 —— 前者看得见,后者查不出来。
 	for _, a := range assets {
 		if counts != nil {
 			a.InspectionCount = counts[a.ID]
 			a.countedInspections = true // 已批量算过,enrich 里不必逐台再查
 		}
 		s.enrichAssetForDisplay(a)
-		if isLegacyZihanAggregateAsset(a) {
-			continue
-		}
-		visible = append(visible, a)
 	}
-	return visible, nil
+	return assets, nil
 }
 
 // ensureAssetLedgerFromRecords 启动时从巡检记录补建缺失的台账条目。
@@ -4030,40 +4036,6 @@ func recordTouchesAsset(rec *Record, asset *AssetEntry) bool {
 		}
 	}
 	return false
-}
-
-func isLegacyZihanAggregateAsset(a *AssetEntry) bool {
-	if a == nil || a.Project != "紫菡雅集" {
-		return false
-	}
-	switch a.TemplateID {
-	case "zihan_energy":
-		return !isZihanEnergyAssetKey(a.AssetKey)
-	case "zihan_daily":
-		return !isZihanDailyAssetKey(a.AssetKey)
-	default:
-		return false
-	}
-}
-
-func isZihanEnergyAssetKey(key string) bool {
-	switch sanitizeAssetIdent(key) {
-	case "z1_energy_meter", "z2_energy_meter", "z3_energy_meter", "z4_energy_meter",
-		"living_water_meter", "fire_water_meter":
-		return true
-	default:
-		return false
-	}
-}
-
-func isZihanDailyAssetKey(key string) bool {
-	switch sanitizeAssetIdent(key) {
-	case "strong_room", "distribution_box", "distribution_box_inside", "weak_room",
-		"fire_pump_room", "environment":
-		return true
-	default:
-		return false
-	}
 }
 
 func inferOverallStatus(rec *Record) string {
