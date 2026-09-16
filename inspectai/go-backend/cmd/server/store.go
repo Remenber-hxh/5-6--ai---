@@ -110,7 +110,7 @@ type AssetStore interface {
 	SubmitRecordWithAssets(rec *Record, assets []*AssetEntry, snaps []*AssetSnapshot, obs []*FieldObservation) error
 	ListAssets(tenantID string) ([]*AssetEntry, error)
 	GetAsset(tenantID, id string) (*AssetEntry, error)
-	UpdateAssetMeta(tenantID, id, assetName, lastStatus, lastSummary string) (*AssetEntry, error)
+	UpdateAssetMeta(tenantID, id, assetName, lastStatus, lastSummary, assetType string) (*AssetEntry, error)
 	// UpdateAssetProfile 静态档案(厂家/型号/投运/维保)。只改传进来的字段 ——
 	// 全字段覆盖会把没传的那些写成空,和计划页那次"编辑即清空"是同一类事故。
 	UpdateAssetProfile(tenantID, id string, p AssetProfilePatch) (*AssetEntry, error)
@@ -894,7 +894,7 @@ func (s *MemStore) UpdateAssetCover(tenantID, id, coverImagePath string) (*Asset
 	return a, nil
 }
 
-func (s *MemStore) UpdateAssetMeta(tenantID, id, name, status, summary string) (*AssetEntry, error) {
+func (s *MemStore) UpdateAssetMeta(tenantID, id, name, status, summary, assetType string) (*AssetEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	a, ok := s.assets[id]
@@ -911,6 +911,9 @@ func (s *MemStore) UpdateAssetMeta(tenantID, id, name, status, summary string) (
 	}
 	if summary != "" {
 		a.LastSummary = summary
+	}
+	if assetType != "" {
+		a.AssetType = assetType
 	}
 	a.UpdatedAt = time.Now()
 	return a, nil
@@ -2148,10 +2151,11 @@ func getAssetByID(queryer sqlQueryer, id string) (*AssetEntry, error) {
 	return scanAsset(row)
 }
 
-// UpdateAssetMeta 仅允许编辑 assetName / lastStatus / lastSummary。
+// UpdateAssetMeta 仅允许编辑 assetName / lastStatus / lastSummary / assetType。
+// 空字符串 = 不改这一项(见 SQL 里的 CASE WHEN)。
 // 空字符串视为不改动该字段（partial update 语义）。
-func (s *SQLiteStore) UpdateAssetMeta(tenantID, id, name, status, summary string) (*AssetEntry, error) {
-	if err := updateAssetMetaExec(s.db, tenantID, id, name, status, summary); err != nil {
+func (s *SQLiteStore) UpdateAssetMeta(tenantID, id, name, status, summary, assetType string) (*AssetEntry, error) {
+	if err := updateAssetMetaExec(s.db, tenantID, id, name, status, summary, assetType); err != nil {
 		return nil, err
 	}
 	return getAssetByID(s.db, id) // 写后读回:租户已在上面的 UPDATE 中校验过
@@ -2265,7 +2269,7 @@ func updateAssetCoverExec(exec sqlExecutor, tenantID, id, coverImagePath string)
 	return nil
 }
 
-func updateAssetMetaExec(exec sqlExecutor, tenantID, id, name, status, summary string) error {
+func updateAssetMetaExec(exec sqlExecutor, tenantID, id, name, status, summary, assetType string) error {
 	now := nowStamp()
 	res, err := exec.Exec(`
 		UPDATE assets SET
@@ -2274,6 +2278,7 @@ func updateAssetMetaExec(exec sqlExecutor, tenantID, id, name, status, summary s
 			status_level = CASE WHEN ?='' THEN status_level ELSE ? END,
 			status_order = CASE WHEN ?='' THEN status_order ELSE ? END,
 			last_summary = CASE WHEN ?='' THEN last_summary ELSE ? END,
+			asset_type   = CASE WHEN ?='' THEN asset_type   ELSE ? END,
 			updated_at   = ?
 		WHERE id = ? AND tenant_id = ?`,
 		name, name,
@@ -2281,6 +2286,7 @@ func updateAssetMetaExec(exec sqlExecutor, tenantID, id, name, status, summary s
 		status, statusLevel(status),
 		status, statusOrder(status),
 		summary, summary,
+		assetType, assetType,
 		now, id, tenantID,
 	)
 	if err != nil {

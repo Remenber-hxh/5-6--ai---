@@ -62,7 +62,7 @@ func TestAssetTenantIsolationOnMutations(t *testing.T) {
 	}
 
 	// 租户 A 改租户 B 的资产 → 必须失败
-	if _, err := store.UpdateAssetMeta("t_a", "b1", "被篡改", "正常", "x"); err == nil {
+	if _, err := store.UpdateAssetMeta("t_a", "b1", "被篡改", "正常", "x", ""); err == nil {
 		t.Error("UpdateAssetMeta(t_a, b1) 跨租户写入竟成功了")
 	}
 	if _, err := store.UpdateAssetCover("t_a", "b1", "/evil.jpg"); err == nil {
@@ -83,7 +83,7 @@ func TestAssetTenantIsolationOnMutations(t *testing.T) {
 	}
 
 	// 本租户操作正常
-	if _, err := store.UpdateAssetMeta("t_b", "b1", "新名", "", ""); err != nil {
+	if _, err := store.UpdateAssetMeta("t_b", "b1", "新名", "", "", ""); err != nil {
 		t.Errorf("本租户 UpdateAssetMeta 失败: %v", err)
 	}
 	if err := store.DeleteAsset("t_b", "b1"); err != nil {

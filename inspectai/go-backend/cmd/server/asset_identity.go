@@ -63,6 +63,30 @@ func templateIDForAssetType(assetType string) string {
 	return hit
 }
 
+// isKnownAssetType 这个设备类型是不是模板里配过的(模板级或字段级)。
+//
+// 【为什么要有这道闸】设备类型不是自由文本 —— 它决定这台设备挂哪个模板、
+// 会不会出现在抄表的候选设备里。手打一个没人认识的类型,建出来的设备
+// 从此挂不上模板、也选不到,而且全程不报错。和"项目必须真实存在"
+// (checkProjectRegistered)是同一条规矩。
+func isKnownAssetType(assetType string) bool {
+	at := strings.TrimSpace(assetType)
+	if at == "" {
+		return false
+	}
+	for _, tpl := range reportTemplates() {
+		if strings.EqualFold(strings.TrimSpace(tpl.AssetType), at) {
+			return true
+		}
+		for _, f := range tpl.Fields {
+			if strings.EqualFold(strings.TrimSpace(f.AssetType), at) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // resolveAssetIdentity 在建立"这条记录属于哪台设备"时，优先复用已有资产。
 //
 // 【为什么要有这一步】

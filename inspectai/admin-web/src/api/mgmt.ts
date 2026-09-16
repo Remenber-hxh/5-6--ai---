@@ -615,7 +615,10 @@ export async function dispatchPlan(plan: EngineeringPlan) {
 }
 
 // 主管直接修改台账字段(其余角色走修改申请审批流)
-export function updateAsset(id: string, patch: { assetName?: string; lastStatus?: string; lastSummary?: string }) {
+export function updateAsset(
+  id: string,
+  patch: { assetName?: string; lastStatus?: string; lastSummary?: string; assetType?: string },
+) {
   return api<{ asset: AssetEntry }>(`/api/assets/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(patch),

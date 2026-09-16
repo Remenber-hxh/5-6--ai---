@@ -381,6 +381,7 @@ export default function Ledger() {
                     else if (key === "edit") {
                       editForm.setFieldsValue({
                         assetName: current.assetName,
+                        assetType: current.assetType || undefined,
                         lastStatus: current.lastStatus || "正常",
                         lastSummary: current.lastSummary || "",
                       });
@@ -547,6 +548,27 @@ export default function Ledger() {
               >
                 <Form.Item name="assetName" label="资产名称" rules={[{ required: true, message: "请输入名称" }]}>
                   <Input maxLength={64} />
+                </Form.Item>
+                {/* 【设备类型必须能改】它决定这台设备挂哪个模板、会不会出现在
+                    抄表确认页的候选设备里。填错一次原来只能删掉重建,
+                    而删掉会连它的巡检历史和二维码一起没了。 */}
+                <Form.Item
+                  name="assetType"
+                  label="设备类型"
+                  extra="抄表类的设备要选到具体那一类(电表 / 水表),选「能耗表组」确认页认不出来"
+                >
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder="选择设备类型"
+                    options={templateTypes.map((t) => ({
+                      value: t.assetType,
+                      label: `${t.assetType}(${t.name})`,
+                    }))}
+                    filterOption={(input, opt) =>
+                      String(opt?.label || "").toLowerCase().includes(input.toLowerCase())
+                    }
+                  />
                 </Form.Item>
                 <Form.Item name="lastStatus" label="状态">
                   <Select options={["正常", "异常", "待复核", "待维修"].map((s) => ({ value: s, label: s }))} />

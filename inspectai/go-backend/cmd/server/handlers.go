@@ -1892,13 +1892,29 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 		AssetName   string `json:"assetName"`
 		LastStatus  string `json:"lastStatus"`
 		LastSummary string `json:"lastSummary"`
+		// AssetType 设备类型。
+		//
+		// 【为什么必须能改】它决定这台设备能不能被抄表确认页认出来
+		// (fillReadingAssetOptions 按类型字符串精确匹配)。填错一次,原来只能
+		// 删掉重建 —— 而删掉会连它的巡检历史和二维码一起没了。
+		// 线上 Z1 建于 09-11,类型填成了"能耗表组",就卡在这儿。
+		AssetType string `json:"assetType"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if req.AssetName == "" && req.LastStatus == "" && req.LastSummary == "" {
-		writeError(w, http.StatusBadRequest, "no_fields", "至少修改一个字段：assetName / lastStatus / lastSummary")
+	req.AssetType = strings.TrimSpace(req.AssetType)
+	if req.AssetName == "" && req.LastStatus == "" && req.LastSummary == "" && req.AssetType == "" {
+		writeError(w, http.StatusBadRequest, "no_fields", "至少修改一个字段：assetName / lastStatus / lastSummary / assetType")
+		return
+	}
+	// 【改类型也要受约束】和新增设备同一条规矩:类型必须是模板里配过的,
+	// 手打一个没人认识的类型,这台设备就再也挂不上模板、也不会出现在
+	// 抄表的候选里 —— 而且不报错。
+	if req.AssetType != "" && !isKnownAssetType(req.AssetType) {
+		writeError(w, http.StatusBadRequest, "unknown_asset_type",
+			"没有「"+req.AssetType+"」这种设备类型。类型要和巡检模板里配的一致,否则这台设备巡检后挂不上模板。")
 		return
 	}
 	if req.LastStatus != "" {
@@ -1909,7 +1925,7 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 	}
-	asset, err := s.store.UpdateAssetMeta(s.tenantForRequest(r), id, req.AssetName, req.LastStatus, req.LastSummary)
+	asset, err := s.store.UpdateAssetMeta(s.tenantForRequest(r), id, req.AssetName, req.LastStatus, req.LastSummary, req.AssetType)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在或更新失败")
 		return
@@ -1918,6 +1934,7 @@ func (s *Server) handlePatchAsset(w http.ResponseWriter, r *http.Request, id str
 		"assetName":   req.AssetName,
 		"lastStatus":  req.LastStatus,
 		"lastSummary": req.LastSummary,
+		"assetType":   req.AssetType,
 	})
 	// 资产被标记为"正常" → 异常闭环回写：清掉对应任务的待整改态、重算计划
 	if asset != nil && asset.LastStatus == "正常" {
@@ -4438,7 +4455,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 					"早期版本的移动端对台账目标发的是巡检记录的 patch 形状,提交时不会报错、" +
 					"到这一步才拦下。请驳回后重新提交")
 		}
-		return nil, updateAssetMetaExec(exec, defaultTenantID, cr.TargetID, name, status, summary)
+		return nil, updateAssetMetaExec(exec, defaultTenantID, cr.TargetID, name, status, summary, "")
 	case "record":
 		rec, err := getRecordByID(exec, cr.TargetID)
 		if err != nil {
@@ -4509,7 +4526,7 @@ func (s *Server) applyChangeRequestSQL(exec sqlReadWriter, cr *ChangeRequest) (f
 		}
 		for _, asset := range buildAssets(rec, time.Now()) {
 			if a, err := getAssetByID(exec, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
-				if err := updateAssetMetaExec(exec, defaultTenantID, asset.ID, "", asset.LastStatus, asset.LastSummary); err != nil {
+				if err := updateAssetMetaExec(exec, defaultTenantID, asset.ID, "", asset.LastStatus, asset.LastSummary, ""); err != nil {
 					return cleanupFiles, err
 				}
 			}
@@ -4684,7 +4701,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 					"早期版本的移动端对台账目标发的是巡检记录的 patch 形状,提交时不会报错、" +
 					"到这一步才拦下。请驳回后重新提交")
 		}
-		_, err := s.store.UpdateAssetMeta(defaultTenantID, cr.TargetID, name, status, summary)
+		_, err := s.store.UpdateAssetMeta(defaultTenantID, cr.TargetID, name, status, summary, "")
 		if err == nil && status == "正常" {
 			// 修改审批通过、资产改回正常 → 异常闭环回写
 			s.onAssetResolvedNormal(cr.TargetID)
@@ -4762,7 +4779,7 @@ func (s *Server) applyChangeRequest(cr *ChangeRequest) error {
 		// 同步资产 last_status / last_summary。
 		for _, asset := range buildAssets(rec, time.Now()) {
 			if a, err := s.store.GetAsset(defaultTenantID, asset.ID); err == nil && a != nil && a.LastRecordID == rec.ID {
-				_, _ = s.store.UpdateAssetMeta(defaultTenantID, asset.ID, "", asset.LastStatus, asset.LastSummary)
+				_, _ = s.store.UpdateAssetMeta(defaultTenantID, asset.ID, "", asset.LastStatus, asset.LastSummary, "")
 				// 字段级审批通过后资产重算为正常 → 异常闭环回写（与「标记正常」「资产级审批」「复检」一致）
 				if asset.LastStatus == "正常" {
 					s.onAssetResolvedNormal(asset.ID)
