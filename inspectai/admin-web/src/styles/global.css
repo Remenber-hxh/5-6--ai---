@@ -354,3 +354,38 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* 台账页布局:左列表 + 右详情。
+   【必须是 minmax(0, 1fr),不能是 1fr】grid/flex 里 1fr 的最小宽度是 auto ——
+   也就是左栏【不肯缩到比内容窄】。窗口一窄,左栏顶着内容宽度不让,
+   就把右边那栏整个挤出屏幕,页面长出一条横向滚动条,详情面板被切掉一半。
+   这个坑的表现很像"没做响应式",实际是一行 CSS。 */
+.ledger-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 396px;
+  gap: 16px;
+  align-items: start;
+}
+/* 窄屏直接上下堆叠。硬挤两栏的话,列表和详情都窄到没法用。 */
+@media (max-width: 1180px) {
+  .ledger-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 卡片头部的工具栏:标题 + 筛选 + 按钮。
+   【不用 Card 的 title/extra】antd 的标题区是可收缩的,extra 一宽就把标题
+   压成 0 宽度 —— 标题会整个消失。自己排一行,放不下就换行。 */
+.ledger-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ledger-toolbar-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: auto;
+}

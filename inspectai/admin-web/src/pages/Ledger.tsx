@@ -186,12 +186,13 @@ export default function Ledger() {
   }, [rows]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 396px", gap: 16, alignItems: "start" }}>
-    <Card
-      size="small"
-      title={`资产台账(${rows.length} 台)`}
-      extra={
-        <Space>
+    <div className="ledger-layout">
+    <Card size="small">
+      {/* 工具栏自己排一行(见 global.css 的 .ledger-toolbar):标题靠左、
+          控件靠右,放不下就整齐换行,不会互相挤压。 */}
+      <div className="ledger-toolbar">
+        <span className="ledger-toolbar-title">{`资产台账(${rows.length} 台)`}</span>
+        <Space wrap size={[12, 8]}>
           {/* 【项目候选来自项目表,不是来自已有资产】一个项目在你范围里却
               一台设备都没有,是个要说出来的状态(见下面的空态提示)——
               用资产拼候选的话它压根不出现,你只会以为"没这个项目"。 */}
@@ -243,8 +244,7 @@ export default function Ledger() {
             导出
           </Button>
         </Space>
-      }
-    >
+      </div>
       {loading && assets.length === 0 ? (
         <Skeleton active paragraph={{ rows: 8 }} />
       ) : rows.length === 0 ? (
