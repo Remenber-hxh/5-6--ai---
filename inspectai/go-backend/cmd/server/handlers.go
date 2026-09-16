@@ -1548,6 +1548,15 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 			"你没有项目「"+req.Project+"」的权限,不能往里建设备。需要的话请管理员把你加进这个项目。")
 		return
 	}
+	// 【新增和编辑必须同一条规矩】设备类型只能是模板里配过的。
+	// 只在 PATCH 拦、不在这里拦的话,从接口建一台"瞎打的类型"照样能进台账 ——
+	// 而它从此挂不上模板、也不会出现在抄表候选里,全程不报错。
+	// 留空是允许的:后台表单里设备类型本来就不是必填。
+	if req.AssetType != "" && !isKnownAssetType(req.AssetType) {
+		writeError(w, http.StatusBadRequest, "unknown_asset_type",
+			"没有「"+req.AssetType+"」这种设备类型。要从巡检模板里配过的类型中选,否则这台设备巡检后挂不上模板。")
+		return
+	}
 	// 模板段决定这台设备的身份能不能和巡检记录对上。
 	//
 	// 后台的新建表单【没有模板这一项】,所以 req.TemplateID 永远是空。原来这里
