@@ -8,7 +8,6 @@ import { AssetEntry, AssetSnapshotEntry, EngineeringTask, ReportTemplateDTO, cre
 import AssetQRSheet from "../components/AssetQRSheet";
 import AssetTrend from "../components/AssetTrend";
 import { exportCsv } from "../lib/csv";
-import { useUi } from "../store/ui";
 import { fmtTime, mediaUrl, statusTagColor } from "../lib/status";
 
 const levelTag = (a: AssetEntry) => {
@@ -32,7 +31,10 @@ export default function Ledger() {
   const [creating, setCreating] = useState(false);
   const [createForm] = Form.useForm();
   const [tasks, setTasks] = useState<EngineeringTask[]>([]);
-  const { project } = useUi();
+  // 项目筛选。【不再用 useUi().project】那是个"顶栏全局项目选择"的遗留:
+  // 全项目没有任何一处调用 setProject,它永远是空字符串,那行过滤从来没生效过 ——
+  // 而页面上也没有任何控件能改它。等于台账一直没有按项目筛的能力。
+  const [project, setProject] = useState("");
   const [loading, setLoading] = useState(true);
   const [qrOpen, setQrOpen] = useState(false);
   const [params] = useSearchParams();
@@ -190,10 +192,24 @@ export default function Ledger() {
       title={`资产台账(${rows.length} 台)`}
       extra={
         <Space>
+          {/* 【项目候选来自项目表,不是来自已有资产】一个项目在你范围里却
+              一台设备都没有,是个要说出来的状态(见下面的空态提示)——
+              用资产拼候选的话它压根不出现,你只会以为"没这个项目"。 */}
+          {/* 【value 受控】不给 value 的话"清除筛选"清掉了 state,下拉里
+              却还显示着原来那个词 —— 看着像筛选还在,实际已经没了。 */}
+          <Select
+            allowClear
+            placeholder="项目"
+            style={{ width: 150 }}
+            value={project || undefined}
+            options={projects.map((p) => ({ value: p, label: p }))}
+            onChange={(v) => setProject(v || "")}
+          />
           <Select
             allowClear
             placeholder="类型"
             style={{ width: 150 }}
+            value={type || undefined}
             options={types.map((t) => ({ value: t, label: t }))}
             onChange={(v) => setType(v || "")}
           />
@@ -232,12 +248,24 @@ export default function Ledger() {
       {loading && assets.length === 0 ? (
         <Skeleton active paragraph={{ rows: 8 }} />
       ) : rows.length === 0 ? (
-        <Empty description={kw || type ? "没有匹配的资产" : "暂无资产"}>
-          {(kw || type) && (
+        <Empty
+          description={
+            /* 【筛出 0 台要说清是哪一种 0】"这个项目你一台都看不到"和
+               "这个项目本来就是空的"处理方式完全不同,给同一句"没有匹配的资产"
+               只会让人以为设备丢了 —— 今天就是为这个查了半天。 */
+            project && !kw && !type
+              ? `「${project}」下面没有你能看到的设备。可能是这个项目还没建设备,也可能是你没有它的数据权限 —— 后者要请管理员把你加进这个项目。`
+              : kw || type || project
+                ? "没有匹配的资产"
+                : "暂无资产"
+          }
+        >
+          {(kw || type || project) && (
             <Button
               onClick={() => {
                 setKw("");
                 setType("");
+                setProject("");
               }}
             >
               清除筛选
