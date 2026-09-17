@@ -17,6 +17,7 @@ import {
   moveReading,
   patchField,
   patchFieldAsset,
+  patchFieldAssetSource,
   patchFieldSource,
   startAnalysis,
 } from "@/api/inspection";
@@ -343,11 +344,13 @@ export default function RecordPage() {
   const [siteDraft, setSiteDraft] = useState("");
   useEffect(() => setSiteDraft(siteField?.value || ""), [siteField?.value]);
 
-  async function commitSite() {
-    if (!rec || !siteField || siteDraft === siteField.value) return;
+  // 【可以直接传值】下拉选中时 setSiteDraft 还没生效,读 siteDraft 拿到的是旧值 ——
+  // 表现是"选了巡塘书香,存进去的还是紫菡雅集"。
+  async function commitSite(next: string = siteDraft) {
+    if (!rec || !siteField || next === siteField.value) return;
     try {
       mergeField(
-        await patchField(rec.id, siteField.code, siteDraft, siteField.version, {
+        await patchField(rec.id, siteField.code, next, siteField.version, {
           action: "correct",
         }),
       );
@@ -402,21 +405,65 @@ export default function RecordPage() {
    *   已经认领了、选的还是同一台 → 什么都不做
    *   已经认领了、改选另一台 → 走 move:读数、照片、置信度整组搬过去
    */
+  //
+  // 【找格子不能只靠"哪一格默认绑的是这台"】原来就是这么找的,而默认设备是
+  // 按"格子名去掉读数二字 == 设备名"算出来的 —— 台账里的表叫「Z1」而不是
+  // 「Z1能耗表」时,没有一格默认绑着它,于是点什么都提示"没有对应的格子",
+  // 只有名字恰好一字不差的「生活水表」能选。线上就是这样。
+  //
+  // 现在按这个顺序找:
+  //   1. 已经有一格绑着这台 → 就是它
+  //   2. 这张照片已经在某一格上,而这台表是那格能选的 → 就在原格上换设备
+  //   3. 找一格同类型、还空着的(没绑设备、也没读数)
   async function pickAssetForPhoto(imageId: string, assetName: string) {
     if (!rec) return;
     const cur = fieldOfPhoto(rec.fields, imageId);
-    const target = rec.fields.find((f) => f.assetName === assetName);
-    if (!target) {
-      Toast.show({ content: "这台设备在这张表单里没有对应的格子" });
-      return;
-    }
-    if (cur && cur.code === target.code) return;
+    let target = rec.fields.find((f) => f.assetName === assetName);
+
     try {
+      if (!target && cur && (cur.assetOptions || []).includes(assetName)) {
+        await patchFieldAsset(rec.id, cur.code, assetName, cur.version);
+        setRec(await getRecord(rec.id));
+        return;
+      }
+      if (!target) {
+        // 【没读数就算空着,不管有没有默认设备】默认设备只是系统按名字猜的,
+        // 读数都没有的格子让出来不丢任何东西;只认"没绑设备"的话,
+        // 格子明明空着却提示"位置都用了"。和 takenAssets 同一个口径。
+        // 没绑设备的优先,少动一个猜好的默认值。
+        const free = rec.fields.filter(
+          (f) => (f.assetOptions || []).includes(assetName) && !String(f.value || "").trim(),
+        );
+        target = free.find((f) => !f.assetName) || free[0];
+      }
+      if (!target) {
+        // 【说清是哪种满了】同类型的格子数是模板定的(比如只有 4 个电表位),
+        // 台账里的表比格子多时,多出来的那台这张表记不下 —— 不说的话人会以为是系统坏了。
+        const sameType = rec.fields.filter((f) => (f.assetOptions || []).includes(assetName)).length;
+        Toast.show({
+          content: `这类设备的 ${sameType} 个位置都已经用了 —— 先把别的行换掉,或者这张表记不下这台`,
+          duration: 3000,
+        });
+        return;
+      }
+      if (cur && cur.code === target.code) return;
+
       if (!cur) {
-        // 还没认领:直接把这张照片挂到目标格上(读数由人接着填)
-        setRec(await patchFieldSource(rec.id, target.code, imageId, target.version));
+        // 照片还没人认领:照片和设备一起挂到这一格(读数由人接着填)
+        setRec(
+          target.assetName === assetName
+            ? await patchFieldSource(rec.id, target.code, imageId, target.version)
+            : await patchFieldAssetSource(rec.id, target.code, assetName, imageId, target.version),
+        );
       } else {
-        setRec(await moveReading(rec.id, cur.code, target.code));
+        // 照片在别的格上:读数、照片整组搬过去,再标上是哪台表
+        let next = await moveReading(rec.id, cur.code, target.code);
+        const moved = next.fields.find((f) => f.code === target!.code);
+        if (moved && moved.assetName !== assetName) {
+          await patchFieldAsset(rec.id, moved.code, assetName, moved.version);
+          next = await getRecord(rec.id);
+        }
+        setRec(next);
       }
     } catch (err) {
       Toast.show({
@@ -494,16 +541,34 @@ export default function RecordPage() {
             巡检地点仍然是个可改的字段(系统按项目预填,人能改);
             巡检人不是字段,是记录本身带的,所以只读。 */}
         <div className="rec-who">
+          {/* 【按后台设的类型显示,不写死成文本框】原来这里固定是一个输入框,
+              后台把巡检地点改成"选一个"、设了选项和必填,手机上一样都不生效 ——
+              改模板的人以为没保存上,反复改。 */}
           {siteField && (
             <div className="rec-who-row">
-              <span className="rec-who-k">巡检地点</span>
-              <input
-                className="rec-who-v"
-                value={siteDraft}
-                placeholder="请输入"
-                onChange={(e) => setSiteDraft(e.target.value)}
-                onBlur={() => void commitSite()}
-              />
+              <span className="rec-who-k">
+                巡检地点
+                {siteField.required && <i className="fld-req"> *</i>}
+              </span>
+              {siteField.kind === "choice" && (siteField.options || []).length > 0 ? (
+                <Picker
+                  options={siteField.options || []}
+                  value={siteDraft}
+                  placeholder="请选择"
+                  onChange={(v) => {
+                    setSiteDraft(v);
+                    void commitSite(v);
+                  }}
+                />
+              ) : (
+                <input
+                  className="rec-who-v"
+                  value={siteDraft}
+                  placeholder="请输入"
+                  onChange={(e) => setSiteDraft(e.target.value)}
+                  onBlur={() => void commitSite()}
+                />
+              )}
             </div>
           )}
           <div className="rec-who-row">

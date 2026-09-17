@@ -260,6 +260,26 @@ export async function patchFieldAsset(
   );
 }
 
+/**
+ * 一次性把"这一格是哪台表"和"读数来自哪张照片"都写上。
+ *
+ * 【为什么要合成一次】分两次调的话,第一次改完版本号就变了,第二次拿着旧版本号
+ * 会被当成冲突打回 —— 表现是"选了设备,照片没挂上",而第一步已经生效了一半。
+ */
+export async function patchFieldAssetSource(
+  recordId: string,
+  code: string,
+  assetName: string,
+  sourceImageId: string,
+  version: number,
+): Promise<RecordDTO> {
+  await api<FieldValue>(
+    `/api/inspection/records/${recordId}/fields/${encodeURIComponent(code)}`,
+    { method: "PATCH", body: JSON.stringify({ assetName, sourceImageId, version }) },
+  );
+  return getRecord(recordId);
+}
+
 /** 转人工填写(AI 多次识别不稳时) */
 export async function enableManual(id: string) {
   return api<RecordDTO>(`/api/inspection/records/${id}/manual`, {

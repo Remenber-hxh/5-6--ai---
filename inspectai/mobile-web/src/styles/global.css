@@ -1498,6 +1498,14 @@
 .rec-who-v.is-ro {
   color: var(--ios-gray);
 }
+/* 巡检地点在后台设成"选一个"时,这一格是下拉。和输入框一样占满剩下的宽度、
+   靠右对齐 —— 否则两种类型在同一个位置一左一右,看着像排版坏了。 */
+.rec-who-row > .dd {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
 /* 缺哪一台:说名字,不说"有字段为空" —— 后者等于让人自己去数 */
 .mpr-missing {
   display: flex;

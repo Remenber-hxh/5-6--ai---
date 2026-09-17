@@ -1151,7 +1151,8 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 		if rec == nil || !rec.Submitted {
 			continue
 		}
-		for _, asset := range buildAssets(rec, assetLedgerTime(rec)) {
+		// 【和提交同一套规则】提交时不建的假设备,回填要是照建,每次重启都会补回来
+		for _, asset := range s.buildLedgerAssets(rec, assetLedgerTime(rec)) {
 			// 先看能不能挂到已有设备上(改名分家、手工建档的 manual:: 等),
 			// 挂得上就不算新设备。existing 是循环外查的一份,回填过程中
 			// 新插入的不在里面 —— 所以下面还要用 latestByAssetID 兜一层。
@@ -2966,7 +2967,9 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 	rec.Report = buildDailyPreview(rec)
 	rec.Submitted = true
 	rec.SubmittedAt = &now
-	assets := buildAssets(rec, now)
+	// 【用 buildLedgerAssets 不用 buildAssets】抄表记录每一格是哪台表要查台账才定得下来,
+	// 见 ledger_assets.go。
+	assets := s.buildLedgerAssets(rec, now)
 	// 优先挂到【已有】资产上,而不是按编号算出一个新 ID 就建新档。
 	//
 	// 编号是最容易不一致的东西:AI 读错过、后台改过名(改名只动 asset_name、
@@ -3723,14 +3726,35 @@ func buildZihanEnergyAssets(rec *Record, now time.Time) []*AssetEntry {
 	assets := make([]*AssetEntry, 0, len(specs))
 	for _, spec := range specs {
 		field, _ := fieldByCode(rec.Fields, spec.FieldCode)
+		key, name := spec.Key, spec.Name
+		if field != nil {
+			if chosen := strings.TrimSpace(field.AssetName); chosen != "" {
+				// 【确认页上选了是哪台表,读数就记到那台表上】
+				//
+				// 原来这里一律写死「Z1能耗表」…「消防水表」,完全不看现场选的设备。
+				// 线上台账里的表叫「Z1」…「Z5」,于是:现场选的 Z1 收不到读数,
+				// 系统还按写死的名字另建一批「Z1能耗表」—— 台账里凭空多出重复设备,
+				// 而且不报错。
+				//
+				// 这里先用名字占位;按名字对到台账里那台真设备的 ID
+				// 在 buildLedgerAssets 里做(那一步要查库)。
+				key, name = chosen, chosen
+			} else if len(field.AssetOptions) > 0 {
+				// 【台账里有这类表、但这一格没选是哪台 → 不写台账】
+				// 凭模板默认名字写的话,台账里的表不叫这个名字时就会新建一台假设备。
+				// 候选只有经过 fillReadingAssetOptions 才会有 —— 回填老记录、
+				// 没有候选的场合走下面的默认名字,和原来一样。
+				continue
+			}
+		}
 		assets = append(assets, buildAssetEntry(
 			rec,
 			now,
-			spec.Key,
-			spec.Name,
+			key,
+			name,
 			spec.AssetType,
-			readingAssetStatus(field, rec, spec.Name),
-			readingAssetSummary(spec.Name, fieldValue(rec.Fields, spec.FieldCode), field),
+			readingAssetStatus(field, rec, name),
+			readingAssetSummary(name, fieldValue(rec.Fields, spec.FieldCode), field),
 			field,
 		))
 	}

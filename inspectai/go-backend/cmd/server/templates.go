@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -463,6 +464,13 @@ func initialFieldValues(tpl ReportTemplate, inspector string, site ...string) []
 			// 把同一次读对的四个表读数一起扔掉。2026-09-10 17:30 那条就是这么没的。
 			if len(site) > 0 {
 				value = strings.TrimSpace(site[0])
+			}
+			// 【后台把巡检地点设成了选择题,预填的值必须在选项里】
+			// 项目名不在选项里还硬填的话,手机上的下拉显示着一个选不到的值,
+			// 人以为已经填好了 —— 而这个值在后台任何筛选里都对不上。留空让人选。
+			if value != "" && field.Kind == "choice" && len(field.Options) > 0 &&
+				!slices.Contains(field.Options, value) {
+				value = ""
 			}
 			if value != "" {
 				source = "manual"
