@@ -1225,12 +1225,42 @@ func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 		a.LastInspector = rec.Inspector
 	}
 	if len(rec.Images) > 0 {
-		img := rec.Images[0]
+		// 【封面跟着这台设备自己的照片走,不是一律第一张】
+		//
+		// 一条抄表记录派生六台设备。建台账时 LastPhotoPath 已经按字段挑成了
+		// 各自那一张(见 assetPhotoPath)。但这里原来又写死 rec.Images[0] 当封面 ——
+		// 而台账卡片【优先用 CoverImage】,LastPhotoPath 排在最后,根本轮不到。
+		// 于是六台卡片还是同一张图:建台账那处修对了,显示走的是这处。
+		// 2026-09-16 只修了前一处就说"修好了",实际页面一张没变。
+		first := rec.Images[0]
 		if a.CoverImage == nil {
-			a.CoverImage = &img
+			switch {
+			case a.LastPhotoPath != "":
+				// 优先在这条记录里找到同一张(带上 ID、文件名等完整信息)
+				var own *ImageInfo
+				for i := range rec.Images {
+					if rec.Images[i].Path == a.LastPhotoPath {
+						own = &rec.Images[i]
+						break
+					}
+				}
+				if own == nil {
+					// 不在这条记录里(照片来自更早那次)—— 仍然用它自己的那张,
+					// 不要退回这条记录的第一张:那张是别的设备的。
+					own = &ImageInfo{
+						ID:       "asset_last_" + sanitizeAssetIdent(a.ID),
+						FileName: filepath.Base(a.LastPhotoPath),
+						Path:     a.LastPhotoPath,
+					}
+				}
+				cp := *own
+				a.CoverImage = &cp
+			default:
+				a.CoverImage = &first
+			}
 		}
 		if a.LastPhotoPath == "" {
-			a.LastPhotoPath = img.Path
+			a.LastPhotoPath = first.Path
 		}
 	}
 }
