@@ -64,6 +64,32 @@ var migrationList = []migration{
 	{35, "field_asset_type", (*SQLiteStore).migFieldAssetType},
 	{36, "site_filled_by_system", (*SQLiteStore).migSiteFilledBySystem},
 	{37, "asset_photo_per_field", (*SQLiteStore).migAssetPhotoPerField},
+	{38, "plan_owners_json", (*SQLiteStore).migPlanOwnersJSON},
+}
+
+// 038 — 计划支持多位负责人。
+//
+// 【只加列,不回填】老计划这一列是空数组,读出来时 syncPlanOwners 会从
+// owner_name / owner_id 生成一人列表 —— 读的那一刻就是对的,不需要写库。
+// 回填反而多一次风险:回填和读取各算一遍,两边规则稍有出入就会不一致。
+func (s *SQLiteStore) migPlanOwnersJSON() error {
+	exists, err := s.hasColumn("engineering_plan_items", "owners_json")
+	if err != nil {
+		return fmt.Errorf("inspect engineering_plan_items.owners_json: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	// 和 asset_ids_json 同一个写法:MySQL 不给 TEXT 加 DEFAULT
+	def := `TEXT NOT NULL DEFAULT '[]'`
+	if s.dialect == "mysql" {
+		def = `TEXT`
+	}
+	if _, err := s.db.Exec(
+		`ALTER TABLE engineering_plan_items ADD COLUMN owners_json ` + def); err != nil {
+		return fmt.Errorf("add engineering_plan_items.owners_json: %w", err)
+	}
+	return nil
 }
 
 // 037 — 一条记录派生的多台设备,各自用回自己那张照片。

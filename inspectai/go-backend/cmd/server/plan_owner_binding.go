@@ -144,6 +144,13 @@ func (s *Server) buildOwnerBindingReport(r *http.Request) (*ownerBindingReport, 
 			report.AlreadyBound++
 			continue
 		}
+		// 【多位负责人的计划不进这个工具】它是给"历史上手打一个名字"的老计划
+		// 补账号用的,一条计划对一个人。多人的计划是新界面里逐个选出来的,
+		// 这里按合并串「张三、李四」去匹配账号只会一个都对不上,还容易让人误点。
+		if len(p.Owners) > 1 {
+			report.AlreadyBound++
+			continue
+		}
 		name := strings.TrimSpace(p.OwnerName)
 		if name == "" {
 			report.NoOwner++
@@ -297,6 +304,13 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, "plan_not_found", "计划不存在:"+planID)
 			return
 		}
+		// 【多人计划不许用这个工具改】它一条计划只写一个人,套在多人计划上
+		// 会把其余负责人静默删掉 —— 报告里已经不列它们了,这里防直接调接口。
+		if len(plan.Owners) > 1 {
+			writeError(w, http.StatusBadRequest, "plan_has_multiple_owners",
+				"计划 "+planID+" 有多位负责人,请到计划编辑页里修改")
+			return
+		}
 		var user *User
 		if userID != "" {
 			u, uErr := s.store.GetUser(userID)
@@ -337,14 +351,18 @@ func (s *Server) handleOwnerBindingApply(w http.ResponseWriter, r *http.Request)
 			entry["userId"] = "" // 解绑
 		}
 		trail = append(trail, entry)
+		// 【负责人列表才是事实来源】只改 OwnerID/OwnerName 的话,写入时
+		// syncPlanOwners 会按列表把它们算回去 —— 绑定就等于没做,而且不报错。
+		name := strings.TrimSpace(p.OwnerName)
 		if item.user != nil {
-			p.OwnerID = item.user.ID
-			// 【名字跟着账号走】两列并存的代价是它们可能说不一样的话。
-			// 绑定的那一刻对齐,之后界面上显示的名字就永远是这个账号的名字。
-			p.OwnerName = firstNonEmpty(item.user.DisplayName, item.user.Username)
+			// 【名字跟着账号走】绑定的那一刻对齐,之后界面上显示的名字就永远是这个账号的名字。
+			name = firstNonEmpty(item.user.DisplayName, item.user.Username)
+			p.Owners = []PlanOwner{{ID: item.user.ID, Name: name}}
 		} else {
-			p.OwnerID = "" // 解绑:名字保留,只是不再指向账号
+			p.Owners = []PlanOwner{{Name: name}} // 解绑:名字保留,只是不再指向账号
 		}
+		p.OwnerName, p.OwnerID = "", ""
+		syncPlanOwners(p)
 		if err := s.store.UpsertEngineeringPlan(p); err != nil {
 			// 校验全过了还失败,说明是库层面的问题。已经改掉的不回滚 ——
 			// 把改了几条如实报出去,比假装什么都没发生有用。

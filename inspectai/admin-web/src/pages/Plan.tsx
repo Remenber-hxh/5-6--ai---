@@ -9,6 +9,7 @@ import {
   EngineeringPlan,
   EngineeringTask,
   PLAN_TYPES,
+  PlanOwner,
   ProjectEntry,
   ProjectScopeDTO,
   UserEntry,
@@ -118,6 +119,47 @@ function toRange(start?: string, end?: string): PlanRange {
 // Excel 粘出来的名字中间带空格是常事,中文输入法敲的还是全角空格(U+3000)。
 function ownerNameKey(s: string): string {
   return (s || "").replace(/[\s　]/g, "").toLowerCase();
+}
+
+// ===== 负责人:表单值 ↔ 计划数据 =====
+// 表单里从人员表选的人存成 "u:<账号ID>",手打的外委名字原样存。
+const OWNER_USER_PREFIX = "u:";
+function isOwnerUserValue(v: string): boolean {
+  return typeof v === "string" && v.startsWith(OWNER_USER_PREFIX);
+}
+function ownerUserIdOf(v: string): string {
+  return v.slice(OWNER_USER_PREFIX.length);
+}
+
+/**
+ * 计划 → 表单值。
+ * 【没有 owners 的老数据】从 ownerName/ownerId 生成一人,和后端 syncPlanOwners 同一条规则 ——
+ * 两边不一致的话,老计划一打开负责人栏是空的,保存一次就把负责人抹掉了。
+ */
+function ownersToFormValues(plan: EngineeringPlan): string[] {
+  const list: PlanOwner[] =
+    plan.owners && plan.owners.length > 0
+      ? plan.owners
+      : plan.ownerName || plan.ownerId
+        ? [{ id: plan.ownerId, name: plan.ownerName || "" }]
+        : [];
+  return list
+    .map((o) => (o.id ? OWNER_USER_PREFIX + o.id : (o.name || "").trim()))
+    .filter(Boolean);
+}
+
+/** 表单值 → 计划的 owners。名字后端会按账号对齐,这里给个能看的就行。 */
+function formValuesToOwners(values: string[] | undefined, users: UserEntry[]): PlanOwner[] {
+  return (values || [])
+    .map((v) => {
+      if (isOwnerUserValue(v)) {
+        const id = ownerUserIdOf(v);
+        const u = users.find((x) => x.id === id);
+        return { id, name: u?.displayName || u?.username || "" };
+      }
+      return { name: String(v).trim() };
+    })
+    .filter((o) => o.id || o.name);
 }
 
 // 详情面板字段行(旧版 label/value 样式)
@@ -304,45 +346,99 @@ export default function Plan() {
   // 【和迁移里拒绝"自动全绑"不矛盾】那里是一次几十条、没人在看;
   // 这里是一条计划、一个名字、人正盯着屏幕,而且下面会明确写出对应到了谁。
   // 唯一命中才自动填,重名一律不猜。
-  const ownerName = Form.useWatch<string | undefined>("ownerName", form) || "";
-  const ownerId = Form.useWatch<string | undefined>("ownerId", form) || "";
+  // ===== 多位负责人 =====
+  //
+  // 表单里 owners 是一个字符串数组:
+  //   "u:<账号ID>"  从人员表里选的人
+  //   其他文字       手打的名字(外委人员)
+  // 【为什么不直接存名字】重名的两个人名字一样,只存名字就分不清选的是谁 ——
+  // 表现是"提醒点了另一个同名的人",而且不报错。带前缀的 ID 不会撞。
+  const ownerValues = Form.useWatch<string[] | undefined>("owners", form) || [];
 
+  // 手打的名字里,哪些其实在人员表里唯一对得上、哪些对上多个、哪些账号看不到项目
   const ownerResolve = useMemo(() => {
-    const key = ownerNameKey(ownerName);
-    if (!key) return { eligible: [], anyMatch: false };
-    const eligible = ownerOptions.filter((o) => ownerNameKey(o.value) === key);
-    const anyMatch = users.some(
-      (u) =>
-        u.status !== "disabled" &&
-        (ownerNameKey(u.displayName || "") === key || ownerNameKey(u.username || "") === key),
-    );
-    return { eligible, anyMatch };
-  }, [ownerName, ownerOptions, users]);
+    const unique: { value: string; userId: string }[] = [];
+    const ambiguous: string[] = [];
+    const outOfScope: string[] = [];
+    const external: string[] = [];
+    for (const v of ownerValues) {
+      if (isOwnerUserValue(v)) continue;
+      const key = ownerNameKey(v);
+      if (!key) continue;
+      const eligible = ownerOptions.filter((o) => ownerNameKey(o.value) === key);
+      if (eligible.length === 1) {
+        unique.push({ value: v, userId: eligible[0].userId });
+      } else if (eligible.length > 1) {
+        ambiguous.push(v);
+      } else if (
+        users.some(
+          (u) =>
+            u.status !== "disabled" &&
+            (ownerNameKey(u.displayName || "") === key || ownerNameKey(u.username || "") === key),
+        )
+      ) {
+        outOfScope.push(v);
+      } else {
+        external.push(v);
+      }
+    }
+    return { unique, ambiguous, outOfScope, external };
+  }, [ownerValues, ownerOptions, users]);
 
-  // 唯一命中就填上。填的是隐藏字段,所以下面的 extra 必须把结果说出来 ——
-  // 否则就成了"系统偷偷替我决定了负责人是谁"。
+  // 【手打的名字唯一对得上账号,就换成那个账号】和原来单人时同一条规则:
+  // 编辑老计划时栏里只有一个名字、没有账号 ID,不换的话保存后还是「未绑账号」,
+  // 表单上又看不出还差一步。唯一命中才换,重名一律不猜。
   useEffect(() => {
-    if (!editing || ownerId) return;
-    if (ownerResolve.eligible.length === 1) {
-      form.setFieldsValue({ ownerId: ownerResolve.eligible[0].userId });
-    }
+    if (!editing || ownerResolve.unique.length === 0) return;
+    const swap = new Map(ownerResolve.unique.map((x) => [x.value, OWNER_USER_PREFIX + x.userId]));
+    const next = Array.from(new Set(ownerValues.map((v) => swap.get(v) || v)));
+    form.setFieldsValue({ owners: next });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerResolve, ownerId, editing]);
+  }, [ownerResolve, editing]);
 
+  // 【说清楚每个名字是什么情况】自动换成账号、手打外委,在栏里看着都是一个人名 ——
+  // 不说出来就成了"系统偷偷替我决定了负责人是谁"。
   const ownerHint = useMemo(() => {
-    if (!ownerName) return "选人员表里的人才能收到每日提醒;手填的名字只做记录";
-    if (ownerId) {
-      const hit = ownerOptions.find((o) => o.userId === ownerId);
-      return `已对应账号:${hit?.label || ownerId} —— 保存后按人过滤和提醒都按它算`;
+    if (ownerValues.length === 0) {
+      return "可以选多个人,每日提醒里会把他们都点出来。人员表里的人直接选;外委人员输入名字后回车";
     }
-    if (ownerResolve.eligible.length > 1) {
-      return `「${ownerName}」对应 ${ownerResolve.eligible.length} 个账号,请从下拉里选一个`;
+    const parts: string[] = [];
+    if (ownerResolve.ambiguous.length) {
+      parts.push(`「${ownerResolve.ambiguous.join("、")}」对应多个账号,请删掉后从下拉里选`);
     }
-    if (ownerResolve.anyMatch) {
-      return `「${ownerName}」的账号看不到「${formProject}」—— 派给他也看不到,请换人或先分配项目`;
+    if (ownerResolve.outOfScope.length) {
+      parts.push(
+        `「${ownerResolve.outOfScope.join("、")}」的账号看不到「${formProject}」—— 派给他也看不到,请换人或先分配项目`,
+      );
     }
-    return `人员表里没有「${ownerName}」—— 仍可保存(外委人员就是这种),只是收不到每日提醒`;
-  }, [ownerName, ownerId, ownerOptions, ownerResolve, formProject]);
+    if (ownerResolve.external.length) {
+      parts.push(
+        `「${ownerResolve.external.join("、")}」没有账号:提醒里会写他的名字,但他在系统里看不到这条计划`,
+      );
+    }
+    return parts.length ? parts.join(";") : `共 ${ownerValues.length} 位负责人,每日提醒会把他们都点出来`;
+  }, [ownerValues, ownerResolve, formProject]);
+
+  // 【已经选了、但现在不在候选里的账号】停用了,或者改了项目之后看不到了。
+  // 不补一个选项的话,标签上显示的是 "u:xxxx" 这种 ID —— 用户看不懂是谁。
+  // 补成禁用的一项,名字照常显示,并标出来为什么有问题。
+  const ownerSelectOptions = useMemo(() => {
+    const base = ownerOptions.map((o) => ({
+      key: o.key,
+      value: OWNER_USER_PREFIX + o.userId,
+      label: o.label,
+    }));
+    const known = new Set(base.map((o) => o.value));
+    const stale = ownerValues
+      .filter((v) => isOwnerUserValue(v) && !known.has(v))
+      .map((v) => {
+        const id = ownerUserIdOf(v);
+        const u = users.find((x) => x.id === id);
+        const name = u?.displayName || u?.username || id;
+        return { key: v, value: v, label: `${name}(不可选:已停用或看不到该项目)`, disabled: true };
+      });
+    return [...base, ...stale];
+  }, [ownerOptions, ownerValues, users]);
 
   // 被项目范围筛掉了几个人。要说出来 —— 不说的话候选列表凭空变短,
   // 用户只会觉得"怎么找不到老张了",而不知道是范围没配。
@@ -355,13 +451,21 @@ export default function Plan() {
   // 【改了项目就要重新检查负责人】先选人再改项目的话,那个人可能看不到
   // 新项目了。不清掉的话表单看着完全正常,一提交才被后端打回来 ——
   // 而那时用户已经填完整张表,还得自己猜是哪一项不对。
+  //
+  // 【多人时只去掉看不到的那几位,其余保留】全部清空的话,改一下项目
+  // 就要把五个人重新选一遍 —— 而其中四个明明还看得到。
   useEffect(() => {
     if (!editing || !formProject) return;
-    const curId = form.getFieldValue("ownerId");
-    if (!curId) return;
-    if (ownerOptions.some((o) => o.userId === curId)) return;
-    form.setFieldsValue({ ownerId: "", ownerName: "" });
-    message.warning(`原负责人看不到「${formProject}」,已清空 —— 请重新选`);
+    const cur: string[] = form.getFieldValue("owners") || [];
+    const allowed = new Set(ownerOptions.map((o) => OWNER_USER_PREFIX + o.userId));
+    const dropped = cur.filter((v) => isOwnerUserValue(v) && !allowed.has(v));
+    if (dropped.length === 0) return;
+    form.setFieldsValue({ owners: cur.filter((v) => !dropped.includes(v)) });
+    const names = dropped.map((v) => {
+      const u = users.find((x) => x.id === ownerUserIdOf(v));
+      return u?.displayName || u?.username || ownerUserIdOf(v);
+    });
+    message.warning(`${names.join("、")} 看不到「${formProject}」,已从负责人里去掉 —— 需要的话请重新选`);
     // ownerOptions 是按 formProject 算出来的,依赖它就够了
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formProject, ownerOptions]);
@@ -921,12 +1025,32 @@ export default function Plan() {
                 {/* 【标出有没有绑账号】绑了才收得到每日提醒。不标的话这两种
                     情况在界面上长得一模一样,而差别要到提醒该来没来那天才暴露。 */}
                 <FieldRow label="责任人">
-                  {selPlan.ownerName || "—"}
-                  {selPlan.ownerName && !selPlan.ownerId && (
-                    <Tag color="orange" style={{ marginLeft: 8, fontWeight: 400 }}>
-                      未绑账号
-                    </Tag>
-                  )}
+                  {(() => {
+                    // 【逐个标出有没有账号】没账号的人提醒里会写他的名字,但他在系统里
+                    // 看不到这条计划 —— 和有账号的长得一样的话,差别要到出事才暴露。
+                    const list: PlanOwner[] =
+                      selPlan.owners && selPlan.owners.length > 0
+                        ? selPlan.owners
+                        : selPlan.ownerName
+                          ? [{ id: selPlan.ownerId, name: selPlan.ownerName }]
+                          : [];
+                    if (list.length === 0) return "—";
+                    return (
+                      <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6 }}>
+                        {list.map((o, i) => (
+                          <span key={(o.id || o.name) + i}>
+                            {o.name || o.id}
+                            {!o.id && (
+                              <Tag color="orange" style={{ marginLeft: 4, fontWeight: 400 }}>
+                                无账号
+                              </Tag>
+                            )}
+                            {i < list.length - 1 ? "、" : ""}
+                          </span>
+                        ))}
+                      </span>
+                    );
+                  })()}
                 </FieldRow>
                 <FieldRow label="说明">{selPlan.cycleText || "—"}</FieldRow>
                 <FieldRow label="计划节点">
@@ -966,8 +1090,7 @@ export default function Plan() {
                       workContent: selPlan.workContent,
                       project: selPlan.project,
                       category: selPlan.category,
-                      ownerName: selPlan.ownerName,
-                      ownerId: selPlan.ownerId || "",
+                      owners: ownersToFormValues(selPlan),
                       cycleText: selPlan.cycleText,
                       remark: selPlan.remark,
                       budgetAmount: selPlan.budgetAmount || undefined,
@@ -1023,7 +1146,7 @@ export default function Plan() {
             // Checkbox.Group 给的是数组,后端要 "1,2,3" 的串。
             // 【必须排序】不排的话勾选顺序会被原样存下来("3,1,2"),
             // 虽然判定不受影响,但下次打开看到的顺序是乱的,像坏了。
-            const { weekdayList, planRange, ...rest } = v;
+            const { weekdayList, planRange, owners: ownerFormValues, ...rest } = v;
             const [start, end] = (planRange as PlanRange) || [];
             // 【编辑时以原记录打底】后端保存是整行覆盖(upsert 把每一列都写成
             // 传来的值),表单没管到的列会被写成空。原来只传了表单里那几项,
@@ -1042,6 +1165,12 @@ export default function Plan() {
             const payload = {
               ...(base || {}),
               ...rest,
+              // 【负责人以列表为准,老字段必须清空】base 里带着原来的 ownerName/ownerId ——
+              // 不清掉的话,把负责人全删了再保存,后端会从老字段把原来的人又生成回来,
+              // 表现是"删不掉负责人"。
+              owners: formValuesToOwners(ownerFormValues as string[] | undefined, users),
+              ownerName: "",
+              ownerId: "",
               weekdays: Array.isArray(weekdayList)
                 ? [...weekdayList].sort().join(",")
                 : undefined,
@@ -1101,7 +1230,7 @@ export default function Plan() {
             />
           </Form.Item>
           <Form.Item
-            name="ownerName"
+            name="owners"
             label="负责人"
             extra={
               hiddenOwnerCount > 0
@@ -1109,35 +1238,17 @@ export default function Plan() {
                 : ownerHint
             }
           >
-            <AutoComplete
+            {/* 【tags 模式:能选也能打】人员表里的人从下拉里选(值是 "u:账号ID",
+                重名的两个人不会混);外委班组的人没有账号,输入名字回车就行。
+                【按显示文字搜,不按值搜】值是 "u:xxxx",按值搜的话打人名什么都搜不到。 */}
+            <Select
+              mode="tags"
               allowClear
-              options={ownerOptions}
-              placeholder="从人员里选,外委人员可直接填"
-              filterOption={(input, option) => String(option?.label ?? "").includes(input)}
-              // 【选人只认 onSelect 给的那个 option,不靠名字反查】
-              // 两个账号都叫「余红星」时,options 里就有两条 value 相同的项 ——
-              // 用 find(o => o.value === v) 会永远挑到排在前面的那个,
-              // 也就是说点第二个人会静默绑到第一个人身上。而这个错不报,
-              // 表现是"提醒发给了另一个同名的人"。
-              onSelect={(_v, option) => {
-                form.setFieldsValue({ ownerId: (option as { userId?: string }).userId || "" });
-              }}
-              // 【onChange 只负责作废,不负责挑人】名字被改成和当前绑定不一致了,
-              // 旧的 ID 必须清掉 —— 留着的话这条计划显示着新名字、
-              // 提醒却还发给旧账号那个人,界面上完全看不出来。
-              onChange={(v) => {
-                const cur = form.getFieldValue("ownerId");
-                if (!cur) return;
-                const bound = ownerOptions.find((o) => o.userId === cur);
-                if (bound && ownerNameKey(bound.value) === ownerNameKey(v || "")) return;
-                form.setFieldsValue({ ownerId: "" });
-              }}
+              options={ownerSelectOptions}
+              placeholder="从人员里选,可以选多个;外委人员输入名字回车"
+              optionFilterProp="label"
+              tokenSeparators={["、", ",", ","]}
             />
-          </Form.Item>
-          {/* 绑定的账号 ID。不给人看也不给人改 —— 它是「负责人」那一栏选出来的
-              结果,单独摆出来只会让人以为这是两件要分别填的事。 */}
-          <Form.Item name="ownerId" hidden>
-            <Input />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(a, b) => a.planType !== b.planType}>
             {({ getFieldValue }) =>

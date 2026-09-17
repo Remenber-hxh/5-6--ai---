@@ -297,14 +297,27 @@ export function reviewChangeRequest(id: string, action: "approve" | "reject") {
 }
 
 // ===== 巡检计划 / 工程任务 =====
+
+/** 计划的一位负责人。外委人员没有账号,id 为空。 */
+export interface PlanOwner {
+  id?: string;
+  name: string;
+}
+
 export interface EngineeringPlan {
   id: string;
   workContent?: string;
   project?: string;
   category?: string;
+  /**
+   * 全部负责人的合并写法,如「周新宇、苑文涛」。
+   * 【只读展示用】由后端按 owners 算出来,保存时以 owners 为准。
+   */
   ownerName?: string;
-  /** 负责人的账号 ID。空 = 没绑账号(外委人员),此时只有 ownerName 有意义。 */
+  /** 第一位有账号的负责人。只读,由后端按 owners 算出来。 */
   ownerId?: string;
+  /** 全部负责人。【这是事实来源】保存计划时改它。 */
+  owners?: PlanOwner[];
   planStart?: string;
   planEnd?: string;
   status?: string; // 待执行 / 执行中 / 待整改 / 已完成

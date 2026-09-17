@@ -54,6 +54,9 @@ type EngineeringPlanItem struct {
 	// 【为什么不能只靠名字】重名、改过名、名字里多个空格,按名字匹配就会
 	// 绑到错的人身上,而表现是提醒发给了不该发的人 —— 得等有人抱怨才发现。
 	OwnerID   string `json:"ownerId"`
+	// Owners 全部负责人。【这是事实来源】OwnerName / OwnerID 跟着它算,
+	// 见 plan_owners.go 的 syncPlanOwners。
+	Owners    []PlanOwner `json:"owners"`
 	CycleText string `json:"cycleText"`
 	Remark       string  `json:"remark"`
 	Status       string  `json:"status"`
@@ -209,6 +212,8 @@ func normalizeEngineeringPlan(item *EngineeringPlanItem) {
 	item.WorkContent = strings.TrimSpace(item.WorkContent)
 	item.Status = firstNonEmpty(item.Status, inferEngineeringPlanStatus(item.PlanStart, item.PlanEnd))
 	item.RiskLevel = firstNonEmpty(item.RiskLevel, "normal")
+	// 负责人列表和老字段在写入时对齐(两种存储都走这里)
+	syncPlanOwners(item)
 	if item.CreatedAt.IsZero() {
 		item.CreatedAt = now
 	}
@@ -359,7 +364,8 @@ func (s *SQLiteStore) ListEngineeringPlans(filter EngineeringPlanFilter) ([]*Eng
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
 		       latest_task_id, created_at, updated_at, plan_type, weekdays,
-		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, '')
+		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, ''),
+		       COALESCE(owners_json, '[]')
 		FROM engineering_plan_items
 		ORDER BY plan_end ASC, updated_at DESC`)
 	if err != nil {
@@ -386,7 +392,8 @@ func (s *SQLiteStore) GetEngineeringPlan(id string) (*EngineeringPlanItem, error
 		       work_content, scope_desc, budget_amount, budget_text, plan_start,
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
 		       latest_task_id, created_at, updated_at, plan_type, weekdays,
-		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, '')
+		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, ''),
+		       COALESCE(owners_json, '[]')
 		FROM engineering_plan_items WHERE id=?`, id)
 	return scanEngineeringPlan(row)
 }
@@ -403,8 +410,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
 				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json,
-				owner_id
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				owner_id, owners_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE
 				source=VALUES(source), sequence_no=VALUES(sequence_no), business_type=VALUES(business_type),
 				project=VALUES(project), category=VALUES(category), sub_type=VALUES(sub_type),
@@ -413,7 +420,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				owner_name=VALUES(owner_name), cycle_text=VALUES(cycle_text), remark=VALUES(remark),
 				status=VALUES(status), risk_level=VALUES(risk_level), latest_task_id=VALUES(latest_task_id),
 				updated_at=VALUES(updated_at), plan_type=VALUES(plan_type), weekdays=VALUES(weekdays),
-				asset_ids_json=VALUES(asset_ids_json), owner_id=VALUES(owner_id)`
+				asset_ids_json=VALUES(asset_ids_json), owner_id=VALUES(owner_id),
+				owners_json=VALUES(owners_json)`
 	} else {
 		query = `
 			INSERT INTO engineering_plan_items (
@@ -421,8 +429,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
 				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json,
-				owner_id
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				owner_id, owners_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				source=excluded.source, sequence_no=excluded.sequence_no, business_type=excluded.business_type,
 				project=excluded.project, category=excluded.category, sub_type=excluded.sub_type,
@@ -431,7 +439,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				owner_name=excluded.owner_name, cycle_text=excluded.cycle_text, remark=excluded.remark,
 				status=excluded.status, risk_level=excluded.risk_level, latest_task_id=excluded.latest_task_id,
 				updated_at=excluded.updated_at, plan_type=excluded.plan_type, weekdays=excluded.weekdays,
-				asset_ids_json=excluded.asset_ids_json, owner_id=excluded.owner_id`
+				asset_ids_json=excluded.asset_ids_json, owner_id=excluded.owner_id,
+				owners_json=excluded.owners_json`
 	}
 	// 设备清单存 JSON。序列化失败也要给个合法的空数组 —— 存进 NULL 或空串
 	// 会让下次读取时解析报错,而那时候已经查不出是哪一条写坏的了。
@@ -439,12 +448,17 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 	if raw, mErr := json.Marshal(item.AssetIDs); mErr == nil && item.AssetIDs != nil {
 		assetIDsJSON = string(raw)
 	}
+	// 负责人列表同样存 JSON,序列化失败给合法的空数组(理由同上)
+	ownersJSON := "[]"
+	if raw, mErr := json.Marshal(item.Owners); mErr == nil && item.Owners != nil {
+		ownersJSON = string(raw)
+	}
 	_, err := s.db.Exec(query,
 		item.ID, item.Source, item.SequenceNo, item.BusinessType, item.Project, item.Category, item.SubType,
 		item.WorkContent, item.ScopeDesc, item.BudgetAmount, item.BudgetText, item.PlanStart,
 		item.PlanEnd, item.OwnerName, item.CycleText, item.Remark, item.Status, item.RiskLevel,
 		item.LatestTaskID, created, updated, item.PlanType, item.Weekdays, assetIDsJSON,
-		item.OwnerID,
+		item.OwnerID, ownersJSON,
 	)
 	return err
 }
@@ -585,13 +599,13 @@ func (s *SQLiteStore) UpdateEngineeringTask(id string, mutate func(*EngineeringT
 
 func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 	item := &EngineeringPlanItem{}
-	var created, updated, assetIDsJSON string
+	var created, updated, assetIDsJSON, ownersJSON string
 	err := row.Scan(
 		&item.ID, &item.Source, &item.SequenceNo, &item.BusinessType, &item.Project, &item.Category, &item.SubType,
 		&item.WorkContent, &item.ScopeDesc, &item.BudgetAmount, &item.BudgetText, &item.PlanStart,
 		&item.PlanEnd, &item.OwnerName, &item.CycleText, &item.Remark, &item.Status, &item.RiskLevel,
 		&item.LatestTaskID, &created, &updated, &item.PlanType, &item.Weekdays, &assetIDsJSON,
-		&item.OwnerID,
+		&item.OwnerID, &ownersJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -605,6 +619,10 @@ func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 	}
 	// 解析失败就当空清单:一条计划的设备清单坏了,不该让整页计划打不开
 	_ = json.Unmarshal([]byte(assetIDsJSON), &item.AssetIDs)
+	// 负责人列表:老数据这一列是空数组,syncPlanOwners 会从 owner_name/owner_id
+	// 生成一人列表 —— 所以不需要回填迁移,老计划读出来就是对的。
+	_ = json.Unmarshal([]byte(ownersJSON), &item.Owners)
+	syncPlanOwners(item)
 	return item, nil
 }
 
@@ -639,7 +657,7 @@ func engineeringPlanMatches(item *EngineeringPlanItem, filter EngineeringPlanFil
 	if filter.Status != "" && item.Status != filter.Status {
 		return false
 	}
-	if filter.Owner != "" && item.OwnerName != filter.Owner {
+	if filter.Owner != "" && !planHasOwner(item, filter.Owner) {
 		return false
 	}
 	if filter.Keyword == "" {
@@ -722,7 +740,14 @@ func engineeringPlanSummary(items []*EngineeringPlanItem) map[string]any {
 		}
 		byStatus[firstNonEmpty(item.Status, "未定义")]++
 		byCategory[firstNonEmpty(item.Category, "未分类")]++
-		byOwner[firstNonEmpty(item.OwnerName, "未指派")]++
+		// 【一位负责人记一次】多人负责的计划按合并串计数的话,
+		// 统计里会冒出「周新宇、苑文涛」这么一个"人"。
+		if len(item.Owners) == 0 {
+			byOwner["未指派"]++
+		}
+		for _, o := range item.Owners {
+			byOwner[firstNonEmpty(o.Name, "未指派")]++
+		}
 		budget += item.BudgetAmount
 	}
 	return map[string]any{
@@ -821,14 +846,27 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 	// 【绑了账号就当场核实】存进一个不存在的 owner_id,「我的计划」和点名提醒
 	// 会安静地查不到这条 —— 表现是"这条计划谁都不归",而库里明明写着个 ID。
 	// 顺手让名字跟账号对齐:两列并存的代价就是它们可能说不一样的话。
-	if req.OwnerID = strings.TrimSpace(req.OwnerID); req.OwnerID != "" {
-		owner, uErr := s.store.GetUser(req.OwnerID)
+	//
+	// 【多位负责人:每一位都核实】只核第一位的话,第二位选了个停用的账号或
+	// 看不到这个项目的人照样能存进去 —— 而提醒点了他的名,他打开什么都没有。
+	//
+	// 先同步一次:只传了 ownerName/ownerId 的老客户端,在这里变成一人列表,
+	// 走同一套校验。
+	syncPlanOwners(&req)
+	for i := range req.Owners {
+		o := &req.Owners[i]
+		if o.ID == "" {
+			continue // 外委人员没有账号,只留名字
+		}
+		owner, uErr := s.store.GetUser(o.ID)
 		if uErr != nil || owner == nil {
-			writeError(w, http.StatusBadRequest, "owner_not_found", "负责人账号不存在")
+			writeError(w, http.StatusBadRequest, "owner_not_found",
+				"负责人账号不存在:"+firstNonEmpty(o.Name, o.ID))
 			return
 		}
+		ownerLabel := firstNonEmpty(owner.DisplayName, owner.Username)
 		if owner.Status == userStatusDisabled {
-			writeError(w, http.StatusBadRequest, "owner_disabled", "负责人账号已停用")
+			writeError(w, http.StatusBadRequest, "owner_disabled", "负责人账号已停用:"+ownerLabel)
 			return
 		}
 		// 【看不到就不许派】负责人看不到自己被派的活,是个不会报错的死结:
@@ -837,13 +875,14 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 		// 拦在这里,错误当场可读,还告诉他该怎么办。
 		if !s.userCanSeeProject(s.tenantForRequest(r), owner, req.Project) {
 			writeError(w, http.StatusBadRequest, "owner_cannot_see_project",
-				firstNonEmpty(owner.DisplayName, owner.Username)+
-					" 的数据范围里没有「"+req.Project+"」,派给他也看不到 —— "+
+				ownerLabel+" 的数据范围里没有「"+req.Project+"」,派给他也看不到 —— "+
 					"请换一个人,或先在「用户与权限」里把这个项目分给他")
 			return
 		}
-		req.OwnerName = firstNonEmpty(owner.DisplayName, owner.Username)
+		// 名字跟着账号走:两列并存的代价是它们可能说不一样的话
+		o.Name = ownerLabel
 	}
+	syncPlanOwners(&req) // 名字对齐之后重算合并写法
 	if req.PlanType == planTypeDaily {
 		// 每日计划的"完成"是自动判定的(这些设备今天有没有巡检快照)。
 		// 没有设备清单就永远算不出完成率,而看板上它会显示成一条空计划 ——
