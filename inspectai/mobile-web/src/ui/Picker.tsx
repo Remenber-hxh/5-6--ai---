@@ -22,10 +22,13 @@ export interface PickerProps {
   /**
    * 这几项现在选不了,以及为什么。键是选项,值是一句话理由。
    *
-   * 【为什么是"变灰 + 说明",不是直接从列表里去掉】抄表一条记录抄六台表,
+   * 【为什么是"变灰",不是直接从列表里去掉】抄表一条记录抄六台表,
    * 一台只能归一行。去掉的话人只会觉得"怎么没有 Z3",不知道它在哪、
-   * 也不知道该怎么办。摆在那儿写明「第 3 张已选」,他才知道要先去
-   * 把第 3 张那行清掉 —— 少一次困惑,而不是少一个选项。
+   * 也不知道该怎么办;摆在那儿变灰,至少说明"它存在,只是现在轮不到"。
+   *
+   * 【理由不显示在列表里】一行选项后面挂一句灰字,九个选项就是九条,
+   * 列表被说明文字撑得比选项还满 —— 而人只是想点一台表。
+   * 理由留在 aria-label 里,读屏能念到,眼睛不用为它多读一遍。
    */
   disabledOptions?: Record<string, string>;
 }
@@ -75,17 +78,17 @@ export function Picker({
                   role="option"
                   aria-selected={o === value}
                   aria-disabled={Boolean(why)}
+                  aria-label={why ? `${o}(${why})` : undefined}
                   className={
                     why ? "dd-item is-off" : o === value ? "dd-item is-on" : "dd-item"
                   }
                   onClick={() => {
-                    if (why) return; // 理由就写在这一行上,点了不动才对
+                    if (why) return; // 变灰的点了不动才对
                     onChange(o);
                     setOpen(false);
                   }}
                 >
                   <span>{o}</span>
-                  {why && <em className="dd-why">{why}</em>}
                 </button>
               </li>
             );

@@ -3915,28 +3915,21 @@ a {
   color: var(--brand);
   font-weight: 600;
 }
-/* 现在选不了的:变灰、右边写明为什么。
+/* 现在选不了的:只变灰。
 
    【为什么摆在那儿而不是从列表里去掉】抄表一台设备只能归一行。去掉的话
-   人只会觉得"怎么没有 Z3",不知道它在哪、也不知道该怎么办。写明
-   「第 3 张已选」,他才知道先去把那一行清掉再回来。 */
+   人只会觉得"怎么没有 Z3",不知道它在哪、也不知道该怎么办;变灰至少说明
+   "它在,只是现在轮不到"。
+
+   【原来右边还挂着一句「另一张照片已选」,去掉了】九个选项挂九条灰字,
+   列表被说明撑得比选项还满,而人只是想点一台表。理由留在 aria-label 里。
+   不写 display:flex —— 保持和其他选项同一种排版,一列字才对得齐。 */
 .dd-item.is-off {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
   color: var(--ios-gray);
   cursor: default;
 }
 .dd-item.is-off:active {
   background: transparent; /* 点了不动,就别给按下去的反馈 */
-}
-.dd-why {
-  flex: none;
-  font-size: 12px;
-  font-style: normal;
-  color: var(--ios-gray);
-  opacity: 0.85;
 }
 
 /* ===== 台账:折叠筛选 + 分组吸顶标题 ===== */
