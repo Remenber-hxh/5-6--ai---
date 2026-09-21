@@ -382,14 +382,34 @@ export default function RecordPage() {
    * "怎么没有 Z3",不知道它在哪、也不知道该怎么办。写明「第 3 张已选」,
    * 他才知道要先去把第 3 张那行清掉再回来 —— 少一次困惑,而不是少一个选项。
    */
+  /**
+   * 这一格是不是真的有人在用。
+   *
+   * 【为什么要把这个判断抽出来】它被问两次:下拉里哪些设备该变灰(takenAssets),
+   * 以及选中一台设备时可以放进哪一格(pickAssetForPhoto)。两处各写一套的话,
+   * 就会出现"看着能选、选下去却把别人挤掉"——2026-09-21 报上来的那个 bug
+   * 正是这么来的:一处只看读数,另一处也只看读数,但都漏了"绑了照片"这一半。
+   *
+   * 【为什么不能只看"绑了设备"】后端会给字段名和设备名完全对得上的格子预填
+   * 默认设备(「消防水表读数」→「消防水表」,见 fillReadingAssetOptions)。
+   * 那只是按名字猜的,照片还没认领它 —— 一律当成占用的话,新记录一打开
+   * 水表就全灰了,反而选不上。
+   *
+   * 【为什么不能只看"有读数"】那正是原来的写法,也正是这次的 bug:
+   * 一张照片明明已经认领了消防水表,只因为读数还空着,别的行里它还能再选一次。
+   * 同一台设备时而灰时而不灰,取决于另一行碰巧填没填数,人无从预期。
+   *
+   * 所以是两者取或:绑了照片,或者已经有读数 —— 都算这一格名花有主。
+   */
+  function slotInUse(f: FieldValue): boolean {
+    return Boolean(f.sourceImageId) || String(f.value || "").trim() !== "";
+  }
+
   function takenAssets(self: FieldValue | null): Record<string, string> {
     const out: Record<string, string> = {};
     if (!rec) return out;
     for (const f of rec.fields) {
-      if (f.code === self?.code || !f.assetName) continue;
-      // 只有"真占着"才算:选了设备但读数是空的,那一行本来就要人来填,
-      // 不该反过来把别的行也锁住。
-      if (!String(f.value || "").trim()) continue;
+      if (f.code === self?.code || !f.assetName || !slotInUse(f)) continue;
       // 【不再说"第 3 张已选"】行号已经不显示了,说了人也对不上是哪一行。
       // 说"另一张照片已选",再配上那一行自己的照片,人扫一眼就找得到。
       out[f.assetName] = "另一张照片已选";
@@ -427,12 +447,12 @@ export default function RecordPage() {
         return;
       }
       if (!target) {
-        // 【没读数就算空着,不管有没有默认设备】默认设备只是系统按名字猜的,
-        // 读数都没有的格子让出来不丢任何东西;只认"没绑设备"的话,
-        // 格子明明空着却提示"位置都用了"。和 takenAssets 同一个口径。
+        // 【空着 = slotInUse 的反面】必须和下拉里变灰的口径完全一致:
+        // 显示成"能选"的,选下去就真的能放进一个没人要的格子;
+        // 而一个已经认领了照片的格子,不该被无声无息地顶掉。
         // 没绑设备的优先,少动一个猜好的默认值。
         const free = rec.fields.filter(
-          (f) => (f.assetOptions || []).includes(assetName) && !String(f.value || "").trim(),
+          (f) => (f.assetOptions || []).includes(assetName) && !slotInUse(f),
         );
         target = free.find((f) => !f.assetName) || free[0];
       }
