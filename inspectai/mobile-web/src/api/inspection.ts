@@ -15,6 +15,13 @@ export interface OfflineShotDTO {
   recordId?: string;
   /** 这张拍的是哪台设备(扫码时带上)。空 = 手动路径拍的 */
   assetId?: string;
+  /** 这台设备归哪个模板(后端按 assetId 查出来的)。空 = 不知道 */
+  assetTemplateId?: string;
+  /**
+   * 这个模板一条记录本来就覆盖多台设备(抄表这种:六张照片六台表)。
+   * 空/false = 不知道或不是 —— 这时按老规矩,多台设备就拦。
+   */
+  multiDevice?: boolean;
   status: string;
 }
 

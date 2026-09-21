@@ -143,17 +143,33 @@ export default function ReviewPage() {
       });
       return;
     }
-    // 【一次只能提交一台设备的照片】扫码拍的照片自己记着是哪台(assetId)。
-    // 不拦的话:扫 A 拍几张、走到 B 扫 B 再拍几张,这里一全选,六张全落到
-    // 一条记录上 —— 而扫码流程跳过了 AI 场景分类,连"这些照片不像同一个场景"
-    // 的兜底提示都没有,错得悄无声息。
-    const devices = new Set(
-      pickedIds.map((id) => shots.find((x) => x.id === id)?.assetId || ""),
-    );
-    if (devices.size > 1) {
+    // 【一次只能提交一台设备的照片 —— 除非这个模板本来就抄多台】
+    //
+    // 扫码(或从今日待巡点进去)拍的照片自己记着是哪台(assetId)。不拦的话:
+    // 扫 A 拍几张、走到 B 扫 B 再拍几张,这里一全选,六张全落到一条记录上 ——
+    // 而扫码流程跳过了 AI 场景分类,连"这些照片不像同一个场景"的兜底提示
+    // 都没有,错得悄无声息。电梯那种"一台一条记录"的模板必须拦住。
+    //
+    // 但抄表恰恰相反:一条记录就是六张照片六台表。原来这里只数设备个数,
+    // 于是抄表走一遍今日待巡、一台一台点进去拍,回到这一屏就再也提交不了了。
+    // 2026-09-21 线上就是这么卡住的。
+    //
+    // 【空的不算一台】原来用 `assetId || ""` 兜底,手动拍的和扫码拍的混选时
+    // 集合里会同时有 "" 和真 ID —— size=2,照样拦。那是纯粹的误伤。
+    const picked = pickedIds
+      .map((id) => shots.find((x) => x.id === id))
+      .filter((x): x is OfflineShotDTO => Boolean(x));
+    const devices = new Set(picked.map((x) => x.assetId).filter(Boolean));
+    // 放行的条件写严一点:所有带设备的照片属于【同一个】模板,而且那个模板
+    // 确实是一条记录抄多台。两台电梯混在一起仍然拦得住。
+    const templates = new Set(picked.map((x) => x.assetTemplateId).filter(Boolean));
+    const multiDeviceTemplate =
+      templates.size === 1 && picked.some((x) => x.multiDevice) &&
+      picked.filter((x) => x.assetId).every((x) => x.multiDevice);
+    if (devices.size > 1 && !multiDeviceTemplate) {
       Toast.show({
-      content: "选中的照片来自不同设备,请一次只提交一台",
-      duration: 3000,
+        content: "选中的照片来自不同设备,请一次只提交一台",
+        duration: 3000,
       });
       return;
     }

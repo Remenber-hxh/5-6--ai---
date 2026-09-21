@@ -43,6 +43,18 @@ type OfflineShot struct {
 	// RecordID 归档到某条巡检记录后回填;空 = 尚未成单
 	RecordID string `json:"recordId,omitempty"`
 	Status   string `json:"status"`
+
+	// 下面两个是【算出来的,不存库】,只在列表接口里填给"选照片"那一屏用。
+	//
+	// 【为什么非得给出去】那一屏要拦的是"A 和 B 两台设备的照片混进同一条记录",
+	// 可它手上只有 AssetID,判断不了"这个模板本来就一条记录抄多台"——
+	// 抄表正是这样:六张照片六台表,就该进同一条记录。
+	// 不给的话它只能按"设备数 > 1 就拦",把抄表整条路堵死。
+
+	// AssetTemplateID 这台设备归哪个模板。空 = 这张照片没指定设备(手动拍的)。
+	AssetTemplateID string `json:"assetTemplateId,omitempty"`
+	// MultiDevice 这个模板一条记录本来就覆盖多台设备(抄表这种)。
+	MultiDevice bool `json:"multiDevice,omitempty"`
 }
 
 // OfflineShotStore — 离线照片
@@ -495,7 +507,57 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+	s.annotateShotTemplates(tenantID, shots)
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots})
+}
+
+// annotateShotTemplates 给每张带设备的照片补上"它归哪个模板、那个模板是不是
+// 一条记录抄多台"。
+//
+// 【取不到就留空,不报错】这两个字段只是让"选照片"那一屏少拦一次,
+// 拿不到时它退回原来的老规矩(多台设备就拦)——比让整个列表打不开好。
+func (s *Server) annotateShotTemplates(tenantID string, shots []*OfflineShot) {
+	// 【先看有没有必要查】手动路径拍的照片没有设备,一次列表几十张全是空的时候
+	// 不该白跑一趟台账查询。
+	need := false
+	for _, sh := range shots {
+		if sh != nil && strings.TrimSpace(sh.AssetID) != "" {
+			need = true
+			break
+		}
+	}
+	if !need {
+		return
+	}
+	// 一次取回台账建索引,不要每张照片查一次 —— 六张照片就是六次查询。
+	byID := map[string]*AssetEntry{}
+	if all, err := s.store.ListAssets(tenantID); err == nil {
+		for _, a := range all {
+			if a != nil {
+				byID[a.ID] = a
+			}
+		}
+	}
+	// 同一个模板问一次就够
+	multi := map[string]bool{}
+	for _, sh := range shots {
+		if sh == nil || strings.TrimSpace(sh.AssetID) == "" {
+			continue
+		}
+		a := byID[sh.AssetID]
+		if a == nil {
+			continue // 设备被删了:当成"不知道",走老规矩
+		}
+		tplID := strings.TrimSpace(a.TemplateID)
+		if tplID == "" {
+			continue
+		}
+		sh.AssetTemplateID = tplID
+		if _, seen := multi[tplID]; !seen {
+			multi[tplID] = templateHasReadingAssets(tplID)
+		}
+		sh.MultiDevice = multi[tplID]
+	}
 }
 
 // handleOfflineShotImage 提供离线照片原图。
