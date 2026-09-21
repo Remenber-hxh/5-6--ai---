@@ -534,49 +534,6 @@ export default function RecordPage() {
       />
 
       <div className="scroll-area flow-body">
-        {/* 【巡检地点和巡检人放最上面】这两条回答的是"这份表是谁、在哪填的",
-            是看一眼就该知道的语境,不是要逐项核对的检查项。混在读数中间的话,
-            人往下核表时每次都要跳过它们;而真要改地点,又得从六个读数里把它找出来。
-
-            巡检地点仍然是个可改的字段(系统按项目预填,人能改);
-            巡检人不是字段,是记录本身带的,所以只读。 */}
-        <div className="rec-who">
-          {/* 【按后台设的类型显示,不写死成文本框】原来这里固定是一个输入框,
-              后台把巡检地点改成"选一个"、设了选项和必填,手机上一样都不生效 ——
-              改模板的人以为没保存上,反复改。 */}
-          {siteField && (
-            <div className="rec-who-row">
-              <span className="rec-who-k">
-                巡检地点
-                {siteField.required && <i className="fld-req"> *</i>}
-              </span>
-              {siteField.kind === "choice" && (siteField.options || []).length > 0 ? (
-                <Picker
-                  options={siteField.options || []}
-                  value={siteDraft}
-                  placeholder="请选择"
-                  onChange={(v) => {
-                    setSiteDraft(v);
-                    void commitSite(v);
-                  }}
-                />
-              ) : (
-                <input
-                  className="rec-who-v"
-                  value={siteDraft}
-                  placeholder="请输入"
-                  onChange={(e) => setSiteDraft(e.target.value)}
-                  onBlur={() => void commitSite()}
-                />
-              )}
-            </div>
-          )}
-          <div className="rec-who-row">
-            <span className="rec-who-k">巡检人</span>
-            <span className="rec-who-v is-ro">{rec.inspector || "—"}</span>
-          </div>
-        </div>
-
         {/* 顶部那行「模板 · 项目 · 点位 · N/M 项已填」删了:
             四段信息挤成一行小字,读起来费劲又占地方。
             模板名在顶栏标题里已有语境;填写进度靠字段本身的填/未填状态
@@ -636,6 +593,52 @@ export default function RecordPage() {
             </div>
           </>
         )}
+
+        {/* 【照片在前,巡检人/地点跟在后面】这两条回答的是"这份表是谁、在哪填的",
+            是语境,不是要逐项核对的检查项 —— 所以既不能混在读数中间(往下核表时
+            每次都要跳过它们),也不该占掉首屏最上面那块。
+
+            现场打开这一页,第一眼要确认的是"我拍的这几张对不对、够不够";
+            照片先亮出来,人和地点紧跟着做落款,再往下才是一行一张的核对。
+
+            巡检地点仍然是个可改的字段(系统按项目预填,人能改);
+            巡检人不是字段,是记录本身带的,所以只读。 */}
+        <div className="rec-who">
+          {/* 【按后台设的类型显示,不写死成文本框】原来这里固定是一个输入框,
+              后台把巡检地点改成"选一个"、设了选项和必填,手机上一样都不生效 ——
+              改模板的人以为没保存上,反复改。 */}
+          {siteField && (
+            <div className="rec-who-row">
+              <span className="rec-who-k">
+                巡检地点
+                {siteField.required && <i className="fld-req"> *</i>}
+              </span>
+              {siteField.kind === "choice" && (siteField.options || []).length > 0 ? (
+                <Picker
+                  options={siteField.options || []}
+                  value={siteDraft}
+                  placeholder="请选择"
+                  onChange={(v) => {
+                    setSiteDraft(v);
+                    void commitSite(v);
+                  }}
+                />
+              ) : (
+                <input
+                  className="rec-who-v"
+                  value={siteDraft}
+                  placeholder="请输入"
+                  onChange={(e) => setSiteDraft(e.target.value)}
+                  onBlur={() => void commitSite()}
+                />
+              )}
+            </div>
+          )}
+          <div className="rec-who-row">
+            <span className="rec-who-k">巡检人</span>
+            <span className="rec-who-v is-ro">{rec.inspector || "—"}</span>
+          </div>
+        </div>
 
         {/* 一键确认:只针对置信偏低的项,替代逐字段按钮(旧版做法) */}
         {lowConf.length > 0 && (
