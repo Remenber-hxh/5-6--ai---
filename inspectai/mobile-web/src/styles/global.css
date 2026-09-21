@@ -1381,6 +1381,13 @@
 .mpr-warn {
   background: var(--lt-warn-bg, #fff8ec);
 }
+/* 【还没选设备的行,行首一条竖线】没选设备的行和已填的行原来长得一样:
+   要数还剩几行没弄,得一行行看读数框里是不是"先选设备"。
+   一条 2px 的蓝竖线,扫一眼就数得出来 —— 蓝 = 这儿要你动手,和主按钮同一个意思。
+   用 inset 阴影不用 border:border 会把整行内容往右推 2px,和上下行错开。 */
+.mpr-todo {
+  box-shadow: inset 2px 0 0 var(--brand);
+}
 .mpr-head {
   display: flex;
   align-items: center;
@@ -1405,6 +1412,17 @@
   flex: 1;
   min-width: 0;
 }
+/* 【设备名让位给读数】这一页的动作是"连着扫六个数字对不对",设备名只是
+   告诉人这一行是哪台表。原来两者都是 15px,一样重,眼睛得自己分主次。 */
+.mpr-head .dd-text {
+  font-size: 14px;
+  color: var(--ios-gray);
+}
+.mpr-head .dd-trigger:not(.is-empty) .dd-text {
+  color: var(--lt-fg);
+}
+/* 读数 15 → 17px 半粗:配上本来就有的等宽数字,六行的小数点竖着对齐,
+   错一位一眼就看得出来 —— 这正是核表要的。 */
 .mpr-input {
   flex: none;
   width: 110px;
@@ -1412,7 +1430,8 @@
   border: 0.5px solid var(--lt-border);
   border-radius: 8px;
   padding: 0 10px;
-  font-size: 15px;
+  font-size: 17px;
+  font-weight: 600;
   text-align: right;
   font-variant-numeric: tabular-nums;
   background: var(--lt-card, #fff);
@@ -1423,6 +1442,10 @@
 .mpr-input:disabled {
   background: var(--lt-fill, #f2f2f7);
   color: var(--ios-gray);
+  /* 这会儿框里是"先选设备"这句提示,不是数字 —— 别用读数的字重字号,
+     否则一句灰字看着比真读数还重。 */
+  font-size: 15px;
+  font-weight: 400;
 }
 /* AI 试过、放弃了,理由写出来 —— 只留一个空格子的话,
    人会以为系统没跑,而不是"这张确实读不出、该我来填" */
@@ -1908,15 +1931,30 @@ a {
   background: var(--screen-bg);
   padding-top: var(--safe-top);
 }
+/* 【一屏只留一个强调色】这条进度条原来是绿→青的渐变,而主按钮是品牌蓝:
+   同一屏上三种强调色互相抢。收成品牌蓝的纯色之后,蓝 = 可点/进行中,
+   绿退回去只做"正常/已完成"的状态色,红继续只管异常 —— 颜色各有各的意思。
+   渐变本身也一并去掉:它没表达任何信息,只是让界面看着像模板。
+
+   【顺带说明一处重名】顶栏那条进度条是组件库的 Progress,它自己的类名
+   也叫 .progress-bar,正好被这条规则罩住了 —— 所以那条渐变其实是从这里
+   漏过去的。改成纯色后两处一起对齐,不用再单独写一条覆盖。 */
 .progress {
   height: 3px;
-  background: rgba(67, 229, 172, 0.14);
+  background: var(--lt-fill, #f2f3f5);
   flex: none;
 }
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #12a968, var(--tech-cyan));
+  background: var(--brand);
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 组件库给顶栏这条填的是它自己的蓝(#165DFF),规则是
+   `.arco-progress .progress-wrapper .progress-bar`,比上面那条更具体 ——
+   所以只去掉渐变还不够,会变成"我们的蓝按钮配它的蓝进度条",差一点点最难看。
+   这里把它那串选择器原样抄过来再加上自己的类名,权重压过去,不用 !important。 */
+.arco-progress.flow-progress .progress-wrapper .progress-bar {
+  background-color: var(--brand);
 }
 .loading-body {
   flex: 1;
@@ -2134,13 +2172,16 @@ a {
 .photo-strip::-webkit-scrollbar {
   display: none;
 }
-/* 缩略图 72 → 104px:巡检照片是要【看清拍到了什么】的,72px 只能看出
-   "有张图",看不出是铭牌还是地面。放大后一屏仍能露出三张半,
-   横向滑动的暗示还在。 */
+/* 缩略图 104 → 56px。
+   【为什么又缩回来】当初放大到 104 是为了"看清拍到了什么",那时候照片只有
+   顶上这一条。现在每一行核对行自己就带着同一张图 —— 看清是铭牌还是地面
+   该由那儿负责,这条只剩一个职责:够不够 6 张、顺序对不对。
+   104px 时这条带标题吃掉 133px,占首屏 16%,装的全是下面重复一遍的内容;
+   压到 56 省出的那截还给核对行,一屏多看一行。要看大图点开就是。 */
 .photo-thumb {
   flex: none;
-  width: 104px;
-  height: 104px;
+  width: 56px;
+  height: 56px;
   padding: 0;
   border: 0.5px solid var(--lt-border);
   border-radius: 12px;
@@ -3788,12 +3829,16 @@ a {
   display: inline-block;
   min-width: 96px;
 }
+/* 【点击区 44,视觉一点不变】这个触发器本来只有 23px 高 —— 一行文字加个
+   小三角,看着是"一段字",手指要点的却是它。苹果 44pt、谷歌 48dp 是下限,
+   而现场是戴着手套点的。撑高度不撑样式:背景透明、无边框,人看到的还是那段字。 */
 .dd-trigger {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
   width: 100%;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: transparent;

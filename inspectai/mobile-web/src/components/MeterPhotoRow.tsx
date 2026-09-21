@@ -63,7 +63,9 @@ export default function MeterPhotoRow({
   const needsReview = Boolean(field?.needsReview);
 
   return (
-    <div className={`mpr ${needsReview ? "mpr-warn" : ""}`}>
+    <div
+      className={`mpr ${needsReview ? "mpr-warn" : ""} ${assetName ? "" : "mpr-todo"}`}
+    >
       <div className="mpr-head">
         {/* 【照片就是这一行的左栏,固定大小】原来照片单独挂在行下面,还缩进一截:
             六行连着核时,有读数区特写的和没有的两种图大小不一样,位置也对不齐,
