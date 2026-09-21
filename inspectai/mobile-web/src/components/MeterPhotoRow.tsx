@@ -65,7 +65,19 @@ export default function MeterPhotoRow({
   return (
     <div className={`mpr ${needsReview ? "mpr-warn" : ""}`}>
       <div className="mpr-head">
-        <span className="mpr-seq">第 {index} 张</span>
+        {/* 【照片就是这一行的左栏,固定大小】原来照片单独挂在行下面,还缩进一截:
+            六行连着核时,有读数区特写的和没有的两种图大小不一样,位置也对不齐,
+            看着像每一行都在挪位置。放进行首、写死一个尺寸,一列对齐到底。
+            原来左边还占着一个「第 N 张」,一屏就少看一行。 */}
+        <span className="mpr-thumb">
+          {field?.bbox?.length === 4 ? (
+            <ReadingCrop url={photoUrl} bbox={field.bbox} onOpen={onOpenPhoto} />
+          ) : (
+            <button className="mpr-photo" onClick={onOpenPhoto} aria-label={`看第 ${index} 张大图`}>
+              <img src={photoUrl} alt="" loading="lazy" />
+            </button>
+          )}
+        </span>
         {/* 【设备选择器就是这一行的身份】选完读数落到哪一栏由它决定。
             没选之前读数框是禁用的 —— 不知道是哪台表,填了也不知道记到哪。 */}
         <Picker
@@ -95,21 +107,6 @@ export default function MeterPhotoRow({
           理由写在这儿,人才知道该自己看照片填,而不是以为系统没跑。 */}
       {unread && <div className="mpr-note">{field?.reason}</div>}
 
-      {/* 照片摆在这一行下面,但只占一小条。
-
-          【为什么不是整张照片铺满】现场照是竖着拍的,原比例铺开一行就一屏,
-          而抄表恰恰要连着核六行。更要紧的是:整张照片里 LCD 只占一百多像素,
-          缩到一行高之后根本看不清数字 —— 又大又没用。
-
-          有读数区的框就裁出那一小块(数字能看清),没有就退回整张缩略图。
-          两种都是点一下看大图。 */}
-      {field?.bbox?.length === 4 ? (
-        <ReadingCrop url={photoUrl} bbox={field.bbox} onOpen={onOpenPhoto} />
-      ) : (
-        <button className="mpr-photo" onClick={onOpenPhoto} aria-label={`看第 ${index} 张大图`}>
-          <img src={photoUrl} alt="" loading="lazy" />
-        </button>
-      )}
     </div>
   );
 }
@@ -119,19 +116,3 @@ export function fieldOfPhoto(fields: FieldValue[], imageId: string): FieldValue 
   return fields.find((f) => f.sourceImageId === imageId) || null;
 }
 
-/**
- * 台账里这个模板该覆盖的设备,这次一台都没落下吗。
- *
- * 【为什么要算这个】按拍照顺序排之后,现场看到 5 行,他根本不知道缺的是
- * 哪一台 —— 而系统知道:台账里有 6 台,这次认领了 5 台,差的那台叫什么
- * 名字能直接说出来。只说"有字段为空"等于让人自己去数。
- */
-export function missingAssets(fields: FieldValue[]): string[] {
-  const all = new Set<string>();
-  const claimed = new Set<string>();
-  for (const f of fields) {
-    for (const o of f.assetOptions || []) all.add(o);
-    if (f.assetName && String(f.value || "").trim()) claimed.add(f.assetName);
-  }
-  return [...all].filter((a) => !claimed.has(a));
-}

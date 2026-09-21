@@ -1372,7 +1372,7 @@
    下面 —— 核对从"记着六张照片的顺序、点开大图、翻页、退回来"变成扫一眼。 */
 .mpr {
   border-bottom: 0.5px solid var(--lt-border);
-  padding: 12px 18px 14px;
+  padding: 8px 18px;
 }
 .mpr:last-of-type {
   border-bottom: 0;
@@ -1386,12 +1386,20 @@
   align-items: center;
   gap: 10px;
 }
-/* 「第 3 张」——给人一个和上面照片条对得上的锚点,不然选错了也不知道在说哪张 */
-.mpr-seq {
+/* 照片列:每一行最左边一块,大小写死。
+   【两种图必须一样大】有读数区特写的裁一小块、没有的用整张缩略图 ——
+   尺寸不统一的话,六行连着核时每一行的设备名和读数框都在左右挪,
+   视线要为每一行重新找位置。 */
+.mpr-thumb {
   flex: none;
-  font-size: 12px;
-  color: var(--ios-gray);
-  min-width: 40px;
+  display: block;
+  width: 76px;
+  height: 46px;
+}
+.mpr-thumb > * {
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 .mpr-head .dd {
   flex: 1;
@@ -1419,7 +1427,7 @@
 /* AI 试过、放弃了,理由写出来 —— 只留一个空格子的话,
    人会以为系统没跑,而不是"这张确实读不出、该我来填" */
 .mpr-note {
-  margin: 6px 0 0 50px;
+  margin: 6px 0 0 86px;
   font-size: 12px;
   color: var(--ios-orange, #c77700);
 }
@@ -1433,10 +1441,6 @@
    塌掉,看上去像"这张照片不存在",而它只是还没到。 */
 .mpr-photo {
   display: block;
-  width: 88px;
-  height: 40px;
-  margin-top: 8px;
-  margin-left: 50px;
   padding: 0;
   border: 0.5px solid var(--lt-border);
   border-radius: 6px;
@@ -1453,10 +1457,11 @@
 .mpr-photo:active {
   opacity: 0.75;
 }
-/* 抄表行里的读数特写:和上面那张缩略图对齐,别自己单起一套缩进 */
-.mpr .fld-crop {
-  margin-top: 8px;
-  margin-left: 50px;
+/* 抄表行里的读数特写:尺寸由 .mpr-thumb 定,别自己带一套宽高和缩进 */
+.mpr-thumb .fld-crop {
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
 /* ===== 这份表是谁、在哪填的 =====
@@ -1506,23 +1511,6 @@
   display: flex;
   justify-content: flex-end;
 }
-/* 缺哪一台:说名字,不说"有字段为空" —— 后者等于让人自己去数 */
-.mpr-missing {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 18px 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--lt-warn-bg, #fff8ec);
-  font-size: 13px;
-  color: var(--ios-orange, #c77700);
-}
-.mpr-missing span {
-  flex: 1;
-  min-width: 0;
-}
-
 /* 读数区特写:这个数是从哪张图的哪一块读出来的。
 
    【尺寸怎么定的】表盘读数是一条横向的数字带,88x40 的比例接近它本身的

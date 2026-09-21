@@ -6,7 +6,7 @@ import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import LoadingScene from "@/components/LoadingScene";
 import PhotoViewer, { PhotoMeta } from "@/components/PhotoViewer";
-import MeterPhotoRow, { fieldOfPhoto, missingAssets } from "@/components/MeterPhotoRow";
+import MeterPhotoRow, { fieldOfPhoto } from "@/components/MeterPhotoRow";
 import ReadingCrop from "@/components/ReadingCrop";
 import {
   FieldValue,
@@ -367,7 +367,6 @@ export default function RecordPage() {
   // 写死 id 的话,以后后台配出第二个抄表模板,它不会走这条路,而且不报错。
   const isMeterField = (f: FieldValue) => Boolean(f.assetOptions?.length);
   const meterMode = (rec?.fields || []).some(isMeterField) && (rec?.images.length || 0) > 0;
-  const missing = rec ? missingAssets(rec.fields) : [];
 
   /** 这次巡检能选的全部设备(按台账现算,后端已经填在每个读数字段上) */
   function allAssets(): string[] {
@@ -391,8 +390,9 @@ export default function RecordPage() {
       // 只有"真占着"才算:选了设备但读数是空的,那一行本来就要人来填,
       // 不该反过来把别的行也锁住。
       if (!String(f.value || "").trim()) continue;
-      const idx = rec.images.findIndex((img) => img.id === f.sourceImageId);
-      out[f.assetName] = idx >= 0 ? `第 ${idx + 1} 张已选` : "已被别的项占用";
+      // 【不再说"第 3 张已选"】行号已经不显示了,说了人也对不上是哪一行。
+      // 说"另一张照片已选",再配上那一行自己的照片,人扫一眼就找得到。
+      out[f.assetName] = "另一张照片已选";
     }
     return out;
   }
@@ -655,17 +655,6 @@ export default function RecordPage() {
         {meterMode && (
           <>
             <div className="fld-group-title">按拍照顺序核对</div>
-            {missing.length > 0 && (
-              // 【说清缺的是哪一台,不是"有字段为空"】现场看到 5 行,
-              // 他没法知道缺的是哪一台 —— 而系统知道。不拦提交:漏抄是事实,
-              // 不该卡住交工;但要把该补的那台指出来,顺带给补拍入口。
-              <div className="mpr-missing">
-                <span>还差 {missing.join("、")} 没抄</span>
-                <button className="fld-btn" onClick={() => nav("/")}>
-                  去补拍
-                </button>
-              </div>
-            )}
             {rec.images.map((img, i) => {
               const f = fieldOfPhoto(rec.fields, img.id);
               return (
