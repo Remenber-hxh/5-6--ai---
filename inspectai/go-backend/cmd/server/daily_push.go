@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -204,6 +205,7 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 			// 不说的话用户会打开开关、等到第二天、然后来问"为什么没发"。
 			"botReady": s.weworkBot != nil && s.weworkBot.Enabled(),
 			"timezone": pushTZ.String(),
+			"bots":     s.botConfigViews(kv),
 		})
 		return
 	}
@@ -213,6 +215,11 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 		Time           string `json:"time"`
 		Weekdays       string `json:"weekdays"`
 		SilentWhenDone bool   `json:"silentWhenDone"`
+		// Bots 各个群自己的单独设置。
+		//
+		// 【不传 = 一个群的设置都别动】老版本后台发上来的请求里没有这个字段,
+		// 当成"全部清空"的话,升级那天所有群的单独设置会被静默抹掉。
+		Bots []botConfigReq `json:"bots"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", err.Error())
@@ -224,26 +231,131 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_time", "推送时间要写成 HH:MM,例如 17:00")
 		return
 	}
-	for _, part := range strings.Split(strings.TrimSpace(req.Weekdays), ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if n, err := strconv.Atoi(part); err != nil || n < 1 || n > 7 {
-			writeError(w, http.StatusBadRequest, "bad_weekdays", "执行日只能是 1-7(1=周一,7=周日)")
-			return
-		}
+	if msg := validWeekdays(req.Weekdays); msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_weekdays", msg)
+		return
 	}
 	cfg := dailyPushConfig{
 		Enabled: req.Enabled, HourMin: strings.TrimSpace(req.Time),
 		Weekdays: strings.TrimSpace(req.Weekdays), SilentWhenDone: req.SilentWhenDone,
 	}
-	if err := s.store.SetAppSettings(cfg.toSettings(), s.currentUserName(r)); err != nil {
+	settings := cfg.toSettings()
+
+	// 【单独设置和全局设置一起存】分两次写的话,中间失败会留下
+	// "全局改了、单独的没改"这种一半的状态,而页面显示的是改完的样子。
+	for _, b := range req.Bots {
+		if !s.knownBotIndex(b.Index) {
+			writeError(w, http.StatusBadRequest, "unknown_bot",
+				fmt.Sprintf("没有第 %d 个群机器人", b.Index))
+			return
+		}
+		ov, msg := b.toOverride()
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, "bad_bot_config", msg)
+			return
+		}
+		settings[botOverrideKey(b.Index)] = ov.encode()
+	}
+
+	if err := s.store.SetAppSettings(settings, s.currentUserName(r)); err != nil {
 		writeError(w, http.StatusInternalServerError, "save_settings_failed", err.Error())
 		return
 	}
 	s.recordOperation(r, "daily_push_config", "app_settings", keyPushEnabled, map[string]any{
 		"enabled": cfg.Enabled, "time": cfg.HourMin, "weekdays": cfg.Weekdays,
+		"bots": len(req.Bots),
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// botConfigReq 后台发上来的"第 N 个群的单独设置"。
+//
+// 【字段是指针】null = 这一项跟随全局。用零值表达的话,"这个群停掉"
+// 和"这个群跟随全局"会长得一模一样。
+type botConfigReq struct {
+	Index          int     `json:"index"`
+	Enabled        *bool   `json:"enabled"`
+	Time           *string `json:"time"`
+	Weekdays       *string `json:"weekdays"`
+	SilentWhenDone *bool   `json:"silentWhenDone"`
+}
+
+// toOverride 校验并转成存库的形状。第二个返回值非空 = 这份设置有问题。
+func (b botConfigReq) toOverride() (dailyPushOverride, string) {
+	o := dailyPushOverride{Enabled: b.Enabled, SilentWhenDone: b.SilentWhenDone}
+	if b.Time != nil {
+		t := strings.TrimSpace(*b.Time)
+		if !validHourMin(t) {
+			return o, fmt.Sprintf("第 %d 个群的推送时间要写成 HH:MM,例如 18:30", b.Index)
+		}
+		o.HourMin = &t
+	}
+	if b.Weekdays != nil {
+		wd := strings.TrimSpace(*b.Weekdays)
+		if msg := validWeekdays(wd); msg != "" {
+			return o, fmt.Sprintf("第 %d 个群:%s", b.Index, msg)
+		}
+		o.Weekdays = &wd
+	}
+	return o, ""
+}
+
+// validWeekdays 返回空串表示没问题。
+//
+// 【抽出来是因为全局和单独设置得是同一套规则】各写一份的话,
+// 单独设置那边迟早会放过一个全局不收的值,而坏值的表现是"那个群不发了"。
+func validWeekdays(raw string) string {
+	for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+		if part = strings.TrimSpace(part); part == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(part); err != nil || n < 1 || n > 7 {
+			return "执行日只能是 1-7(1=周一,7=周日)"
+		}
+	}
+	return ""
+}
+
+func (s *Server) knownBotIndex(index int) bool {
+	for _, b := range s.weworkBots {
+		if b.Index == index {
+			return true
+		}
+	}
+	return false
+}
+
+// botConfigViews 后台要显示的每个群:它是谁、收哪些项目、现在实际几点发。
+//
+// 【绝不返回 webhook】这个接口是给浏览器的,返回值会进控制台、进截图、
+// 进任何一次"帮我看看"的粘贴 —— 而 webhook 等价于往那个群发消息的权限。
+func (s *Server) botConfigViews(kv map[string]string) []map[string]any {
+	out := make([]map[string]any, 0, len(s.weworkBots))
+	for _, b := range s.weworkBots {
+		o := parseDailyPushOverride(kv[botOverrideKey(b.Index)])
+		eff := dailyPushConfigForBot(kv, b.Index)
+		out = append(out, map[string]any{
+			"index":    b.Index,
+			"name":     b.Name,
+			"projects": b.Projects,
+			"ready":    b.Client != nil && b.Client.Enabled(),
+			// follows:这个群现在是不是完全跟着全局走。前端据此决定
+			// "单独设置"那一块是展开还是收着。
+			"follows": o.IsEmpty(),
+			// override:只有人真的设过的那几项。没设的是 null,不是零值 ——
+			// 前端要靠这个区分"关掉了"和"没设过"。
+			"override": map[string]any{
+				"enabled": o.Enabled, "time": o.HourMin,
+				"weekdays": o.Weekdays, "silentWhenDone": o.SilentWhenDone,
+			},
+			// effective:全局和覆盖合并之后,这个群实际用的那套。
+			// 【必须一起给】只给覆盖值的话,页面上一个群写着"18:30"、
+			// 另一个什么都没写,人得自己在脑子里做一遍合并才知道几点发。
+			"effective": map[string]any{
+				"enabled": eff.Enabled, "time": eff.HourMin,
+				"weekdays": eff.Weekdays, "silentWhenDone": eff.SilentWhenDone,
+			},
+		})
+	}
+	return out
 }

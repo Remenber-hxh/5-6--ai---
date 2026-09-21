@@ -3,6 +3,8 @@ import dayjs from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  DailyPushBot,
+  DailyPushBotOverride,
   DailyPushConfig,
   DailyPushDigest,
   getDailyPushConfig,
@@ -78,6 +80,35 @@ export default function DailyPushPreview({
     } catch (e) {
       message.error(e instanceof Error ? e.message : "保存失败");
       await load(); // 失败就回到服务端的真实状态,别让界面停在一个没存进去的值上
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * 改某一个群的单独设置。
+   *
+   * 【必须把这个群现有的覆盖一起发回去】后端是整份替换 ——
+   * 只发一个 time 的话,这个群原来设的"暂停"会被一起清掉,
+   * 而页面上不会有任何提示,下次到点它就又开始发了。
+   */
+  async function patchBot(bot: DailyPushBot, next: Partial<DailyPushBotOverride>) {
+    if (!cfg) return;
+    setSaving(true);
+    try {
+      await saveDailyPushConfig({
+        enabled: cfg.enabled,
+        time: cfg.time,
+        weekdays: cfg.weekdays,
+        silentWhenDone: cfg.silentWhenDone,
+        bots: [{ index: bot.index, ...bot.override, ...next }],
+      });
+      // 【重新拉一遍,不在本地拼】effective 是后端合并出来的,
+      // 前端自己算一份就等于把合并规则写两遍,迟早分叉。
+      setCfg(await getDailyPushConfig());
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+      await load();
     } finally {
       setSaving(false);
     }
@@ -162,6 +193,27 @@ export default function DailyPushPreview({
           </div>
         )}
 
+        {/* 【只有配了两个群以上才出现这一块】一个群的时候,"分项目设置"
+            是一个永远只有一行、而且那一行还只能写"跟随全局"的空壳。 */}
+        {cfg && (cfg.bots?.length ?? 0) > 1 && (
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: C.text, fontSize: 13 }}>
+              分项目设置
+              <span style={{ fontWeight: 400, color: C.textSub, marginLeft: 8 }}>
+                不单独设就按上面那套发
+              </span>
+            </div>
+            {cfg.bots!.map((b) => (
+              <BotConfigRow
+                key={b.index}
+                bot={b}
+                saving={saving}
+                onChange={(next) => void patchBot(b, next)}
+              />
+            ))}
+          </div>
+        )}
+
         {digest && (
           <>
             {digest.wouldSend ? (
@@ -201,5 +253,111 @@ export default function DailyPushPreview({
         </Button>
       </Space>
     </Modal>
+  );
+}
+
+/**
+ * 一个群一行。
+ *
+ * 【收着的时候要把实际几点发写出来】只显示"跟随全局"的话,人得抬头去看
+ * 上面那块才知道这个群几点发;而这一行存在的理由恰恰是"这个群到底怎么发"。
+ */
+function BotConfigRow({
+  bot,
+  saving,
+  onChange,
+}: {
+  bot: DailyPushBot;
+  saving: boolean;
+  onChange: (next: Partial<DailyPushBotOverride>) => void;
+}) {
+  const eff = bot.effective;
+  const picked = new Set((eff.weekdays || "").split(",").filter(Boolean));
+  const label = bot.projects.length ? bot.projects.join("、") : "全部项目";
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 8,
+        padding: "10px 12px",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <Space size={10} wrap style={{ justifyContent: "space-between", width: "100%" }}>
+        <Space size={8}>
+          <span style={{ fontWeight: 600, color: C.text }}>{label}</span>
+          {/* 这个群的 webhook 没配好,单独设置存了也发不出去 —— 就地说明白,
+              不然人会以为是时间设错了,反复改时间。 */}
+          {!bot.ready && (
+            <span style={{ color: C.textSub, fontSize: 12 }}>(地址未配置,发不出去)</span>
+          )}
+        </Space>
+        <Space size={8}>
+          <Switch
+            size="small"
+            checked={!bot.follows}
+            disabled={saving}
+            onChange={(v) =>
+              // 打开时用这个群【现在实际用的】那套当起点 —— 从全局的值开始改,
+              // 比从一个空表单开始少一次"它现在到底几点发"的来回。
+              onChange(
+                v
+                  ? { time: eff.time, weekdays: eff.weekdays }
+                  : { enabled: null, time: null, weekdays: null, silentWhenDone: null },
+              )
+            }
+          />
+          <span style={{ color: C.textSub, fontSize: 13 }}>单独设置</span>
+        </Space>
+      </Space>
+
+      {bot.follows ? (
+        <div style={{ color: C.textSub, fontSize: 13 }}>
+          跟随全局:{eff.time} · {picked.size === 0 ? "每天" : `周${[...picked].sort().map((v) => WEEKDAYS.find((d) => d.v === v)?.label).join("")}`}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          <Space size={10} wrap>
+            <TimePicker
+              size="small"
+              format="HH:mm"
+              allowClear={false}
+              disabled={saving}
+              value={dayjs(eff.time, "HH:mm")}
+              onChange={(v) => v && onChange({ time: v.format("HH:mm") })}
+            />
+            {WEEKDAYS.map((d) => (
+              <Checkbox
+                key={d.v}
+                disabled={saving}
+                checked={picked.size === 0 || picked.has(d.v)}
+                onChange={(e) => {
+                  const base = picked.size === 0 ? WEEKDAYS.map((x) => x.v) : [...picked];
+                  const next = e.target.checked
+                    ? [...new Set([...base, d.v])]
+                    : base.filter((x) => x !== d.v);
+                  onChange({ weekdays: next.sort().join(",") });
+                }}
+              >
+                {d.label}
+              </Checkbox>
+            ))}
+          </Space>
+          <Space size={10}>
+            <Switch
+              size="small"
+              disabled={saving}
+              checked={bot.override.enabled === false}
+              onChange={(v) => onChange({ enabled: v ? false : null })}
+            />
+            {/* 【只能停自己,不能反过来打开】上面那个总开关关着的时候,
+                这里开着也不发 —— 所以文案写"暂停",不写"启用"。 */}
+            <span style={{ color: C.textSub, fontSize: 13 }}>这个群暂停推送</span>
+          </Space>
+        </div>
+      )}
+    </div>
   );
 }

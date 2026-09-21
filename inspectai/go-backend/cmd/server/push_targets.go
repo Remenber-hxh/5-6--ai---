@@ -20,6 +20,10 @@ import (
 
 // weworkBotTarget 一个群机器人 + 它负责哪些项目。
 type weworkBotTarget struct {
+	// Index 第几个群(从 1 开始),和 WEWORK_BOT_[N]_WEBHOOK 的编号一致。
+	// 它是这个群在"单独设置"里的身份(见 push_bot_config.go)——
+	// 不能用项目名当身份:项目改个名,这个群的时间设置就跟着丢了。
+	Index int
 	// Name 只用于日志和推送记账。【绝不放 webhook】—— 日志会被复制到工单、
 	// 截图发到群里,凭证一旦进日志就等于公开了。
 	Name   string
@@ -66,6 +70,7 @@ func loadWeWorkBotTargets(read func(key, def string) string) []weworkBotTarget {
 		}
 		projects := splitProjects(read(projKey, ""))
 		out = append(out, weworkBotTarget{
+			Index:    i,
 			Name:     botDisplayName(i, projects),
 			Client:   NewWeWorkBotClient(hook),
 			Projects: projects,

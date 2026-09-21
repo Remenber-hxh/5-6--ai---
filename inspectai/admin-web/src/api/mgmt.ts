@@ -501,6 +501,37 @@ export function previewDailyPush(silentWhenDone: boolean) {
   );
 }
 
+/**
+ * 一个群自己那份设置。
+ *
+ * 【每一项都可能是 null】null = 这一项跟随全局。不能用 false/"" 代替:
+ * 「这个群停掉」和「这个群跟随全局」会变成同一个值。
+ */
+export interface DailyPushBotOverride {
+  enabled: boolean | null;
+  time: string | null;
+  weekdays: string | null;
+  silentWhenDone: boolean | null;
+}
+
+export interface DailyPushBot {
+  /** 第几个群,和服务器上 WEWORK_BOT_[N]_WEBHOOK 的编号一致 */
+  index: number;
+  name: string;
+  projects: string[];
+  /** 这个群的 webhook 配好没有。没配的话设置能存,但发不出去 */
+  ready: boolean;
+  /** 完全跟随全局 —— 一项都没单独设过 */
+  follows: boolean;
+  override: DailyPushBotOverride;
+  /**
+   * 全局 + 覆盖合并之后,这个群实际用的那套。
+   * 【后端算好给过来,前端不自己合并】两边各算一遍的话,迟早出现
+   * 页面显示 18:30、实际 17:00 发,而两边都说自己是对的。
+   */
+  effective: { enabled: boolean; time: string; weekdays: string; silentWhenDone: boolean };
+}
+
 export interface DailyPushConfig {
   enabled: boolean;
   time: string;
@@ -509,6 +540,8 @@ export interface DailyPushConfig {
   /** 企微群机器人配没配。没配的话开关打开了也发不出去 —— 界面必须先说 */
   botReady?: boolean;
   timezone?: string;
+  /** 服务器上配了哪几个群。没配过多群时是空的 */
+  bots?: DailyPushBot[];
 }
 
 export function getDailyPushConfig() {
@@ -520,6 +553,8 @@ export function saveDailyPushConfig(c: {
   time: string;
   weekdays: string;
   silentWhenDone: boolean;
+  /** 不传 = 一个群的单独设置都不动 */
+  bots?: ({ index: number } & Partial<DailyPushBotOverride>)[];
 }) {
   return api("/api/engineering/plans/daily-push/config", {
     method: "PUT",

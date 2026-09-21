@@ -72,7 +72,8 @@ func (s *Server) runDailyPushOnce(now time.Time) {
 		}
 		// 【一个租户失败不能中断其他租户】否则排在前面的那个一出问题,
 		// 后面所有客户当天都收不到提醒,而日志里只有一条错误。
-		s.pushOneTenant(t.ID, cfg, now)
+		// kv 一路传下去:每个群还要按它自己那份覆盖值重算一遍参数。
+		s.pushOneTenant(t.ID, kv, cfg, now)
 	}
 }
 
@@ -81,7 +82,11 @@ func (s *Server) runDailyPushOnce(now time.Time) {
 // 【为什么逐个机器人独立走一遍】一个项目一个群。共用一次记账的话,
 // 发完第一个群就记成"今天已发",第二个群永远收不到 —— 而日志显示成功。
 // 一个群失败也不该带走其他群:紫菡那个 webhook 失效,不能让会议中心也收不到。
-func (s *Server) pushOneTenant(tenantID string, cfg dailyPushConfig, now time.Time) {
+//
+// 【几点发也是一个群一份】cfg 是全局那套,每个群还要叠上自己的覆盖值:
+// 紫菡 17:00、会议中心 18:30,或者紫菡这阵子先别发。
+// 没设覆盖的群拿到的就是 cfg 本身,和以前一模一样。
+func (s *Server) pushOneTenant(tenantID string, kv map[string]string, cfg dailyPushConfig, now time.Time) {
 	bots := s.weworkBots
 	if len(bots) == 0 {
 		// 【说清楚是没配,不是没数据】否则运维看到"没推送"会去查计划和设备。
@@ -92,7 +97,7 @@ func (s *Server) pushOneTenant(tenantID string, cfg dailyPushConfig, now time.Ti
 		return
 	}
 	for _, bot := range bots {
-		s.pushOneBot(tenantID, cfg, now, bot)
+		s.pushOneBot(tenantID, dailyPushConfigForBot(kv, bot.Index), now, bot)
 	}
 }
 
