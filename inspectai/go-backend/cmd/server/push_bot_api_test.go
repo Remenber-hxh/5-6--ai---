@@ -36,6 +36,15 @@ func newPushConfigServer(t *testing.T) (*Server, string) {
 	if err := s.loadPermissions(); err != nil {
 		t.Fatalf("loadPermissions: %v", err)
 	}
+	// 【库里要有真项目】页面显示的项目名是拿配置去库里核出来的,
+	// 不是照抄配置 —— 没有项目的话每个群都会显示成"配错了"。
+	for _, name := range []string{"会议中心", "紫菡雅集"} {
+		if err := store.CreateProject(&Project{
+			ID: "p_" + name, TenantID: defaultTenantID, Name: name,
+		}); err != nil {
+			t.Fatalf("CreateProject %s: %v", name, err)
+		}
+	}
 	admin := &User{ID: "user_admin", Username: "admin", DisplayName: "系统管理员", RoleCode: roleAdmin}
 	if err := store.CreateUser(admin, "test-password"); err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -62,11 +71,12 @@ func putPushConfig(t *testing.T, s *Server, token, body string) *httptest.Respon
 type pushCfgView struct {
 	Enabled bool `json:"enabled"`
 	Bots    []struct {
-		Index    int      `json:"index"`
-		Projects []string `json:"projects"`
-		Ready    bool     `json:"ready"`
-		Follows  bool     `json:"follows"`
-		Override struct {
+		Index           int      `json:"index"`
+		Projects        []string `json:"projects"`
+		UnknownProjects []string `json:"unknownProjects"`
+		Ready           bool     `json:"ready"`
+		Follows         bool     `json:"follows"`
+		Override        struct {
 			Enabled  *bool   `json:"enabled"`
 			Time     *string `json:"time"`
 			Weekdays *string `json:"weekdays"`
@@ -115,6 +125,52 @@ func TestPushConfigListsBotsFollowingGlobal(t *testing.T) {
 	}
 	if got.Bots[1].Projects[0] != "紫菡雅集" {
 		t.Errorf("项目名对不上:%v", got.Bots[1].Projects)
+	}
+}
+
+// 【配置里的项目名库里没有 → 必须喊出来】这是个安静的故障:
+// 那个群照常"按时发送成功",只是内容里一台设备都没有。
+// 2026-09-20 本地就是这么坏的(读 .env 的编码把项目名变成了乱码)。
+func TestPushConfigFlagsProjectsMissingFromDB(t *testing.T) {
+	s, tok := newPushConfigServer(t)
+	// 模拟配错/编码坏掉:配的是一个库里不存在的名字
+	s.weworkBots[1].Projects = []string{"绱彙闆呴泦"}
+
+	got := getPushConfig(t, s, tok)
+	bad := got.Bots[1]
+	if len(bad.Projects) != 0 {
+		t.Errorf("库里没有的项目不该当成真项目显示:%v", bad.Projects)
+	}
+	if len(bad.UnknownProjects) != 1 || bad.UnknownProjects[0] != "绱彙闆呴泦" {
+		t.Errorf("对不上的项目名没被拎出来:%v", bad.UnknownProjects)
+	}
+	// 另一个群不受影响 —— 一个配错了不该让整页都不可信
+	if len(got.Bots[0].Projects) != 1 || got.Bots[0].Projects[0] != "会议中心" {
+		t.Errorf("好的那个群被带坏了:%+v", got.Bots[0])
+	}
+}
+
+// 显示的名字来自库,不是照抄配置 —— 所以库里改了项目名,页面跟着变。
+func TestPushConfigProjectNamesComeFromDB(t *testing.T) {
+	s, tok := newPushConfigServer(t)
+	if got := getPushConfig(t, s, tok); got.Bots[0].Projects[0] != "会议中心" {
+		t.Fatalf("起点就不对:%v", got.Bots[0].Projects)
+	}
+	// 把库里那个项目删掉:配置一个字没动,页面就该说"这个名字现在不存在"
+	list, err := s.store.ListProjects(defaultTenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range list {
+		if p.Name == "会议中心" {
+			if err := s.store.DeleteProject(defaultTenantID, p.ID); err != nil {
+				t.Fatalf("DeleteProject: %v", err)
+			}
+		}
+	}
+	got := getPushConfig(t, s, tok)
+	if len(got.Bots[0].Projects) != 0 || len(got.Bots[0].UnknownProjects) != 1 {
+		t.Errorf("项目从库里没了,页面还在照抄配置:%+v", got.Bots[0])
 	}
 }
 

@@ -518,7 +518,13 @@ export interface DailyPushBot {
   /** 第几个群,和服务器上 WEWORK_BOT_[N]_WEBHOOK 的编号一致 */
   index: number;
   name: string;
+  /** 库里真实存在的那几个项目。空 = 这个群收全部项目 */
   projects: string[];
+  /**
+   * 配置里写了、库里却没有的项目名。
+   * 非空 = 这个群一台设备也筛不到、一条提醒也发不出去,而且不报错。
+   */
+  unknownProjects?: string[];
   /** 这个群的 webhook 配好没有。没配的话设置能存,但发不出去 */
   ready: boolean;
   /** 完全跟随全局 —— 一项都没单独设过 */

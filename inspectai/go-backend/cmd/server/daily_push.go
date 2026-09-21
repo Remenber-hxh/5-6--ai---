@@ -205,7 +205,7 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 			// 不说的话用户会打开开关、等到第二天、然后来问"为什么没发"。
 			"botReady": s.weworkBot != nil && s.weworkBot.Enabled(),
 			"timezone": pushTZ.String(),
-			"bots":     s.botConfigViews(kv),
+			"bots":     s.botConfigViews(kv, s.tenantForRequest(r)),
 		})
 		return
 	}
@@ -329,16 +329,45 @@ func (s *Server) knownBotIndex(index int) bool {
 //
 // 【绝不返回 webhook】这个接口是给浏览器的,返回值会进控制台、进截图、
 // 进任何一次"帮我看看"的粘贴 —— 而 webhook 等价于往那个群发消息的权限。
-func (s *Server) botConfigViews(kv map[string]string) []map[string]any {
+//
+// 【项目名对着库里核一遍再显示,不照抄配置】配置里写的是一串字符串,
+// 库里的项目才是真的。两者对不上时这个群一台设备也筛不到、一条提醒也发不出去,
+// 而配置本身看上去完全正常 —— 2026-09-20 本地就是这么坏的(见 start-local.ps1
+// 里那段编码注释),后台页面把配置原样显示成一串乱码才被发现。
+// 现在显示的是库里查到的那个项目,查不到的单独列出来,让这种故障自己说话。
+func (s *Server) botConfigViews(kv map[string]string, tenantID string) []map[string]any {
+	// 读不到项目不该让整个设置页打不开 —— 退回显示配置原文,
+	// 那仍然比什么都不显示有用。
+	live := map[string]string{}
+	if projects, err := s.store.ListProjects(tenantID); err == nil {
+		for _, p := range projects {
+			if p != nil {
+				live[p.Name] = p.Name
+			}
+		}
+	}
+
 	out := make([]map[string]any, 0, len(s.weworkBots))
 	for _, b := range s.weworkBots {
 		o := parseDailyPushOverride(kv[botOverrideKey(b.Index)])
 		eff := dailyPushConfigForBot(kv, b.Index)
+		matched, unknown := []string{}, []string{}
+		for _, name := range b.Projects {
+			if real, ok := live[name]; ok {
+				matched = append(matched, real)
+			} else {
+				unknown = append(unknown, name)
+			}
+		}
 		out = append(out, map[string]any{
-			"index":    b.Index,
-			"name":     b.Name,
-			"projects": b.Projects,
-			"ready":    b.Client != nil && b.Client.Enabled(),
+			"index": b.Index,
+			"name":  b.Name,
+			// projects:库里真实存在的那几个。空 = 这个群收全部项目。
+			"projects": matched,
+			// unknownProjects:配置里写了、库里却没有的。非空 =
+			// 这个群收不到任何东西,而且不会报错。页面必须把它喊出来。
+			"unknownProjects": unknown,
+			"ready":           b.Client != nil && b.Client.Enabled(),
 			// follows:这个群现在是不是完全跟着全局走。前端据此决定
 			// "单独设置"那一块是展开还是收着。
 			"follows": o.IsEmpty(),

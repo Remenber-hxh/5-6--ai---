@@ -7,9 +7,23 @@ $goCache = Join-Path $root ".gocache"
 $goTelemetry = Join-Path $root ".gotelemetry"
 $envFile = Join-Path $root ".env"
 
+# NOTE: keep this file ASCII-only. Windows PowerShell 5.1 parses a .ps1 without
+# a BOM using the ANSI codepage, so a non-ASCII comment can break the script
+# itself -- which is exactly what happened while fixing the bug below.
+#
+# -Encoding UTF8 is mandatory here. Get-Content defaults to the ANSI codepage
+# (GB2312 on this dev box) and .env is UTF-8 with Chinese project names in it.
+# Read as GB2312 they come out as mojibake, and one whole line gets swallowed.
+#
+# 2026-09-20: WEWORK_BOT_2_PROJECTS was set here, mangled, before the Go backend
+# loaded .env itself; Go's loader skips keys already present, so the bot filtered
+# on a project name no table contains -- zero devices, zero errors, and the admin
+# page rendering mojibake was the only symptom. WEWORK_BOT_PROJECTS in the same
+# file was dropped entirely by the bad read, so Go loaded it correctly: one bot
+# right and one bot wrong, which made encoding the last thing anyone suspected.
 function Load-DotEnv($path) {
   if (-not (Test-Path -LiteralPath $path)) { return }
-  foreach ($line in Get-Content -LiteralPath $path) {
+  foreach ($line in Get-Content -LiteralPath $path -Encoding UTF8) {
     $trimmed = $line.Trim()
     if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
     $idx = $trimmed.IndexOf("=")
@@ -22,8 +36,10 @@ function Load-DotEnv($path) {
 
 function Load-DotEnvSecure($path) {
   # Decrypt DPAPI-encrypted values from .env.secure into process env vars.
+  # -Encoding UTF8 for the same reason as Load-DotEnv above: today this file is
+  # pure base64, but one Chinese comment line would silently shift every line.
   if (-not (Test-Path -LiteralPath $path)) { return }
-  foreach ($line in Get-Content -LiteralPath $path) {
+  foreach ($line in Get-Content -LiteralPath $path -Encoding UTF8) {
     $trimmed = $line.Trim()
     if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
     $idx = $trimmed.IndexOf("=")

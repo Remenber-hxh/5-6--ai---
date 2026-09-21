@@ -273,7 +273,14 @@ function BotConfigRow({
 }) {
   const eff = bot.effective;
   const picked = new Set((eff.weekdays || "").split(",").filter(Boolean));
-  const label = bot.projects.length ? bot.projects.join("、") : "全部项目";
+  const bad = bot.unknownProjects ?? [];
+  // 【显示的是库里查到的项目名】配置里那串字符串只在对不上的时候才出现,
+  // 而且是作为错误出现 —— 把它当标题显示的话,配错了看起来和配对了一样。
+  const label = bot.projects.length
+    ? bot.projects.join("、")
+    : bad.length
+      ? "配置的项目不存在"
+      : "全部项目";
 
   return (
     <div
@@ -292,6 +299,13 @@ function BotConfigRow({
               不然人会以为是时间设错了,反复改时间。 */}
           {!bot.ready && (
             <span style={{ color: C.textSub, fontSize: 12 }}>(地址未配置,发不出去)</span>
+          )}
+          {/* 【配错项目名是个安静的故障】这个群照常"按时发送成功",
+              只是内容里一台设备都没有。不喊出来的话,人会去查计划和设备。 */}
+          {bad.length > 0 && (
+            <span style={{ color: C.danger, fontSize: 12 }}>
+              服务器上配的「{bad.join("、")}」库里没有,这个群收不到任何设备
+            </span>
           )}
         </Space>
         <Space size={8}>
