@@ -27,8 +27,15 @@ func TestAssumedDecimalIsForcedToReview(t *testing.T) {
 		t.Errorf("读数本身不该被改动:%q", f.Value)
 	}
 	// 理由要说人话,"按固定格式切分"现场看不懂是什么意思
-	if !contains(f.Reason, "请核对小数点") {
+	if !contains(f.Reason, decimalHintMarker) {
 		t.Errorf("没告诉人要做什么:%q", f.Reason)
+	}
+
+	// 【跑第二遍不能再追加一遍】判断和追加用的不是同一串时就会,理由越滚越长
+	before := f.Reason
+	guardAssumedDecimal(f)
+	if f.Reason != before {
+		t.Errorf("重复识别时理由被追加了第二遍:\n%q", f.Reason)
 	}
 }
 
@@ -71,6 +78,26 @@ func TestGuardNeverRaisesConfidence(t *testing.T) {
 	}
 }
 
+// 【新提示词下最要紧的一条】改完提示词,模型看不见小数点时会【原样输出数字串】,
+// value 里没有小数点。这种才是最危险的:60197924 交上去差的是一千倍,
+// 而"按格式补"那组判断要求 value 带小数点,正好漏掉它。
+func TestUndeterminedDecimalWithoutDotIsCaught(t *testing.T) {
+	f := &FieldValue{
+		Code: "z1_reading", Value: "60197924", Confidence: 0.9,
+		Reason: "EP 上排6019 下排7924;屏上未见小数点,请按实际度数补",
+	}
+	guardAssumedDecimal(f)
+	if !f.NeedsReview {
+		t.Error("没定小数点的数字串没被标成待复核 —— 这一串差一千倍")
+	}
+	if f.Confidence > assumedDecimalConfidence {
+		t.Errorf("置信度没压下来:%v", f.Confidence)
+	}
+	if f.Value != "60197924" {
+		t.Errorf("不该替人把小数点补上:%q", f.Value)
+	}
+}
+
 // 线上出现过的几种说法都要认得出来 —— 提示词改了措辞不能让这道闸失效。
 func TestMarkerCoverage(t *testing.T) {
 	for _, reason := range []string{
@@ -81,6 +108,15 @@ func TestMarkerCoverage(t *testing.T) {
 	} {
 		if !decimalWasAssumed("60197.924", reason) {
 			t.Errorf("没认出这是猜的:%q", reason)
+		}
+	}
+	// 没带小数点时,只有"压根没定下来"那一组才该触发
+	for reason, want := range map[string]bool{
+		"屏上未见小数点,请按实际度数补": true,  // 数字串等着人去点小数点
+		"按固定格式读取黑色字轮":     false, // 机械水表的整数读数,别误伤
+	} {
+		if got := decimalWasAssumed("60197924", reason); got != want {
+			t.Errorf("无小数点时判断错了:%q 得到 %v,应为 %v", reason, got, want)
 		}
 	}
 	for _, reason := range []string{

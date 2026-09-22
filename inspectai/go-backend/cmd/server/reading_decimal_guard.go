@@ -23,39 +23,61 @@ import "strings"
 // 确认页顶部会把它们聚在一起提示——猜出来的小数点正该进那一组。
 const assumedDecimalConfidence = 0.6
 
+// decimalHint 补在理由后面、说给现场人听的那句话;decimalHintMarker 是它的
+// 去重标记 —— 两者必须同源,否则每识别一次就再追加一遍。
+const (
+	decimalHintMarker = "请对着表补小数点"
+	decimalHint       = " —— 屏上看不到小数点," + decimalHintMarker
+)
+
 // assumedDecimalMarkers AI 在理由里承认"小数位不是从屏幕上读到的"时会出现的说法。
 //
 // 【为什么是一组关键词而不是一个结构化字段】结构化字段同样要模型自觉去填,
 // 而这次的教训恰恰是它会填一半。理由是自由文本、模型写得很稳,
 // 多列几种说法比赌一个布尔位可靠。提示词那边也要求写明,两边对着来。
+// 【A 组:小数点是按格式补出来的】这类说法只有在读数【真的带小数点】时才算数 ——
+// 机械水表的理由里也会写"按固定格式读取黑色字轮",那是整数读数,不该被拖进复核。
 var assumedDecimalMarkers = []string{
 	"固定格式",
 	"按格式",
 	"格式假设",
 	"假设小数",
+	"按表型",
+}
+
+// 【B 组:小数点压根没定下来】提示词现在要求"看不见小数点就原样输出数字串、
+// 并在理由里写明"。那种情况下 value 里【没有】小数点,A 组那个判断就漏了 ——
+// 而这恰恰是最需要人去补的一种:一串 60197924 交上去,差的是一千倍。
+// 所以这一组不看 value 有没有小数点。
+var undeterminedDecimalMarkers = []string{
 	"看不到小数点",
 	"看不清小数点",
 	"小数点不可见",
 	"未见小数点",
-	"按表型",
+	"没有小数点",
+	"请按实际度数补",
 }
 
-// decimalWasAssumed 这个读数的小数位是猜出来的吗。
-func decimalWasAssumed(value, reason string) bool {
-	// 没有小数点就无所谓猜不猜 —— 别把整数读数也拖进复核。
-	if !strings.Contains(value, ".") {
-		return false
-	}
-	r := strings.TrimSpace(reason)
-	if r == "" {
-		return false
-	}
-	for _, m := range assumedDecimalMarkers {
-		if strings.Contains(r, m) {
+func hasAnyMarker(s string, markers []string) bool {
+	for _, m := range markers {
+		if strings.Contains(s, m) {
 			return true
 		}
 	}
 	return false
+}
+
+// decimalWasAssumed 这个读数的小数位是猜的、或者压根还没定下来。
+func decimalWasAssumed(value, reason string) bool {
+	r := strings.TrimSpace(reason)
+	if r == "" {
+		return false
+	}
+	if hasAnyMarker(r, undeterminedDecimalMarkers) {
+		return true
+	}
+	// 按格式补的:只有读数真带小数点时才算
+	return strings.Contains(value, ".") && hasAnyMarker(r, assumedDecimalMarkers)
 }
 
 // guardAssumedDecimal 小数位是猜出来的就压低置信度并强制人工复核。
@@ -72,7 +94,10 @@ func guardAssumedDecimal(f *FieldValue) {
 	f.NeedsReview = true
 	// 【把话说给人听】理由里原本是"按固定格式切分"这种内部说法,
 	// 现场看不懂那意味着什么。补一句说清要他做什么。
-	if !strings.Contains(f.Reason, "请核对小数点") {
-		f.Reason = strings.TrimSpace(f.Reason + " —— 屏上没有小数点,位置是按表型推的,请核对小数点")
+	//
+	// 去重要认这句话里的固定片段,不能各写各的 —— 判断和追加用的不是同一串时,
+	// 每识别一次就会再追加一遍,理由越滚越长。
+	if !strings.Contains(f.Reason, decimalHintMarker) {
+		f.Reason = strings.TrimSpace(f.Reason + decimalHint)
 	}
 }
