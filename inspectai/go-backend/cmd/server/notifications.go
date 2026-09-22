@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) notifyInspectionSubmitted(rec *Record, assets []*AssetEntry) {
-	if rec == nil || s.weworkBot == nil || !s.weworkBot.Enabled() {
+	if rec == nil || !s.weworkBotAvailable() {
 		return
 	}
 	attention := assetsNeedingAttention(assets)
@@ -32,11 +32,11 @@ func (s *Server) notifyInspectionSubmitted(rec *Record, assets []*AssetEntry) {
 		fmt.Sprintf("> AI建议：%s", truncate(advice, 90)),
 		fmt.Sprintf("> 处理入口：%s", markdownLink("查看巡检记录", s.adminRecordURL(rec.ID))),
 	}, "\n")
-	s.sendWeWorkBotMarkdownAsync("inspection.submitted", content)
+	s.sendWeWorkBotMarkdownAsync("inspection.submitted", rec.Project, content)
 }
 
 func (s *Server) notifyChangeRequestCreated(cr *ChangeRequest) {
-	if cr == nil || s.weworkBot == nil || !s.weworkBot.Enabled() {
+	if cr == nil || !s.weworkBotAvailable() {
 		return
 	}
 	content := strings.Join([]string{
@@ -46,11 +46,11 @@ func (s *Server) notifyChangeRequestCreated(cr *ChangeRequest) {
 		fmt.Sprintf("> 原因：%s", truncate(cr.Reason, 100)),
 		fmt.Sprintf("> 审批入口：%s", markdownLink("进入审批详情", s.adminChangeRequestURL(cr.ID))),
 	}, "\n")
-	s.sendWeWorkBotMarkdownAsync("change_request.created", content)
+	s.sendWeWorkBotMarkdownAsync("change_request.created", s.changeRequestProject(cr), content)
 }
 
 func (s *Server) notifyChangeRequestReviewed(cr *ChangeRequest, resultText string) {
-	if cr == nil || s.weworkBot == nil || !s.weworkBot.Enabled() {
+	if cr == nil || !s.weworkBotAvailable() {
 		return
 	}
 	content := strings.Join([]string{
@@ -62,20 +62,33 @@ func (s *Server) notifyChangeRequestReviewed(cr *ChangeRequest, resultText strin
 		fmt.Sprintf("> 说明：%s", truncate(firstNonEmpty(cr.ReviewNote, "无"), 100)),
 		fmt.Sprintf("> 查看结果：%s", markdownLink("打开审批记录", s.adminChangeRequestURL(cr.ID))),
 	}, "\n")
-	s.sendWeWorkBotMarkdownAsync("change_request.reviewed", content)
+	s.sendWeWorkBotMarkdownAsync("change_request.reviewed", s.changeRequestProject(cr), content)
 }
 
-func (s *Server) sendWeWorkBotMarkdownAsync(event, content string) {
-	if s.weworkBot == nil || !s.weworkBot.Enabled() || strings.TrimSpace(content) == "" {
+// sendWeWorkBotMarkdownAsync 把一条提醒发到【这个项目对应的群】。
+//
+// 【project 必须传】原来这里写死 s.weworkBot(第 1 个群),于是紫菡雅集的异常提醒
+// 发进了会议中心的群 —— 群里能看到别的项目的设备名、巡检人、点位。
+// 项目不明时传空串:只发给"收全部项目"的群,不会塞进某个项目专用的群。
+func (s *Server) sendWeWorkBotMarkdownAsync(event, project, content string) {
+	if strings.TrimSpace(content) == "" {
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-		defer cancel()
-		if _, err := s.weworkBot.SendMarkdown(ctx, content); err != nil {
-			log.Printf("WARN: wework bot notification failed event=%s err=%v", event, err)
-		}
-	}()
+	targets := s.weworkTargetsFor(event, project)
+	if len(targets) == 0 {
+		return // weworkTargetsFor 已经打过日志
+	}
+	for _, bot := range targets {
+		bot := bot
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			if _, err := bot.SendMarkdown(ctx, content); err != nil {
+				log.Printf("WARN: wework bot notification failed event=%s project=%s err=%v",
+					event, project, err)
+			}
+		}()
+	}
 }
 
 func (s *Server) adminURL() string {
