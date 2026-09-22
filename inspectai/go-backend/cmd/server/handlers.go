@@ -2715,6 +2715,9 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 			}
 		}
 		field.AssetName = want
+		// 清空 = 人点了「清除」,记一位下来,免得下次读记录时默认值又被猜回去。
+		// 重新选了一台就把这一位放掉,恢复成正常状态。
+		field.AssetCleared = want == ""
 	}
 
 	// 【认领一张没人要的照片】只认这条记录里真实存在的照片 id。

@@ -53,6 +53,78 @@ func TestPatchFieldCanClearAssetName(t *testing.T) {
 	}
 }
 
+// 【清掉之后不能被默认值又猜回来】fillReadingAssetOptions 每次读记录都会在
+// 设备为空时按字段名猜一个填回去(「消防水表读数」→「消防水表」)。
+// 不认 AssetCleared 这一位的话,人点完「清除」下一次刷新它又回来了 ——
+// 点了跟没点一样,而接口全程返回 200。这条是「清除」能不能用的命门。
+func TestClearedAssetIsNotRefilledByDefault(t *testing.T) {
+	s, _, rid := newSwapAPIServer(t)
+	// 台账里有「消防水表」,默认值才猜得出来 —— 否则这条测试是空跑的
+	if err := s.store.CreateAsset(&AssetEntry{
+		ID: "紫菡雅集::zihan_energy::fire", TenantID: defaultTenantID, Project: "紫菡雅集",
+		TemplateID: "zihan_energy", AssetType: "水表", AssetName: "消防水表", LastStatus: "未巡检",
+	}); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	rec, err := s.store.GetRecord(defaultTenantID, rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 先证明"没清过的空设备"确实会被猜回来 —— 这是这一位存在的理由
+	f, _ := fieldByCode(rec.Fields, "fire_water_reading")
+	f.AssetName, f.AssetCleared = "", false
+	s.fillReadingAssetOptions(rec)
+	if got, _ := fieldByCode(rec.Fields, "fire_water_reading"); got.AssetName != "消防水表" {
+		t.Fatalf("前提不成立:空设备本该被默认值填上,却得到 %q", got.AssetName)
+	}
+
+	// 人点了「清除」之后,就不该再猜
+	f, _ = fieldByCode(rec.Fields, "fire_water_reading")
+	f.AssetName, f.AssetCleared = "", true
+	s.fillReadingAssetOptions(rec)
+	if got, _ := fieldByCode(rec.Fields, "fire_water_reading"); got.AssetName != "" {
+		t.Errorf("清除之后默认值又被猜回来了(%q)—— 界面上就是「点了没反应」", got.AssetName)
+	}
+	// 候选还得照常给,否则清完就没得选了
+	if got, _ := fieldByCode(rec.Fields, "fire_water_reading"); len(got.AssetOptions) == 0 {
+		t.Error("清除之后连候选都没了,那就谁也选不上")
+	}
+}
+
+// 重新选一台之后,这一位要放掉 —— 否则这一格从此再也拿不到默认值。
+func TestPickingAgainClearsTheClearedFlag(t *testing.T) {
+	s, tok, rid := newSwapAPIServer(t)
+	if err := s.store.CreateAsset(&AssetEntry{
+		ID: "紫菡雅集::zihan_energy::fire", TenantID: defaultTenantID, Project: "紫菡雅集",
+		TemplateID: "zihan_energy", AssetType: "水表", AssetName: "消防水表", LastStatus: "未巡检",
+	}); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	patch := func(body string) {
+		req := httptest.NewRequest(http.MethodPatch,
+			"/api/inspection/records/"+rid+"/fields/fire_water_reading",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-InspectAI-Token", tok)
+		s.router(httptest.NewRecorder(), req)
+	}
+	patch(`{"assetName":""}`)
+	patch(`{"assetName":"消防水表"}`)
+
+	after, err := s.store.GetRecord(defaultTenantID, rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := fieldByCode(after.Fields, "fire_water_reading")
+	if f.AssetCleared {
+		t.Error("重新选了设备,「清除过」这一位还挂着 —— 这一格从此拿不到默认值")
+	}
+	if f.AssetName != "消防水表" {
+		t.Errorf("重新选的设备没存上:%q", f.AssetName)
+	}
+}
+
 // 清掉之后,这台设备在别的行里就该重新可选 —— 也就是后端算出来的候选里
 // 仍然有它(候选来自台账,不受这一格归属影响),而且没有任何一格再占着它。
 func TestClearedAssetIsFreeAgain(t *testing.T) {

@@ -144,6 +144,15 @@ type FieldValue struct {
 	// 过几天就和台账对不上,而界面上看不出来它已经过期了。
 	AssetName    string   `json:"assetName,omitempty"`
 	AssetOptions []string `json:"assetOptions,omitempty"`
+	// AssetCleared 人在确认页点过「清除」,主动把这一格的设备放掉了。
+	//
+	// 【为什么非得记一位】fillReadingAssetOptions 每次读记录都会在设备为空时
+	// 按字段名猜一个默认值填回去(「消防水表读数」→「消防水表」)。
+	// 不区分"从没设过"和"人刚清掉"的话,清除完下一次刷新它又回来了 ——
+	// 点了跟没点一样,而接口全程返回 200。
+	//
+	// 落在 fields_json 里,不需要迁移。重新选一台设备时置回 false。
+	AssetCleared bool `json:"assetCleared,omitempty"`
 
 	// SourceImageID 这个读数是从哪张照片读出来的;Bbox 是读数区在那张图里的
 	// 位置(归一化 [左,上,右,下])。确认页据此把那一小块裁出来摆在这一行旁边。
