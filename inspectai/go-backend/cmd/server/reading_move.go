@@ -119,5 +119,8 @@ func (s *Server) handleMoveReading(w http.ResponseWriter, r *http.Request, recor
 		Operator:      operator,
 	})
 
-	writeJSON(w, http.StatusOK, sanitizeRecordForCurrentTemplate(rec))
+	// 【和 GET 同一个形状】原来这里只裁了字段,没填设备候选 —— 候选是现算的、
+	// 不存库,于是前端拿这个返回值刷新之后,读数行的设备下拉里一台都没有,
+	// 要等下一次 GET 才回来。接口返回 200,界面看着"就是选不了"。
+	s.respondRecord(w, rec)
 }

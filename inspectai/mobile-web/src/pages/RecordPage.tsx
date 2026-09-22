@@ -378,12 +378,32 @@ export default function RecordPage() {
 
   /**
    * 这一格是不是真的有人在用(绑了照片,或者已经有读数)。
-   *
-   * 只用来找"哪一格还空着",【不再用来禁用下拉里的选项】——
-   * 见 pickAssetForPhoto 上那段关于对调的说明。
+   * 用来找"哪一格还空着",以及判断该走搬家还是对调。
    */
   function slotInUse(f: FieldValue): boolean {
     return Boolean(f.sourceImageId) || String(f.value || "").trim() !== "";
+  }
+
+  /**
+   * 哪些设备现在选不了 —— 一台设备只能归一行,已经归了别行的变灰。
+   *
+   * 【判据是"那一行已经有读数",不是"绑了设备"】这两者差别很大,
+   * 2026-09-22 线上因此卡死过一次:当时按"绑了照片或有读数"算,而六台表六个格子、
+   * 格子里都预填了默认设备,于是一打开所有设备全灰 —— 两个水表一个都填不了,
+   * 想改都无从下手。按"有读数"算的话,没抄到数的那几格始终让得出来,不会锁死。
+   *
+   * 【为什么是变灰而不是从列表里去掉】去掉的话人只会觉得"怎么没有 Z3",
+   * 不知道它在哪、也不知道该怎么办;摆在那儿变灰,至少说明"它在,只是轮不到"。
+   */
+  function takenAssets(self: FieldValue | null): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!rec) return out;
+    for (const f of rec.fields) {
+      if (f.code === self?.code || !f.assetName) continue;
+      if (String(f.value || "").trim() === "") continue;
+      out[f.assetName] = "另一张照片已选";
+    }
+    return out;
   }
 
   /**
@@ -394,16 +414,11 @@ export default function RecordPage() {
    *   已经认领了、选的还是同一台 → 什么都不做
    *   已经认领了、改选另一台 → 走 move:读数、照片、置信度整组搬过去
    *
-   * 【那台设备正被别的行占着 → 两行对调,不是禁止选它】
+   * 【那台设备的格子已经占着东西 → 两行对调,不是把它顶掉】
    *
-   * 2026-09-22 线上卡死过一次,值得写清楚:我先前把"已经归了别行的设备"
-   * 在下拉里一律禁掉。看着合理 —— 一台设备只能归一行嘛。但抄表的错位恰恰
-   * 是"六台表六个格子,AI 把归属排错了":两个水表的格子里装着电表的读数,
-   * 要腾出水表得先改那两格,可那时所有设备都是灰的 —— 一步都动不了。
-   *
-   * 格子和设备一样多的时候,"禁用"永远解不开错位,只有对调能。
-   * 所以现在谁都能选:选一台正被别行占着的设备,就是把那两行换过来 ——
-   * 两行同时变,看得见,再点一次就换回去。
+   * 已经抄到数的设备在下拉里是灰的(见 takenAssets),所以能走到这里的
+   * 是"那一格绑了照片、但还没抄到数"——这时仍然不能直接顶掉它:
+   * 那张照片会失去归属,而界面上没有任何地方说过。整组对调才不丢东西。
    */
   //
   // 【找格子不能只靠"哪一格默认绑的是这台"】原来就是这么找的,而默认设备是
@@ -701,6 +716,7 @@ export default function RecordPage() {
                   photoUrl={photos[i]?.url || ""}
                   field={f}
                   options={allAssets()}
+                  disabledAssets={takenAssets(f)}
                   assetName={f?.assetName || ""}
                   onPickAsset={(name) => pickAssetForPhoto(img.id, name)}
                   onChangeValue={(v) => (f ? saveFieldValue(f, v) : Promise.resolve())}

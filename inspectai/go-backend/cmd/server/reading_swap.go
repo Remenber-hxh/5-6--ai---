@@ -93,8 +93,22 @@ func (s *Server) handleSwapReading(w http.ResponseWriter, r *http.Request, recor
 		})
 	}
 
-	s.fillReadingAssetOptions(rec)
-	writeJSON(w, http.StatusOK, rec)
+	s.respondRecord(w, rec)
+}
+
+// respondRecord 把一条记录交给前端时的统一形状。
+//
+// 【为什么要统一】GET 那条路返回前做了三件事:按当前模板裁字段、填编号候选、
+// 填读数行的设备候选。而 move 只做了第一件 —— 候选是【现算的、不存库】,
+// 所以前端 setRec(move 的返回值) 之后,设备下拉里一台都没有,
+// 要等下一次 GET 才回来。接口返回 200、界面看着"就是选不了"。
+//
+// 两处各写一套迟早分叉,所以收成一个函数。
+func (s *Server) respondRecord(w http.ResponseWriter, rec *Record) {
+	out := sanitizeRecordForCurrentTemplate(rec)
+	s.fillAssetNoOptions(out)
+	s.fillReadingAssetOptions(out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // swapFieldPayload 两格互换"这一次抄到的东西",不换这一格是谁。

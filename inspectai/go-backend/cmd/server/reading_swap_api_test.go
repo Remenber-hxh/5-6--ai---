@@ -133,6 +133,38 @@ func TestSwapRefusesSubmittedRecord(t *testing.T) {
 	}
 }
 
+// 【返回值里必须带着设备候选】候选是现算的、不存库。少了它,前端拿这个
+// 返回值刷新之后读数行的下拉里一台设备都没有 —— 而接口返回的是 200,
+// 界面上只表现成"就是选不了"。move 原来就漏了这一条。
+func TestSwapResponseCarriesAssetOptions(t *testing.T) {
+	s, tok, rid := newSwapAPIServer(t)
+	// 台账里有这台表,候选才算得出来
+	if err := s.store.CreateAsset(&AssetEntry{
+		ID: "紫菡雅集::zihan_energy::Z1", TenantID: defaultTenantID, Project: "紫菡雅集",
+		TemplateID: "zihan_energy", AssetType: "电表", AssetName: "Z1", LastStatus: "未巡检",
+	}); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	got := postSwap(t, s, tok, rid, `{"aCode":"z1_reading","bCode":"fire_water_reading"}`)
+	if got.Code != http.StatusOK {
+		t.Fatalf("对调失败 status=%d %s", got.Code, got.Body.String())
+	}
+	var out struct {
+		Fields []struct {
+			Code         string   `json:"code"`
+			AssetOptions []string `json:"assetOptions"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(got.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析返回失败: %v", err)
+	}
+	for _, f := range out.Fields {
+		if f.Code == "z1_reading" && len(f.AssetOptions) == 0 {
+			t.Error("返回值里没有设备候选 —— 前端刷新后下拉会是空的")
+		}
+	}
+}
+
 // 换到自己头上不该悄悄成功 —— 那通常是前端算错了目标格。
 func TestSwapRejectsSameField(t *testing.T) {
 	s, tok, rid := newSwapAPIServer(t)
