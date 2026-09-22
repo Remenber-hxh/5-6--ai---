@@ -280,10 +280,20 @@ export default function AssetDetailPage() {
                 url: `/storage/uploads/${rec!.id}/${img.id}_${img.fileName}`,
                 key: img.id,
               }));
-              // 只列有值的字段 —— 空字段铺一屏"—"没有任何信息量
-              const filled = (rec?.fields || []).filter(
-                (f) => String(f.value ?? "").trim() !== "",
-              );
+              // 只列有值的字段 —— 空字段铺一屏"—"没有任何信息量。
+              //
+              // 【还要只列这台设备自己的】一条抄表记录派生六台设备(四电表两水表),
+              // 六台的详情页原来列的是同一份六行读数 —— 看「生活水表」的人得自己
+              // 从 Z1~Z4、消防水表里找出哪一行是它的,而那几行还会被误读成这台表的历史。
+              //
+              // 判据:字段上的 assetName 就是"这个读数归哪台设备"。
+              // 没有 assetName 的(巡检地点、备注)是整条记录的上下文,留着 ——
+              // 去掉的话这台设备的历史里连"在哪巡的"都没有了。
+              const filled = (rec?.fields || []).filter((f) => {
+                if (String(f.value ?? "").trim() === "") return false;
+                const owner = String(f.assetName ?? "").trim();
+                return owner === "" || owner === (asset.assetName || "").trim();
+              });
               return (
                 <details
                   className="hist-item"

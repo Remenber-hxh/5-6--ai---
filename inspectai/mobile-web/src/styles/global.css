@@ -202,16 +202,33 @@
   display: none;
 }
 
+/* 【居中用 auto margin,不用 justify-content】
+ *
+ * 键盘一弹,容器高度骤降到比卡片还矮。justify-content:center 在这种时候会把
+ * 内容从上下两头挤出去,而【溢出到顶部那一截是滚不回来的】—— 这是 flex 居中
+ * 的老毛病:滚动条的起点在内容框顶部,被挤到上面的部分够不着。
+ * auto margin 在空间不够时会自动塌成 0,内容老老实实从头排下来,滚得到。
+ *
+ * 【自己要能滚】body 是 overflow:hidden(滚动交给内部容器),这一屏不写
+ * overflow-y 的话,键盘一弹下半截就彻底够不着 —— 登录按钮正在那下面。
+ */
 .center-screen {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  position: relative; /* 给 .beian-line 的绝对定位做参照 */
+  overflow-y: auto;
   padding: 32px 24px calc(24px + var(--safe-bottom));
   padding-top: calc(24px + var(--safe-top));
+}
+/* 卡片和备案条各拿一个 auto 上边距:空间富余时平分,卡片居中、备案条落到底;
+   空间不够时两个都塌成 0,顺序排列不重叠。 */
+.center-screen > * {
+  flex: none;
+}
+.center-screen .glass-card {
+  margin-top: auto;
 }
 
 /* ===== 品牌标牌(旧版 .login-brand) ===== */
@@ -1866,12 +1883,13 @@
 }
 
 /* 登录页:居中卡片 + 钉底 */
+/* 【留在文档流里,不要绝对定位】原来是 position:absolute 钉在屏幕底,
+   键盘一弹容器变矮,它就骑到卡片的「忘记密码…」那行上面 —— 两行字叠在一起。
+   现在用 margin-top:auto 把它推到底:空间富余时效果和钉在底部一样,
+   空间不够时它老实排在卡片下面,永远压不到别人。 */
 .center-screen .beian-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(14px + var(--safe-bottom));
-  margin: 0;
+  margin: auto 0 0;
+  padding-top: 18px;
   opacity: 1;
 }
 

@@ -202,8 +202,17 @@ export default function ChangeRequestSheet({
   }
 
   const isAsset = splitTarget(target)[0] === "asset";
-  const bad = (fields || []).filter(fieldIsBad);
-  const rest = (fields || []).filter((f) => !fieldIsBad(f));
+  // 【只列这台设备自己的字段】和设备详情页同一个道理:一条抄表记录派生六台设备,
+  // 不过滤的话,从「生活水表」点进来要改的却是 Z1~Z4 的读数 —— 改错一行,
+  // 走的还是审批流程,批下来就落到别的表上了。
+  //
+  // 没有 assetName 的(巡检地点、备注)是整条记录的上下文,留着。
+  const mine = (fields || []).filter((f) => {
+    const owner = String(f.assetName ?? "").trim();
+    return owner === "" || owner === (asset?.assetName || "").trim();
+  });
+  const bad = mine.filter(fieldIsBad);
+  const rest = mine.filter((f) => !fieldIsBad(f));
 
   return (
     <Popup visible={visible} onClose={onClose} className="cr-sheet">
