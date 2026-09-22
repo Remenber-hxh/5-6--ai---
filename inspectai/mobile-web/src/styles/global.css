@@ -3130,6 +3130,18 @@ a {
   color: var(--lt-fg);
   font-weight: 500;
 }
+/* 「为什么是这个状态」。紧贴在状态那一行下面,靠右对齐 ——
+   它解释的是右边那个标签,不是左边的字段名。
+   用淡橙底:和状态标签同一个"要跟进"的语气,但不抢它的位置。 */
+.ad-reason {
+  margin: -2px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--lt-warn-bg, #fff8ec);
+  color: var(--ios-orange, #c77700);
+  font-size: 12px;
+  line-height: 1.55;
+}
 .ad-summary {
   margin-top: 10px;
   padding-top: 10px;

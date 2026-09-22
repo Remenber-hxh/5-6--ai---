@@ -175,6 +175,13 @@ export default function AssetDetailPage() {
             <span className="ad-k">当前状态</span>
             <StatusTag text={asset.lastStatus || "未巡检"} />
           </div>
+          {/* 【为什么是这个状态,就写在状态下面】原来这一屏只有一个「待复核」
+              标签,现场看到了却不知道要核什么 —— 读数看着正常、照片也拍了,
+              只能猜。触发待复核的有四种情况,其中"AI 把握不大""总结失败"
+              这两种以前页面上一个字都没有。 */}
+          {asset.statusReason && (
+            <div className="ad-reason">{asset.statusReason}</div>
+          )}
           <div className="ad-row">
             <span className="ad-k">累计巡检</span>
             <span className="ad-v">{asset.inspectionCount} 次</span>

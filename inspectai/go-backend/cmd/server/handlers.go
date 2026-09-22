@@ -1225,6 +1225,9 @@ func (s *Server) enrichAssetForDisplay(a *AssetEntry) {
 	if a.LastInspector == "" {
 		a.LastInspector = rec.Inspector
 	}
+	// 【为什么是这个状态,和状态一起给出去】现场看到「待复核」却不知道要核什么,
+	// 只能猜。原因和状态同源(同一条记录、同一格),所以在这里一并算。
+	a.StatusReason = assetStatusReason(a, rec, fieldForAsset(rec, a.AssetName))
 	if len(rec.Images) > 0 {
 		// 【封面跟着这台设备自己的照片走,不是一律第一张】
 		//

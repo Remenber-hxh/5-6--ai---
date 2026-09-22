@@ -472,6 +472,11 @@ export interface AssetDTO {
   projectCode?: string;
   lastStatus: string; // 正常 / 异常 / 待复核 / 待维修 / 未巡检
   statusLevel?: string; // normal / warning / danger / repair / unknown
+  /**
+   * 为什么是这个状态 —— 一句人话。只在需要跟进的状态下有值。
+   * 后端按"那条记录 + 那一格"现算,不入库(见 asset_status_reason.go)。
+   */
+  statusReason?: string;
   lastSummary?: string;
   lastInspectedAt?: string;
   lastInspector?: string;

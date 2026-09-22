@@ -422,6 +422,13 @@ type AssetEntry struct {
 
 	// CoverImage 仅 API 展示时动态填充，不入库。优先取 CoverImagePath，回退到最近一次巡检的第一张图。
 	CoverImage *ImageInfo `json:"coverImage,omitempty"`
+
+	// StatusReason 为什么是现在这个状态 —— 一句给现场看的人话。
+	//
+	// 【只在需要跟进的状态下有值】正常设备挂一句解释是噪音。
+	// 【不入库,每次现算】原因完全由"那条记录 + 那一格"决定,和状态同源;
+	// 存一列就多一份会过期的副本(记录改了、AI 重跑了,列里还是旧话)。
+	StatusReason string `json:"statusReason,omitempty"`
 }
 
 // AssetListSummary — 台账列表页展示用的聚合数据
