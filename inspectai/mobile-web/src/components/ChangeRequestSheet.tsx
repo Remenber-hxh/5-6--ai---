@@ -240,10 +240,10 @@ export default function ChangeRequestSheet({
              东西 —— 选了资产的人只能靠补张照片才提交得出去,而后端的 asset
              分支根本不看照片,于是审批时必炸。 */
           <>
-            <div className="cr-hint">
-              改台账不留巡检依据。只有"这次巡检没问题、是台账状态记错了"才用它,
-              否则请选一次巡检记录来改。
-            </div>
+            {/* 【一行说清就够】原来这里是一整段两行半的解释,占掉弹层顶部
+                三分之一,而人来这一屏是为了改东西,不是读说明。
+                留下的这句是唯一会影响他决定的那半句:改台账不留巡检依据。 */}
+            <div className="cr-hint">改台账不留巡检依据,建议改巡检记录。</div>
 
             <div className="cr-sec">设备状态</div>
             <div className="cr-chips">

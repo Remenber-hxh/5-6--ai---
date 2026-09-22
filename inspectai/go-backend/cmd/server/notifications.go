@@ -42,7 +42,7 @@ func (s *Server) notifyChangeRequestCreated(cr *ChangeRequest) {
 	content := strings.Join([]string{
 		"### 智巡修改申请",
 		fmt.Sprintf("> 申请人：%s", firstNonEmpty(cr.RequestedBy, "未填写")),
-		fmt.Sprintf("> 对象：%s", changeTargetLabel(cr.TargetType, cr.TargetID)),
+		fmt.Sprintf("> 对象：%s", s.changeTargetLabel(cr)),
 		fmt.Sprintf("> 原因：%s", truncate(cr.Reason, 100)),
 		fmt.Sprintf("> 审批入口：%s", markdownLink("进入审批详情", s.adminChangeRequestURL(cr.ID))),
 	}, "\n")
@@ -56,7 +56,7 @@ func (s *Server) notifyChangeRequestReviewed(cr *ChangeRequest, resultText strin
 	content := strings.Join([]string{
 		"### 智巡处理结果",
 		fmt.Sprintf("> 申请人：%s", firstNonEmpty(cr.RequestedBy, "未填写")),
-		fmt.Sprintf("> 对象：%s", changeTargetLabel(cr.TargetType, cr.TargetID)),
+		fmt.Sprintf("> 对象：%s", s.changeTargetLabel(cr)),
 		fmt.Sprintf("> 结果：%s", resultText),
 		fmt.Sprintf("> 处理人：%s", firstNonEmpty(cr.ReviewedBy, "未填写")),
 		fmt.Sprintf("> 说明：%s", truncate(firstNonEmpty(cr.ReviewNote, "无"), 100)),
@@ -209,13 +209,31 @@ func firstRecommendationText(items []Recommendation) string {
 	return ""
 }
 
-func changeTargetLabel(targetType, targetID string) string {
-	switch targetType {
+// changeTargetLabel 推送文案里的"改的是哪台设备"。
+//
+// 【绝不能把 TargetID 拼进去】它是内部主键:资产是
+// "紫菡雅集::zihan_energy::生活水表",记录是 "rec_1754..."。
+// 原来直接拼,于是客户群里收到的是
+//   对象:资产台账 紫菡雅集::zihan_energy::生活水表
+// —— 双冒号、模板 id 这些东西对现场没有任何意义,只会让人觉得这产品没做完。
+//
+// 名字统一走 resolveChangeTargetName(审批页用的同一份),各写各的迟早只修好一处。
+func (s *Server) changeTargetLabel(cr *ChangeRequest) string {
+	if cr == nil {
+		return "未知对象"
+	}
+	name := strings.TrimSpace(cr.TargetName)
+	if name == "" {
+		name = s.resolveChangeTargetName(defaultTenantID, cr)
+	}
+	switch cr.TargetType {
 	case "asset":
-		return "资产台账 " + targetID
+		return "资产台账 " + firstNonEmpty(name, "未知设备")
 	case "record":
-		return "巡检记录 " + targetID
+		return "巡检记录 " + firstNonEmpty(name, "未知记录")
 	default:
-		return firstNonEmpty(targetID, "未知对象")
+		// 【兜底也不许回落到 TargetID】认不出类型是我们的问题,
+		// 不该让主键替我们出现在群里。
+		return firstNonEmpty(name, "未知对象")
 	}
 }

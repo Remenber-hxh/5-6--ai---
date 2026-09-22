@@ -4087,11 +4087,13 @@ a {
 .cr-label:first-child {
   margin-top: 0;
 }
+/* 小节标题。【16 收到 12】这一屏是"标题+控件"交替往下排,每节多 4px
+   看着不多,五六节下来就是小半屏 —— 而弹层最高只有 82vh。 */
 .cr-sec {
   font-size: 12px;
   font-weight: 600;
   color: var(--lt-fg-3);
-  margin: 16px 0 6px;
+  margin: 12px 0 6px;
 }
 .cr-sec.warn {
   color: var(--ios-red);
@@ -4134,6 +4136,76 @@ a {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+/* ===== 申请修改:表单控件 =====
+ *
+ * 【为什么要单独压一遍】这一屏的 Input / Textarea 是裸放在弹层里的,没有
+ * .field 也没有 .form-light 包着 —— 于是吃的是 Arco 的默认样式:没有边框、
+ * 没有底色,在浅色弹层上看起来就是一行普通文字。人根本看不出这里能改。
+ * CSS 里那段"深色表单搬到浅色页会翻车"的警告(改密码页那次)说的是同一件事,
+ * 这里是第五次。
+ *
+ * 【选中态必须自己给】Arco 的 Tag 是展示型组件,primary 和 hollow 在浅底上
+ * 差别很小 —— 四个状态片看着一模一样,人不知道当前是哪个。
+ */
+
+/* 输入框:白底 + 一圈实边,聚焦时边框收紧成品牌色。
+   和确认页的读数框同一套语言,不另起一种。 */
+.cr-sheet .arco-input-container {
+  border: 1px solid var(--lt-border);
+  border-radius: 10px;
+  background: var(--lt-card, #fff);
+  padding: 0 12px;
+  transition: border-color 140ms ease;
+}
+.cr-sheet .arco-input-container:focus-within {
+  border-color: var(--brand);
+}
+/* 【textarea 没有容器层】Arco 的 input 有 .arco-input-container 包着,
+   textarea 只有 .arco-textarea 这一个类(在 arco 的样式表里核过)。
+   所以边框得直接加在它自己身上,不能照抄上面那条 —— 写 .arco-textarea-container
+   是白写,而白写的表现恰恰是"还是没有边框",和没改一样。 */
+.cr-sheet textarea.arco-textarea {
+  border: 1px solid var(--lt-border);
+  border-radius: 10px;
+  background: var(--lt-card, #fff);
+  padding: 10px 12px;
+  transition: border-color 140ms ease;
+}
+.cr-sheet textarea.arco-textarea:focus {
+  border-color: var(--brand);
+  outline: none;
+}
+.cr-sheet input.arco-input,
+.cr-sheet textarea.arco-textarea {
+  color: var(--lt-ink, #111);
+  font-size: 15px;
+}
+/* 字数统计压到右下角的小灰字,不要占一整行 */
+.cr-sheet .arco-textarea-length {
+  font-size: 11px;
+  color: var(--lt-fg-3);
+}
+
+/* 状态片:选中 = 实心品牌色,未选 = 白底灰边。一眼看得出当前是哪个。 */
+.cr-chips .arco-tag {
+  min-width: 64px;
+  justify-content: center;
+}
+/* 【类名是 .arco-tag-hollow,不是 .hollow】和上面 textarea 同一个教训:
+   照着组件的 props 名写选择器是白写,而白写的表现是"看着没变"。
+   这两个类名都在 arco 的样式表里核过。 */
+.cr-chips .arco-tag.arco-tag-hollow {
+  border-color: var(--lt-border);
+  color: var(--lt-fg-2);
+  background: var(--lt-card, #fff);
+}
+.cr-chips .arco-tag.arco-tag-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  font-weight: 600;
 }
 .cr-photo {
   display: block;

@@ -4378,24 +4378,34 @@ func (s *Server) fillChangeRequestTargetNames(r *http.Request, list []*ChangeReq
 		// 还留着 —— 成了孤儿。这种情况必须【说出来】:显示成空白会让审批的人
 		// 以为系统坏了,反复刷新;而它其实是永远也批不了的(applyChangeRequest
 		// 那一步同样查不到目标)。
-		name := ""
-		switch cr.TargetType {
-		case "asset":
-			if a, err := s.store.GetAsset(tenant, cr.TargetID); err == nil && a != nil {
-				name = firstNonEmpty(a.AssetName, a.AssetKey)
-			} else {
-				name = "设备已不存在"
-			}
-		case "record":
-			if rec, err := s.store.GetRecord(tenant, cr.TargetID); err == nil && rec != nil {
-				name = firstNonEmpty(fieldValue(rec.Fields, "asset_no"), rec.PointName)
-			} else {
-				name = "记录已不存在"
-			}
-		}
+		name := s.resolveChangeTargetName(tenant, cr)
 		cache[key] = name
 		cr.TargetName = name
 	}
+}
+
+// resolveChangeTargetName 把 TargetID 翻成一个人看得懂的名字。
+//
+// 【抽出来是因为推送也要用】企业微信那条「智巡修改申请」原来直接把 TargetID
+// 拼进文案,群里看到的是「资产台账 紫菡雅集::zihan_energy::生活水表」——
+// 内部主键发到了客户群里。翻译逻辑只能有一份,各写各的迟早只修好一处。
+func (s *Server) resolveChangeTargetName(tenant string, cr *ChangeRequest) string {
+	switch cr.TargetType {
+	case "asset":
+		if a, err := s.store.GetAsset(tenant, cr.TargetID); err == nil && a != nil {
+			return firstNonEmpty(a.AssetName, a.AssetKey)
+		}
+		// 【目标可能已经不存在】清理历史数据时删掉了记录,而引用它的修改申请
+		// 还留着 —— 成了孤儿。这种情况必须【说出来】:显示成空白会让审批的人
+		// 以为系统坏了,反复刷新;而它其实是永远也批不了的。
+		return "设备已不存在"
+	case "record":
+		if rec, err := s.store.GetRecord(tenant, cr.TargetID); err == nil && rec != nil {
+			return firstNonEmpty(fieldValue(rec.Fields, "asset_no"), rec.PointName, rec.TemplateName)
+		}
+		return "记录已不存在"
+	}
+	return ""
 }
 
 // handleChangeRequestRoutes 分发 /api/change-requests/{id}/{action}
