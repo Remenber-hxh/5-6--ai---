@@ -3473,6 +3473,9 @@ func applyRecognizedFields(rec *Record, recognized []RecognizedField) {
 		setReadingSource(&rec.Fields[i], got, rec.Images)
 		// 高置信度的 ai 字段不再要求人工复核
 		rec.Fields[i].NeedsReview = got.Confidence < 0.85
+		// 【小数点是猜的就别放行】必须排在上一句之后:它要改写的正是这个结论。
+		// 模型会在理由里承认"按固定格式切分"却照样给 0.95,靠它自觉不行。
+		guardAssumedDecimal(&rec.Fields[i])
 		rec.Fields[i].Version++
 	}
 }
