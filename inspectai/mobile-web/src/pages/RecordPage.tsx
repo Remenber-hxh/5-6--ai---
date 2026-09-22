@@ -460,6 +460,9 @@ export default function RecordPage() {
     if (!rec) return;
     const cur = fieldOfPhoto(rec.fields, imageId);
     let target = rec.fields.find((f) => f.assetName === assetName);
+    // 这一格是"现在归这台表的那一格",还是"随便找的一个空位"。
+    // 两者后面要走的路不一样:前者可能要和人对调,后者直接占用就行。
+    let targetWasFree = false;
 
     try {
       if (!target && cur && (cur.assetOptions || []).includes(assetName)) {
@@ -468,14 +471,24 @@ export default function RecordPage() {
         return;
       }
       if (!target) {
-        // 【空着 = slotInUse 的反面】必须和下拉里变灰的口径完全一致:
-        // 显示成"能选"的,选下去就真的能放进一个没人要的格子;
-        // 而一个已经认领了照片的格子,不该被无声无息地顶掉。
-        // 没绑设备的优先,少动一个猜好的默认值。
+        // 【空位 = 没设备、没读数;照片不算数】
+        //
+        // 照片本来也在判据里,结果把「清除」堵死了:清除只放掉设备,那一格还挂着
+        // 原来那张照片,于是它被算成占用 —— 人明明刚腾出一格,再选却弹
+        // "这类设备的 4 个位置都已经用了"。2026-09-22 实测到的。
+        //
+        // 照片不该挡路:一格没设备时,它那一行本来就显示「选一台设备」;
+        // 把这一格改派给另一张照片,只是换了哪一张照片没着落,界面上看着一样。
+        // 【但有读数的绝不能碰】那是人抄下来的数,顶掉就没了。
         const free = rec.fields.filter(
-          (f) => (f.assetOptions || []).includes(assetName) && !slotInUse(f),
+          (f) =>
+            (f.assetOptions || []).includes(assetName) &&
+            !f.assetName &&
+            String(f.value || "").trim() === "",
         );
-        target = free.find((f) => !f.assetName) || free[0];
+        // 真正空着的(连照片都没有)优先 —— 不动别人那张图。
+        target = free.find((f) => !f.sourceImageId) || free[0];
+        targetWasFree = Boolean(target);
       }
       if (!target) {
         // 【说清是哪种满了】同类型的格子数是模板定的(比如只有 4 个电表位),
@@ -489,9 +502,13 @@ export default function RecordPage() {
       }
       if (cur && cur.code === target.code) return;
 
-      // 目标格已经被别的照片/读数占着 —— 这才是现场最常见的一步:
+      // 【随便找来的空位直接占用,不走对调】那一格没设备、没读数,
+      // 只是可能还挂着别人那张照片。对调的意义是"两台表换个位置",
+      // 而这里根本没有另一台表 —— 走对调只会把一格空的和一格满的绕一圈。
+      //
+      // 目标格是"现在归这台表的那一格"、而且占着东西时,才是要对调的那种:
       // AI 把归属排错了,人要把两行换过来。
-      if (slotInUse(target)) {
+      if (!targetWasFree && slotInUse(target)) {
         if (cur) {
           // 两边都有东西:一次请求整组对调。
           // 【不能用两次 move 凑】move 遇到"目标格有读数"会直接拒绝。
