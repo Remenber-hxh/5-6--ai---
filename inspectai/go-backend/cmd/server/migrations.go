@@ -65,6 +65,35 @@ var migrationList = []migration{
 	{36, "site_filled_by_system", (*SQLiteStore).migSiteFilledBySystem},
 	{37, "asset_photo_per_field", (*SQLiteStore).migAssetPhotoPerField},
 	{38, "plan_owners_json", (*SQLiteStore).migPlanOwnersJSON},
+	{39, "project_bot_index", (*SQLiteStore).migProjectBotIndex},
+}
+
+// 039 — 每个项目的提醒发到哪个群,搬到后台配置。
+//
+// 【原来在哪】环境变量 WEWORK_BOT_[N]_PROJECTS —— 是"群收哪些项目"的视角。
+// 那个视角有个天然的坑:新建一个项目,不去改服务器配置它就不属于任何群,
+// 提醒静默地不发,而后台一切正常。2026-09-22 紫菡的异常提醒发进会议中心群,
+// 起因也是这条链路没人按项目对过。
+//
+// 【为什么只存序号,不存地址】webhook 等价于"往这个群发消息的权限"。
+// 进了库就会出现在备份、导出、后台页面和任何一次截图里。
+// 地址继续留在 secrets,库里只记"这个项目发第几个群"。
+//
+// 【0 = 没配过,按环境变量走】存量项目一条都不用动,线上行为保持不变;
+// 谁在后台选过,DB 才接管那个项目(见 botsForProject)。
+func (s *SQLiteStore) migProjectBotIndex() error {
+	exists, err := s.hasColumn("projects", "bot_index")
+	if err != nil {
+		return fmt.Errorf("inspect projects.bot_index: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := s.db.Exec(
+		`ALTER TABLE projects ADD COLUMN bot_index INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("add projects.bot_index: %w", err)
+	}
+	return nil
 }
 
 // 038 — 计划支持多位负责人。
@@ -473,6 +502,7 @@ func (s *SQLiteStore) migMergeFieldRulesIntoTemplate() error {
 // 【旧表不删】prompt_templates / prompt_versions 都留着:
 //   - 历史版本要能翻(那是"改坏了能退回去"的唯一依据)
 //   - 合并出问题时还能回去看原始数据
+//
 // 只是从此不再从它读。
 func (s *SQLiteStore) migMergePromptIntoTemplate() error {
 	// 判定规则并到字段上

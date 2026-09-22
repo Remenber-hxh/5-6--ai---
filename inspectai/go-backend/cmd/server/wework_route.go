@@ -31,6 +31,26 @@ func (s *Server) weworkBotAvailable() bool {
 	return false
 }
 
+// configuredBotIndex 后台给这个项目选的群序号;0 = 没配过。
+//
+// 【查不到就当没配过,不报错】推送是旁路:数据库这一下抖了,不该让
+// "提交巡检"这个动作失败。退回环境变量那份配置,行为和以前一样。
+func (s *Server) configuredBotIndex(project string) int {
+	if project == "" || s.store == nil {
+		return 0
+	}
+	list, err := s.store.ListProjects(defaultTenantID)
+	if err != nil {
+		return 0
+	}
+	for _, p := range list {
+		if p != nil && strings.TrimSpace(p.Name) == project {
+			return p.BotIndex
+		}
+	}
+	return 0
+}
+
 // botsForProject 这个项目的提醒该发给哪些群机器人。
 //
 // 规则和 visibilityForBot 一致:机器人没绑项目 = 收全部项目。
@@ -39,6 +59,24 @@ func (s *Server) weworkBotAvailable() bool {
 // 退回去就是把这个项目的内容送进别人的群,正是这次要修的事。
 func (s *Server) botsForProject(project string) []weworkBotTarget {
 	project = strings.TrimSpace(project)
+
+	// 【后台配过就以后台为准】项目管理里给这个项目选了群 → 只发那个群,
+	// 环境变量里那份 WEWORK_BOT_[N]_PROJECTS 对它不再起作用。
+	//
+	// 后台没配过(bot_index=0)的项目继续走环境变量 —— 存量部署一条都不用动。
+	if idx := s.configuredBotIndex(project); idx > 0 {
+		for _, b := range s.weworkBots {
+			if b.Index == idx && b.Client != nil && b.Client.Enabled() {
+				return []weworkBotTarget{b}
+			}
+		}
+		// 【选了一个不存在/没配地址的群 → 不发,也不退回环境变量】
+		// 退回去就等于"我在后台选了 A 群,它却发去了 B 群"。
+		log.Printf("WARN: 项目「%s」在后台选了第 %d 个群,但这个群没有配置可用地址 —— "+
+			"提醒不会发送。检查 secrets/wework_bot_%d_webhook", project, idx, idx)
+		return nil
+	}
+
 	out := make([]weworkBotTarget, 0, len(s.weworkBots))
 	for _, b := range s.weworkBots {
 		if b.Client == nil || !b.Client.Enabled() {

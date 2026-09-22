@@ -1139,6 +1139,29 @@ export interface ProjectEntry {
   assetCount: number;
   memberCount: number;
   createdAt?: string;
+  /**
+   * 这个项目的提醒发到第几个企微群。0 = 没在后台配过,按服务器上的
+   * WEWORK_BOT_[N]_PROJECTS 走。
+   */
+  botIndex?: number;
+}
+
+/**
+ * 服务器上配好地址的企微群。
+ *
+ * 【这里没有 webhook,也不该有】地址等价于往那个群发消息的权限,
+ * 它只存在服务器的 secrets 里 —— 后台只知道"第几个群、叫什么、配没配好"。
+ */
+export interface WeWorkBotEntry {
+  index: number;
+  name: string;
+  /** 服务器上给这个群配的项目;后台没给项目选群时按它走 */
+  envProjects?: string[];
+  ready: boolean;
+}
+
+export function listWeWorkBots() {
+  return api<{ bots: WeWorkBotEntry[] }>("/api/wework/bots").then((d) => d.bots || []);
 }
 
 export function listProjects() {
@@ -1149,7 +1172,11 @@ export function createProject(payload: { name: string; note?: string }) {
   return api("/api/projects", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function updateProject(id: string, payload: { note?: string; disabled: boolean }) {
+export function updateProject(
+  id: string,
+  // botIndex 不传 = 这次不改它 —— 改备注/停用时不该把已经选好的群清掉
+  payload: { note?: string; disabled: boolean; botIndex?: number },
+) {
   return api(`/api/projects/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
 }
 

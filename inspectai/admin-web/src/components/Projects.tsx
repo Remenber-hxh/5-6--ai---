@@ -1,8 +1,31 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 
-import { ProjectEntry, createProject, deleteProject, listProjects, updateProject } from "../api/mgmt";
+import {
+  ProjectEntry,
+  WeWorkBotEntry,
+  createProject,
+  deleteProject,
+  listProjects,
+  listWeWorkBots,
+  updateProject,
+} from "../api/mgmt";
+
+/**
+ * 「跟随服务器配置」这一项要说清它现在实际发哪个群。
+ *
+ * 【为什么不能只写"跟随服务器配置"】人看到的是一个没选过的下拉,不知道
+ * 这个项目现在到底发不发、发给谁。服务器上 WEWORK_BOT_[N]_PROJECTS 写了
+ * 这个项目名就按那个走;一个都没写就是【谁也收不到】—— 那种情况必须喊出来。
+ */
+function followEnvLabel(p: ProjectEntry, bots: WeWorkBotEntry[]): string {
+  const hit = bots.find((b) => (b.envProjects || []).includes(p.name));
+  if (hit) return `跟随服务器配置(${hit.name})`;
+  const catchAll = bots.find((b) => (b.envProjects || []).length === 0);
+  if (catchAll) return `跟随服务器配置(${catchAll.name})`;
+  return "跟随服务器配置(当前没有群会收到)";
+}
 
 /**
  * 项目管理。
@@ -21,6 +44,8 @@ export default function Projects() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bots, setBots] = useState<WeWorkBotEntry[]>([]);
+  const [savingBot, setSavingBot] = useState("");
   const [form] = Form.useForm();
 
   async function load() {
@@ -32,6 +57,9 @@ export default function Projects() {
     } finally {
       setLoading(false);
     }
+    // 【群列表取不到不该让整页打不开】没有它,"推送群"那一列退化成只有
+    // 「跟随服务器配置」一项 —— 项目本身还是能看能改的。
+    setBots(await listWeWorkBots().catch(() => []));
   }
 
   useEffect(() => {
@@ -51,6 +79,24 @@ export default function Projects() {
       message.error(e instanceof Error ? e.message : "创建失败");
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * 给这个项目选推送群。
+   *
+   * 【note/disabled 要原样带上】后端这条是 PUT 整条项目,不带就会把备注清空、
+   * 把停用状态改回启用 —— 选个群顺手改坏两个字段,而界面上要刷新才看得见。
+   */
+  async function setBot(p: ProjectEntry, botIndex: number) {
+    setSavingBot(p.id);
+    try {
+      await updateProject(p.id, { note: p.note, disabled: !!p.disabled, botIndex });
+      await load();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSavingBot("");
     }
   }
 
@@ -110,6 +156,30 @@ export default function Projects() {
               ),
           },
           { title: "成员", width: 90, render: (_, p) => `${p.memberCount} 人` },
+          {
+            title: "推送群",
+            width: 190,
+            render: (_, p) => (
+              <Select
+                size="small"
+                style={{ width: 170 }}
+                value={p.botIndex || 0}
+                loading={savingBot === p.id}
+                disabled={savingBot === p.id}
+                onChange={(v) => void setBot(p, v)}
+                options={[
+                  // 【0 摆在最上面而且说清它是什么】不写"跟随服务器配置"的话,
+                  // 人只会看到一个空选项,不知道选了它会发生什么。
+                  { value: 0, label: followEnvLabel(p, bots) },
+                  ...bots.map((b) => ({
+                    value: b.index,
+                    label: b.ready ? b.name : `${b.name}(地址未配置)`,
+                    disabled: !b.ready,
+                  })),
+                ]}
+              />
+            ),
+          },
           { title: "备注", render: (_, p) => p.note || "—" },
           {
             title: "状态",

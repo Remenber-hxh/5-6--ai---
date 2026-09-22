@@ -31,6 +31,15 @@ type Project struct {
 	AssetCount int `json:"assetCount"`
 	// MemberCount 已分配到这个项目的人数。
 	MemberCount int `json:"memberCount"`
+	// BotIndex 这个项目的提醒发到第几个企微群(和 WEWORK_BOT_[N]_WEBHOOK 的编号一致)。
+	//
+	// 【0 = 没在后台配过,按环境变量走】存量项目一条都不用动 ——
+	// 服务器上原来配的 WEWORK_BOT_[N]_PROJECTS 继续生效。
+	// 谁在后台选过,DB 才接管这个项目(见 botsForProject)。
+	//
+	// 【只存序号,不存地址】webhook 等价于往那个群发消息的权限,进了库就会出现在
+	// 备份、导出、截图里。地址留在 secrets。
+	BotIndex int `json:"botIndex"`
 }
 
 // ProjectStore — 项目登记与成员关系
@@ -39,6 +48,8 @@ type ProjectStore interface {
 	CreateProject(p *Project) error
 	// UpdateProjectMeta 只改备注和启用状态。【名字不能改】—— 业务表按名字关联。
 	UpdateProjectMeta(tenantID, id, note string, disabled bool) error
+	// SetProjectBotIndex 这个项目的提醒发到第几个企微群。传 0 = 交回环境变量决定。
+	SetProjectBotIndex(tenantID, id string, botIndex int) error
 	// ListUserProjectNames 这个人被分到了哪些项目(返回项目名,直接用于过滤)。
 	// 返回空切片 = 没被分配过 = 不受项目限制。
 	ListUserProjectNames(tenantID, userID string) ([]string, error)
@@ -67,7 +78,7 @@ var errProjectNameRequired = errors.New("project name required")
 func (s *SQLiteStore) ListProjects(tenantID string) ([]*Project, error) {
 	tenantID = tenantOrDefault(tenantID)
 	rows, err := s.db.Query(`
-		SELECT id, tenant_id, name, code, note, disabled, created_at, updated_at
+		SELECT id, tenant_id, name, code, note, disabled, created_at, updated_at, bot_index
 		FROM projects WHERE tenant_id = ? ORDER BY disabled ASC, name ASC`, tenantID)
 	if err != nil {
 		return nil, err
@@ -79,7 +90,7 @@ func (s *SQLiteStore) ListProjects(tenantID string) ([]*Project, error) {
 		p := &Project{}
 		var disabled int
 		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.Code, &p.Note,
-			&disabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			&disabled, &p.CreatedAt, &p.UpdatedAt, &p.BotIndex); err != nil {
 			return nil, err
 		}
 		p.Disabled = disabled != 0
@@ -158,6 +169,19 @@ func (s *SQLiteStore) UpdateProjectMeta(tenantID, id, note string, disabled bool
 	res, err := s.db.Exec(
 		`UPDATE projects SET note=?, disabled=?, updated_at=? WHERE tenant_id=? AND id=?`,
 		note, boolToInt(disabled), nowStamp(), tenantOrDefault(tenantID), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *SQLiteStore) SetProjectBotIndex(tenantID, id string, botIndex int) error {
+	res, err := s.db.Exec(
+		`UPDATE projects SET bot_index=?, updated_at=? WHERE tenant_id=? AND id=?`,
+		botIndex, nowStamp(), tenantOrDefault(tenantID), id)
 	if err != nil {
 		return err
 	}
@@ -385,6 +409,18 @@ func (s *MemStore) UpdateProjectMeta(tenantID, id, note string, disabled bool) e
 		return sql.ErrNoRows
 	}
 	p.Note, p.Disabled, p.UpdatedAt = note, disabled, nowStamp()
+	return nil
+}
+
+func (s *MemStore) SetProjectBotIndex(tenantID, id string, botIndex int) error {
+	tenantID = tenantOrDefault(tenantID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.projects[id]
+	if !ok || p.TenantID != tenantID {
+		return sql.ErrNoRows
+	}
+	p.BotIndex, p.UpdatedAt = botIndex, nowStamp()
 	return nil
 }
 

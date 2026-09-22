@@ -52,6 +52,8 @@ var apiRoutes = []apiRoute{
 	//     项目归属直接决定谁能看到哪些数据,是权限动作) ——
 	{http.MethodGet, "/api/projects", guardSupervisor, "", (*Server).handleListProjects},
 	{http.MethodPost, "/api/projects", guardAdmin, "", (*Server).handleCreateProject},
+	// 给项目选推送群时,下拉要知道服务器上配了哪几个群(只给序号和名称,不给地址)
+	{http.MethodGet, "/api/wework/bots", guardAdmin, "", (*Server).handleListWeWorkBots},
 
 	// —— 注册码(仅管理员:一张能自助注册的码流出去就是一道敞开的门)
 	{http.MethodGet, "/api/registration-codes", guardAdmin, "", (*Server).handleListRegistrationCodes},

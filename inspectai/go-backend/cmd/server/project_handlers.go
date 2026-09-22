@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -69,6 +70,11 @@ type projectUpsertRequest struct {
 	Name     string `json:"name"`
 	Note     string `json:"note"`
 	Disabled bool   `json:"disabled"`
+	// BotIndex 这个项目的提醒发到第几个企微群。
+	//
+	// 【指针:不传 = 这次不改】前端有两处会 PUT 这条接口(改备注/停用、以及选群),
+	// 用零值的话"改个备注"会把已经选好的群一起清成 0,而界面上什么都不显示。
+	BotIndex *int `json:"botIndex"`
 }
 
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
@@ -139,8 +145,65 @@ func (s *Server) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "update_failed", err.Error())
 		return
 	}
+	if req.BotIndex != nil {
+		if err := s.setProjectBot(w, r, id, *req.BotIndex); err != nil {
+			return // setProjectBot 已经写过响应
+		}
+	}
 	s.recordOperation(r, "project.update", "project", id, map[string]any{"disabled": req.Disabled})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// setProjectBot 保存"这个项目的提醒发到第几个群"。
+//
+// 【只认真实存在的群】随手填一个 9,提醒就会静默地发不出去 —— 而后台显示
+// 保存成功。所以在这里就拦住,让人当场看到。0 是合法值:交回环境变量决定。
+//
+// 返回 error 非空 = 已经写过响应,调用方直接 return。
+func (s *Server) setProjectBot(w http.ResponseWriter, r *http.Request, id string, botIndex int) error {
+	if botIndex < 0 {
+		writeError(w, http.StatusBadRequest, "bad_bot_index", "群序号不能是负数")
+		return errBadBotIndex
+	}
+	if botIndex > 0 && !s.knownBotIndex(botIndex) {
+		writeError(w, http.StatusBadRequest, "unknown_bot",
+			fmt.Sprintf("服务器上没有配置第 %d 个群 —— 先在 secrets 里配好它的地址", botIndex))
+		return errBadBotIndex
+	}
+	if err := s.store.SetProjectBotIndex(s.tenantForRequest(r), id, botIndex); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "project_not_found", "项目不存在")
+		} else {
+			writeError(w, http.StatusInternalServerError, "update_failed", err.Error())
+		}
+		return err
+	}
+	s.recordOperation(r, "project.set_bot", "project", id, map[string]any{"botIndex": botIndex})
+	return nil
+}
+
+var errBadBotIndex = errors.New("bad bot index")
+
+// handleListWeWorkBots —— GET /api/wework/bots
+//
+// 后台"给项目选群"那个下拉要用。
+//
+// 【绝不返回 webhook】这个接口是给浏览器的,返回值会进控制台、进截图、
+// 进任何一次"帮我看看"的粘贴 —— 而 webhook 等价于往那个群发消息的权限。
+// 只给序号、名称(名称里是项目名,不是地址)和"地址配了没有"。
+func (s *Server) handleListWeWorkBots(w http.ResponseWriter, r *http.Request) {
+	out := make([]map[string]any, 0, len(s.weworkBots))
+	for _, b := range s.weworkBots {
+		out = append(out, map[string]any{
+			"index": b.Index,
+			"name":  b.Name,
+			// envProjects:服务器上 WEWORK_BOT_[N]_PROJECTS 写的那几个项目。
+			// 后台没给项目选群时按它走,所以要显示出来让人知道默认是什么。
+			"envProjects": b.Projects,
+			"ready":       b.Client != nil && b.Client.Enabled(),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"bots": out})
 }
 
 // ===== 某人的项目归属:GET / PUT /api/users/<id>/projects =====

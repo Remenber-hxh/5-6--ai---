@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // ===== 提醒不能发进别的项目的群 =====
 //
@@ -130,5 +133,70 @@ func TestChangeRequestProjectFromAssetID(t *testing.T) {
 	// 取不到就返回空 —— 上层会当成"项目不明",只发给收全部项目的群
 	if got := s.changeRequestProject(&ChangeRequest{TargetType: "asset", TargetID: "没有分隔符"}); got != "" {
 		t.Errorf("分不出项目时不该猜一个:%q", got)
+	}
+}
+
+// ===== 后台给项目选群之后,以后台为准 =====
+
+// projectRouteServer 带一个真实 store 的路由测试服务器。
+func projectRouteServer(t *testing.T, projects map[string]int) *Server {
+	t.Helper()
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "route.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	for name, idx := range projects {
+		p := &Project{ID: "p_" + name, TenantID: defaultTenantID, Name: name}
+		if err := store.CreateProject(p); err != nil {
+			t.Fatalf("CreateProject %s: %v", name, err)
+		}
+		if idx > 0 {
+			if err := store.SetProjectBotIndex(defaultTenantID, p.ID, idx); err != nil {
+				t.Fatalf("SetProjectBotIndex %s: %v", name, err)
+			}
+		}
+	}
+	s := routeServer(twoProjectBots()...)
+	s.store = store
+	return s
+}
+
+// 后台把紫菡改到第 1 个群 → 就该发第 1 个群,环境变量里那份不再作数。
+func TestAdminChoiceOverridesEnv(t *testing.T) {
+	s := projectRouteServer(t, map[string]int{"紫菡雅集": 1})
+	got := s.botsForProject("紫菡雅集")
+	if len(got) != 1 || got[0].Index != 1 {
+		t.Fatalf("后台选的群没生效,仍按环境变量走:%v", botNames(got))
+	}
+}
+
+// 【没在后台配过的项目继续按环境变量走】存量部署一条都不用动。
+func TestUnconfiguredProjectStillFollowsEnv(t *testing.T) {
+	s := projectRouteServer(t, map[string]int{"紫菡雅集": 0})
+	got := s.botsForProject("紫菡雅集")
+	if len(got) != 1 || got[0].Index != 2 {
+		t.Fatalf("没配过的项目该按环境变量走(第2个群),实得:%v", botNames(got))
+	}
+}
+
+// 【后台选了一个没配地址的群 → 不发,也不退回环境变量】
+// 退回去就等于"我在后台选了 A 群,它却发去了 B 群"。
+func TestChosenButUnconfiguredBotSendsNothing(t *testing.T) {
+	s := projectRouteServer(t, map[string]int{"紫菡雅集": 7}) // 第 7 个群不存在
+	if got := s.botsForProject("紫菡雅集"); len(got) != 0 {
+		t.Errorf("选了不存在的群却发了出去:%v", botNames(got))
+	}
+}
+
+// 存了又改回 0 = 交回环境变量决定。
+func TestClearingChoiceFallsBackToEnv(t *testing.T) {
+	s := projectRouteServer(t, map[string]int{"紫菡雅集": 1})
+	if err := s.store.SetProjectBotIndex(defaultTenantID, "p_紫菡雅集", 0); err != nil {
+		t.Fatal(err)
+	}
+	got := s.botsForProject("紫菡雅集")
+	if len(got) != 1 || got[0].Index != 2 {
+		t.Errorf("改回「跟随服务器配置」没生效:%v", botNames(got))
 	}
 }
