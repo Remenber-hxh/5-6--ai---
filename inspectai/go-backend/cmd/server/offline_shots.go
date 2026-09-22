@@ -511,6 +511,35 @@ func (s *Server) handleListOfflineShots(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"shots": shots})
 }
 
+// assetTemplateIDFor 这台设备到底归哪个模板。
+//
+// 【为什么不能只读 TemplateID 那一列】台账里这一列有三种形态,历史上都出现过:
+//  1. 正常存着模板 id
+//  2. 空的 —— 显示路径是靠 deriveAssetDisplayKeys 从 ID 第二段现推的
+//  3. 存着 "manual" —— 手工新建时设备类型没对上任何模板就落这个占位
+//
+// 只认第 1 种的话,后两种设备身上的照片会被当成"不知道属于哪个模板",
+// 于是抄表那条放行规则对它们失效 —— 表现成"改了还是被拦",而台账页面上
+// 这台设备一切正常(因为显示路径自己推了一遍)。
+//
+// 【最后一档按设备类型反查】templateIDForAssetType 会看到字段级的设备类型
+// (抄表模板的"电表""水表"配在字段上),所以一台类型正确的电表即使 ID 里
+// 落的是 manual 段,也还能找回 zihan_energy。
+func assetTemplateIDFor(a *AssetEntry) string {
+	if a == nil {
+		return ""
+	}
+	if t := strings.TrimSpace(a.TemplateID); t != "" && t != "manual" {
+		return t
+	}
+	if parts := strings.Split(a.ID, "::"); len(parts) >= 2 {
+		if t := strings.TrimSpace(parts[1]); t != "" && t != "manual" {
+			return t
+		}
+	}
+	return templateIDForAssetType(a.AssetType)
+}
+
 // annotateShotTemplates 给每张带设备的照片补上"它归哪个模板、那个模板是不是
 // 一条记录抄多台"。
 //
@@ -548,7 +577,7 @@ func (s *Server) annotateShotTemplates(tenantID string, shots []*OfflineShot) {
 		if a == nil {
 			continue // 设备被删了:当成"不知道",走老规矩
 		}
-		tplID := strings.TrimSpace(a.TemplateID)
+		tplID := assetTemplateIDFor(a)
 		if tplID == "" {
 			continue
 		}

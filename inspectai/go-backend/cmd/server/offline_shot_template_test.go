@@ -76,6 +76,28 @@ func TestShotWithMissingAssetIsNotTrusted(t *testing.T) {
 	}
 }
 
+// 【台账里模板那一列不干净时也要认得出来】线上这一列有三种形态:
+// 正常存着、空的、以及手工新建时类型没对上落的 "manual"。只认第一种的话,
+// 后两种设备身上的照片会被当成"不知道属于哪个模板",抄表照样被拦 ——
+// 而台账页面上这台设备看着一切正常(显示路径自己从 ID 里推了一遍)。
+func TestAssetTemplateResolvedFromDirtyColumn(t *testing.T) {
+	for name, a := range map[string]*AssetEntry{
+		"列里正常存着":            {ID: "紫菡雅集::zihan_energy::Z1", TemplateID: "zihan_energy", AssetType: "电表"},
+		"列是空的,从 ID 第二段推":    {ID: "紫菡雅集::zihan_energy::Z1", TemplateID: "", AssetType: "电表"},
+		"列是 manual,按设备类型反查": {ID: "紫菡雅集::manual::Z1", TemplateID: "manual", AssetType: "电表"},
+		"列空 + ID 也是 manual": {ID: "紫菡雅集::manual::Z1", TemplateID: "", AssetType: "水表"},
+	} {
+		if got := assetTemplateIDFor(a); got != "zihan_energy" {
+			t.Errorf("%s:该认出 zihan_energy,得到 %q —— 这台设备的照片会在选照片那屏被拦住", name, got)
+		}
+	}
+	// 类型也认不出来时老实返回空,不瞎猜一个模板
+	unknown := &AssetEntry{ID: "紫菡雅集::manual::X", TemplateID: "manual", AssetType: "瞎打的类型"}
+	if got := assetTemplateIDFor(unknown); got != "" {
+		t.Errorf("认不出的类型不该猜出模板,得到 %q", got)
+	}
+}
+
 // 一张设备都没有时不该去查台账 —— 这一屏一次几十张照片,多数是手动拍的。
 // 用一个会在被调用时失败的 store 来证明"根本没调"。
 func TestNoAssetsMeansNoLedgerQuery(t *testing.T) {
