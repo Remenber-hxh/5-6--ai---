@@ -233,6 +233,24 @@ export async function moveReading(
 }
 
 /**
+ * 两格的读数、照片整组对调。
+ *
+ * 【为什么不能用两次 move 凑】move 的规矩是"目标格有读数就拒绝"。
+ * 两格都有数时它一步都走不了,得先寄存再搬两次 —— 中间断一次就停在
+ * 说不清的中间态上。对调必须是一次请求。
+ */
+export async function swapReadings(
+  recordId: string,
+  aCode: string,
+  bCode: string,
+): Promise<RecordDTO> {
+  return api<RecordDTO>(`/api/inspection/records/${recordId}/fields/swap`, {
+    method: "POST",
+    body: JSON.stringify({ aCode, bCode }),
+  });
+}
+
+/**
  * 认领一张还没人要的照片:告诉系统"这一格的读数来自这张图"。
  *
  * 【为什么要回整条记录,不只回这一格】一张照片只能归一格,后端在挂上去的

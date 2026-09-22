@@ -2319,6 +2319,9 @@ func (s *Server) handleRecordRoutes(w http.ResponseWriter, r *http.Request) {
 		// 【必须排在下面那条 PATCH 之前】两条都是三段、都以 fields 开头,
 		// 顺序反了 "move" 会被当成字段标识走进 handlePatchField。
 		s.handleMoveReading(w, r, recordID)
+	case len(parts) == 3 && parts[1] == "fields" && parts[2] == "swap" && r.Method == http.MethodPost:
+		// 同上:也必须排在下面那条 PATCH 之前,否则 "swap" 会被当成字段标识。
+		s.handleSwapReading(w, r, recordID)
 	case len(parts) == 3 && parts[1] == "fields" && r.Method == http.MethodPatch:
 		s.handlePatchField(w, r, recordID, parts[2])
 	case len(parts) == 2 && parts[1] == "manual" && r.Method == http.MethodPost:
