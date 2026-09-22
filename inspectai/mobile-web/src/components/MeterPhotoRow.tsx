@@ -28,6 +28,8 @@ export interface MeterPhotoRowProps {
   /** 当前这行选中的设备名 */
   assetName: string;
   onPickAsset: (assetName: string) => Promise<void> | void;
+  /** 放掉这一行选的设备,好让它在别的行里重新可选 */
+  onClearAsset?: () => Promise<void> | void;
   onChangeValue: (v: string) => Promise<void> | void;
   onOpenPhoto: () => void;
 }
@@ -40,6 +42,7 @@ export default function MeterPhotoRow({
   disabledAssets,
   assetName,
   onPickAsset,
+  onClearAsset,
   onChangeValue,
   onOpenPhoto,
 }: MeterPhotoRowProps) {
@@ -92,6 +95,15 @@ export default function MeterPhotoRow({
             setBusy(true);
             void Promise.resolve(onPickAsset(v)).finally(() => setBusy(false));
           }}
+          onClear={
+            onClearAsset
+              ? () => {
+                  if (busy) return;
+                  setBusy(true);
+                  void Promise.resolve(onClearAsset()).finally(() => setBusy(false));
+                }
+              : undefined
+          }
         />
         <input
           className="mpr-input"

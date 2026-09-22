@@ -410,6 +410,29 @@ export default function RecordPage() {
   }
 
   /**
+   * 放掉这一行选的设备 —— 让它在别的行里重新变成可选。
+   *
+   * 【为什么需要这个动作】已经归了别行的设备在下拉里是灰的。六张照片都认领完
+   * 之后,在用的设备就全是灰的,想把两行的归属换过来就没有入口了。
+   * 先在一行点「清除」,那台表立刻在别的行里可选 —— 这是解开错位的那把钥匙。
+   *
+   * 【只放设备,不动读数和照片】这一行还是这张照片、还是这个数,只是暂时
+   * 说不清它是哪台表。清掉读数的话,人为了换个归属得把抄到的数重抄一遍。
+   */
+  async function clearAssetForField(f: FieldValue) {
+    if (!rec) return;
+    try {
+      await patchFieldAsset(rec.id, f.code, "", f.version);
+      setRec(await getRecord(rec.id));
+    } catch (err) {
+      Toast.show({
+        content: err instanceof Error ? err.message : "清除失败,请重试",
+        duration: 3000,
+      });
+    }
+  }
+
+  /**
    * 给某张照片指定设备。
    *
    * 【三种情况】
@@ -722,6 +745,7 @@ export default function RecordPage() {
                   disabledAssets={takenAssets(f)}
                   assetName={f?.assetName || ""}
                   onPickAsset={(name) => pickAssetForPhoto(img.id, name)}
+                  onClearAsset={f ? () => clearAssetForField(f) : undefined}
                   onChangeValue={(v) => (f ? saveFieldValue(f, v) : Promise.resolve())}
                   onOpenPhoto={() => setViewing(i)}
                 />
