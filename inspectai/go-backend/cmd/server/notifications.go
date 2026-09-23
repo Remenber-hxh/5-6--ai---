@@ -23,15 +23,15 @@ func (s *Server) notifyInspectionSubmitted(rec *Record, assets []*AssetEntry) {
 	if advice == "" {
 		advice = "请主管查看后台记录并完成复核。"
 	}
-	content := strings.Join([]string{
-		"### 智巡异常提醒",
-		fmt.Sprintf("> 设备：%s", assetLine),
-		fmt.Sprintf("> 点位：%s", firstNonEmpty(rec.PointName, rec.TemplateName, "未填写")),
-		fmt.Sprintf("> 巡检人：%s", firstNonEmpty(rec.Inspector, "未填写")),
-		fmt.Sprintf("> 状态：%s", status),
-		fmt.Sprintf("> AI建议：%s", truncate(advice, 90)),
-		fmt.Sprintf("> 处理入口：%s", markdownLink("查看巡检记录", s.adminRecordURL(rec.ID))),
-	}, "\n")
+	content := buildNotifyCard("智巡异常提醒",
+		cardRow("项目", rec.Project),
+		cardRow("设备", cardStrong(assetLine)),
+		cardRow("状态", cardWarn(status)),
+		cardRow("点位", firstNonEmpty(rec.PointName, rec.TemplateName)),
+		cardRow("巡检人", rec.Inspector),
+		cardRow("建议", truncate(advice, 90)),
+		"> "+markdownLink("查看巡检记录", s.adminRecordURL(rec.ID)),
+	)
 	s.sendWeWorkBotMarkdownAsync("inspection.submitted", rec.Project, content)
 }
 
