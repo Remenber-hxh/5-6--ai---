@@ -288,10 +288,27 @@ export default function AssetDetailPage() {
             {shownSnaps.map((snap, i) => {
               const rec = recCache[snap.recordId];
               const busy = recBusy[snap.recordId];
-              const photos = (rec?.images || []).map((img) => ({
-                url: `/storage/uploads/${rec!.id}/${img.id}_${img.fileName}`,
-                key: img.id,
-              }));
+              // 【照片也只摆这台设备自己的】上次只过滤了字段、漏了照片 ——
+              // 「消防水表」的历史里摆着六张图,另外五张是四块电表和生活水表的。
+              // 读数那边已经只剩它自己一行了,照片还是整条记录的,两边对不上。
+              //
+              // 判据:这台设备那几格读数引用的照片(sourceImageId)。
+              // 整条记录都没有设备归属的(电梯这种一台一条记录),照旧全摆。
+              const mine = (rec?.fields || []).filter(
+                (f) => String(f.assetName ?? "").trim() === (asset.assetName || "").trim(),
+              );
+              const multiDevice = (rec?.fields || []).some(
+                (f) => String(f.assetName ?? "").trim() !== "",
+              );
+              const ownImageIds = new Set(
+                mine.map((f) => f.sourceImageId).filter((x): x is string => Boolean(x)),
+              );
+              const photos = (rec?.images || [])
+                .filter((img) => !multiDevice || ownImageIds.has(img.id))
+                .map((img) => ({
+                  url: `/storage/uploads/${rec!.id}/${img.id}_${img.fileName}`,
+                  key: img.id,
+                }));
               // 只列有值的字段 —— 空字段铺一屏"—"没有任何信息量。
               //
               // 【还要只列这台设备自己的】一条抄表记录派生六台设备(四电表两水表),

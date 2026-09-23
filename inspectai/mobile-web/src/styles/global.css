@@ -3063,9 +3063,15 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 【不许折行】这一行是「项目 · 类型 · 最近 巡检人」,放不下就截断。
+   折行的结果是 K03 那一行把「朱佳伟」断成「朱佳 / 伟」—— 人名被拆开,
+   而且那一行比别的行高一截,一列里忽高忽低。 */
 .ar-sub {
   font-size: 11px;
   color: var(--lt-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ===== 状态标签(全站唯一一套)=====
