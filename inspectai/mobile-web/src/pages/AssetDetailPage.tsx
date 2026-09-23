@@ -24,6 +24,11 @@ function fmtWhen(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
+  // 【Go 的零值时间不是空串】从没巡检过的设备,后端发来的 lastInspectedAt 是
+  // "0001-01-01T00:00:00Z" —— 这是一个【合法】日期,上面两道判空都拦不住。
+  // 于是详情页写着「最近巡检 12/31 16:07」(中国时区下又是另一个怪时间),
+  // 而它其实一次都没巡过。2000 年以前的一律当没有。
+  if (d.getFullYear() < 2000) return "";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }

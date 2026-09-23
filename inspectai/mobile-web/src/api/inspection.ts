@@ -500,18 +500,48 @@ export interface AssetSummary {
   assetTypes?: AssetGroup[];
 }
 
+/** 后端实际发的分组形状(见 Go 的 AssetListSummary.ByProject / ByAssetType) */
+interface ServerAssetGroup {
+  key?: string;
+  label?: string;
+  total?: number;
+}
+type ServerAssetSummary = Omit<AssetSummary, "projects" | "assetTypes"> & {
+  byProject?: ServerAssetGroup[];
+  byAssetType?: ServerAssetGroup[];
+};
+
+/**
+ * 【键名和形状都要翻一次】这里原来直接读 summary.projects / summary.assetTypes,
+ * 而后端发的是 byProject / byAssetType,每项还是 {key,label,total} 而不是
+ * {value,count} —— 两个字段从来没对上过。台账页面没坏,是因为它有一条
+ * "summary 没有就自己数"的兜底,一直在替这个错误打掩护。
+ * 这种"碰巧能用"的契约最危险:哪天兜底被删,筛选下拉就静悄悄地空了。
+ */
+function toGroups(list?: ServerAssetGroup[]): AssetGroup[] | undefined {
+  if (!list?.length) return undefined;
+  return list
+    .map((g) => ({ value: g.key || g.label || "", count: g.total || 0 }))
+    .filter((g) => g.value);
+}
+
 export async function listAssets(
   signal?: AbortSignal,
 ): Promise<{ assets: AssetDTO[]; summary: AssetSummary | null }> {
   const body = await api<{
     assets: AssetDTO[] | null;
-    summary?: AssetSummary;
-    totalSummary?: AssetSummary;
+    summary?: ServerAssetSummary;
+    totalSummary?: ServerAssetSummary;
   }>("/api/assets", { signal });
-  return {
-    assets: body.assets || [],
-    summary: body.summary || body.totalSummary || null,
-  };
+  const raw = body.summary || body.totalSummary;
+  const summary: AssetSummary | null = raw
+    ? {
+        ...raw,
+        projects: toGroups(raw.byProject),
+        assetTypes: toGroups(raw.byAssetType),
+      }
+    : null;
+  return { assets: body.assets || [], summary };
 }
 
 /** 单台资产详情 */
