@@ -63,6 +63,12 @@ export default function MeterPhotoRow({
   }
 
   const unread = Boolean(field && !field.value && field.reason);
+  // 【有读数但存疑,也要把话说出来】原来这一行只在"没读到数"时才显示理由,
+  // 而读数合理性检查(reading_sanity.go)的场景恰恰是【有数、但这个数不对劲】:
+  // "比上一次的 116748.24 还小""是上一次的 14 倍,小数点丢了"。
+  // 那是唯一能当场发现归属错位/小数点错的线索,却一个字都没出现在这一屏 ——
+  // 人在这里点提交,不会先跑去台账看。
+  const doubt = Boolean(field && field.value && field.needsReview && field.reason);
   const needsReview = Boolean(field?.needsReview);
 
   return (
@@ -119,7 +125,11 @@ export default function MeterPhotoRow({
 
       {/* 【读不出来要说出来,不能只留一个空格子】AI 试过、放弃了,
           理由写在这儿,人才知道该自己看照片填,而不是以为系统没跑。 */}
-      {unread && <div className="mpr-note">{field?.reason}</div>}
+      {(unread || doubt) && (
+        <div className={doubt ? "mpr-note is-doubt" : "mpr-note"}>
+          {field?.reason}
+        </div>
+      )}
 
     </div>
   );
