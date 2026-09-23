@@ -8,6 +8,7 @@ import FlowHeader from "@/components/FlowHeader";
 import SectionHeader from "@/components/SectionHeader";
 import { AssetDTO, listAssets } from "@/api/inspection";
 import { useResource } from "@/hooks/useResource";
+import { coverURL } from "@/lib/assetCover";
 
 /**
  * 列表分组:需跟进的排最前。
@@ -46,19 +47,6 @@ function groupAssets(list: AssetDTO[]): {
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/**
- * 设备封面缩略图地址。照搬旧版 thumbPath + storageURL 的口径:
- * 后端给的是磁盘路径(Windows 上是 `..\storage\assets\...` 反斜杠),
- * 统一斜杠后截掉 `/storage/` 之前的部分,再拼回 /storage/ 前缀。
- */
-function coverURL(a: AssetDTO): string | null {
-  const raw = (a.coverImage?.path || "").replace(/\\/g, "/");
-  if (!raw) return null;
-  const i = raw.indexOf("/storage/");
-  if (i < 0) return null;
-  return "/storage/" + encodeURI(raw.substring(i + "/storage/".length));
 }
 
 type Filter = {

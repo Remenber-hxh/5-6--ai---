@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import ChangeRequestSheet from "@/components/ChangeRequestSheet";
 import { useNavigate, useParams } from "react-router-dom";
 
+import AssetTypeIcon from "@/components/AssetTypeIcon";
 import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import StatusTag from "@/components/StatusTag";
+import { coverURL } from "@/lib/assetCover";
 import {
   AssetSnapshotDTO,
   RecordDTO,
@@ -31,6 +33,21 @@ function fmtWhen(iso?: string): string {
   if (d.getFullYear() < 2000) return "";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * 这段摘要是不是只在复述读数。
+ *
+ * 后端给抄表类设备生成的摘要是固定句式(readingAssetSummary):
+ *   「消防水表本次读数:60197.924。」 / 「Z1本次状态:正常。」
+ * 这种句子的全部信息都已经在上面的字段里了,再摆一遍只是让同一个数
+ * 在一屏出现四次。
+ *
+ * 【只认"整句就这一句"】后面跟了「AI 提示:…」的不算复述 —— 那半句是真信息,
+ * 要留着。电梯那种一两百字的 AI 总结更不会被这条误伤。
+ */
+function isReadingEcho(text: string): boolean {
+  return /^[^。]{1,30}本次(读数|状态)[:：][^。]*。?\s*$/.test(text.trim());
 }
 
 // 申请状态的中文。后端存的是英文枚举,直接把 "pending" 显示给现场没有意义。
@@ -107,6 +124,8 @@ export default function AssetDetailPage() {
   }, [id]);
 
   const asset = data?.asset ?? null;
+  // 和列表页同一份换算(lib/assetCover),点进来看到的就是列表里那张图
+  const cover = asset ? coverURL(asset) : null;
 
   // 这台设备是不是"还没了结"。判据和台账列表的状态标一致 ——
   // 两处口径分叉的话,列表标红的设备点进去却没有复检入口,人会以为功能坏了。
@@ -170,15 +189,31 @@ export default function AssetDetailPage() {
       <FlowHeader title={asset.assetName} onBack={() => nav("/ledger")} />
 
       <div className="scroll-area flow-body">
-        <p className="flow-caption">
-          {asset.project || "—"}
-          {asset.assetType ? ` · ${asset.assetType}` : ""}
-        </p>
         {/* 当前状态 */}
         <div className="ad-card">
-          <div className="ad-row">
-            <span className="ad-k">当前状态</span>
-            <StatusTag text={asset.lastStatus || "未巡检"} />
+          {/* 【顶部放设备照片】现场是靠照片认设备的 —— 列表里每行都有封面,
+              点进来反而一张图都没有,只剩一个设备名。K07 / K7 这种只差一个字的,
+              没有照片根本分不清进对了没有。
+
+              【做成卡片头,不做成通栏大图】通栏图要再占一百多像素,而这一屏
+              本来就头重脚轻(巡检历史被推到了 y=505)。72px 的缩略图够认,
+              又不额外占高度:它顶掉的是原来单独一行的「项目 · 类型」和
+              「当前状态」两行。 */}
+          <div className="ad-head">
+            {cover ? (
+              <img className="ad-cover" src={cover} alt="" />
+            ) : (
+              <span className="ad-cover ar-cover-icon" aria-hidden>
+                <AssetTypeIcon type={asset.assetType} />
+              </span>
+            )}
+            <span className="ad-head-main">
+              <span className="ad-head-sub">
+                {asset.project || "—"}
+                {asset.assetType ? ` · ${asset.assetType}` : ""}
+              </span>
+              <StatusTag text={asset.lastStatus || "未巡检"} />
+            </span>
           </div>
           {/* 【为什么是这个状态,就写在状态下面】原来这一屏只有一个「待复核」
               标签,现场看到了却不知道要核什么 —— 读数看着正常、照片也拍了,
@@ -203,7 +238,10 @@ export default function AssetDetailPage() {
               <span className="ad-v">{asset.lastInspector}</span>
             </div>
           )}
-          {asset.lastSummary && (
+          {/* 【只是复述读数的那句不再摆】抄表设备的摘要就是「消防水表本次读数:
+              60197.924。」—— 同一个数在这一屏出现了四次(状态原因、这里、历史字段、
+              历史摘要)。电梯那种真有内容的 AI 总结照样显示。 */}
+          {asset.lastSummary && !isReadingEcho(asset.lastSummary) && (
             <div className="ad-summary">{asset.lastSummary}</div>
           )}
         </div>
@@ -214,6 +252,10 @@ export default function AssetDetailPage() {
             这是旧版有、新版一直缺的一条闭环:台账里挂着异常,巡检员现场复查完
             却没有办法把它销掉 —— 直接重拍会生成一条【新】记录,而那条异常还挂在
             原设备上。带上 模板/点位/编号 去拍,新记录才落得回同一台。 */}
+        {/* 【两个按钮并排成一行】原来上下各占一整行(各 47px + 间距),
+            和状态卡一起把巡检历史推到了屏幕下半截。并排省出一行,
+            而且两个动作本来就是"二选一":要么去复检,要么申请改。 */}
+        <div className="ad-actions">
         {needsFollowup && (
           <button
             className="ad-action is-primary"
@@ -242,6 +284,7 @@ export default function AssetDetailPage() {
         <button className="ad-action" onClick={() => setCrOpen(true)}>
           申请修改
         </button>
+        </div>
 
         {/* 相关申请。只在真有申请时出现 —— 常年挂一个"暂无申请"的空标题是噪音。
             标题按角色变:一线人员这里只拿得到自己发起的,写"相关申请"是撒谎。 */}
@@ -374,8 +417,13 @@ export default function AssetDetailPage() {
                     <div className="hist-body is-empty">正在取这次的照片和字段…</div>
                   )}
 
+                  {/* 摘要只是把上面那格读数再念一遍的,不再摆 ——
+                      读数只在字段里出现一次。【也不补"没有留下总结"】那句话
+                      在这里是错的:总结有,只是和上面的字段重复了。 */}
                   {snap.summary ? (
-                    <div className="hist-body">{snap.summary}</div>
+                    !isReadingEcho(snap.summary) && (
+                      <div className="hist-body">{snap.summary}</div>
+                    )
                   ) : (
                     <div className="hist-body is-empty">这次巡检没有留下总结</div>
                   )}

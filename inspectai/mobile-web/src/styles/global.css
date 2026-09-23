@@ -2824,17 +2824,20 @@ a {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  margin: 0 16px 12px;
+  margin: 0 16px 10px;
 }
+/* 【72 → 约 56px 高】四张卡加筛选栏加分组标题,原来占掉首屏 30%,
+   38 台设备首屏只看得到 5 行。卡片上下内边距是最大的一块可以收的空间 ——
+   数字本身不缩太多(24 → 22),它是这四张卡存在的全部理由。 */
 .lo-card {
-  padding: 14px 4px 12px;
+  padding: 9px 4px 8px;
   border: 1px solid transparent;
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
   transition:
     border-color 140ms ease,
@@ -2861,7 +2864,7 @@ a {
   cursor: pointer;
 }
 .lo-num {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--lt-fg);
@@ -2958,19 +2961,21 @@ a {
 /* 分组标题(components/SectionHeader.tsx)。旧版是「● 需跟进 · 3」——
    圆点不是装饰:一页两三组,红点/绿点让人不用读字就能定位到要处理的那段。
    工地上戴手套、赶时间的人,靠的就是这种一眼能抓住的东西。 */
+/* 【12 → 14px】「需跟进 · 4」是这一页最重要的路标 —— 管理者进来就是为了
+   找这一组。原来它和副行差不多大(12 vs 11),扫一眼分不出哪是标题哪是内容。 */
 .section-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 4px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  padding: 4px 4px 6px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   background: var(--lt-bg);
 }
 .sh-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex: none;
   background: currentColor;
@@ -3008,7 +3013,7 @@ a {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 13px 14px;
+  padding: 12px 14px;
   border: 0;
   border-bottom: 0.5px solid var(--lt-border);
   background: transparent;
@@ -3063,15 +3068,30 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 【不许折行】这一行是「项目 · 类型 · 最近 巡检人」,放不下就截断。
-   折行的结果是 K03 那一行把「朱佳伟」断成「朱佳 / 伟」—— 人名被拆开,
-   而且那一行比别的行高一截,一列里忽高忽低。 */
+/* 【不许折行】放不下就截断。折行的结果是 K03 那一行把「朱佳伟」断成
+   「朱佳 / 伟」—— 人名被拆开,而且那一行比别的行高一截,一列里忽高忽低。
+   【11 → 12px】区分 K07 / K7 靠的正是这一行,原来却是整页最小的字。 */
 .ar-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--lt-fg-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 设备名 + 状态胶囊同一行。胶囊原来在右侧独占一整列,
+   从上到下都占着宽度,副行被挤到只剩 182px。 */
+.ar-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ar-top .ar-name {
+  flex: 1;
+  min-width: 0;
+}
+.ar-top > :last-child {
+  flex: none;
 }
 
 /* ===== 状态标签(全站唯一一套)=====
@@ -3126,6 +3146,38 @@ a {
   border-radius: 16px;
   background: var(--lt-card);
   box-shadow: var(--lt-shadow);
+}
+/* 卡片头:设备照片 + 项目·类型 + 状态。现场靠照片认设备,列表里每行都有封面,
+   点进来原来一张图都没有。72px 够认,又不额外占高度 —— 它顶掉的是原来
+   单独一行的「项目 · 类型」和一行「当前状态」。 */
+.ad-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 0.5px solid var(--lt-border);
+}
+.ad-cover {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--lt-fill);
+  display: block;
+}
+.ad-head-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.ad-head-sub {
+  font-size: 13px;
+  color: var(--lt-fg-2);
 }
 .ad-row {
   display: flex;
@@ -4037,10 +4089,17 @@ a {
 
 /* ===== 申请修改面板(components/ChangeRequestSheet.tsx)===== */
 /* 入口按钮:次要操作,不能跟底部主按钮抢眼 */
+/* 【并排一行】原来上下各占一整行,和状态卡一起把巡检历史推到了屏幕下半截。
+   只有一个按钮(设备正常、没有复检)时它自己撑满这一行。 */
+.ad-actions {
+  display: flex;
+  gap: 10px;
+  margin: 0 16px 14px;
+}
 .ad-action {
   display: block;
-  width: calc(100% - 32px);
-  margin: 0 16px 14px;
+  flex: 1;
+  min-width: 0;
   padding: 12px;
   border: 0;
   border-radius: 14px;

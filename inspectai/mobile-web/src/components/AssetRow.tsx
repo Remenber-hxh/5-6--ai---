@@ -1,5 +1,6 @@
 import AssetTypeIcon from "@/components/AssetTypeIcon";
 import StatusTag from "@/components/StatusTag";
+import { sinceText } from "@/lib/assetCover";
 
 import type { AssetDTO } from "@/api/inspection";
 
@@ -10,9 +11,17 @@ import type { AssetDTO } from "@/api/inspection";
 // 进详情页看。提炼那段正则和它修好的 bug 记在 git 里(commit 6fdcf21),
 // 哪天要放到详情页可以捡回来,别重写一遍。
 //
-//   第一行  设备名
-//   第二行  项目 · 类型 · 最近 巡检人
-//   右  侧  状态胶囊 + 巡检次数
+//   第一行  设备名 ………………………… 状态胶囊
+//   第二行  项目 · 类型 · 巡检人 · 多久前(独占整行宽)
+//
+// 【状态胶囊从右侧一列挪到名字那一行】原来右边是一整列:胶囊在上、
+// 「63 次」在下。那一列的宽度由胶囊决定(51px),而且从上到下都占着 ——
+// 中间只剩 182px,副行放不下,K03 那一行就把「朱佳伟」截成了省略号。
+// 挪上去之后副行独占整行,182 → 约 243px。
+//
+// 【「63 次」换成「3 天前」】一条记录派生好几台设备,每台都 +1,同一个
+// 模板下的设备次数全一样(综合巡检那 5 台全是 68)。"多久没巡了"才是
+// 每台都不一样、而且真能用来决定先去看哪台的信息。
 
 export interface AssetRowProps {
   asset: AssetDTO;
@@ -22,13 +31,10 @@ export interface AssetRowProps {
 }
 
 export default function AssetRow({ asset, cover, onClick }: AssetRowProps) {
-  // 项目名整页往往都一样,但类型和巡检人不是 —— 三段拼起来才够区分两台
+  // 项目名整页往往都一样,但类型和巡检人不是 —— 几段拼起来才够区分两台
   // 只差一个字符的设备(K07 / K7 就是这么被认错的)。
-  const sub = [
-    asset.project,
-    asset.assetType,
-    asset.lastInspector && `最近 ${asset.lastInspector}`,
-  ]
+  const since = sinceText(asset.lastInspectedAt);
+  const sub = [asset.project, asset.assetType, asset.lastInspector, since]
     .filter(Boolean)
     .join(" · ");
 
@@ -44,15 +50,11 @@ export default function AssetRow({ asset, cover, onClick }: AssetRowProps) {
       )}
 
       <span className="ar-main">
-        <span className="ar-name">{asset.assetName}</span>
+        <span className="ar-top">
+          <span className="ar-name">{asset.assetName}</span>
+          <StatusTag text={asset.lastStatus || "未巡检"} />
+        </span>
         <span className="ar-sub">{sub || "—"}</span>
-      </span>
-
-      <span className="ar-side">
-        <StatusTag text={asset.lastStatus || "未巡检"} />
-        {asset.inspectionCount > 0 && (
-          <span className="ar-count">{asset.inspectionCount} 次</span>
-        )}
       </span>
     </button>
   );
