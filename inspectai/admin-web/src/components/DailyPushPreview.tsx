@@ -5,8 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import {
   DailyPushBot,
   DailyPushBotOverride,
+  DailyPushBotPreview,
   DailyPushConfig,
   DailyPushDigest,
+  DailyPushPreviewResult,
   getDailyPushConfig,
   previewDailyPush,
   saveDailyPushConfig,
@@ -40,7 +42,7 @@ export default function DailyPushPreview({
   open: boolean;
   onClose: () => void;
 }) {
-  const [digest, setDigest] = useState<DailyPushDigest | null>(null);
+  const [preview, setPreview] = useState<DailyPushPreviewResult | null>(null);
   const [cfg, setCfg] = useState<DailyPushConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -51,7 +53,7 @@ export default function DailyPushPreview({
       // 设置读不到不该让预览也打不开 —— 预览是这个弹窗更常用的那一半
       const c = await getDailyPushConfig().catch(() => null);
       setCfg(c);
-      setDigest(await previewDailyPush(c?.silentWhenDone ?? true));
+      setPreview(await previewDailyPush(c?.silentWhenDone ?? true));
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载失败");
     } finally {
@@ -76,7 +78,7 @@ export default function DailyPushPreview({
         weekdays: merged.weekdays,
         silentWhenDone: merged.silentWhenDone,
       });
-      setDigest(await previewDailyPush(merged.silentWhenDone));
+      setPreview(await previewDailyPush(merged.silentWhenDone));
     } catch (e) {
       message.error(e instanceof Error ? e.message : "保存失败");
       await load(); // 失败就回到服务端的真实状态,别让界面停在一个没存进去的值上
@@ -105,7 +107,11 @@ export default function DailyPushPreview({
       });
       // 【重新拉一遍,不在本地拼】effective 是后端合并出来的,
       // 前端自己算一份就等于把合并规则写两遍,迟早分叉。
-      setCfg(await getDailyPushConfig());
+      const c = await getDailyPushConfig();
+      setCfg(c);
+      // 这个群的时间、暂停一改,它今天会不会发就变了 —— 预览必须跟着重算,
+      // 否则上面刚点了「暂停」,下面还写着"今天 17:00 会发出"
+      setPreview(await previewDailyPush(c.silentWhenDone));
     } catch (e) {
       message.error(e instanceof Error ? e.message : "保存失败");
       await load();
@@ -214,38 +220,19 @@ export default function DailyPushPreview({
           </div>
         )}
 
-        {digest && (
-          <>
-            {digest.wouldSend ? (
-              <Alert
-                type="success"
-                showIcon
-                message={
-                  cfg?.enabled
-                    ? `今天 ${cfg.time} 会发出下面这条`
-                    : "开启后,今天这个点会发出下面这条"
-                }
-              />
-            ) : (
-              <Alert type="info" showIcon message={`今天不会发 —— ${digest.skipReason || "无内容"}`} />
-            )}
-
-            <pre
-                style={{
-                  marginTop: 0,
-                  padding: "12px 14px",
-                  background: "#fafbfc",
-                  border: `1px solid ${C.line}`,
-                  borderRadius: 8,
-                  fontSize: 13,
-                  lineHeight: 1.7,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                }}
-              >
-                {digest.text || "(空)"}
-            </pre>
-          </>
+        {/* 【一个群一张】和真发一致:每个群只算它负责的项目,守它自己的时间和暂停。
+            原来是全部项目拼一条、只看全局设置 —— 暂停了的紫菡还出现在
+            "今天 17:00 会发出下面这条"里,而那条消息根本不存在。 */}
+        {preview && preview.bots.length > 0 && (
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ fontWeight: 600, color: C.text, fontSize: 13 }}>今天各群会收到什么</div>
+            {preview.bots.map((b) => (
+              <BotPreview key={b.index} bot={b} titled={preview.bots.length > 1} />
+            ))}
+          </div>
+        )}
+        {preview && preview.bots.length === 0 && preview.digest && (
+          <DigestBlock digest={preview.digest} enabled={!!cfg?.enabled} time={cfg?.time || ""} />
         )}
 
         <Button size="small" loading={loading} onClick={() => void load()}>
@@ -276,11 +263,13 @@ function BotConfigRow({
   const bad = bot.unknownProjects ?? [];
   // 【显示的是库里查到的项目名】配置里那串字符串只在对不上的时候才出现,
   // 而且是作为错误出现 —— 把它当标题显示的话,配错了看起来和配对了一样。
-  const label = bot.projects.length
-    ? bot.projects.join("、")
-    : bad.length
-      ? "配置的项目不存在"
-      : "全部项目";
+  const label = bot.allProjects
+    ? "全部项目"
+    : bot.projects.length
+      ? bot.projects.join("、")
+      : bad.length
+        ? "配置的项目不存在"
+        : "没有分到项目";
 
   return (
     <div
@@ -373,5 +362,58 @@ function BotConfigRow({
         </div>
       )}
     </div>
+  );
+}
+
+const PRE_STYLE = {
+  margin: 0,
+  padding: "12px 14px",
+  background: "#fafbfc",
+  border: `1px solid ${C.line}`,
+  borderRadius: 8,
+  fontSize: 13,
+  lineHeight: 1.7,
+  whiteSpace: "pre-wrap" as const,
+  wordBreak: "break-word" as const,
+};
+
+/**
+ * 一个群今天会收到什么。
+ *
+ * 【不发的群不摆原文】暂停了、今天不在推送日、没什么可发、已经发过 ——
+ * 摆一段原文在下面,人扫一眼只会记住"会发这段"。只说为什么不发。
+ * 总开关没开、地址没配好的例外:那是"修好就会发这段",原文要让人看到。
+ */
+function BotPreview({ bot, titled }: { bot: DailyPushBotPreview; titled: boolean }) {
+  const showText = bot.kind === "send" || bot.kind === "off" || bot.kind === "no_address";
+  const type = bot.kind === "send" ? "success" : bot.kind === "no_address" ? "warning" : "info";
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {titled && (
+        <span style={{ fontWeight: 600, color: C.text }}>
+          {bot.allProjects ? "全部项目" : bot.projects.length ? bot.projects.join("、") : "没有分到项目"}
+        </span>
+      )}
+      <Alert type={type} showIcon message={bot.status} />
+      {showText && <pre style={PRE_STYLE}>{bot.digest.text || "(空)"}</pre>}
+    </div>
+  );
+}
+
+/** 一个群都没配时的旧样子:只为让人先看到文案 */
+function DigestBlock({ digest, enabled, time }: { digest: DailyPushDigest; enabled: boolean; time: string }) {
+  return (
+    <>
+      {digest.wouldSend ? (
+        <Alert
+          type="success"
+          showIcon
+          message={enabled ? `今天 ${time} 会发出下面这条` : "开启后,今天这个点会发出下面这条"}
+        />
+      ) : (
+        <Alert type="info" showIcon message={`今天不会发 —— ${digest.skipReason || "无内容"}`} />
+      )}
+      <pre style={PRE_STYLE}>{digest.text || "(空)"}</pre>
+    </>
   );
 }

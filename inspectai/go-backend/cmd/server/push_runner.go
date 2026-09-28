@@ -129,7 +129,9 @@ func (s *Server) pushOneBot(tenantID string, cfg dailyPushConfig, now time.Time,
 	// 【按这个机器人负责的项目算,不是全量再裁文案】总数、完成数也要跟着裁 ——
 	// 否则紫菡那个群收到的是"今天 35 台待巡 3 台",而那 35 台里有 32 台是
 	// 会议中心的。数字对不上还在其次,那等于隔着汇总数把别的项目泄露出去。
-	board, err := s.buildTodayBoardFor(tenantID, bot.visibility(), now)
+	// 【项目清单和异常提醒同一套】后台「项目管理」选过群的以后台为准 ——
+	// 见 dailyPushProjectsFor。预览也走这一个函数,两边不会说不一样的话。
+	board, err := s.buildTodayBoardFor(tenantID, s.dailyPushVisibilityFor(tenantID, bot), now)
 	if err != nil {
 		log.Printf("ERROR: [%s] %s 算今日看板失败: %v", tenantID, bot.Name, err)
 		_ = s.store.FinishPushSlot(slot, "failed", "算看板失败: "+err.Error())

@@ -494,9 +494,33 @@ export interface DailyPushDigest {
   skipReason?: string;
 }
 
-/** 只算不发。定时和真发是下一步 —— 先让文案在页面上跑准。 */
+/**
+ * 一个群今天会怎样 —— 和真发走同一套口径(这个群的项目、时间、暂停、今天发过没有)。
+ *
+ * kind:send 会发 / off 总开关没开 / paused 这个群暂停了 / weekday 今天不在推送日 /
+ * sent 今天已发过 / nothing 今天没什么可发 / no_address 群地址没配好
+ */
+export interface DailyPushBotPreview {
+  index: number;
+  projects: string[];
+  /** 收全部项目;false 且 projects 为空 = 一个项目都没分到 */
+  allProjects: boolean;
+  time: string;
+  kind: "send" | "off" | "paused" | "weekday" | "sent" | "nothing" | "no_address";
+  status: string;
+  digest: DailyPushDigest;
+}
+
+export interface DailyPushPreviewResult {
+  /** 一个群一份。只含请求者看得全项目的那些群 */
+  bots: DailyPushBotPreview[];
+  /** 一个群都没配时才有:按请求者可见范围拼的一条,只为看文案 */
+  digest?: DailyPushDigest;
+}
+
+/** 只算不发 */
 export function previewDailyPush(silentWhenDone: boolean) {
-  return api<DailyPushDigest>(
+  return api<DailyPushPreviewResult>(
     `/api/engineering/plans/daily-push/preview?silentWhenDone=${silentWhenDone ? 1 : 0}`,
   );
 }
@@ -518,8 +542,13 @@ export interface DailyPushBot {
   /** 第几个群,和服务器上 WEWORK_BOT_[N]_WEBHOOK 的编号一致 */
   index: number;
   name: string;
-  /** 库里真实存在的那几个项目。空 = 这个群收全部项目 */
+  /**
+   * 这个群的每日提醒实际算哪几个项目 —— 后台「项目管理」选过群的以后台为准,
+   * 没选过的按服务器配置。和真发、预览是同一份。
+   */
   projects: string[];
+  /** 收全部项目(没按项目分)。和"一个项目都没分到"区分开:两者 projects 都是空的 */
+  allProjects?: boolean;
   /**
    * 配置里写了、库里却没有的项目名。
    * 非空 = 这个群一台设备也筛不到、一条提醒也发不出去,而且不报错。

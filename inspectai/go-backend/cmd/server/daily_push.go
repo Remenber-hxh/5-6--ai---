@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -171,17 +172,185 @@ func renderDailyPushText(d dailyPushDigest) string {
 //
 // 只算不发。给的是【逐字的原文】,不是"大概长这样" ——
 // 要确认的正是那些字会不会出现在领导的群里。
+//
+// 【一个群一份,和真发走同一条路】原来这里把请求者能看到的所有项目拼成一条、
+// 用全局时间算 —— 而真发是一个群一个群发、各看各的项目、各守各的时间和暂停
+// (push_runner.go pushOneBot)。于是紫菡那个群明明暂停了,预览里还写着
+// "今天 17:00 会发出下面这条",下面列着会议中心和紫菡两段:一条根本不存在的消息。
+// 现在每个群按 pushOneBot 的同一套口径算:同样的项目范围、同样的覆盖设置、
+// 同样的"今天发过没有"。
 func (s *Server) handleDailyPushPreview(w http.ResponseWriter, r *http.Request) {
-	// 【用请求者的可见范围算,不是"全部数据"】预览是给人看的,
-	// 应该和他在页面上看到的今日看板完全一致。真发时才用系统视角
-	// (那时它代表系统本身,不代表某个人)。
-	board, err := s.buildTodayBoardFor(s.tenantForRequest(r), s.visibilityFor(r), time.Now())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "build_failed", err.Error())
+	tenantID := s.tenantForRequest(r)
+	vis := s.visibilityFor(r)
+	now := time.Now()
+
+	// 一个群都没配:照旧给一条按请求者可见范围算的,至少能看文案长什么样
+	if len(s.weworkBots) == 0 {
+		board, err := s.buildTodayBoardFor(tenantID, vis, now)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "build_failed", err.Error())
+			return
+		}
+		silent := r.URL.Query().Get("silentWhenDone") == "1"
+		writeJSON(w, http.StatusOK, map[string]any{
+			"bots":   []dailyPushBotPreview{},
+			"digest": buildDailyPushDigest(board, silent),
+		})
 		return
 	}
-	silent := r.URL.Query().Get("silentWhenDone") == "1"
-	writeJSON(w, http.StatusOK, buildDailyPushDigest(board, silent))
+
+	kv, err := s.store.ListAppSettings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "read_settings_failed", err.Error())
+		return
+	}
+	global := dailyPushConfigFrom(kv)
+	out := make([]dailyPushBotPreview, 0, len(s.weworkBots))
+	for _, b := range s.weworkBots {
+		// 【只给看自己看得到的群】一个只管会议中心的主管,不该在这里读到
+		// 紫菡那个群今天会收到的原文 —— 那等于绕过项目权限看别的项目的待巡清单。
+		names, all := s.dailyPushProjectsFor(tenantID, b)
+		if all {
+			names = nil
+		}
+		if !visibilityCovers(vis, names) {
+			continue
+		}
+		eff := dailyPushConfigForBot(kv, b.Index)
+		board, err := s.buildTodayBoardFor(tenantID, s.dailyPushVisibilityFor(tenantID, b), now)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "build_failed", err.Error())
+			return
+		}
+		d := buildDailyPushDigest(board, eff.SilentWhenDone)
+		lastDay, _ := s.store.LastPushDay(tenantID, b.SlotKind)
+		ready := b.Client != nil && b.Client.Enabled()
+		kind, status := describeBotPushToday(global, eff, d, ready, lastDay, now)
+		out = append(out, dailyPushBotPreview{
+			Index: b.Index, Projects: append([]string{}, names...), AllProjects: all,
+			Time: eff.HourMin, Kind: kind, Status: status, Digest: d,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"bots": out})
+}
+
+// dailyPushBotPreview 一个群今天会怎样。
+type dailyPushBotPreview struct {
+	Index    int      `json:"index"`
+	Projects    []string `json:"projects"`
+	AllProjects bool     `json:"allProjects"` // 收全部项目;false 且 projects 为空 = 一个项目都没分到
+	Time        string   `json:"time"`        // 这个群实际几点发(已叠上覆盖值)
+	// Kind 机器可读的结论:send 会发 / off 总开关没开 / paused 这个群暂停了 /
+	// weekday 今天不在推送日 / sent 今天已发过 / nothing 今天没什么可发 /
+	// no_address 群地址没配好
+	Kind   string          `json:"kind"`
+	Status string          `json:"status"` // 给人看的一句话
+	Digest dailyPushDigest `json:"digest"`
+}
+
+// describeBotPushToday 这个群今天会不会发、为什么。
+//
+// 【判断顺序和 pushOneBot 一致】先看开关和暂停,再看日子、发过没有,
+// 最后才看有没有内容、地址好不好 —— 顺序不同,给出的理由就会和
+// 实际不发的原因对不上("说是没内容,其实是暂停了")。
+func describeBotPushToday(global, eff dailyPushConfig, d dailyPushDigest, ready bool, lastDay string, now time.Time) (string, string) {
+	switch {
+	case !global.Enabled:
+		return "off", "自动推送还没开 —— 开启后,今天 " + eff.HourMin + " 会发出下面这条"
+	case !eff.Enabled:
+		return "paused", "这个群已暂停推送,今天不发"
+	case !runsOnWeekday(eff.Weekdays, isoWeekday(int(now.Weekday()))):
+		return "weekday", "今天不在这个群的推送日内,不发"
+	case lastDay == now.Format("2006-01-02"):
+		return "sent", "今天已经发过了"
+	case !d.WouldSend:
+		return "nothing", "今天不发 —— " + d.SkipReason
+	case !ready:
+		return "no_address", "群地址没配好,到点也发不出去"
+	default:
+		return "send", "今天 " + eff.HourMin + " 会发出下面这条"
+	}
+}
+
+// dailyPushProjectsFor 这个群的每日提醒该算哪几个项目。all=true 表示收全部项目(不裁)。
+//
+// 【和异常提醒同一套路由】2026-09-22 起,「项目管理」里能给每个项目选发到哪个群
+// (projects.bot_index),异常提醒按它走(botsForProject)。每日提醒原来只看服务器上的
+// WEWORK_BOT_[N]_PROJECTS —— 后台改了群,异常提醒跟着换,每日提醒还往原来的群发。
+// 规则:后台选过群的项目,只归它选的那个群;没选过的,按环境变量那份。
+// 后台一个项目都没选过时,和原来一模一样(直接用环境变量)。
+func (s *Server) dailyPushProjectsFor(tenantID string, b weworkBotTarget) (names []string, all bool) {
+	env := make([]string, 0, len(b.Projects))
+	for _, p := range b.Projects {
+		if p = strings.TrimSpace(p); p != "" {
+			env = append(env, p)
+		}
+	}
+	projects, err := s.store.ListProjects(tenantID)
+	if err != nil {
+		return env, len(env) == 0 // 查不到就退回环境变量那份,不让提醒因为一次查库失败而断掉
+	}
+	configured := false
+	for _, p := range projects {
+		if p != nil && p.BotIndex > 0 {
+			configured = true
+			break
+		}
+	}
+	if !configured {
+		return env, len(env) == 0
+	}
+	for _, p := range projects {
+		if p == nil {
+			continue
+		}
+		name := strings.TrimSpace(p.Name)
+		if p.BotIndex > 0 {
+			if p.BotIndex == b.Index {
+				names = append(names, name)
+			}
+			continue
+		}
+		if len(env) == 0 || slices.Contains(env, name) {
+			names = append(names, name)
+		}
+	}
+	return names, false
+}
+
+// dailyPushVisibilityFor 把上面那份项目清单变成看板的可见范围。
+//
+// 【一个项目都没分到要写成 Blocked,不能给空清单】dataVisibility 里 Projects 为空
+// 表示"不按项目限" —— 一个被后台把项目全挪走的群,会反过来收到全部项目。
+func (s *Server) dailyPushVisibilityFor(tenantID string, b weworkBotTarget) dataVisibility {
+	names, all := s.dailyPushProjectsFor(tenantID, b)
+	if all {
+		return dataVisibility{AllData: true}
+	}
+	if len(names) == 0 {
+		return dataVisibility{Blocked: true, BlockedReason: "这个群没有分到任何项目"}
+	}
+	return dataVisibility{Projects: names}
+}
+
+// visibilityCovers 请求者能不能看全这个群负责的项目。
+// 群收全部项目(projects 为空)时,只有不受项目限制的人才看得全。
+func visibilityCovers(v dataVisibility, projects []string) bool {
+	if v.Blocked || v.OwnOnly {
+		return false
+	}
+	if v.AllData || len(v.Projects) == 0 {
+		return true
+	}
+	if len(projects) == 0 {
+		return false
+	}
+	for _, p := range projects {
+		if !slices.Contains(v.Projects, p) {
+			return false
+		}
+	}
+	return true
 }
 
 // ===== 推送设置 =====
@@ -351,19 +520,26 @@ func (s *Server) botConfigViews(kv map[string]string, tenantID string) []map[str
 	for _, b := range s.weworkBots {
 		o := parseDailyPushOverride(kv[botOverrideKey(b.Index)])
 		eff := dailyPushConfigForBot(kv, b.Index)
+		// 【标题写的必须是真发时算的那几个项目】和 pushOneBot 用同一个函数 ——
+		// 后台「项目管理」改过群的,这里跟着变;不然卡片上写着"紫菡雅集",
+		// 实际发的是另一批。
+		names, all := s.dailyPushProjectsFor(tenantID, b)
 		matched, unknown := []string{}, []string{}
-		for _, name := range b.Projects {
+		for _, name := range names {
 			if real, ok := live[name]; ok {
 				matched = append(matched, real)
-			} else {
+			} else if name != "" {
 				unknown = append(unknown, name)
 			}
 		}
 		out = append(out, map[string]any{
 			"index": b.Index,
 			"name":  b.Name,
-			// projects:库里真实存在的那几个。空 = 这个群收全部项目。
+			// projects:库里真实存在的那几个。
 			"projects": matched,
+			// allProjects:这个群收全部项目(没按项目分)。和"一个项目都没分到"
+			// 必须分开说 —— 两者的 projects 都是空的。
+			"allProjects": all,
 			// unknownProjects:配置里写了、库里却没有的。非空 =
 			// 这个群收不到任何东西,而且不会报错。页面必须把它喊出来。
 			"unknownProjects": unknown,
