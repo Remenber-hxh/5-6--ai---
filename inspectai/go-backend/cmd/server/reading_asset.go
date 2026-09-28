@@ -139,6 +139,13 @@ func readingSlotInUse(rec *Record, f *FieldValue) bool {
 //
 // 【不做模糊匹配】猜错一台比不猜更糟:选择器上摆着一个错的默认值,人扫一眼
 // 觉得"系统填好了"就过去了 —— 那正是今天要修的那个毛病(确认变成下一步)。
+//
+// 【第二档:只去掉表型后缀,而且只认唯一的那一台】线上的电表在台账里就叫「Z1」…「Z4」,
+// 格子叫「Z1 能耗表读数」—— 第一档永远对不上,四行电表每次都得现场手选,
+// 漏选一行,那一格读数就不进台账。2026-09-28 用户定:让它对上。
+// 只去掉「能耗表 / 电能表 / 电表」这几个说"这是哪种表"的尾巴,剩下的编号必须和
+// 台账里【恰好一台】的名字一模一样;两台都像就不猜。其余一切照旧不猜
+// (「水泵房总表」不会被猜成「水泵房」)。
 func defaultAssetForField(label string, options []string) string {
 	want := normalizeAssetKey(label)
 	if want == "" {
@@ -149,8 +156,28 @@ func defaultAssetForField(label string, options []string) string {
 			return o
 		}
 	}
+	for _, suf := range meterTypeSuffixes {
+		base, ok := strings.CutSuffix(want, suf)
+		if !ok || base == "" {
+			continue
+		}
+		hit := ""
+		for _, o := range options {
+			if normalizeAssetKey(o) != base {
+				continue
+			}
+			if hit != "" {
+				return "" // 不止一台对得上,不猜
+			}
+			hit = o
+		}
+		return hit
+	}
 	return ""
 }
+
+// meterTypeSuffixes 格子名里说"这是哪种表"的尾巴。长的在前:先认「电能表」再认「电表」。
+var meterTypeSuffixes = []string{"能耗表", "电能表", "电表"}
 
 // normalizeAssetKey 去掉空格和结尾的"读数",大小写统一。
 func normalizeAssetKey(s string) string {

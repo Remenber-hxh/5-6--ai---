@@ -163,6 +163,32 @@ func TestClearingADefaultedNameSticks(t *testing.T) {
 	}
 }
 
+// 【线上的表叫 Z1,格子叫「Z1 能耗表读数」】第一档对不上时,去掉表型尾巴再对,
+// 只认唯一的一台;对得上全名的永远优先;不是表型尾巴的不去。
+func TestDefaultMatchesBareMeterNumber(t *testing.T) {
+	prod := []string{"Z1", "Z2", "Z3", "Z4", "生活水表", "消防水表"}
+	cases := []struct {
+		label string
+		opts  []string
+		want  string
+		why   string
+	}{
+		{"Z1 能耗表读数", prod, "Z1", "线上电表叫 Z1,应该默认对上"},
+		{"Z4 能耗表读数", prod, "Z4", ""},
+		{"生活水表读数", prod, "生活水表", "全名对得上的照旧"},
+		{"Z1 能耗表读数", []string{"Z1", "Z1能耗表"}, "Z1能耗表", "全名对得上的优先于去尾巴"},
+		{"Z1 能耗表读数", []string{"Z1", "z1"}, "", "两台都像就不猜"},
+		{"Z5 能耗表读数", prod, "", "台账里没有 Z5 就不猜"},
+		{"水泵房总表读数", []string{"水泵房"}, "", "「总表」不是表型尾巴,不去"},
+		{"能耗表读数", []string{""}, "", "去完什么都不剩,不猜"},
+	}
+	for _, c := range cases {
+		if got := defaultAssetForField(c.label, c.opts); got != c.want {
+			t.Errorf("%s / %v → %q,应该是 %q(%s)", c.label, c.opts, got, c.want, c.why)
+		}
+	}
+}
+
 // 【只挂着名字的空格不算占用】读数被挪走后,原来那一格还挂着「Z5」这个名字、
 // 但什么都没有。这时在别的格子上选 Z5 应该成功,并且把那个空名字放掉 ——
 // 不放掉的话,下一次读记录两格都叫 Z5。
