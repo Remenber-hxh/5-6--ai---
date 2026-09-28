@@ -56,6 +56,14 @@ export interface FieldValue {
   assetName?: string;
   assetOptions?: string[];
   /**
+   * assetName 是后端按字段名猜的默认值,人还没选过(「Z2 能耗表读数」→「Z2能耗表」)。
+   * 判断"这一格是不是空位"时不能看名字 —— 四个电表格子永远都有默认名,
+   * 按名字判的话一个空位都找不到。
+   */
+  assetDefaulted?: boolean;
+  /** 人点过「清除」,主动放掉了这一格的设备 */
+  assetCleared?: boolean;
+  /**
    * 这个读数是从哪张照片、哪一块读出来的。
    * bbox 是归一化的 [左, 上, 右, 下],确认页据此把那一小块裁出来摆在行旁边。
    *

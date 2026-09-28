@@ -153,6 +153,14 @@ type FieldValue struct {
 	//
 	// 落在 fields_json 里,不需要迁移。重新选一台设备时置回 false。
 	AssetCleared bool `json:"assetCleared,omitempty"`
+	// AssetDefaulted 这一格的设备名是后端按字段名猜的默认值,人还没选过。
+	//
+	// 【前端要靠它判断"空位"】默认名每次读记录都会填上,于是四个电表格子
+	// 永远"有设备名"。前端原来按"没设备名、没读数"找空位 —— 一个都找不到,
+	// 给照片选一台非默认名字的表(比如 Z5)就报"这类设备的位置都已经用了",
+	// 其实 Z4 那一格照片、读数都没有。
+	// 只在返回给前端时由 fillReadingAssetOptions 填,人一选设备就置回 false。
+	AssetDefaulted bool `json:"assetDefaulted,omitempty"`
 
 	// SourceImageID 这个读数是从哪张照片读出来的;Bbox 是读数区在那张图里的
 	// 位置(归一化 [左,上,右,下])。确认页据此把那一小块裁出来摆在这一行旁边。
@@ -417,6 +425,14 @@ type AssetEntry struct {
 	// countedInspections 内部标记:列表路径已批量算过巡检次数,
 	// enrichAssetForDisplay 就不必再逐台查一遍。不出现在 JSON 里。
 	countedInspections bool
+	// sourceFields 这台设备这一次的读数在记录的哪几格。只在提交/回填时由
+	// buildAssets 填,不出现在 JSON、不入库。
+	//
+	// 【为什么不能再查 assetFieldCodeMap】那张表是写死的「z1_energy_meter →
+	// z1_reading」。现场把 Z1 选到了第 3 格时,Z1 的照片取的是第 3 格(对的),
+	// 读数历史取的却是第 1 格 —— 那是另一块表的数。台账上就成了
+	// "照片是这台表、读数不是这台表的",而且每次提交错得不一样。
+	sourceFields       []string
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 

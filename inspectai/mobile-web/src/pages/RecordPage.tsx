@@ -18,7 +18,6 @@ import {
   patchField,
   patchFieldAsset,
   patchFieldAssetSource,
-  patchFieldSource,
   swapReadings,
   startAnalysis,
 } from "@/api/inspection";
@@ -377,12 +376,40 @@ export default function RecordPage() {
   }
 
   /**
-   * 这一格是不是真的有人在用(绑了照片,或者已经有读数)。
-   * 用来找"哪一格还空着",以及判断该走搬家还是对调。
+   * 这一格在页面上有没有自己的照片 —— 照片还在这条记录里,而且那一行显示的就是它。
+   *
+   * 【一张照片只算给一格】两格指着同一张图时,页面上那一行只显示第一格
+   * (fieldOfPhoto 取第一个);第二格其实没有自己的照片。
+   * 【照片删了指针还在的不算】页面上没有那张图。
+   */
+  function hasPhoto(f: FieldValue): boolean {
+    if (!rec || !f.sourceImageId) return false;
+    if (!rec.images.some((img) => img.id === f.sourceImageId)) return false;
+    return fieldOfPhoto(rec.fields, f.sourceImageId)?.code === f.code;
+  }
+
+  /**
+   * 这一格是不是真的有东西(自己的照片,或者读数)。
+   * 用来找"哪一格还空着"、哪台设备算被占着 —— 和后端 readingSlotInUse 同一个判据。
+   *
+   * 【只看有没有东西,不看有没有名字】后端每次都给没选过的格子填默认名,
+   * 按名字判的话四个电表格子永远是满的。
    */
   function slotInUse(f: FieldValue): boolean {
-    return Boolean(f.sourceImageId) || String(f.value || "").trim() !== "";
+    return hasPhoto(f) || String(f.value || "").trim() !== "";
   }
+
+  /**
+   * 有读数、却没有自己照片的抄表格子 —— 页面上照片行里找不到它。
+   *
+   * 【为什么要单独摆出来】它占着一台设备(那台表在下拉里是灰的),可原来页面上
+   * 没有任何一行显示它:六行都写着「选一台设备」,点开一看 Z1、Z2 莫名其妙是灰的,
+   * 而且没有一行能「清除」它们。本地查到三条这样的记录(8 月的草稿,那时读数还
+   * 不记来源照片)。占着东西的,必须看得见、放得掉。
+   */
+  const orphans = meterMode
+    ? (rec?.fields || []).filter((f) => isMeterField(f) && slotInUse(f) && !hasPhoto(f))
+    : [];
 
   /**
    * 哪些设备现在选不了 —— 一台设备只能归一行,已经归了别行的变灰。
@@ -399,12 +426,17 @@ export default function RecordPage() {
    * 【为什么是变灰而不是从列表里去掉】去掉的话人只会觉得"怎么没有 Z3",
    * 不知道它在哪、也不知道该怎么办;摆在那儿变灰,至少说明"它在,只是轮不到"。
    */
+  //
+  // 【唯一的例外】一张还没人认领的照片,可以选一台"有读数、没照片"的表 ——
+  // 那一行在等的正是一张照片,选它就是把这张照片认给那个读数(见 pickAssetForPhoto)。
+  // 对这张照片来说,那台表不是"被别人占着",而是"在等它"。
   function takenAssets(self: FieldValue | null): Record<string, string> {
     const out: Record<string, string> = {};
     if (!rec) return out;
     for (const f of rec.fields) {
       if (f.code === self?.code || !f.assetName || !slotInUse(f)) continue;
-      out[f.assetName] = "另一张照片已选";
+      if (!self && !hasPhoto(f)) continue;
+      out[f.assetName] = "另一行已选";
     }
     return out;
   }
@@ -435,133 +467,127 @@ export default function RecordPage() {
   /**
    * 给某张照片指定设备。
    *
-   * 【三种情况】
-   *   照片还没人认领 → 把它和读数一起写到那台设备的格子上
-   *   已经认领了、选的还是同一台 → 什么都不做
-   *   已经认领了、改选另一台 → 走 move:读数、照片、置信度整组搬过去
+   * 【判据只有一个:那台表现在在不在别的格子上"有东西"】有照片或有读数才算,
+   * 名字不算 —— 后端给没选过的格子都填了默认名,按名字判的话,四个电表格子
+   * 永远是满的:给照片选一台非默认名字的表(比如 Z5),会报"位置都已经用了",
+   * 其实 Z4 那一格照片、读数都没有。2026-09-27 线上「莫名其妙选不上」的一半。
    *
-   * 【那台设备的格子已经占着东西 → 两行对调,不是把它顶掉】
+   * 顺序:
+   *   1. 有别的格子正用着这台表
+   *        · 这张照片还没人认领、那一格没照片 → 把照片认给那个读数
+   *        · 否则两行对调(正常情况下它是灰的,走到这里是连点/两台手机同时改)
+   *   2. 这张照片还没人认领 → 挂到那台表自己的空栏,没有就找一格空的
+   *   3. 没人用这台表,它自己那一栏空着(默认名或人选过名字的空格)
+   *        → 读数、照片整组搬过去
+   *   4. 这张照片所在那一格能选这台表 → 就在原格上换设备
+   *   5. 找一格同类型、真正空着的(没照片、没读数),整组搬过去
    *
-   * 已经抄到数的设备在下拉里是灰的(见 takenAssets),所以能走到这里的
-   * 是"那一格绑了照片、但还没抄到数"——这时仍然不能直接顶掉它:
-   * 那张照片会失去归属,而界面上没有任何地方说过。整组对调才不丢东西。
+   * 【搬值不搬名】日报上 Z1~Z4 是固定栏位,所以优先把读数搬到那台表自己的栏里(3),
+   * 而不是给现在这一栏改个名字(4)—— 见 reading_move.go 的说明。
    */
-  //
-  // 【找格子不能只靠"哪一格默认绑的是这台"】原来就是这么找的,而默认设备是
-  // 按"格子名去掉读数二字 == 设备名"算出来的 —— 台账里的表叫「Z1」而不是
-  // 「Z1能耗表」时,没有一格默认绑着它,于是点什么都提示"没有对应的格子",
-  // 只有名字恰好一字不差的「生活水表」能选。线上就是这样。
-  //
-  // 现在按这个顺序找:
-  //   1. 已经有一格绑着这台 → 就是它
-  //   2. 这张照片已经在某一格上,而这台表是那格能选的 → 就在原格上换设备
-  //   3. 找一格同类型、还空着的(没绑设备、也没读数)
-  async function pickAssetForPhoto(imageId: string, assetName: string) {
+  function pickAssetForPhoto(imageId: string, assetName: string) {
+    if (!rec) return Promise.resolve();
+    return assignAsset(fieldOfPhoto(rec.fields, imageId), imageId, assetName);
+  }
+  /** 没照片的那种行选设备:和照片行同一套规则,只是它没有照片可以认领 */
+  function pickAssetForField(f: FieldValue, assetName: string) {
+    return assignAsset(f, "", assetName);
+  }
+
+  // cur = 这一行现在是哪一格(照片没人认领时为 null);imageId 只在 cur 为 null 时用到
+  async function assignAsset(cur: FieldValue | null, imageId: string, assetName: string) {
     if (!rec) return;
-    const cur = fieldOfPhoto(rec.fields, imageId);
-    let target = rec.fields.find((f) => f.assetName === assetName);
-    // 这一格是"现在归这台表的那一格",还是"随便找的一个空位"。
-    // 两者后面要走的路不一样:前者可能要和人对调,后者直接占用就行。
-    let targetWasFree = false;
+    const holder = rec.fields.find((f) => f.assetName === assetName && slotInUse(f));
+    // 那台表自己的那一栏,空着
+    const own = rec.fields.find(
+      (f) =>
+        f.assetName === assetName &&
+        !slotInUse(f) &&
+        (f.assetOptions || []).includes(assetName),
+    );
+    // 同类型、真正空着的格子。优先没名字的、名字是猜的;人选过名字的空格排最后
+    function firstFree(): FieldValue | undefined {
+      const free = rec!.fields.filter(
+        (f) => (f.assetOptions || []).includes(assetName) && !slotInUse(f),
+      );
+      return (
+        free.find((f) => !f.assetName) || free.find((f) => f.assetDefaulted) || free[0]
+      );
+    }
+    // 【落定的名字一律写进库里,不留给默认值】默认名是每次读记录现猜的,
+    // 别的格子一旦选了同名的表,这一格的默认名就会让出去 —— 人明明选过的,
+    // 刷新一下又变回「选一台设备」。
+    async function nameIt(f: FieldValue | undefined) {
+      if (f && (f.assetName !== assetName || f.assetDefaulted)) {
+        await patchFieldAsset(rec!.id, f.code, assetName, f.version);
+      }
+    }
+    function noRoom() {
+      const sameType = rec!.fields.filter((f) => (f.assetOptions || []).includes(assetName)).length;
+      Toast.show({
+        content: `这类设备的 ${sameType} 个位置都有读数了 —— 先把其中一行清除或换掉`,
+        duration: 3000,
+      });
+    }
 
     try {
-      if (!target && cur && (cur.assetOptions || []).includes(assetName)) {
+      if (holder) {
+        if (cur && holder.code === cur.code) return;
+        if (!cur) {
+          if (hasPhoto(holder)) {
+            Toast.show({ content: `「${assetName}」已经在另一行了,先把那一行清除`, duration: 3000 });
+            return;
+          }
+          setRec(await patchFieldAssetSource(rec.id, holder.code, assetName, imageId, holder.version));
+          return;
+        }
+        // 两边都有东西:一次请求整组对调。
+        // 【不能用两次 move 凑】move 遇到"目标格有读数"会直接拒绝。
+        setRec(await swapReadings(rec.id, cur.code, holder.code));
+        return;
+      }
+
+      if (!cur) {
+        const target = own || firstFree();
+        if (!target) return noRoom();
+        setRec(await patchFieldAssetSource(rec.id, target.code, assetName, imageId, target.version));
+        return;
+      }
+
+      if (own && own.code !== cur.code) {
+        const next = await moveReading(rec.id, cur.code, own.code);
+        const moved = next.fields.find((f) => f.code === own.code);
+        if (moved && (moved.assetName !== assetName || moved.assetDefaulted)) {
+          await nameIt(moved);
+          setRec(await getRecord(rec.id));
+        } else {
+          setRec(next);
+        }
+        return;
+      }
+
+      if ((cur.assetOptions || []).includes(assetName)) {
         await patchFieldAsset(rec.id, cur.code, assetName, cur.version);
         setRec(await getRecord(rec.id));
         return;
       }
-      if (!target) {
-        // 【空位 = 没设备、没读数;照片不算数】
-        //
-        // 照片本来也在判据里,结果把「清除」堵死了:清除只放掉设备,那一格还挂着
-        // 原来那张照片,于是它被算成占用 —— 人明明刚腾出一格,再选却弹
-        // "这类设备的 4 个位置都已经用了"。2026-09-22 实测到的。
-        //
-        // 照片不该挡路:一格没设备时,它那一行本来就显示「选一台设备」;
-        // 把这一格改派给另一张照片,只是换了哪一张照片没着落,界面上看着一样。
-        // 【但有读数的绝不能碰】那是人抄下来的数,顶掉就没了。
-        const free = rec.fields.filter(
-          (f) =>
-            (f.assetOptions || []).includes(assetName) &&
-            !f.assetName &&
-            String(f.value || "").trim() === "",
-        );
-        // 真正空着的(连照片都没有)优先 —— 不动别人那张图。
-        target = free.find((f) => !f.sourceImageId) || free[0];
-        targetWasFree = Boolean(target);
-      }
-      if (!target) {
-        // 【说清是哪种满了】同类型的格子数是模板定的(比如只有 4 个电表位),
-        // 台账里的表比格子多时,多出来的那台这张表记不下 —— 不说的话人会以为是系统坏了。
-        const sameType = rec.fields.filter((f) => (f.assetOptions || []).includes(assetName)).length;
-        Toast.show({
-          content: `这类设备的 ${sameType} 个位置都已经用了 —— 先把别的行换掉,或者这张表记不下这台`,
-          duration: 3000,
-        });
-        return;
-      }
-      if (cur && cur.code === target.code) return;
 
-      // 【随便找来的空位直接占用,不走对调】那一格没设备、没读数,
-      // 只是可能还挂着别人那张照片。对调的意义是"两台表换个位置",
-      // 而这里根本没有另一台表 —— 走对调只会把一格空的和一格满的绕一圈。
-      //
-      // 目标格是"现在归这台表的那一格"、而且占着东西时,才是要对调的那种:
-      // AI 把归属排错了,人要把两行换过来。
-      if (!targetWasFree && slotInUse(target)) {
-        if (cur) {
-          // 两边都有东西:一次请求整组对调。
-          // 【不能用两次 move 凑】move 遇到"目标格有读数"会直接拒绝。
-          setRec(await swapReadings(rec.id, cur.code, target.code));
-        } else {
-          // 这张照片还没有格子,没法跟目标格互换 —— 先把目标格里那一组
-          // 挪到一个空格寄存,腾出来再把这张照片放进去。
-          const free = rec.fields.find(
-            (f) =>
-              f.code !== target!.code &&
-              (f.assetOptions || []).includes(target!.assetName || assetName) &&
-              !slotInUse(f),
-          );
-          if (!free) {
-            Toast.show({
-              content: `「${assetName}」那一行有读数,而且没有空位可以腾 —— 先把它换到别的表上`,
-              duration: 3000,
-            });
-            return;
-          }
-          await moveReading(rec.id, target.code, free.code);
-          const after = await getRecord(rec.id);
-          const t = after.fields.find((f) => f.code === target!.code);
-          setRec(
-            t && t.assetName === assetName
-              ? await patchFieldSource(rec.id, target.code, imageId, t?.version ?? 0)
-              : await patchFieldAssetSource(
-                  rec.id, target.code, assetName, imageId, t?.version ?? 0,
-                ),
-          );
-        }
-      } else if (!cur) {
-        // 照片还没人认领,目标格也空着:照片和设备一起挂上去(读数由人接着填)
-        setRec(
-          target.assetName === assetName
-            ? await patchFieldSource(rec.id, target.code, imageId, target.version)
-            : await patchFieldAssetSource(rec.id, target.code, assetName, imageId, target.version),
-        );
-      } else {
-        // 照片在别的格上、目标格空着:读数、照片整组搬过去,再标上是哪台表
-        let next = await moveReading(rec.id, cur.code, target.code);
-        const moved = next.fields.find((f) => f.code === target!.code);
-        if (moved && moved.assetName !== assetName) {
-          await patchFieldAsset(rec.id, moved.code, assetName, moved.version);
-          next = await getRecord(rec.id);
-        }
-        setRec(next);
-      }
+      const free = firstFree();
+      if (!free) return noRoom();
+      const next = await moveReading(rec.id, cur.code, free.code);
+      await nameIt(next.fields.find((f) => f.code === free.code));
+      setRec(await getRecord(rec.id));
     } catch (err) {
       Toast.show({
         content: err instanceof Error ? err.message : "改不了,请重试",
         duration: 3000,
       });
+      // 失败时以库里为准刷新一次 —— 连点、两台手机同时改时,本地这份可能已经旧了
+      try {
+        setRec(await getRecord(rec.id));
+      } catch {
+        /* 刷新也失败就保持原样,Toast 已经说过了 */
+      }
     }
   }
 
@@ -768,6 +794,25 @@ export default function RecordPage() {
                 />
               );
             })}
+            {/* 有读数、没照片的格子排在照片行后面。它们也占着设备,
+                不摆出来的话,那几台表在下拉里就是"莫名其妙的灰"。
+                选中上面某张没人认领的照片、选这台表,照片就认给这个读数了;
+                不要这个数的话把读数删掉,这一行就没了。 */}
+            {orphans.map((f) => (
+              <MeterPhotoRow
+                key={`orphan-${f.code}`}
+                index={0}
+                photoUrl=""
+                field={f}
+                options={allAssets()}
+                disabledAssets={takenAssets(f)}
+                assetName={f.assetName || ""}
+                onPickAsset={(name) => pickAssetForField(f, name)}
+                onClearAsset={() => clearAssetForField(f)}
+                onChangeValue={(v) => saveFieldValue(f, v)}
+                onOpenPhoto={() => undefined}
+              />
+            ))}
             <div className="fld-group-title">其余项</div>
           </>
         )}

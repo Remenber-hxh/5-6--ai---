@@ -42,6 +42,29 @@ export interface PickerProps {
    * 只在已经选了东西的时候显示:空着的行点"清除"没有任何意义。
    */
   onClear?: () => void;
+  /** 整个选择器暂时点不开(比如这一行正在保存) */
+  disabled?: boolean;
+}
+
+/** 列表最高 208px(约 5 项),和 CSS 的 max-height 一致 */
+const LIST_MAX = 208;
+const ITEM_H = 41;
+
+/**
+ * 往下展开放不放得下。
+ *
+ * 【为什么要算】确认页底部钉着「保存并预览日报」,最后两三行的下拉往下一展开,
+ * 选项全压在按钮底下,点不着 —— 要先滚页面才露出来,而人不知道要滚。
+ * 放不下、上面又放得下,就往上开。下边界取底部按钮条的上沿(没有就是屏幕底)。
+ */
+function shouldOpenUp(box: HTMLElement, rows: number): boolean {
+  const r = box.getBoundingClientRect();
+  const foot = document.querySelector(".flow-foot");
+  const bottom = foot ? foot.getBoundingClientRect().top : window.innerHeight;
+  const need = Math.min(LIST_MAX, rows * ITEM_H + 8) + 6;
+  const below = bottom - r.bottom;
+  const above = r.top - 56; // 顶栏
+  return below < need && above > below;
 }
 
 export function Picker({
@@ -51,9 +74,29 @@ export function Picker({
   placeholder = "请选择",
   disabledOptions,
   onClear,
+  disabled,
 }: PickerProps) {
   const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+
+  function toggle() {
+    if (disabled) return;
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (boxRef.current) {
+      const rows = options.length + (onClear && value ? 1 : 0);
+      setUp(shouldOpenUp(boxRef.current, rows));
+    }
+    setOpen(true);
+  }
+
+  // 存着的时候别让列表还开着
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   // 点外面关掉。用 pointerdown 而不是 click:click 会和触发器自己的
   // onClick 打架(先关再开,看起来像没反应)。
@@ -71,14 +114,16 @@ export function Picker({
       <button
         type="button"
         className={value ? "dd-trigger" : "dd-trigger is-empty"}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
+        disabled={disabled}
+        aria-expanded={open}
       >
         <span className="dd-text">{value || placeholder}</span>
         <span className={open ? "dd-arrow is-open" : "dd-arrow"} aria-hidden />
       </button>
 
       {open && (
-        <ul className="dd-list" role="listbox">
+        <ul className={up ? "dd-list is-up" : "dd-list"} role="listbox">
           {/* 【摆在最上面】它不是一个"选项",是一个动作:放掉这一行的选择,
               好让这台设备在别的行里重新变成可选。混在设备名中间会被当成
               一台叫"清除"的表。 */}

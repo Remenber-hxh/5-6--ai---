@@ -48,6 +48,23 @@ export default function MeterPhotoRow({
 }: MeterPhotoRowProps) {
   const [value, setValue] = useState(field?.value || "");
   const [busy, setBusy] = useState(false);
+  // 【选完立刻显示选的那台】保存要先发请求、再把整条记录拉回来,一两秒里
+  // 这一行还写着「选一台设备」—— 人以为没选上,再点一次,就把刚才那次也搅乱了。
+  // 先把选的名字摆上、整行压暗表示"在存",存完以库里的为准。
+  // null = 没在存;"" = 正在清除。
+  const [pending, setPending] = useState<string | null>(null);
+  const shownAsset = pending ?? assetName;
+  const noPhoto = !photoUrl;
+
+  function run(next: string, act: () => Promise<void> | void) {
+    if (busy) return;
+    setBusy(true);
+    setPending(next);
+    void Promise.resolve(act()).finally(() => {
+      setBusy(false);
+      setPending(null);
+    });
+  }
   // 停留时长交给外层统计,这里只管别在提交中途被覆盖
   const committed = useRef(field?.value || "");
 
@@ -73,7 +90,8 @@ export default function MeterPhotoRow({
 
   return (
     <div
-      className={`mpr ${needsReview ? "mpr-warn" : ""} ${assetName ? "" : "mpr-todo"}`}
+      className={`mpr ${needsReview ? "mpr-warn" : ""} ${shownAsset ? "" : "mpr-todo"} ${busy ? "mpr-busy" : ""}`}
+      aria-busy={busy}
     >
       <div className="mpr-head">
         {/* 【照片就是这一行的左栏,固定大小】原来照片单独挂在行下面,还缩进一截:
@@ -81,7 +99,11 @@ export default function MeterPhotoRow({
             看着像每一行都在挪位置。放进行首、写死一个尺寸,一列对齐到底。
             原来左边还占着一个「第 N 张」,一屏就少看一行。 */}
         <span className="mpr-thumb">
-          {field?.bbox?.length === 4 ? (
+          {noPhoto ? (
+            // 有读数、没照片的格子(老草稿里读数不记来源照片)。占着同一块位置,
+            // 一列才对得齐;写明"无照片",人才知道这一行为什么没有图。
+            <span className="mpr-nophoto">无照片</span>
+          ) : field?.bbox?.length === 4 ? (
             <ReadingCrop url={photoUrl} bbox={field.bbox} onOpen={onOpenPhoto} />
           ) : (
             <button className="mpr-photo" onClick={onOpenPhoto} aria-label={`看第 ${index} 张大图`}>
@@ -94,30 +116,25 @@ export default function MeterPhotoRow({
         <Picker
           options={options}
           disabledOptions={disabledAssets}
-          value={assetName}
+          value={shownAsset}
           placeholder="选一台设备"
+          // 存的时候不让再点开 —— 连点两下会发出两个互相打架的请求
+          disabled={busy}
           onChange={(v) => {
-            if (busy) return;
-            setBusy(true);
-            void Promise.resolve(onPickAsset(v)).finally(() => setBusy(false));
+            if (v === assetName) return;
+            run(v, () => onPickAsset(v));
           }}
-          onClear={
-            onClearAsset
-              ? () => {
-                  if (busy) return;
-                  setBusy(true);
-                  void Promise.resolve(onClearAsset()).finally(() => setBusy(false));
-                }
-              : undefined
-          }
+          onClear={onClearAsset ? () => run("", () => onClearAsset()) : undefined}
         />
         <input
           className="mpr-input"
           type="number"
           inputMode="decimal"
           value={value}
-          disabled={!assetName || busy}
-          placeholder={assetName ? "读数" : "先选设备"}
+          // 没照片的那种行例外:它的读数得能删 —— 删空了这一行就消失,
+          // 那台表也就放开了。锁着的话,不要的旧数就永远赖在这儿占着一台表。
+          disabled={busy || (!shownAsset && !noPhoto)}
+          placeholder={shownAsset ? "读数" : "先选设备"}
           onChange={(e) => setValue(e.target.value)}
           onBlur={() => void commit()}
         />

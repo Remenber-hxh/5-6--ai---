@@ -67,26 +67,34 @@ export default function LedgerPage() {
     errorText: "台账加载失败",
   });
   const assets = data?.assets ?? [];
-  const summary = data?.summary ?? null;
+
+  // 【四个数跟着项目/类型走】选了「紫菡雅集」,下面列的是 15 台,上面却还写着
+  // 38 台、32 台健康 —— 一屏两个数字对不上,人不知道该信哪个。
+  // 项目和类型是"看哪一片",四张卡是"这一片里挑哪一档";先圈范围再数。
+  const scoped = useMemo(
+    () =>
+      assets.filter(
+        (a) =>
+          (!filter.project || a.project === filter.project) &&
+          (!filter.assetType || a.assetType === filter.assetType),
+      ),
+    [assets, filter.project, filter.assetType],
+  );
 
   const stats = useMemo(() => {
     const today = todayStr();
-    // 需跟进口径与旧版一致:异常 + 待复核 + 待维修;未巡检不算需跟进
-    const risk = summary
-      ? (summary.warning || 0) + (summary.danger || 0) + (summary.repair || 0)
-      : assets.filter((a) =>
-          ["异常", "待复核", "待维修"].includes(a.lastStatus),
-        ).length;
+    // 需跟进口径与旧版一致:异常 + 待复核 + 待维修;未巡检不算需跟进。
+    // 【直接数列表,不用后端 summary】summary 数的是全部设备,圈了范围之后
+    // 和下面的列表不是同一批 —— 同一屏的数字必须同源。
     return {
-      total: summary?.total ?? assets.length,
-      normal:
-        summary?.normal ?? assets.filter((a) => a.lastStatus === "正常").length,
-      risk,
-      today: assets.filter(
+      total: scoped.length,
+      normal: scoped.filter((a) => a.lastStatus === "正常").length,
+      risk: scoped.filter((a) => RISK_STATUS.includes(a.lastStatus)).length,
+      today: scoped.filter(
         (a) => (a.lastInspectedAt || "").slice(0, 10) === today,
       ).length,
     };
-  }, [assets, summary]);
+  }, [scoped]);
 
   const shown = useMemo(() => {
     const today = todayStr();
@@ -105,28 +113,32 @@ export default function LedgerPage() {
     });
   }, [assets, filter]);
 
-  // 分组来源:后端 summary 有就用,没有就从资产现算,不至于筛选整个不可用
-  const projects = useMemo(() => {
-    if (summary?.projects?.length) return summary.projects;
+  // 选项和台数都从列表现数,理由同上:面板里写「电表 7」,点进去就得是 7 台。
+  function countBy(list: AssetDTO[], key: "project" | "assetType") {
     const m = new Map<string, number>();
-    assets.forEach(
-      (a) => a.project && m.set(a.project, (m.get(a.project) || 0) + 1),
-    );
-    return [...m].map(([value, count]) => ({ value, count }));
-  }, [assets, summary]);
-
-  const types = useMemo(() => {
-    if (summary?.assetTypes?.length) return summary.assetTypes;
-    const m = new Map<string, number>();
-    assets.forEach(
-      (a) => a.assetType && m.set(a.assetType, (m.get(a.assetType) || 0) + 1),
-    );
-    return [...m].map(([value, count]) => ({ value, count }));
-  }, [assets, summary]);
+    list.forEach((a) => a[key] && m.set(a[key], (m.get(a[key]) || 0) + 1));
+    return [...m]
+      .sort((x, y) => y[1] - x[1])
+      .map(([value, count]) => ({ value, count }));
+  }
+  const projects = useMemo(() => countBy(assets, "project"), [assets]);
+  // 【类型只列这个项目里有的】选了紫菡雅集,面板里再摆「有机房电梯 10」
+  // 就是一个点了必然为空的选项。
+  const types = useMemo(
+    () =>
+      countBy(
+        filter.project ? assets.filter((a) => a.project === filter.project) : assets,
+        "assetType",
+      ),
+    [assets, filter.project],
+  );
 
   const hasFilter = Boolean(
     filter.project || filter.assetType || filter.level || filter.today,
   );
+  // 四张卡的"其余变淡"只看卡自己那一档 —— 选了项目时四张卡一起变淡,
+  // 看着像整块失效了,其实它们只是在数这个项目。
+  const tileFiltering = Boolean(filter.level || filter.today);
 
   /** 点同一项 = 取消选择,不用另找清除按钮 */
   function pick<K extends keyof Filter>(key: K, value: Filter[K]) {
@@ -155,15 +167,18 @@ export default function LedgerPage() {
 
       <div className="scroll-area flow-body">
         {/* 概览四数,点击即筛选 */}
-        <div className={hasFilter ? "lo-row filtering" : "lo-row"}>
-          {/* 没有任何筛选时这张卡是选中态 —— 照旧版,表达"当前看的是全部"。
+        <div className={tileFiltering ? "lo-row filtering" : "lo-row"}>
+          {/* 没有按档筛时这张卡是选中态 —— 照旧版,表达"当前看的是全部"。
               少了它,四张卡在初始状态下没有一张是亮的,选中态这个语言就没有
-              起点,用户点第一下之前不知道亮起来意味着什么。 */}
+              起点,用户点第一下之前不知道亮起来意味着什么。
+              点它只退掉"档",不退项目/类型 —— 那是下面筛选栏管的。 */}
           <button
-            className={hasFilter ? "lo-card" : "lo-card on"}
-            onClick={() => setFilter({})}
+            className={tileFiltering ? "lo-card" : "lo-card on"}
+            onClick={() =>
+              setFilter((cur) => ({ project: cur.project, assetType: cur.assetType }))
+            }
           >
-            <span className={hasFilter ? "lo-num" : "lo-num blue"}>
+            <span className={tileFiltering ? "lo-num" : "lo-num blue"}>
               {stats.total}
             </span>
             {/* 旧版这里写的是"已巡设备",但 total 含未巡检设备(现在有 2 台),
@@ -208,7 +223,17 @@ export default function LedgerPage() {
                 })),
                 value: filter.project ?? "",
                 onChange: (v) =>
-                  setFilter((cur) => ({ ...cur, project: v || undefined })),
+                  setFilter((cur) => ({
+                    ...cur,
+                    project: v || undefined,
+                    // 换了项目,原来选的类型在新项目里没有的话就放掉 ——
+                    // 否则列表是空的,而栏上看不出为什么
+                    assetType:
+                      cur.assetType &&
+                      (!v || assets.some((a) => a.project === v && a.assetType === cur.assetType))
+                        ? cur.assetType
+                        : undefined,
+                  })),
               },
               {
                 label: "设备类型",

@@ -2704,6 +2704,8 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 	// 放行任意字符串的话,一个手滑就在台账里对不上任何一台设备,
 	// 而记录看着是填好的 —— 和 asset_no 要防的是同一件事。
 	originalAsset := field.AssetName
+	originalCleared := field.AssetCleared
+	releasedOther := false // 别的空格上挂着的同名被放掉了,也得写库
 	if req.AssetName != nil {
 		want := strings.TrimSpace(*req.AssetName)
 		if want != "" {
@@ -2716,8 +2718,34 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 					"这台设备不在候选里，请刷新后重选")
 				return
 			}
+			// 【一台表只能在一格上有东西】前端会把别行占着的设备变灰,但两台手机
+			// 同时改、或者连点两下,请求照样能到这里。不拦的话同一台表挂在两格上:
+			// 日报两栏写着同一个名字,台账里两个读数抢这一台,哪儿都不报错。
+			//
+			// 另一格只是挂着这个名字、照片读数都没有(比如读数被挪走后留下的空格),
+			// 那不算占用 —— 把名字从那一格上放掉,免得它在下一次读记录时又冒出来。
+			//
+			// 【按界面上显示的名字判占用】probe 里带着默认名 —— 一格没人选过、
+			// 界面上显示着「Z2能耗表」并且有照片读数,它就是被占着的,和人选的一样。
+			for i := range probe.Fields {
+				if probe.Fields[i].Code == code || strings.TrimSpace(probe.Fields[i].AssetName) != want {
+					continue
+				}
+				if readingSlotInUse(rec, &rec.Fields[i]) {
+					writeError(w, http.StatusConflict, "asset_taken",
+						"「"+want+"」已经在另一行了，先把那一行清除或换掉")
+					return
+				}
+				if strings.TrimSpace(rec.Fields[i].AssetName) == want {
+					rec.Fields[i].AssetName = ""
+					rec.Fields[i].AssetDefaulted = false
+					rec.Fields[i].Version++
+					releasedOther = true
+				}
+			}
 		}
 		field.AssetName = want
+		field.AssetDefaulted = false
 		// 清空 = 人点了「清除」,记一位下来,免得下次读记录时默认值又被猜回去。
 		// 重新选了一台就把这一位放掉,恢复成正常状态。
 		field.AssetCleared = want == ""
@@ -2774,8 +2802,15 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		field.NeedsReview = false
 		action = "correct"
 	}
-	if action == "reassign" && field.AssetName == originalAsset && req.SourceImageID == nil {
-		// 什么都没变的空请求,不必写库也不必留痕
+	if action == "reassign" && field.AssetName == originalAsset && req.SourceImageID == nil &&
+		field.AssetCleared == originalCleared && !releasedOther {
+		// 什么都没变的空请求,不必写库也不必留痕。
+		//
+		// 【"清除过"这一位也算变化】界面上显示的设备名可能是后端猜的默认值,
+		// 库里存的其实是空。对这种格子点「清除」,名字"从空改成空",原来就被
+		// 当成空请求直接返回 200 —— 清除过的标记没存下来,下次读记录默认名
+		// 又猜回来。生活水表、消防水表这种默认名对得上的格子,「清除」一直是
+		// 点了没反应。2026-09-27 本地实测到的。
 		writeJSON(w, http.StatusOK, field)
 		return
 	}
@@ -3759,7 +3794,7 @@ func buildZihanEnergyAssets(rec *Record, now time.Time) []*AssetEntry {
 				continue
 			}
 		}
-		assets = append(assets, buildAssetEntry(
+		a := buildAssetEntry(
 			rec,
 			now,
 			key,
@@ -3768,7 +3803,10 @@ func buildZihanEnergyAssets(rec *Record, now time.Time) []*AssetEntry {
 			readingAssetStatus(field, rec, name),
 			readingAssetSummary(name, fieldValue(rec.Fields, spec.FieldCode), field),
 			field,
-		))
+		)
+		// 读数历史跟着"这台表这次落在哪一格"走,和照片、状态同一格 —— 见 sourceFields
+		a.sourceFields = []string{spec.FieldCode}
+		assets = append(assets, a)
 	}
 	return assets
 }
@@ -3912,7 +3950,12 @@ func buildRecordObservations(rec *Record, assets []*AssetEntry, t time.Time) ([]
 			CreatedAt:   t,
 		})
 		var codes []string
-		if fieldMap == nil {
+		if len(a.sourceFields) > 0 {
+			// 【优先用 buildAssets 记下的那几格】抄表时现场能把一台表选到任意一格,
+			// 写死的 fieldMap 只知道"Z1 默认在第 1 格"—— 选动过就会把
+			// 另一块表的读数记到这台名下。
+			codes = a.sourceFields
+		} else if fieldMap == nil {
 			for i := range rec.Fields {
 				codes = append(codes, rec.Fields[i].Code)
 			}

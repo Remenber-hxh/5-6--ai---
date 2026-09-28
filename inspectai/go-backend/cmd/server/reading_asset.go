@@ -66,6 +66,22 @@ func (s *Server) fillReadingAssetOptions(rec *Record) {
 		byType[at] = dedupSorted(byType[at])
 	}
 
+	// 【人选过的名字,默认值不许再用】
+	//
+	// 默认值是"按字段名猜"的:第 2 格叫「Z2 能耗表读数」就猜「Z2能耗表」。
+	// 可人在第 1 格上已经把「Z2能耗表」选走了的话,第 2 格再猜一遍,
+	// 同一台表就同时挂在两格上 —— 下拉里它时灰时不灰、台账里两格读数抢一台表。
+	explicit := map[string]bool{}
+	for i := range rec.Fields {
+		f := &rec.Fields[i]
+		if _, watched := assetTypeOf[f.Code]; !watched {
+			continue
+		}
+		if name := strings.TrimSpace(f.AssetName); name != "" && !f.AssetDefaulted {
+			explicit[name] = true
+		}
+	}
+
 	for i := range rec.Fields {
 		f := &rec.Fields[i]
 		at, watched := assetTypeOf[f.Code]
@@ -86,9 +102,34 @@ func (s *Server) fillReadingAssetOptions(rec *Record) {
 		// 【人主动清掉的就别再猜回来】不判这一位的话,确认页点完「清除」
 		// 下一次刷新默认值又填回去了 —— 点了跟没点一样,接口还全程 200。
 		if cur == "" && !f.AssetCleared {
-			f.AssetName = defaultAssetForField(f.Label, opts)
+			if d := defaultAssetForField(f.Label, opts); d != "" && !explicit[d] {
+				f.AssetName = d
+				f.AssetDefaulted = true
+			}
 		}
 	}
+}
+
+// readingSlotInUse 这一格是不是真的有东西:有读数,或者挂着一张【还在这条记录里】的照片。
+//
+// 【和确认页的判据必须一致】前端据此决定哪台设备变灰、哪一格算空位。
+// 照片被删了、指针还留着的那种不算 —— 界面上根本没有那张图,
+// 算它占用的话,这台表就会莫名其妙地灰掉,而且没有任何一行能把它放掉。
+func readingSlotInUse(rec *Record, f *FieldValue) bool {
+	if f == nil {
+		return false
+	}
+	if strings.TrimSpace(f.Value) != "" {
+		return true
+	}
+	if id := strings.TrimSpace(f.SourceImageID); id != "" && rec != nil {
+		for _, img := range rec.Images {
+			if img.ID == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // defaultAssetForField 按字段名猜默认是哪台设备。
