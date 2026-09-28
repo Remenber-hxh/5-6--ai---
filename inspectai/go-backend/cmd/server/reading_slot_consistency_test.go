@@ -189,6 +189,30 @@ func TestDefaultMatchesBareMeterNumber(t *testing.T) {
 	}
 }
 
+// 【"这一栏是谁的"不随清除、不随别处选择变】消防水表那一栏被「清除」过、
+// 名字也被别的格子拿走了,它仍然是消防水表的栏 —— 前端靠这个把读数搬回来,
+// 而不是在「生活水表读数」那一栏上就地改名(2026-09-22 线上两条)。
+func TestAssetHomeSurvivesClearAndElsewherePick(t *testing.T) {
+	s, _, _ := newSwapAPIServer(t)
+	seedDefaultNamedMeters(t, s, "生活水表", "消防水表")
+	rec := &Record{
+		ID: "rec_home", TenantID: defaultTenantID, TemplateID: "zihan_energy", Project: "紫菡雅集",
+		Fields: []FieldValue{
+			{Code: "living_water_reading", Label: "生活水表读数", AssetName: "消防水表", Value: "104"},
+			{Code: "fire_water_reading", Label: "消防水表读数", AssetCleared: true, Value: "2002"},
+		},
+	}
+	s.fillReadingAssetOptions(rec)
+	living, _ := fieldByCode(rec.Fields, "living_water_reading")
+	fire, _ := fieldByCode(rec.Fields, "fire_water_reading")
+	if fire.AssetHome != "消防水表" {
+		t.Errorf("清除过的消防水表栏认不出是谁的栏了:%q", fire.AssetHome)
+	}
+	if living.AssetHome != "生活水表" {
+		t.Errorf("生活水表栏被选成了消防水表,它的栏位归属也跟着变了:%q", living.AssetHome)
+	}
+}
+
 // 【只挂着名字的空格不算占用】读数被挪走后,原来那一格还挂着「Z5」这个名字、
 // 但什么都没有。这时在别的格子上选 Z5 应该成功,并且把那个空名字放掉 ——
 // 不放掉的话,下一次读记录两格都叫 Z5。

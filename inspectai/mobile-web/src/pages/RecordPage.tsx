@@ -498,13 +498,20 @@ export default function RecordPage() {
   async function assignAsset(cur: FieldValue | null, imageId: string, assetName: string) {
     if (!rec) return;
     const holder = rec.fields.find((f) => f.assetName === assetName && slotInUse(f));
-    // 那台表自己的那一栏,空着
-    const own = rec.fields.find(
-      (f) =>
-        f.assetName === assetName &&
-        !slotInUse(f) &&
-        (f.assetOptions || []).includes(assetName),
-    );
+    // 那台表自己的那一栏。先找挂着它名字的空格;再按栏位名找(assetHome)——
+    // 【只按名字找会漏】那一栏刚被「清除」过就没名字了,找不到它,于是在别的栏上
+    // 就地改名:消防水表的读数记进「生活水表读数」那一栏,日报上写成生活水表。
+    // 按栏位名找到的那一栏可能正装着别的表的数,下面会走对调,不会顶掉它。
+    const own =
+      rec.fields.find(
+        (f) =>
+          f.assetName === assetName &&
+          !slotInUse(f) &&
+          (f.assetOptions || []).includes(assetName),
+      ) ||
+      rec.fields.find(
+        (f) => f.assetHome === assetName && (f.assetOptions || []).includes(assetName),
+      );
     // 同类型、真正空着的格子。优先没名字的、名字是猜的;人选过名字的空格排最后
     function firstFree(): FieldValue | undefined {
       const free = rec!.fields.filter(
@@ -548,14 +555,20 @@ export default function RecordPage() {
       }
 
       if (!cur) {
-        const target = own || firstFree();
+        // 自己那一栏装着别的表的数时不去动它 —— 一张还没人认领的照片,
+        // 没有东西可以和它对调
+        const target = own && !slotInUse(own) ? own : firstFree();
         if (!target) return noRoom();
         setRec(await patchFieldAssetSource(rec.id, target.code, assetName, imageId, target.version));
         return;
       }
 
       if (own && own.code !== cur.code) {
-        const next = await moveReading(rec.id, cur.code, own.code);
+        // 自己那一栏空着就搬过去;装着别的表的数就两行对调 —— 那个数回到
+        // 现在这一行,人看得见、改得了,不会被顶掉
+        const next = slotInUse(own)
+          ? await swapReadings(rec.id, cur.code, own.code)
+          : await moveReading(rec.id, cur.code, own.code);
         const moved = next.fields.find((f) => f.code === own.code);
         if (moved && (moved.assetName !== assetName || moved.assetDefaulted)) {
           await nameIt(moved);

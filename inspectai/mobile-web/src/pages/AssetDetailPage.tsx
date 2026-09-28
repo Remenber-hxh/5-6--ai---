@@ -413,7 +413,13 @@ export default function AssetDetailPage() {
                             className={"hist-kv-row" + (bad ? " is-bad" : "")}
                             key={f.code}
                           >
-                            <span className="hist-kv-k">{f.label}</span>
+                            {/* 【抄表读数不写栏位名】栏位名是日报上那一栏印的字,
+                                和"这是哪台表"不一定一致:消防水表的读数落在
+                                「生活水表读数」那一栏时,消防水表的历史里写着生活水表。
+                                这一页本来就只列这台表自己的,写「读数」就够了。 */}
+                            <span className="hist-kv-k">
+                              {f.assetOptions && f.assetOptions.length > 0 ? "读数" : f.label}
+                            </span>
                             <span className="hist-kv-v">{String(f.value)}</span>
                           </div>
                         );

@@ -99,6 +99,8 @@ func (s *Server) fillReadingAssetOptions(rec *Record) {
 			opts = dedupSorted(append(append([]string{}, opts...), cur))
 		}
 		f.AssetOptions = opts
+		// 这一栏按名字是谁的 —— 不管现在挂的是谁、清没清过(见 AssetHome)
+		f.AssetHome = defaultAssetForField(f.Label, opts)
 		// 【人主动清掉的就别再猜回来】不判这一位的话,确认页点完「清除」
 		// 下一次刷新默认值又填回去了 —— 点了跟没点一样,接口还全程 200。
 		if cur == "" && !f.AssetCleared {

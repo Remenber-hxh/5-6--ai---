@@ -161,6 +161,15 @@ type FieldValue struct {
 	// 其实 Z4 那一格照片、读数都没有。
 	// 只在返回给前端时由 fillReadingAssetOptions 填,人一选设备就置回 false。
 	AssetDefaulted bool `json:"assetDefaulted,omitempty"`
+	// AssetHome 按格子名,这一格本来是哪台表的栏(「消防水表读数」→「消防水表」)。
+	//
+	// 【和 AssetName 分开】AssetName 是"现在记的是哪台",会被人改、被「清除」;
+	// AssetHome 是日报上这一栏印着的那台,永远不变。前端靠它把读数搬回
+	// 那台表自己的栏 —— 原来找栏只看 AssetName,那一栏刚被「清除」过就找不到,
+	// 于是在别的栏上就地改名:消防水表的读数记在「生活水表读数」那一栏里,
+	// 日报上写成"生活水表读数 104"。2026-09-22 线上两条就是这么来的。
+	// 和候选一样每次现算、不落库。
+	AssetHome string `json:"assetHome,omitempty"`
 
 	// SourceImageID 这个读数是从哪张照片读出来的;Bbox 是读数区在那张图里的
 	// 位置(归一化 [左,上,右,下])。确认页据此把那一小块裁出来摆在这一行旁边。
