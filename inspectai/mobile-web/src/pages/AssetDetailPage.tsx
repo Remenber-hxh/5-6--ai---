@@ -361,10 +361,18 @@ export default function AssetDetailPage() {
               // 判据:字段上的 assetName 就是"这个读数归哪台设备"。
               // 没有 assetName 的(巡检地点、备注)是整条记录的上下文,留着 ——
               // 去掉的话这台设备的历史里连"在哪巡的"都没有了。
+              //
+              // 【没归属的读数不是"上下文"】抄表格子有设备候选(assetOptions),
+              // 现场没选是哪台就提交了的话,它的 assetName 是空的 —— 原来按
+              // "空 = 整条记录的上下文"留下,于是每台表的历史里都列着别的表的读数:
+              // 照片是这台的,读数却是另外几格的。线上电表名字(Z1…)和模板默认名
+              // (Z1能耗表)对不上、没有默认归属,这种格子很常见。
+              // 只有本来就不属于任何设备的字段(没有候选)才算上下文。
               const filled = (rec?.fields || []).filter((f) => {
                 if (String(f.value ?? "").trim() === "") return false;
                 const owner = String(f.assetName ?? "").trim();
-                return owner === "" || owner === (asset.assetName || "").trim();
+                if (owner) return owner === (asset.assetName || "").trim();
+                return !(f.assetOptions && f.assetOptions.length > 0);
               });
               return (
                 <details
