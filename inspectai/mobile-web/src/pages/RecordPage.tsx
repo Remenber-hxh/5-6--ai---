@@ -21,6 +21,7 @@ import {
   swapReadings,
   startAnalysis,
 } from "@/api/inspection";
+import { thumbURL } from "@/lib/assetCover";
 import { usePolling } from "@/hooks/usePolling";
 import { useResource } from "@/hooks/useResource";
 import { getRetakeTarget } from "@/store/retake";
@@ -718,7 +719,8 @@ export default function RecordPage() {
                 >
                   {/* 用组件库的 Image:自带加载占位、失败兜底和自动重试。
                       手写 <img> 在现场信号差时会白一片或直接裂图。 */}
-                  <Image src={p.url} radius={12} />
+                  {/* 格子里用小图,点开的查看器用 photos 里的原图 */}
+                  <Image src={thumbURL(p.url)} radius={12} />
                 </button>
               ))}
             </div>

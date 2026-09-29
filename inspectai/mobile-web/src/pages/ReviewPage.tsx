@@ -271,7 +271,17 @@ export default function ReviewPage() {
                     setViewing(i);
                   }}
                 >
-                  ⛶
+                  {/* 【画出来,不用字符】「⛶」在不少安卓字体里没有这个字形,显示成方块 */}
+                  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden>
+                    <path
+                      d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </span>
               </button>
             );

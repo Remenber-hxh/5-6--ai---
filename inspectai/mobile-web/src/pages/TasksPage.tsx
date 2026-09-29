@@ -36,9 +36,43 @@ const ORDER: Record<string, number> = { 逾期: 0, 进行中: 1, 待整改: 2 };
 
 function fmtDue(iso?: string): string {
   if (!iso) return "";
+  // 【只有日期的直接拆,不交给 Date 解析】截止日存的是 "2026-09-28",
+  // new Date() 会把它当成 UTC 零点 —— 在东八区以西的时区里就显示成前一天,
+  // 和"逾期"的判断(按字符串比日期)差一天。
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (m) return `${Number(m[2])}/${Number(m[3])} 截止`;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return `${d.getMonth() + 1}/${d.getDate()} 截止`;
+}
+
+/** 本地日历日 YYYY-MM-DD。手机在东八区,和后端算"逾期"用的那个今天一致 */
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * 这条任务在页面上归哪一档。
+ *
+ * 【逾期要自己按截止日算】后端从来不把任务状态改成「逾期」—— 常量定义了,
+ * 没有任何地方赋值。于是「逾期」那一档永远是 0,9/7 截止的任务到 9/28
+ * 还挂着「进行中」排在中间。规则和设备档案页(asset_open_items.go)一致:
+ * 在办、有截止日、截止日早于今天。没定截止日的不算 —— 说它逾期是冤枉。
+ * 只改页面上的归档和排序;开始任务时仍按真实状态走(见 start)。
+ */
+function shownStatus(t: EngineeringTaskDTO, today: string): string {
+  const due = String(t.dueAt || "").slice(0, 10);
+  if (t.status !== "逾期" && due && due < today) return "逾期";
+  return t.status;
+}
+
+/** 过了几天。只给逾期的任务用 */
+function daysLate(dueAt: string | undefined, today: string): number {
+  const due = String(dueAt || "").slice(0, 10);
+  if (!due) return 0;
+  const ms = new Date(today + "T00:00:00").getTime() - new Date(due + "T00:00:00").getTime();
+  return Math.max(0, Math.round(ms / 86_400_000));
 }
 
 // 我的任务:工程巡检任务闭环入口(旧版 sceneTasks)
@@ -119,22 +153,22 @@ export default function TasksPage() {
     );
   }
 
+  const today = todayStr();
   const sorted = tasks
     .filter((t) => CAN_START.includes(t.status))
     .sort(
       (a, b) =>
-        (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) ||
+        (ORDER[shownStatus(a, today)] ?? 3) - (ORDER[shownStatus(b, today)] ?? 3) ||
         String(a.dueAt || "9999").localeCompare(String(b.dueAt || "9999")),
     );
   // 概览数字必须从【正在渲染的这份列表】算出来,否则数字和卡片数会对不上
-  // 概览数字必须从【正在渲染的这份列表】算出来,否则数字和卡片数会对不上
   const counts: Record<string, number> = {};
   for (const st of CAN_START)
-    counts[st] = sorted.filter((t) => t.status === st).length;
+    counts[st] = sorted.filter((t) => shownStatus(t, today) === st).length;
 
   // 点中某一档时列表只留那一档;数字本身不跟着变 —— 它们是"总共有多少",
   // 跟着变的话点一下别的档就看不到了,等于把筛选入口自己关掉。
-  const shown = pick ? sorted.filter((t) => t.status === pick) : sorted;
+  const shown = pick ? sorted.filter((t) => shownStatus(t, today) === pick) : sorted;
 
   return (
     <div className="flow-screen">
@@ -239,9 +273,13 @@ export default function TasksPage() {
               return (
                 <article className="task-card" key={t.id}>
                   <div className="task-card-head">
-                    <StatusTag text={t.status || "待执行"} />
+                    <StatusTag text={shownStatus(t, today) || "待执行"} />
                     {t.dueAt && (
-                      <span className="task-due">{fmtDue(t.dueAt)}</span>
+                      <span className={shownStatus(t, today) === "逾期" ? "task-due is-late" : "task-due"}>
+                        {shownStatus(t, today) === "逾期" && daysLate(t.dueAt, today) > 0
+                          ? `已过 ${daysLate(t.dueAt, today)} 天 · ${fmtDue(t.dueAt)}`
+                          : fmtDue(t.dueAt)}
+                      </span>
                     )}
                   </div>
                   <div className="task-title">{title}</div>

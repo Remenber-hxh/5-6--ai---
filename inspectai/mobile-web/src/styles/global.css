@@ -1859,9 +1859,16 @@
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
-  font-size: 11px;
-  line-height: 22px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 【点击区比看上去大】22px 的角标,手指按下去常常落在旁边的照片上 ——
+   本想看大图,结果把这张取消选中了。看起来不变,能点的范围扩到 38px。 */
+.cell-zoom::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 /* ===== ICP 备案号:钉在本屏底部,不参与卡片居中(与旧版一致) ===== */
@@ -2564,6 +2571,12 @@ a {
   font-size: 11px;
   color: var(--lt-fg-2);
 }
+/* 过了截止日:红字写明过了几天 —— 灰字的"9/7 截止"在 9/28 看起来和
+   "下周截止"一模一样,人要自己在脑子里算日期 */
+.task-due.is-late {
+  color: var(--ios-red);
+  font-weight: 600;
+}
 .task-title {
   font-size: 16px;
   font-weight: 600;
@@ -2764,6 +2777,7 @@ a {
   gap: 6px;
 }
 .sel-btn {
+  position: relative;
   padding: 5px 11px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
@@ -2771,6 +2785,12 @@ a {
   color: var(--ink-2);
   font-size: 11px;
   font-weight: 600;
+}
+/* 看上去 28px 高的小药丸,能点的范围扩到 44px —— 戴手套也按得中 */
+.sel-btn::before {
+  content: "";
+  position: absolute;
+  inset: -8px -4px;
 }
 .sel-btn:active {
   background: rgba(255, 255, 255, 0.08);
@@ -3373,6 +3393,13 @@ a {
   color: var(--lt-fg-2);
   flex: none;
 }
+/* 栏名下面一小行:这个数实际记在哪台表名下(和栏名不一致时才出现) */
+.pv-k-asset {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--brand);
+}
 .pv-v {
   font-size: 14px;
   color: var(--lt-fg);
@@ -3746,12 +3773,19 @@ a {
 /* 登录页密码小眼睛。旧版验收清单点名要有 ——
    现场戴手套、强光下打错密码很常见,没有它只能反复清空重来。 */
 .pwd-eye {
+  position: relative;
   padding: 4px 8px;
   border: 0;
   background: transparent;
   color: var(--tech-jade);
   font-size: 12px;
   cursor: pointer;
+}
+/* 「显示」两个字只有 30px 高,扩大能点的范围,样子不变 */
+.pwd-eye::before {
+  content: "";
+  position: absolute;
+  inset: -7px -4px;
 }
 
 /* ===== 底部常驻导航 =====
@@ -5012,6 +5046,13 @@ a {
   color: var(--lt-fg-2);
   /* 日期和"已填 3/8 项"要对得齐,不然一列数字看着是歪的 */
   font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 4px;
+}
+/* 一段之内不折行:换行只发生在两段之间(见 DraftList.tsx) */
+.draft-meta-seg {
+  white-space: nowrap;
 }
 .draft-actions {
   flex: none;

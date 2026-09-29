@@ -75,12 +75,24 @@ export default function DraftList() {
               {d.assetNo ? `${d.assetNo} · ` : ""}
               {d.templateName || "巡检记录"}
             </div>
+            {/* 【每一段各自不折行,点挂在前一段末尾】原来是一整串字,360 宽的安卓机上
+                在「·」前面断开,第二行以「· 已填 6/8 项」开头,每一行都是。
+                拆成几段、段内不折,点跟着前一段走 —— 要换行只会换在点后面。 */}
             <div className="draft-meta">
-              {d.createdAt}
-              {d.imageCount > 0 && ` · ${d.imageCount} 张照片`}
-              {/* 【填了几项要说出来】只给时间戳的话,人分不清"刚建的空壳"
-                  和"就差点提交" —— 而这两种该做的事完全相反。 */}
-              {d.fieldsTotal > 0 && ` · 已填 ${d.fieldsFilled}/${d.fieldsTotal} 项`}
+              {[
+                d.createdAt,
+                d.imageCount > 0 ? `${d.imageCount} 张照片` : "",
+                // 【填了几项要说出来】只给时间戳的话,人分不清"刚建的空壳"
+                // 和"就差点提交" —— 而这两种该做的事完全相反。
+                d.fieldsTotal > 0 ? `已填 ${d.fieldsFilled}/${d.fieldsTotal} 项` : "",
+              ]
+                .filter(Boolean)
+                .map((seg, i, all) => (
+                  <span key={i} className="draft-meta-seg">
+                    {seg}
+                    {i < all.length - 1 ? " ·" : ""}
+                  </span>
+                ))}
             </div>
           </div>
           <div className="draft-actions">

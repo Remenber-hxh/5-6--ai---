@@ -13,7 +13,22 @@ export function coverURL(a: Pick<AssetDTO, "coverImage">): string | null {
   if (!raw) return null;
   const i = raw.indexOf("/storage/");
   if (i < 0) return null;
-  return "/storage/" + encodeURI(raw.substring(i + "/storage/".length));
+  return thumbURL("/storage/" + encodeURI(raw.substring(i + "/storage/".length)));
+}
+
+/**
+ * 小图地址:后端按 ?w= 出缩略图并落盘缓存(见 go-backend image_thumb.go)。
+ *
+ * 【为什么列表里一律用它】台账一屏 22 张封面,引的全是原图 —— 实测前 8 张
+ * 就有 20.7 MB(有 PNG 单张 11 MB),缩略图一共 118 KB。机房里 4G 一格信号,
+ * 用户看到的就是一排灰框。框只有 60~80px 宽,240 在 3 倍屏上也够。
+ *
+ * 【只给"只看不放大"的地方用】点开看大图的查看器、按读数区裁剪的特写
+ * 要原图的分辨率,别传进来。
+ */
+export function thumbURL(url: string, w: 120 | 240 | 480 = 240): string {
+  if (!url || !url.startsWith("/storage/")) return url;
+  return url + (url.includes("?") ? "&" : "?") + "w=" + w;
 }
 
 /**

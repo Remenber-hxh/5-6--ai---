@@ -147,12 +147,24 @@ export default function PreviewPage() {
 
         {/* 字段汇总:只读,要改回上一步 */}
         <div className="pv-card">
-          {rec.fields.map((f) => (
-            <div className="pv-row" key={f.code}>
-              <span className="pv-k">{f.label}</span>
-              <span className="pv-v">{f.value || "-"}</span>
-            </div>
-          ))}
+          {rec.fields.map((f) => {
+            // 【这一栏记的不是栏名上那台表时,要说出来】日报栏位是固定的(Z1~Z4、两个水表),
+            // 台账里多出来的表(比如 Z5)只能借一栏记。只写栏名的话,提交前看到的是
+            // 「Z4 能耗表读数 20184018」—— 其实这个数记在 Z5 名下。
+            const other =
+              f.value && f.assetName && f.assetHome && f.assetName !== f.assetHome
+                ? f.assetName
+                : "";
+            return (
+              <div className="pv-row" key={f.code}>
+                <span className="pv-k">
+                  {f.label}
+                  {other && <span className="pv-k-asset">记到 {other}</span>}
+                </span>
+                <span className="pv-v">{f.value || "-"}</span>
+              </div>
+            );
+          })}
         </div>
 
         {rec.aiSummary && (

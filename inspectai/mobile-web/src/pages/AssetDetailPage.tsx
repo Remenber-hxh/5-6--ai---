@@ -8,7 +8,7 @@ import AssetTypeIcon from "@/components/AssetTypeIcon";
 import CenterLoading from "@/components/CenterLoading";
 import FlowHeader from "@/components/FlowHeader";
 import StatusTag from "@/components/StatusTag";
-import { coverURL } from "@/lib/assetCover";
+import { coverURL, thumbURL } from "@/lib/assetCover";
 import {
   AssetSnapshotDTO,
   RecordDTO,
@@ -396,7 +396,8 @@ export default function AssetDetailPage() {
                     <div className="hist-photos">
                       {photos.map((ph) => (
                         <span className="hist-thumb" key={ph.key}>
-                          <Image src={ph.url} radius={8} />
+                          {/* 历史格子只看不放大,用小图 —— 一页十几条历史,原图能到几十 MB */}
+                          <Image src={thumbURL(ph.url)} radius={8} />
                         </span>
                       ))}
                     </div>

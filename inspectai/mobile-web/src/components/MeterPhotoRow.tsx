@@ -2,6 +2,7 @@ import { Picker } from "@/ui";
 import { useEffect, useRef, useState } from "react";
 
 import ReadingCrop from "@/components/ReadingCrop";
+import { thumbURL } from "@/lib/assetCover";
 import type { FieldValue } from "@/api/inspection";
 
 // ===== 抄表:一张照片 = 一行 =====
@@ -107,7 +108,8 @@ export default function MeterPhotoRow({
             <ReadingCrop url={photoUrl} bbox={field.bbox} onOpen={onOpenPhoto} />
           ) : (
             <button className="mpr-photo" onClick={onOpenPhoto} aria-label={`看第 ${index} 张大图`}>
-              <img src={photoUrl} alt="" loading="lazy" />
+              {/* 76×46 的格子用小图;读数区特写(上面 ReadingCrop)要原图的分辨率,不换 */}
+              <img src={thumbURL(photoUrl)} alt="" loading="lazy" />
             </button>
           )}
         </span>
