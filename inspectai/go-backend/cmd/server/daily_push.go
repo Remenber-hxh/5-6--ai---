@@ -198,11 +198,12 @@ func (s *Server) handleDailyPushPreview(w http.ResponseWriter, r *http.Request) 
 		if kv, kvErr := s.store.ListAppSettings(); kvErr == nil {
 			global := dailyPushConfigFrom(kv)
 			cn := now.In(cnLoc)
-			if cal := s.workCalendarOn(dayStamp(cn)); !runsOnDay(global.Weekdays, isoWeekday(int(cn.Weekday())), cal) {
+			wd := isoWeekday(int(cn.Weekday()))
+			if cal := s.workCalendarOn(dayStamp(cn)); !runsOnDay(global.Weekdays, global.FollowCalendar, wd, cal) {
 				d.WouldSend = false
 				d.SkipReason = "今天不在推送日内"
-				if cal.Kind == workDayOff {
-					d.SkipReason = "今天" + cal.Name + "放假,按法定工作日推送"
+				if skippedForHoliday(global.Weekdays, global.FollowCalendar, wd, cal) {
+					d.SkipReason = "今天" + cal.Name + "放假,跳过法定节假日"
 				}
 			}
 		}
@@ -275,10 +276,10 @@ func describeBotPushToday(global, eff dailyPushConfig, d dailyPushDigest, ready 
 		return "off", "自动推送还没开 —— 开启后,今天 " + eff.HourMin + " 会发出下面这条"
 	case !eff.Enabled:
 		return "paused", "这个群已暂停推送,今天不发"
-	case !runsOnDay(eff.Weekdays, isoWeekday(int(now.Weekday())), cal):
+	case !runsOnDay(eff.Weekdays, eff.FollowCalendar, isoWeekday(int(now.Weekday())), cal):
 		// 【放假不发要说是放假】只说"不在推送日内",人会去查是不是勾错了周几
-		if cal.Kind == workDayOff {
-			return "weekday", "今天" + cal.Name + "放假,这个群按法定工作日推送,不发"
+		if skippedForHoliday(eff.Weekdays, eff.FollowCalendar, isoWeekday(int(now.Weekday())), cal) {
+			return "weekday", "今天" + cal.Name + "放假,这个群跳过法定节假日,不发"
 		}
 		return "weekday", "今天不在这个群的推送日内,不发"
 	case lastDay == now.Format("2006-01-02"):
@@ -389,7 +390,7 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 		c := dailyPushConfigFrom(kv)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"enabled": c.Enabled, "time": c.HourMin, "weekdays": c.Weekdays,
-			"silentWhenDone": c.SilentWhenDone,
+			"silentWhenDone": c.SilentWhenDone, "followCalendar": c.FollowCalendar,
 			// 【把"通道通不通"一起告诉前端】没配 webhook 的话,开关打开了也发不出去。
 			// 不说的话用户会打开开关、等到第二天、然后来问"为什么没发"。
 			"botReady": s.weworkBot != nil && s.weworkBot.Enabled(),
@@ -404,6 +405,7 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 		Time           string `json:"time"`
 		Weekdays       string `json:"weekdays"`
 		SilentWhenDone bool   `json:"silentWhenDone"`
+		FollowCalendar bool   `json:"followCalendar"`
 		// Bots 各个群自己的单独设置。
 		//
 		// 【不传 = 一个群的设置都别动】老版本后台发上来的请求里没有这个字段,
@@ -427,7 +429,9 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := dailyPushConfig{
 		Enabled: req.Enabled, HourMin: strings.TrimSpace(req.Time),
 		Weekdays: strings.TrimSpace(req.Weekdays), SilentWhenDone: req.SilentWhenDone,
+		FollowCalendar: req.FollowCalendar,
 	}
+	cfg.Weekdays, cfg.FollowCalendar = normalizeDayRule(cfg.Weekdays, cfg.FollowCalendar)
 	settings := cfg.toSettings()
 
 	// 【单独设置和全局设置一起存】分两次写的话,中间失败会留下
@@ -452,7 +456,7 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordOperation(r, "daily_push_config", "app_settings", keyPushEnabled, map[string]any{
 		"enabled": cfg.Enabled, "time": cfg.HourMin, "weekdays": cfg.Weekdays,
-		"bots": len(req.Bots),
+		"followCalendar": cfg.FollowCalendar, "bots": len(req.Bots),
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -467,11 +471,12 @@ type botConfigReq struct {
 	Time           *string `json:"time"`
 	Weekdays       *string `json:"weekdays"`
 	SilentWhenDone *bool   `json:"silentWhenDone"`
+	FollowCalendar *bool   `json:"followCalendar"`
 }
 
 // toOverride 校验并转成存库的形状。第二个返回值非空 = 这份设置有问题。
 func (b botConfigReq) toOverride() (dailyPushOverride, string) {
-	o := dailyPushOverride{Enabled: b.Enabled, SilentWhenDone: b.SilentWhenDone}
+	o := dailyPushOverride{Enabled: b.Enabled, SilentWhenDone: b.SilentWhenDone, FollowCalendar: b.FollowCalendar}
 	if b.Time != nil {
 		t := strings.TrimSpace(*b.Time)
 		if !validHourMin(t) {
@@ -486,6 +491,7 @@ func (b botConfigReq) toOverride() (dailyPushOverride, string) {
 		}
 		o.Weekdays = &wd
 	}
+	o.normalizeLegacyWorkday()
 	return o, ""
 }
 
@@ -577,6 +583,7 @@ func (s *Server) botConfigViews(kv map[string]string, tenantID string) []map[str
 			"override": map[string]any{
 				"enabled": o.Enabled, "time": o.HourMin,
 				"weekdays": o.Weekdays, "silentWhenDone": o.SilentWhenDone,
+				"followCalendar": o.FollowCalendar,
 			},
 			// effective:全局和覆盖合并之后,这个群实际用的那套。
 			// 【必须一起给】只给覆盖值的话,页面上一个群写着"18:30"、
@@ -584,6 +591,7 @@ func (s *Server) botConfigViews(kv map[string]string, tenantID string) []map[str
 			"effective": map[string]any{
 				"enabled": eff.Enabled, "time": eff.HourMin,
 				"weekdays": eff.Weekdays, "silentWhenDone": eff.SilentWhenDone,
+				"followCalendar": eff.FollowCalendar,
 			},
 		})
 	}

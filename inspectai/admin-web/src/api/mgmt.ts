@@ -337,11 +337,10 @@ export interface EngineeringPlan {
   riskLevel?: string;
   /** yearly / monthly / weekly / daily / adhoc(临时,对外部项目组) */
   planType?: string;
-  /**
-   * 每日计划专用,执行日三选一:空 = 每天;"1,2,3,4,5" = 按星期(1=周一 … 7=周日);
-   * "workday" = 法定工作日(按工作日历跳过节假日,调休上班照常)
-   */
+  /** 每日计划专用:一周哪几天执行,"1,2,3,4,5"(1=周一 … 7=周日)。空=每天 */
   weekdays?: string;
+  /** 跳过法定节假日:按工作日历,放假不执行,调休上班照常 */
+  followCalendar?: boolean;
   /** 每日计划要巡的设备。完成情况按它自动判定,所以每日计划必填 */
   assetIds?: string[];
 }
@@ -539,6 +538,7 @@ export interface DailyPushBotOverride {
   time: string | null;
   weekdays: string | null;
   silentWhenDone: boolean | null;
+  followCalendar: boolean | null;
 }
 
 export interface DailyPushBot {
@@ -567,7 +567,13 @@ export interface DailyPushBot {
    * 【后端算好给过来,前端不自己合并】两边各算一遍的话,迟早出现
    * 页面显示 18:30、实际 17:00 发,而两边都说自己是对的。
    */
-  effective: { enabled: boolean; time: string; weekdays: string; silentWhenDone: boolean };
+  effective: {
+    enabled: boolean;
+    time: string;
+    weekdays: string;
+    silentWhenDone: boolean;
+    followCalendar: boolean;
+  };
 }
 
 export interface DailyPushConfig {
@@ -575,6 +581,8 @@ export interface DailyPushConfig {
   time: string;
   weekdays: string;
   silentWhenDone: boolean;
+  /** 跳过法定节假日 */
+  followCalendar: boolean;
   /** 企微群机器人配没配。没配的话开关打开了也发不出去 —— 界面必须先说 */
   botReady?: boolean;
   timezone?: string;
@@ -591,6 +599,7 @@ export function saveDailyPushConfig(c: {
   time: string;
   weekdays: string;
   silentWhenDone: boolean;
+  followCalendar: boolean;
   /** 不传 = 一个群的单独设置都不动 */
   bots?: ({ index: number } & Partial<DailyPushBotOverride>)[];
 }) {
@@ -1468,8 +1477,8 @@ export const WEEKDAY_OPTIONS = [
 
 // ===== 工作日历 =====
 //
-// 只存特殊的日子:放假(off)和调休上班(on)。没录的日子按周一到周五算。
-// 只有执行日选了「法定工作日」的计划和推送群才看它。
+// 只存特殊的日子:放假(off)和调休上班(on)。没录的日子只看星期。
+// 只有打开了「跳过法定节假日」的计划和推送群才看它。
 
 export interface WorkCalendarDay {
   date: string; // 2026-10-01

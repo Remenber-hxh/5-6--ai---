@@ -26,7 +26,7 @@ import {
 } from "../api/mgmt";
 import CoverageCard from "../components/CoverageCard";
 import DailyPushPreview from "../components/DailyPushPreview";
-import DayRulePicker, { DAY_RULE_WORKDAY, dayRuleText } from "../components/DayRulePicker";
+import DayRulePicker, { dayRuleText, toDayRule } from "../components/DayRulePicker";
 import TodayInspection from "../components/TodayInspection";
 import WorkCalendarModal from "../components/WorkCalendarModal";
 import { C } from "../styles/tokens";
@@ -844,7 +844,7 @@ export default function Plan() {
                         width: 150,
                         render: (_: unknown, p: EngineeringPlan) => {
                           // 空 = 每天。说"每天"而不是留空 —— 留空会被当成"没配好"
-                          const text = dayRuleText(p.weekdays);
+                          const text = dayRuleText(p.weekdays, p.followCalendar);
                           return text === "每天" || text === "法定工作日" ? <Tag color="blue">{text}</Tag> : <span>{text}</span>;
                         },
                       },
@@ -1098,7 +1098,7 @@ export default function Plan() {
                       // 执行日和设备清单全被清空 —— 而且没有任何提示,
                       // 表现是"我只改了个负责人,第二天提醒就不来了"。
                       planType: selPlan.planType || "adhoc",
-                      weekdays: selPlan.weekdays || "",
+                      dayRule: toDayRule(selPlan.weekdays, selPlan.followCalendar),
                       assetIds: selPlan.assetIds || [],
                     });
                   }}
@@ -1140,7 +1140,7 @@ export default function Plan() {
         onOk={async () => {
           const v = await form.validateFields();
           try {
-            const { planRange, owners: ownerFormValues, ...rest } = v;
+            const { planRange, owners: ownerFormValues, dayRule, ...rest } = v;
             const [start, end] = (planRange as PlanRange) || [];
             // 【编辑时以原记录打底】后端保存是整行覆盖(upsert 把每一列都写成
             // 传来的值),表单没管到的列会被写成空。原来只传了表单里那几项,
@@ -1165,6 +1165,8 @@ export default function Plan() {
               owners: formValuesToOwners(ownerFormValues as string[] | undefined, users),
               ownerName: "",
               ownerId: "",
+              // 执行日:星期 + 跳不跳法定节假日。不是每日计划时表单里没有这一项,原样不带
+              ...(dayRule ? { weekdays: dayRule.weekdays, followCalendar: dayRule.followCalendar } : {}),
               planStart: dateOut(start, base?.planStart),
               planEnd: dateOut(end, base?.planEnd),
             };
@@ -1246,21 +1248,12 @@ export default function Plan() {
               getFieldValue("planType") === "daily" ? (
                 <>
                   {/* 【和推送群用同一个选择器】见 DayRulePicker */}
-                  <Form.Item noStyle shouldUpdate={(a, b) => a.weekdays !== b.weekdays}>
-                    {({ getFieldValue: get }) => (
-                      <Form.Item
-                        name="weekdays"
-                        label="执行日"
-                        initialValue=""
-                        extra={
-                          get("weekdays") === DAY_RULE_WORKDAY
-                            ? "按工作日历跳过节假日,调休上班照常"
-                            : undefined
-                        }
-                      >
-                        <DayRulePicker />
-                      </Form.Item>
-                    )}
+                  <Form.Item
+                    name="dayRule"
+                    label="执行日"
+                    initialValue={toDayRule("", false)}
+                  >
+                    <DayRulePicker />
                   </Form.Item>
                   {/* 【每日计划必须指定设备】完成情况是按设备自动判定的
                       (这些设备今天有没有巡检记录)。没有清单就永远算不出完成率,

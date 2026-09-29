@@ -30,11 +30,27 @@ type dailyPushOverride struct {
 	HourMin        *string `json:"time,omitempty"`
 	Weekdays       *string `json:"weekdays,omitempty"`
 	SilentWhenDone *bool   `json:"silentWhenDone,omitempty"`
+	FollowCalendar *bool   `json:"followCalendar,omitempty"`
 }
 
 // IsEmpty 一项都没设 —— 存的时候直接存空串,别往库里塞一个 "{}"。
 func (o dailyPushOverride) IsEmpty() bool {
-	return o.Enabled == nil && o.HourMin == nil && o.Weekdays == nil && o.SilentWhenDone == nil
+	return o.Enabled == nil && o.HourMin == nil && o.Weekdays == nil && o.SilentWhenDone == nil &&
+		o.FollowCalendar == nil
+}
+
+// normalizeLegacyWorkday 第一版的「法定工作日」存成 weekdays="workday"。
+// 换算成 周一到周五 + 跳过节假日;人明确设过跳不跳的,以人设的为准。
+func (o *dailyPushOverride) normalizeLegacyWorkday() {
+	if o.Weekdays == nil || strings.TrimSpace(*o.Weekdays) != dayRuleWorkday {
+		return
+	}
+	wd := "1,2,3,4,5"
+	o.Weekdays = &wd
+	if o.FollowCalendar == nil {
+		t := true
+		o.FollowCalendar = &t
+	}
 }
 
 // botOverrideKey 第 N 个群的设置存在哪个键。
@@ -63,6 +79,7 @@ func parseDailyPushOverride(raw string) dailyPushOverride {
 	if o.HourMin != nil && !validHourMin(*o.HourMin) {
 		o.HourMin = nil
 	}
+	o.normalizeLegacyWorkday()
 	return o
 }
 
@@ -99,6 +116,9 @@ func dailyPushConfigForBot(kv map[string]string, index int) dailyPushConfig {
 	}
 	if o.SilentWhenDone != nil {
 		c.SilentWhenDone = *o.SilentWhenDone
+	}
+	if o.FollowCalendar != nil {
+		c.FollowCalendar = *o.FollowCalendar
 	}
 	return c
 }

@@ -41,15 +41,18 @@ type dailyPushConfig struct {
 	HourMin string
 	// Weekdays "1,2,3,4,5";空 = 每天
 	Weekdays string
+	// FollowCalendar 跳过法定节假日:放假不发,调休上班照常发(见 work_calendar.go)
+	FollowCalendar bool
 	// SilentWhenDone 今天全巡完了就不发
 	SilentWhenDone bool
 }
 
 const (
-	keyPushEnabled  = "daily_push.enabled"
-	keyPushTime     = "daily_push.time"
-	keyPushWeekdays = "daily_push.weekdays"
-	keyPushSilent   = "daily_push.silent_when_done"
+	keyPushEnabled   = "daily_push.enabled"
+	keyPushTime      = "daily_push.time"
+	keyPushWeekdays  = "daily_push.weekdays"
+	keyPushFollowCal = "daily_push.follow_calendar"
+	keyPushSilent    = "daily_push.silent_when_done"
 )
 
 func defaultDailyPushConfig() dailyPushConfig {
@@ -77,6 +80,10 @@ func dailyPushConfigFrom(kv map[string]string) dailyPushConfig {
 	if v, ok := kv[keyPushSilent]; ok {
 		c.SilentWhenDone = v == "1" || strings.EqualFold(v, "true")
 	}
+	if v, ok := kv[keyPushFollowCal]; ok {
+		c.FollowCalendar = v == "1" || strings.EqualFold(v, "true")
+	}
+	c.Weekdays, c.FollowCalendar = normalizeDayRule(c.Weekdays, c.FollowCalendar)
 	return c
 }
 
@@ -88,10 +95,11 @@ func (c dailyPushConfig) toSettings() map[string]string {
 		return "0"
 	}
 	return map[string]string{
-		keyPushEnabled:  b(c.Enabled),
-		keyPushTime:     c.HourMin,
-		keyPushWeekdays: c.Weekdays,
-		keyPushSilent:   b(c.SilentWhenDone),
+		keyPushEnabled:   b(c.Enabled),
+		keyPushTime:      c.HourMin,
+		keyPushWeekdays:  c.Weekdays,
+		keyPushSilent:    b(c.SilentWhenDone),
+		keyPushFollowCal: b(c.FollowCalendar),
 	}
 }
 
@@ -118,7 +126,7 @@ func parseHourMin(v string) (int, int) {
 
 // shouldFireDailyPush 现在该不该发。
 //
-// now 传的是【东八区】的时间;cal 是今天在工作日历里的记录(执行日选「法定工作日」时才看);
+// now 传的是【东八区】的时间;cal 是今天在工作日历里的记录(打开「跳过法定节假日」才看);
 // lastDay 是 push_log 里最近一次占位的日期。
 //
 // 【补发窗口 catchUpMinutes】容器 17:30 才起来,17:00 那一次没发。
@@ -135,7 +143,7 @@ func shouldFireDailyPush(c dailyPushConfig, now time.Time, cal WorkCalendarDay, 
 		return false, "今天已经发过"
 	}
 	wd := isoWeekday(int(now.Weekday()))
-	if !runsOnDay(c.Weekdays, wd, cal) {
+	if !runsOnDay(c.Weekdays, c.FollowCalendar, wd, cal) {
 		return false, "今天不在推送日内"
 	}
 	h, m := parseHourMin(c.HourMin)

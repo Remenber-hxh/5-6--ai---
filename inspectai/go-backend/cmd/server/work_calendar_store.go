@@ -34,6 +34,26 @@ func (s *SQLiteStore) migWorkCalendar() error {
 	return nil
 }
 
+// migPlanFollowCalendar — 041:每日计划可以"跳过法定节假日"。
+//
+// 【默认 0 = 不跳过】存量计划一条都不变,节假日照常。第一版存成
+// weekdays="workday" 的,读的时候由 normalizeDayRule 换算,不在这里回填 ——
+// 回填和读取各算一遍,规则稍有出入两边就会不一致。
+func (s *SQLiteStore) migPlanFollowCalendar() error {
+	exists, err := s.hasColumn("engineering_plan_items", "follow_calendar")
+	if err != nil {
+		return fmt.Errorf("inspect engineering_plan_items.follow_calendar: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := s.db.Exec(
+		`ALTER TABLE engineering_plan_items ADD COLUMN follow_calendar INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("add engineering_plan_items.follow_calendar: %w", err)
+	}
+	return nil
+}
+
 // ListWorkCalendar from/to 都是 "2006-01-02",含两头。日期按字符串比较就是按时间比较。
 func (s *SQLiteStore) ListWorkCalendar(from, to string) ([]WorkCalendarDay, error) {
 	rows, err := s.db.Query(

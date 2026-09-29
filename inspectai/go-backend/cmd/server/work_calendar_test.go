@@ -12,38 +12,126 @@ import (
 // 2026-09-28:国庆前问到"放假和调休怎么办"。原来只认周几 —— 放假照样列待巡、
 // 照样推"还差 N 台";调休上班的周六,只勾了周一到周五的反而不推。
 
-func TestWorkdayRuleFollowsCalendar(t *testing.T) {
+// 星期和"跳过法定节假日"是两个独立的设置,可以任意组合。
+func TestDayRuleCombinesWeekdaysAndCalendar(t *testing.T) {
 	off := WorkCalendarDay{Kind: workDayOff, Name: "国庆节"}
 	on := WorkCalendarDay{Kind: workDayOn, Name: "国庆节"}
+	none := WorkCalendarDay{}
 	cases := []struct {
 		name     string
 		weekdays string
+		follow   bool
 		wd       int
 		cal      WorkCalendarDay
 		want     bool
 	}{
-		{"平常的周一", dayRuleWorkday, 1, WorkCalendarDay{}, true},
-		{"平常的周六", dayRuleWorkday, 6, WorkCalendarDay{}, false},
-		{"放假的周四", dayRuleWorkday, 4, off, false},
-		{"调休上班的周六", dayRuleWorkday, 6, on, true},
-		// 【没选法定工作日的不受日历影响】机房、泵房节假日照样要巡
-		{"每天:放假也执行", "", 4, off, true},
-		{"按星期:放假也执行", "1,2,3,4,5", 4, off, true},
-		{"按星期:调休周六不因日历执行", "1,2,3,4,5", 6, on, false},
+		// 周一到周五 + 跳过 = 通常说的法定工作日
+		{"工作日:平常的周一", "1,2,3,4,5", true, 1, none, true},
+		{"工作日:平常的周六", "1,2,3,4,5", true, 6, none, false},
+		{"工作日:放假的周四", "1,2,3,4,5", true, 4, off, false},
+		{"工作日:调休上班的周六", "1,2,3,4,5", true, 6, on, true},
+		// 六天班
+		{"周一到周六:平常的周六", "1,2,3,4,5,6", true, 6, none, true},
+		{"周一到周六:放假的周六", "1,2,3,4,5,6", true, 6, off, false},
+		// 平时天天推,放假才停
+		{"每天+跳过:平常的周日", "", true, 7, none, true},
+		{"每天+跳过:放假的周日", "", true, 7, off, false},
+		// 调休上班那天按上班日算,不管勾没勾那个星期
+		{"一三五+跳过:调休上班的周六", "1,3,5", true, 6, on, true},
+		// 【没打开跳过的不受日历影响】机房、泵房节假日照样要巡
+		{"每天:放假也执行", "", false, 4, off, true},
+		{"周一到周五:放假也执行", "1,2,3,4,5", false, 4, off, true},
+		{"周一到周五:调休周六不因日历执行", "1,2,3,4,5", false, 6, on, false},
+		// 第一版的老写法
+		{"老写法 workday:平常的周六", dayRuleWorkday, false, 6, none, false},
+		{"老写法 workday:放假的周四", dayRuleWorkday, false, 4, off, false},
+		{"老写法 workday:调休上班的周六", dayRuleWorkday, false, 6, on, true},
 	}
 	for _, c := range cases {
-		if got := runsOnDay(c.weekdays, c.wd, c.cal); got != c.want {
+		if got := runsOnDay(c.weekdays, c.follow, c.wd, c.cal); got != c.want {
 			t.Errorf("%s: 得到 %v,应该是 %v", c.name, got, c.want)
 		}
 	}
 }
 
-func TestWorkdayRuleIsAValidWeekdaysValue(t *testing.T) {
+// 【"因为放假"只算按星期本来要执行的】周一到周五的计划碰上放假的周六,
+// 本来就不排 —— 不能数进"N 条因放假不巡"里。
+func TestSkippedForHolidayOnlyCountsScheduledDays(t *testing.T) {
+	off := WorkCalendarDay{Kind: workDayOff}
+	if !skippedForHoliday("1,2,3,4,5", true, 4, off) {
+		t.Error("放假的周四,周一到周五 + 跳过的计划应该算因放假不巡")
+	}
+	if skippedForHoliday("1,2,3,4,5", true, 6, off) {
+		t.Error("放假的周六,周一到周五的计划本来就不排,不该算因放假不巡")
+	}
+	if skippedForHoliday("1,2,3,4,5", false, 4, off) {
+		t.Error("没打开跳过节假日的,放假照常执行,不该算因放假不巡")
+	}
+}
+
+func TestLegacyWorkdayIsStillAValidWeekdaysValue(t *testing.T) {
 	if msg := validWeekdays(dayRuleWorkday); msg != "" {
-		t.Fatalf("「法定工作日」被当成了脏值:%s", msg)
+		t.Fatalf("老写法「法定工作日」被当成了脏值:%s —— 老版本后台发上来的保存会被拒", msg)
 	}
 	if msg := validWeekdays("workdays"); msg == "" {
 		t.Fatal("拼错的规则名被放过了 —— 存进去之后这条计划永远不执行,而且不报错")
+	}
+}
+
+// 【线上已经存了老写法】全局和两个群都设过「法定工作日」(weekdays="workday"),
+// 读出来要变成 周一到周五 + 跳过节假日,页面上才显示得对、再次保存才不丢。
+func TestLegacyWorkdayPushSettingsAreConverted(t *testing.T) {
+	kv := map[string]string{
+		keyPushWeekdays:   dayRuleWorkday,
+		botOverrideKey(1): `{"weekdays":"workday"}`,
+		botOverrideKey(2): `{"weekdays":"workday","followCalendar":false}`,
+	}
+	g := dailyPushConfigFrom(kv)
+	if g.Weekdays != "1,2,3,4,5" || !g.FollowCalendar {
+		t.Fatalf("全局老写法没换算:%q follow=%v", g.Weekdays, g.FollowCalendar)
+	}
+	o1 := parseDailyPushOverride(kv[botOverrideKey(1)])
+	if o1.Weekdays == nil || *o1.Weekdays != "1,2,3,4,5" || o1.FollowCalendar == nil || !*o1.FollowCalendar {
+		t.Fatalf("群的老写法没换算:%+v", o1)
+	}
+	// 人明确关掉了跳过节假日的,以人设的为准
+	if c := dailyPushConfigForBot(kv, 2); c.Weekdays != "1,2,3,4,5" || c.FollowCalendar {
+		t.Fatalf("明确设了不跳过的被改回了跳过:%q follow=%v", c.Weekdays, c.FollowCalendar)
+	}
+	// 群没设跳不跳,跟全局走
+	kv[botOverrideKey(3)] = `{"weekdays":"1,2,3,4,5,6"}`
+	if c := dailyPushConfigForBot(kv, 3); c.Weekdays != "1,2,3,4,5,6" || !c.FollowCalendar {
+		t.Fatalf("没单独设跳不跳的群没跟全局:%q follow=%v", c.Weekdays, c.FollowCalendar)
+	}
+}
+
+// 真库:跳过节假日要存得住;第一版存成 weekdays="workday" 的,读出来要换算好。
+func TestPlanFollowCalendarPersists(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "plan.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	p := &EngineeringPlanItem{ID: "p6", Project: "会议中心", WorkContent: "六天班",
+		PlanType: planTypeDaily, Weekdays: "1,2,3,4,5,6", FollowCalendar: true, AssetIDs: []string{"a"}}
+	if err := store.UpsertEngineeringPlan(p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetEngineeringPlan("p6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Weekdays != "1,2,3,4,5,6" || !got.FollowCalendar {
+		t.Fatalf("读回来 %q follow=%v", got.Weekdays, got.FollowCalendar)
+	}
+
+	if _, err := store.db.Exec(`UPDATE engineering_plan_items SET weekdays='workday', follow_calendar=0 WHERE id='p6'`); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.GetEngineeringPlan("p6")
+	if got.Weekdays != "1,2,3,4,5" || !got.FollowCalendar {
+		t.Fatalf("老写法没换算:%q follow=%v", got.Weekdays, got.FollowCalendar)
 	}
 }
 
@@ -182,19 +270,19 @@ func TestTodayBoardSkipsWorkdayPlansOnHoliday(t *testing.T) {
 
 func TestPushFollowsCalendarWhenAskedTo(t *testing.T) {
 	c := baseCfg()
-	c.Weekdays = dayRuleWorkday
+	c.Weekdays, c.FollowCalendar = "1,2,3,4,5", true
 	thu := at("17:05") // 2026-08-27 周四
 	if ok, _ := shouldFireDailyPush(c, thu, WorkCalendarDay{Kind: workDayOff}, "", 0); ok {
-		t.Fatal("放假那天按法定工作日推送的群不该发")
+		t.Fatal("放假那天跳过节假日的群不该发")
 	}
 	sat := thu.AddDate(0, 0, 2)
 	if ok, why := shouldFireDailyPush(c, sat, WorkCalendarDay{Kind: workDayOn}, "", 0); !ok {
 		t.Fatalf("调休上班的周六应该发,却因为「%s」没发", why)
 	}
-	// 按星期的群不看日历
-	c.Weekdays = "1,2,3,4,5"
+	// 没打开跳过的群不看日历
+	c.FollowCalendar = false
 	if ok, _ := shouldFireDailyPush(c, thu, WorkCalendarDay{Kind: workDayOff}, "", 0); !ok {
-		t.Fatal("按星期推送的群被日历拦住了 —— 没选法定工作日的不该受影响")
+		t.Fatal("没打开跳过节假日的群被日历拦住了")
 	}
 }
 

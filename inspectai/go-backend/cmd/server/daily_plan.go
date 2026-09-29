@@ -73,7 +73,8 @@ type TodayInspectionBoard struct {
 	// DayKind / DayName 今天在工作日历里是什么日子:off 放假 / on 调休上班,没录就是空。
 	DayKind string `json:"dayKind,omitempty"`
 	DayName string `json:"dayName,omitempty"`
-	// HolidaySkipped 执行日选了「法定工作日」、今天因为放假不巡的计划条数。
+	// HolidaySkipped 打开了「跳过法定节假日」、今天因为放假不巡的计划条数
+	// (按星期今天本来要巡的才算)。
 	//
 	// 【要说出来】放假那天这些计划从看板上消失,不说的话,人会以为计划被删了
 	// 或者系统坏了 —— 看板上只剩一句"今天没有排定的每日计划"。
@@ -137,8 +138,8 @@ func (s *Server) buildTodayBoardFor(tenant string, vis dataVisibility, now time.
 		if !vis.allowsProject(p.Project) {
 			continue
 		}
-		if !runsOnDay(p.Weekdays, wd, cal) {
-			if cal.Kind == workDayOff && strings.TrimSpace(p.Weekdays) == dayRuleWorkday {
+		if !runsOnDay(p.Weekdays, p.FollowCalendar, wd, cal) {
+			if skippedForHoliday(p.Weekdays, p.FollowCalendar, wd, cal) {
 				board.HolidaySkipped++
 			}
 			continue

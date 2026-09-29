@@ -68,6 +68,7 @@ export default function DailyPushPreview({
         time: merged.time,
         weekdays: merged.weekdays,
         silentWhenDone: merged.silentWhenDone,
+        followCalendar: merged.followCalendar,
       });
       setPreview(await previewDailyPush(merged.silentWhenDone));
     } catch (e) {
@@ -94,6 +95,7 @@ export default function DailyPushPreview({
         time: cfg.time,
         weekdays: cfg.weekdays,
         silentWhenDone: cfg.silentWhenDone,
+        followCalendar: cfg.followCalendar,
         bots: [{ index: bot.index, ...bot.override, ...next }],
       });
       // 【重新拉一遍,不在本地拼】effective 是后端合并出来的,
@@ -157,11 +159,11 @@ export default function DailyPushPreview({
 
             <Space size={10} wrap>
               <span style={{ color: C.textSub, fontSize: 13 }}>执行日</span>
-              {/* 和计划用同一个选择器:每天 / 按星期 / 法定工作日 */}
+              {/* 和计划用同一个选择器:勾星期 + 跳不跳法定节假日 */}
               <DayRulePicker
-                value={cfg.weekdays}
+                value={{ weekdays: cfg.weekdays, followCalendar: cfg.followCalendar }}
                 disabled={saving}
-                onChange={(v) => void patch({ weekdays: v })}
+                onChange={(v) => void patch(v)}
               />
             </Space>
 
@@ -285,8 +287,8 @@ function BotConfigRow({
               // 比从一个空表单开始少一次"它现在到底几点发"的来回。
               onChange(
                 v
-                  ? { time: eff.time, weekdays: eff.weekdays }
-                  : { enabled: null, time: null, weekdays: null, silentWhenDone: null },
+                  ? { time: eff.time, weekdays: eff.weekdays, followCalendar: eff.followCalendar }
+                  : { enabled: null, time: null, weekdays: null, silentWhenDone: null, followCalendar: null },
               )
             }
           />
@@ -296,7 +298,7 @@ function BotConfigRow({
 
       {bot.follows ? (
         <div style={{ color: C.textSub, fontSize: 13 }}>
-          跟随全局:{eff.time} · {dayRuleText(eff.weekdays)}
+          跟随全局:{eff.time} · {dayRuleText(eff.weekdays, eff.followCalendar)}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
@@ -311,9 +313,9 @@ function BotConfigRow({
             />
             <DayRulePicker
               size="small"
-              value={eff.weekdays}
+              value={{ weekdays: eff.weekdays, followCalendar: eff.followCalendar }}
               disabled={saving}
-              onChange={(v) => onChange({ weekdays: v })}
+              onChange={(v) => onChange(v)}
             />
           </Space>
           <Space size={10}>

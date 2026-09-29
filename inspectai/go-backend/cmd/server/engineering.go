@@ -67,6 +67,8 @@ type EngineeringPlanItem struct {
 	// Weekdays 每日计划专用:一周哪几天执行,形如 "1,2,3,4,5"(1=周一 … 7=周日)。
 	// 空 = 每天。其他类型的计划忽略这个字段。
 	Weekdays string `json:"weekdays"`
+	// FollowCalendar 跳过法定节假日:放假不执行,调休上班照常(见 work_calendar.go)。
+	FollowCalendar bool `json:"followCalendar"`
 	// AssetIDs 这条计划要巡哪些设备。【每日计划必须有】——
 	// "完成"是自动判定的(这些设备今天有没有巡检快照),没有清单就无从判起。
 	AssetIDs     []string  `json:"assetIds,omitempty"`
@@ -214,6 +216,7 @@ func normalizeEngineeringPlan(item *EngineeringPlanItem) {
 	item.RiskLevel = firstNonEmpty(item.RiskLevel, "normal")
 	// 负责人列表和老字段在写入时对齐(两种存储都走这里)
 	syncPlanOwners(item)
+	item.Weekdays, item.FollowCalendar = normalizeDayRule(item.Weekdays, item.FollowCalendar)
 	if item.CreatedAt.IsZero() {
 		item.CreatedAt = now
 	}
@@ -365,7 +368,7 @@ func (s *SQLiteStore) ListEngineeringPlans(filter EngineeringPlanFilter) ([]*Eng
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
 		       latest_task_id, created_at, updated_at, plan_type, weekdays,
 		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, ''),
-		       COALESCE(owners_json, '[]')
+		       COALESCE(owners_json, '[]'), COALESCE(follow_calendar, 0)
 		FROM engineering_plan_items
 		ORDER BY plan_end ASC, updated_at DESC`)
 	if err != nil {
@@ -393,7 +396,7 @@ func (s *SQLiteStore) GetEngineeringPlan(id string) (*EngineeringPlanItem, error
 		       plan_end, owner_name, cycle_text, remark, status, risk_level,
 		       latest_task_id, created_at, updated_at, plan_type, weekdays,
 		       COALESCE(asset_ids_json, '[]'), COALESCE(owner_id, ''),
-		       COALESCE(owners_json, '[]')
+		       COALESCE(owners_json, '[]'), COALESCE(follow_calendar, 0)
 		FROM engineering_plan_items WHERE id=?`, id)
 	return scanEngineeringPlan(row)
 }
@@ -410,8 +413,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
 				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json,
-				owner_id, owners_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				owner_id, owners_json, follow_calendar
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE
 				source=VALUES(source), sequence_no=VALUES(sequence_no), business_type=VALUES(business_type),
 				project=VALUES(project), category=VALUES(category), sub_type=VALUES(sub_type),
@@ -421,7 +424,7 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				status=VALUES(status), risk_level=VALUES(risk_level), latest_task_id=VALUES(latest_task_id),
 				updated_at=VALUES(updated_at), plan_type=VALUES(plan_type), weekdays=VALUES(weekdays),
 				asset_ids_json=VALUES(asset_ids_json), owner_id=VALUES(owner_id),
-				owners_json=VALUES(owners_json)`
+				owners_json=VALUES(owners_json), follow_calendar=VALUES(follow_calendar)`
 	} else {
 		query = `
 			INSERT INTO engineering_plan_items (
@@ -429,8 +432,8 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				work_content, scope_desc, budget_amount, budget_text, plan_start,
 				plan_end, owner_name, cycle_text, remark, status, risk_level,
 				latest_task_id, created_at, updated_at, plan_type, weekdays, asset_ids_json,
-				owner_id, owners_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				owner_id, owners_json, follow_calendar
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				source=excluded.source, sequence_no=excluded.sequence_no, business_type=excluded.business_type,
 				project=excluded.project, category=excluded.category, sub_type=excluded.sub_type,
@@ -440,7 +443,7 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 				status=excluded.status, risk_level=excluded.risk_level, latest_task_id=excluded.latest_task_id,
 				updated_at=excluded.updated_at, plan_type=excluded.plan_type, weekdays=excluded.weekdays,
 				asset_ids_json=excluded.asset_ids_json, owner_id=excluded.owner_id,
-				owners_json=excluded.owners_json`
+				owners_json=excluded.owners_json, follow_calendar=excluded.follow_calendar`
 	}
 	// 设备清单存 JSON。序列化失败也要给个合法的空数组 —— 存进 NULL 或空串
 	// 会让下次读取时解析报错,而那时候已经查不出是哪一条写坏的了。
@@ -458,7 +461,7 @@ func (s *SQLiteStore) UpsertEngineeringPlan(item *EngineeringPlanItem) error {
 		item.WorkContent, item.ScopeDesc, item.BudgetAmount, item.BudgetText, item.PlanStart,
 		item.PlanEnd, item.OwnerName, item.CycleText, item.Remark, item.Status, item.RiskLevel,
 		item.LatestTaskID, created, updated, item.PlanType, item.Weekdays, assetIDsJSON,
-		item.OwnerID, ownersJSON,
+		item.OwnerID, ownersJSON, item.FollowCalendar,
 	)
 	return err
 }
@@ -605,7 +608,7 @@ func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 		&item.WorkContent, &item.ScopeDesc, &item.BudgetAmount, &item.BudgetText, &item.PlanStart,
 		&item.PlanEnd, &item.OwnerName, &item.CycleText, &item.Remark, &item.Status, &item.RiskLevel,
 		&item.LatestTaskID, &created, &updated, &item.PlanType, &item.Weekdays, &assetIDsJSON,
-		&item.OwnerID, &ownersJSON,
+		&item.OwnerID, &ownersJSON, &item.FollowCalendar,
 	)
 	if err != nil {
 		return nil, err
@@ -623,6 +626,9 @@ func scanEngineeringPlan(row scanner) (*EngineeringPlanItem, error) {
 	// 生成一人列表 —— 所以不需要回填迁移,老计划读出来就是对的。
 	_ = json.Unmarshal([]byte(ownersJSON), &item.Owners)
 	syncPlanOwners(item)
+	// 第一版「法定工作日」存的是 weekdays="workday",读出来就换算好 ——
+	// 页面、看板、推送拿到的都是同一种写法
+	item.Weekdays, item.FollowCalendar = normalizeDayRule(item.Weekdays, item.FollowCalendar)
 	return item, nil
 }
 
@@ -904,7 +910,7 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 				"这些设备不属于「"+req.Project+"」:"+strings.Join(bad, "、"))
 			return
 		}
-		// 执行日只认 1..7(1=周一 … 7=周日)或「法定工作日」。脏值会让这条计划
+		// 执行日只认 1..7(1=周一 … 7=周日)。脏值会让这条计划
 		// 要么天天触发、要么永远不触发,而两种都不报错。
 		// 【和推送群同一套校验】各写一份的话,迟早一边收了另一边不认的值。
 		req.Weekdays = strings.TrimSpace(req.Weekdays)
@@ -913,8 +919,9 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	} else {
-		// 其他类型不带这两项 —— 留着会让人以为它们生效了
+		// 其他类型不带这几项 —— 留着会让人以为它们生效了
 		req.Weekdays = ""
+		req.FollowCalendar = false
 	}
 	req.Source = firstNonEmpty(req.Source, "manual")
 	if err := s.store.UpsertEngineeringPlan(&req); err != nil {

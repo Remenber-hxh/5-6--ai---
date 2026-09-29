@@ -23,21 +23,32 @@ import (
 //
 // 【不分租户】法定节假日全国统一;和 app_settings 一样是部署级的数据。
 //
-// 【谁跟着日历走,是计划和推送群自己选的】执行日选「法定工作日」才看日历,
-// 「每天」「按星期」完全不受影响 —— 机房、泵房、消防这类节假日照样要巡的,
+// 【谁跟着日历走,是计划和推送群自己选的】打开「跳过法定节假日」才看日历,
+// 没打开的完全不受影响 —— 机房、泵房、消防这类节假日照样要巡的,
 // 录了日历也不会被跳过。
+//
+// 【星期和日历是两个独立的设置】执行日 = 勾哪几天(weekdays)+ 要不要跳过
+// 法定节假日(followCalendar)。周一到周五 + 跳过 就是通常说的"法定工作日";
+// 周一到周六 + 跳过、七天全勾 + 跳过(平时天天推、放假才停)也都能表达。
 
 const (
-	// dayRuleWorkday 执行日选「法定工作日」时 weekdays 存的值。
-	//
-	// 【和星期列表共用一个字段】执行日是三选一:每天("")、按星期("1,2,3")、
-	// 法定工作日("workday")。拆成两个字段的话会出现"选了法定工作日、
-	// 星期列表里还留着上次的勾"这种两边说法不一的状态。
+	// dayRuleWorkday 【老写法】第一版把「法定工作日」做成和星期互斥的第三个选项,
+	// weekdays 里存的就是这个词。线上已经存了,读的时候一律换算成
+	// "周一到周五 + 跳过节假日"(见 normalizeDayRule),新保存的不会再出现它。
 	dayRuleWorkday = "workday"
 
 	workDayOff = "off" // 放假
 	workDayOn  = "on"  // 调休上班
 )
+
+// normalizeDayRule 把老写法 "workday" 换算成 周一到周五 + 跳过节假日。
+func normalizeDayRule(weekdays string, follow bool) (string, bool) {
+	weekdays = strings.TrimSpace(weekdays)
+	if weekdays == dayRuleWorkday {
+		return "1,2,3,4,5", true
+	}
+	return weekdays, follow
+}
 
 // WorkCalendarDay 日历里的一天。没录的日子不存 —— 按平常的周一到周五算。
 type WorkCalendarDay struct {
@@ -48,20 +59,28 @@ type WorkCalendarDay struct {
 
 // runsOnDay 这一天要不要执行。cal 是这一天在日历里的记录(没录就是零值)。
 //
-// 「法定工作日」= 调休上班日 + 周一到周五里不放假的那些天。
-// 日历里没录的年份就是普通的周一到周五 —— 宁可节假日多推一次,
+// 跳过节假日(follow)时:放假那天不执行;调休上班那天执行 —— 不管勾没勾那个星期,
+// 那天按上班日算;其余日子看勾了哪几天。
+// 日历里没录的日子只看星期 —— 宁可节假日多推一次,
 // 也不要因为没录日历,工作日一条提醒都不发。
-func runsOnDay(weekdays string, wd int, cal WorkCalendarDay) bool {
-	if strings.TrimSpace(weekdays) != dayRuleWorkday {
-		return runsOnWeekday(weekdays, wd)
+func runsOnDay(weekdays string, follow bool, wd int, cal WorkCalendarDay) bool {
+	weekdays, follow = normalizeDayRule(weekdays, follow)
+	if follow {
+		switch cal.Kind {
+		case workDayOff:
+			return false
+		case workDayOn:
+			return true
+		}
 	}
-	switch cal.Kind {
-	case workDayOff:
-		return false
-	case workDayOn:
-		return true
-	}
-	return wd >= 1 && wd <= 5
+	return runsOnWeekday(weekdays, wd)
+}
+
+// skippedForHoliday 今天不执行,是不是因为放假(按星期本来要执行)。
+// 看板和预览要把"因为放假"单独说出来 —— 和"今天本来就不排"是两回事。
+func skippedForHoliday(weekdays string, follow bool, wd int, cal WorkCalendarDay) bool {
+	weekdays, follow = normalizeDayRule(weekdays, follow)
+	return follow && cal.Kind == workDayOff && runsOnWeekday(weekdays, wd)
 }
 
 // workCalendarOn 这一天在日历里的记录。

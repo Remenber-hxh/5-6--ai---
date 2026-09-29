@@ -105,7 +105,7 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
   const skipped = board?.holidaySkipped ?? 0;
   const dayNote =
     board?.dayKind === "off"
-      ? `${board.dayName || ""}放假${skipped > 0 ? `,${skipped} 条按法定工作日执行的计划今天不巡` : ""}`
+      ? `${board.dayName || ""}放假${skipped > 0 ? `,${skipped} 条跳过节假日的计划今天不巡` : ""}`
       : board?.dayKind === "on"
         ? `${board.dayName ? board.dayName + " " : ""}调休上班`
         : "";
