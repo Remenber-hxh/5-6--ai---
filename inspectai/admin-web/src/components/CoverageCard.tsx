@@ -94,6 +94,13 @@ export default function CoverageCard({
     );
   }
 
+  // 【环顶要离上沿留出空隙】鼠标停在某一段上时,那一段会向外放大一圈。
+  // 原来外半径正好顶到图表上沿(圆心 38%、外半径 76%,环顶离上沿 0px),
+  // 一悬停,放大的那段顶边就被切平。现在环缩一点、往下挪,放大量也调小,
+  // 放大后离上沿仍有 6px 左右。
+  const chartH = compact ? 212 : 220;
+  const centerY = compact ? 0.41 : 0.43;
+
   const option = {
     tooltip: { trigger: "item", formatter: "{b}:{c} 台({d}%)" },
     // 【窄栏里图例必须能换行】396px 的侧栏放不下四项一行 ——
@@ -114,8 +121,9 @@ export default function CoverageCard({
         type: "pie",
         // 【环形而不是实心饼】中间那个洞不是装饰:总数放在那里,
         // 读者不用把四段加起来才知道基数是多少。
-        radius: ["52%", "76%"],
-        center: ["50%", compact ? "38%" : "40%"],
+        radius: ["48%", "70%"],
+        center: ["50%", `${centerY * 100}%`],
+        emphasis: { scaleSize: 6 },
         avoidLabelOverlap: true,
         label: { show: false },
         labelLine: { show: false },
@@ -135,7 +143,9 @@ export default function CoverageCard({
     graphic: {
       type: "text",
       left: "center",
-      top: compact ? "32%" : "34%",
+      // 按圆心算,不单独写百分比 —— 分开写的话挪了环,数字就不在正中了。
+      // 13 ≈ 26px 数字高度的一半
+      top: Math.round(chartH * centerY - 13),
       style: {
         // 选了某一段就显示那一段的台数 —— 和下面清单的条数对得上
         text: String(pick ? counts[pick] : assets.length),
@@ -167,7 +177,7 @@ export default function CoverageCard({
       >
         <ReactECharts
           option={option}
-          style={{ height: compact ? 212 : 220, cursor: "pointer" }}
+          style={{ height: chartH, cursor: "pointer" }}
           onEvents={{ click: onChartClick }}
           notMerge
         />
