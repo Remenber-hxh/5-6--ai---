@@ -68,4 +68,13 @@ func resolveSceneResult(result *SceneClassifyResult, candidates []SceneCandidate
 	}
 	// 名字以库里的为准 —— 模型可能把中文名说岔,而这个名字会显示给现场看
 	result.TemplateName = name
+	// 【没把握就让人选,不管模型自己怎么说】ai-service 那边已经这么判了,
+	// 这里再守一道:那边的规则被改掉、或者换一个分类服务,这条底线也还在。
+	if result.Confidence < sceneAutoMinConfidence {
+		result.NeedsManualPick = true
+	}
 }
+
+// sceneAutoMinConfidence 低于这个置信度,分类结果只作为默认选项、必须由人确认。
+// 和 ai-service 的 CLASSIFY_AUTO_MIN_CONFIDENCE 同一个值。
+const sceneAutoMinConfidence = 0.7

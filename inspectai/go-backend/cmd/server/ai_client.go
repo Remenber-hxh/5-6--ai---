@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -56,66 +56,66 @@ type SummarizeResponse struct {
 	Model           string           `json:"model"`
 }
 
+// ===== 等多久:Go 和 ai-service 用同一份预算 =====
+//
+// 【Go 等的时间必须比 ai-service 花的时间长】原来两边各设各的:Go 等识别 90 秒,
+// ai-service 第一遍自己就允许 90 秒、再重试、再做放大复核 —— Go 早放弃了,
+// 那边还在调模型、还在花钱,结果没人收;分类是 Go 等 35 秒、那边 90 秒起步。
+// 现在 Go 把预算随请求带过去(budgetSeconds),ai-service 按它决定还来不来得及
+// 重试、复核;Go 自己在预算之上多等一点余量。
+const (
+	// 移动端最多轮询 80 秒(mobile-web RecordPage 的 POLL_MAX)—— 识别必须在那之前出结果
+	analyzeBudget   = 75 * time.Second
+	classifyBudget  = 30 * time.Second // 现场拍完照同步等
+	summarizeBudget = 25 * time.Second
+	draftBudget     = 80 * time.Second
+	// 本机到 ai-service 的往返、JSON 编解码
+	aiBudgetMargin = 8 * time.Second
+)
+
 // AIClient — 调 ai-service 的客户端
 type AIClient struct {
 	baseURL string
-	http    *http.Client
 }
 
 func NewAIClient(baseURL string) *AIClient {
-	return &AIClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		http: &http.Client{
-			Timeout: 90 * time.Second, // 千问 vl-max 慢图能 30s+
-		},
-	}
+	return &AIClient{baseURL: strings.TrimRight(baseURL, "/")}
 }
 
-// Analyze — 调 /analyze（识别字段）
-func (c *AIClient) Analyze(payload map[string]any) (*AnalyzeResponse, error) {
+// postJSON 带预算发一次请求,把响应解进 out。
+func (c *AIClient) postJSON(path string, payload map[string]any, budget time.Duration, out any) error {
+	payload["budgetSeconds"] = int(budget / time.Second)
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/analyze", bytes.NewReader(body))
+	client := &http.Client{Timeout: budget + aiBudgetMargin}
+	resp, err := client.Post(c.baseURL+path, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ai-service /analyze status %d: %s", resp.StatusCode, string(raw))
+		return fmt.Errorf("ai-service %s status %d: %s", path, resp.StatusCode, string(raw))
 	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
+	}
+	return nil
+}
+
+// Analyze — 调 /analyze（识别字段）
+func (c *AIClient) Analyze(payload map[string]any) (*AnalyzeResponse, error) {
 	var out AnalyzeResponse
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("decode analyze: %w", err)
+	if err := c.postJSON("/analyze", payload, analyzeBudget, &out); err != nil {
+		return nil, err
 	}
 	return &out, nil
 }
 
 // Summarize — 调 /summarize（生成总结+建议）
 func (c *AIClient) Summarize(payload map[string]any) (*SummarizeResponse, error) {
-	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/summarize", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ai-service /summarize status %d: %s", resp.StatusCode, string(raw))
-	}
 	var out SummarizeResponse
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("decode summarize: %w", err)
+	if err := c.postJSON("/summarize", payload, summarizeBudget, &out); err != nil {
+		return nil, err
 	}
 	if out.Recommendations == nil {
 		out.Recommendations = []Recommendation{}
@@ -172,52 +172,11 @@ func (c *AIClient) Classify(imagePaths []string, candidates []SceneCandidate) (*
 		"imagePaths": imagePaths,
 		"candidates": candidates,
 	}
-	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 35 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/classify", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ai-service /classify status %d: %s", resp.StatusCode, string(raw))
-	}
 	var out SceneClassifyResult
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("decode classify: %w", err)
+	if err := c.postJSON("/classify", payload, classifyBudget, &out); err != nil {
+		return nil, err
 	}
 	return &out, nil
-}
-
-// Chat — 调 /chat（后台 AI 对话）
-func (c *AIClient) Chat(payload map[string]any) (map[string]any, error) {
-	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 18 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/chat", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ai-service /chat status %d: %s", resp.StatusCode, string(raw))
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("decode chat: %w", err)
-	}
-	return out, nil
 }
 
 // === 工具 ===
@@ -272,14 +231,15 @@ func (c *AIClient) DraftFields(requirement, templateName, assetType string) (
 	fields []map[string]any, sceneFeatures, model string, err error,
 ) {
 	payload := map[string]any{
-		"requirement":  requirement,
-		"templateName": templateName,
-		"assetType":    assetType,
+		"requirement":   requirement,
+		"templateName":  templateName,
+		"assetType":     assetType,
+		"budgetSeconds": int(draftBudget / time.Second),
 	}
 	body, _ := json.Marshal(payload)
 	// 生成要跑一次大模型,比识别还慢一些 —— 超时给足,否则人点了"生成"
 	// 转半天最后告诉他超时,他只会以为功能坏了。
-	client := &http.Client{Timeout: 90 * time.Second}
+	client := &http.Client{Timeout: draftBudget + aiBudgetMargin}
 	resp, err := client.Post(c.baseURL+"/prompt/draft-fields", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, "", "", err

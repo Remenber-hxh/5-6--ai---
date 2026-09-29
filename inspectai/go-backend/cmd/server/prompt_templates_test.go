@@ -233,8 +233,9 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 	if count(s1, "record")+count(s1, "asset") > 0 {
 		t.Errorf("灭火器问句不应出现设备源, got %v", s1)
 	}
-	// 问重点关注 → 给设备源
-	s2 := srv.buildChatSources("最近哪些设备要重点关注", "", att)
+	// 问重点关注、回答点名了设备 → 给那台的设备源
+	// (回答没点名时不给 —— 那是猜的,见 audit_fixes_test.go)
+	s2 := srv.buildChatSources("最近哪些设备要重点关注", "首要关注 HYZX-WJ-DT01。", att)
 	if count(s2, "asset") == 0 {
 		t.Errorf("重点关注应出现设备源, got %v", s2)
 	}
@@ -250,7 +251,7 @@ func TestBuildChatSourcesPrecision(t *testing.T) {
 	}
 	// 同名资产(台账重复)只给一组来源
 	att2 := append(att, &AttentionItem{AssetID: "a2", AssetName: "HYZX-WJ-DT01", Title: "重复登记", LastRecordID: "r2"})
-	s5 := srv.buildChatSources("最近哪些设备要重点关注", "", att2)
+	s5 := srv.buildChatSources("最近哪些设备要重点关注", "首要关注 HYZX-WJ-DT01。", att2)
 	if count(s5, "asset") != 1 {
 		t.Errorf("同名资产应去重为 1 组, got %v", s5)
 	}

@@ -253,9 +253,19 @@ export default function AgentHome() {
   async function dispatchProposal(msg: Msg, extra: Record<string, string> = {}) {
     const p = msg.proposal;
     if (!p) return;
-    const asset = assets.find(
-      (a) => a.assetKey === p.asset || a.assetName === p.asset || a.id === p.asset,
-    );
+    // 【先按 id 找,名字只作兜底】台账里同名设备不少(会议中心就有两台 K01),
+    // 原来按名字 find 取第一台 —— 复查任务可能派到另一台上,而且不报错。
+    let asset = p.assetId ? assets.find((a) => a.id === p.assetId) : undefined;
+    if (!asset) {
+      const hits = assets.filter(
+        (a) => a.assetKey === p.asset || a.assetName === p.asset || a.id === p.asset,
+      );
+      if (hits.length > 1) {
+        antdMsg.warning(`有 ${hits.length} 台设备都叫「${p.asset}」,无法确定派给哪一台,请到设备健康里手动派发`);
+        return;
+      }
+      asset = hits[0];
+    }
     if (!asset) {
       antdMsg.warning(`未找到设备「${p.asset}」,无法派发`);
       return;

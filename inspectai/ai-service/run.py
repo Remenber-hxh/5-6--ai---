@@ -4,6 +4,8 @@
   POST /classify   - 场景分类（拍照后反推模板）
   POST /analyze    - 字段识别（按模板加载对应 prompt）
   POST /summarize  - 总结生成（事实总结 + 行动建议）
+  POST /management/chat, /management/chat-tools, /management/analyze - 管理 AI(DeepSeek)
+  POST /prompt/draft-fields - 需求文字 → 字段表
   GET  /health     - 健康检查
 
 依赖：仅 Python 标准库。千问通过 dashscope OpenAI 兼容端点调用。
@@ -222,6 +224,160 @@ def chat_account_error_of(exc: Exception) -> str:
     return ""
 
 
+# ===== 模型调用的公共层 =====
+#
+# 【为什么三个调用共用一层】原来 call_qwen_chat / call_deepseek_chat /
+# call_deepseek_tools 各写了一遍 curl,三份的超时、重试、错误处理各不相同。
+# 并到这一处之后,下面三件事只做一遍:
+#
+# 1. 【密钥不进命令行】原来是 -H "Authorization: Bearer <key>" 直接放在参数里,
+#    同一台机器上 ps 就能看到。现在请求头写进临时文件,curl 用 -H @文件 读,用完即删。
+# 2. 【守住调用方给的时间预算】Go 那边等多久是有数的。这边原来按自己的超时
+#    再乘重试次数,常常 Go 已经放弃了,这边还在调模型、还在花钱,结果没人收。
+#    现在每次尝试前先看还剩多少时间,不够就不发、不重试。
+# 3. 【每次调用留一行记录】用途、模型、耗时、成败、token 数。原来只有出错时
+#    打一句,正常调用花了多少时间和钱无从查起。
+
+AI_CALL_MIN_SECONDS = 3  # 预算只剩这么点就别发了 —— 发出去也等不到回复
+
+
+def budget_deadline(payload: dict, default_seconds: float) -> float:
+    """调用方给的总时间预算(budgetSeconds) → 截止时刻。没给就用这个接口的默认值。"""
+    try:
+        seconds = float(payload.get("budgetSeconds") or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if seconds <= 0:
+        seconds = default_seconds
+    return time.time() + seconds
+
+
+def seconds_left(deadline: float | None) -> float | None:
+    return None if deadline is None else deadline - time.time()
+
+
+class AICallError(RuntimeError):
+    """一次模型调用失败。retryable = 换一次可能就好(网络抖动、超时、网关 5xx)。"""
+
+    def __init__(self, message: str, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def log_ai_call(provider: str, model: str, purpose: str, started: float, ok: bool,
+                usage: dict | None = None, error: str = "") -> None:
+    rec = {
+        "provider": provider, "model": model, "purpose": purpose or "-",
+        "ms": int((time.time() - started) * 1000), "ok": ok,
+    }
+    if isinstance(usage, dict):
+        rec["promptTokens"] = usage.get("prompt_tokens")
+        rec["completionTokens"] = usage.get("completion_tokens")
+    if error:
+        rec["error"] = error[:160]
+    print("[ai-call] " + json.dumps(rec, ensure_ascii=False), file=sys.stderr)
+
+
+def curl_args(url: str, header_file: str, body_file: str, timeout: int) -> list:
+    """curl 的参数。单独拿出来,是为了测试能断言"密钥不在参数里"。"""
+    return [
+        CURL_PATH,
+        "-4",              # 强制 IPv4
+        "-s", "-S",        # 静默,但错误照打
+        "--noproxy", "*",  # 绕开系统代理(Clash/Fiddler 等会拦 dashscope)
+        "-m", str(timeout),
+        "-X", "POST", url,
+        "-H", f"@{header_file}",
+        "--data-binary", f"@{body_file}",
+    ]
+
+
+def _curl_post_once(url: str, body_bytes: bytes, api_key: str, timeout: float) -> dict:
+    """发一次 POST,返回解析后的 JSON。网络失败/超时/非 JSON 抛 retryable 的 AICallError。"""
+    files = []
+    try:
+        body = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
+        files.append(body.name)
+        body.write(body_bytes)
+        body.close()
+        # NamedTemporaryFile 在 Linux 上建出来就是 0600,只有本进程的用户能读
+        head = tempfile.NamedTemporaryFile("w", suffix=".hdr", delete=False, encoding="utf-8")
+        files.append(head.name)
+        head.write(f"Authorization: Bearer {api_key}\nContent-Type: application/json\n")
+        head.close()
+        t = max(1, int(timeout))
+        try:
+            proc = subprocess.run(
+                curl_args(url, head.name, body.name, t),
+                capture_output=True,
+                timeout=t + 5,
+            )
+        except subprocess.TimeoutExpired:
+            raise AICallError(f"timeout after {t}s", retryable=True)
+        if proc.returncode != 0:
+            err = proc.stderr.decode("utf-8", errors="replace")[:200]
+            raise AICallError(f"curl exit {proc.returncode}: {err}", retryable=True)
+        raw = proc.stdout.decode("utf-8", errors="replace")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            # 网关 5xx 常常回一页 HTML —— 换一次通常就好
+            raise AICallError(f"response is not JSON: {raw[:120]}", retryable=True)
+    finally:
+        for f in files:
+            try:
+                os.unlink(f)
+            except OSError:
+                pass
+
+
+def post_chat_completion(*, provider: str, url: str, body: dict, api_key: str,
+                         timeout: float, max_retries: int = 0,
+                         deadline: float | None = None, purpose: str = "") -> dict:
+    """一次 chat/completions 调用(带重试和时间预算),返回响应 JSON(已确认没有 error)。
+
+    【业务错误不重试】欠费、key 失效这类,重试多少次都一样,只会让用户白等。
+    """
+    body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    model = str(body.get("model") or "")
+    last: Exception | None = None
+    for attempt in range(max_retries + 1):
+        left = seconds_left(deadline)
+        if left is not None and left < AI_CALL_MIN_SECONDS:
+            if last:
+                raise last
+            raise AICallError(f"{provider} 时间预算已用完,未发出请求")
+        this_timeout = timeout if left is None else min(timeout, left - 1)
+        started = time.time()
+        try:
+            payload = _curl_post_once(url, body_bytes, api_key, this_timeout)
+        except AICallError as exc:
+            log_ai_call(provider, model, purpose, started, False, error=str(exc))
+            last = exc
+            if exc.retryable and attempt < max_retries:
+                pause = 0.5 * (2 ** attempt)
+                left = seconds_left(deadline)
+                if left is None or left > pause + AI_CALL_MIN_SECONDS:
+                    time.sleep(pause)
+                continue
+            raise
+        err = payload.get("error")
+        if err:
+            err_obj = err if isinstance(err, dict) else {"message": str(err)}
+            code = err_obj.get("code") or err_obj.get("type", "error")
+            msg = f"{provider} error [{code}]: {err_obj.get('message', 'unknown')}"
+            log_ai_call(provider, model, purpose, started, False, error=msg)
+            raise AICallError(msg)
+        if not (payload.get("choices") or []):
+            log_ai_call(provider, model, purpose, started, False, error="no choices")
+            raise AICallError(f"{provider} response has no choices")
+        log_ai_call(provider, model, purpose, started, True, usage=payload.get("usage"))
+        return payload
+    if last:
+        raise last
+    raise AICallError(f"{provider} call failed")
+
+
 def call_qwen_chat(
     *,
     model: str,
@@ -232,13 +388,13 @@ def call_qwen_chat(
     temperature: float = 0.1,
     max_retries: int = 2,
     extra_body: dict | None = None,
+    deadline: float | None = None,
+    purpose: str = "",
 ) -> str:
     base_url = os.environ.get(
         "DASHSCOPE_BASE_URL",
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     ).rstrip("/")
-    url = f"{base_url}/chat/completions"
-
     body = {
         "model": model,
         "messages": [
@@ -249,73 +405,15 @@ def call_qwen_chat(
     }
     if extra_body:
         body.update(extra_body)
-    body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
-
-    # 写到临时文件后 --data-binary @file，避免命令行长度限制 + quoting 问题
-    tmp = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
-    try:
-        tmp.write(body_bytes)
-        tmp.close()
-        tmp_path = tmp.name
-
-        last_err: Exception | None = None
-        for attempt in range(max_retries + 1):
-            try:
-                proc = subprocess.run(
-                    [
-                        CURL_PATH,
-                        "-4",            # 强制 IPv4
-                        "-s",            # silent
-                        "-S",            # show errors on stderr
-                        "--noproxy", "*", # 绕开系统代理（Clash/Fiddler 等会拦 dashscope）
-                        "-m", str(timeout),
-                        "-X", "POST",
-                        url,
-                        "-H", f"Authorization: Bearer {api_key}",
-                        "-H", "Content-Type: application/json",
-                        "--data-binary", f"@{tmp_path}",
-                    ],
-                    capture_output=True,
-                    timeout=timeout + 5,
-                )
-                if proc.returncode != 0:
-                    err = proc.stderr.decode("utf-8", errors="replace")[:200]
-                    last_err = RuntimeError(f"curl exit {proc.returncode}: {err}")
-                    if attempt < max_retries:
-                        time.sleep(0.5 * (2 ** attempt))
-                        continue
-                    raise last_err
-                raw = proc.stdout.decode("utf-8", errors="replace")
-                payload = json.loads(raw)
-                if "error" in payload:
-                    err_obj = payload.get("error") or {}
-                    msg = err_obj.get("message", "unknown")
-                    code = err_obj.get("code") or err_obj.get("type", "error")
-                    # 这里抛出后【不会被重试】:循环里只 catch TimeoutExpired,
-                    # 业务错误直接向上冒。对账号级错误(欠费/key 失效)正合适 ——
-                    # 重试多少次结果都一样,只会让用户白等。
-                    raise RuntimeError(f"qwen error [{code}]: {msg}")
-                choices = payload.get("choices") or []
-                if not choices:
-                    raise RuntimeError("qwen response has no choices")
-                # 【调用成功就清掉账号故障标记】否则充值/换 key 之后 /health
-                # 会一直报 account_Arrearage 直到重启服务 —— 那是假警报,
-                # 比不报警更糟:运维会学会忽略它。
-                LAST_ACCOUNT_ERROR.clear()
-                return (choices[0].get("message") or {}).get("content") or ""
-            except subprocess.TimeoutExpired:
-                last_err = RuntimeError(f"curl timeout after {timeout}s")
-                if attempt < max_retries:
-                    continue
-                raise last_err
-        if last_err:
-            raise last_err
-        raise RuntimeError("qwen call failed after retries")
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+    payload = post_chat_completion(
+        provider="qwen", url=f"{base_url}/chat/completions", body=body, api_key=api_key,
+        timeout=timeout, max_retries=max_retries, deadline=deadline, purpose=purpose,
+    )
+    # 【调用成功就清掉账号故障标记】否则充值/换 key 之后 /health
+    # 会一直报 account_Arrearage 直到重启服务 —— 那是假警报,
+    # 比不报警更糟:运维会学会忽略它。
+    LAST_ACCOUNT_ERROR.clear()
+    return (payload["choices"][0].get("message") or {}).get("content") or ""
 
 
 def get_api_key() -> str:
@@ -353,10 +451,11 @@ def call_deepseek_chat(
     timeout: int = 30,
     temperature: float = 0.2,
     max_retries: int = 1,
+    deadline: float | None = None,
+    purpose: str = "",
 ) -> tuple[str, str]:
     """打 DeepSeek OpenAI 兼容端点;返回 (reply_text, actual_model)。"""
     base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    url = f"{base_url}/chat/completions"
     body = {
         "model": model,
         "messages": [
@@ -365,64 +464,15 @@ def call_deepseek_chat(
         ],
         "temperature": temperature,
     }
-    body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    tmp = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
-    try:
-        tmp.write(body_bytes)
-        tmp.close()
-        tmp_path = tmp.name
-        last_err: Exception | None = None
-        for attempt in range(max_retries + 1):
-            try:
-                proc = subprocess.run(
-                    [
-                        CURL_PATH, "-4", "-s", "-S",
-                        "--noproxy", "*",
-                        "-m", str(timeout),
-                        "-X", "POST", url,
-                        "-H", f"Authorization: Bearer {api_key}",
-                        "-H", "Content-Type: application/json",
-                        "--data-binary", f"@{tmp_path}",
-                    ],
-                    capture_output=True,
-                    timeout=timeout + 5,
-                )
-                if proc.returncode != 0:
-                    err = proc.stderr.decode("utf-8", errors="replace")[:200]
-                    last_err = RuntimeError(f"curl exit {proc.returncode}: {err}")
-                    if attempt < max_retries:
-                        time.sleep(0.4 * (2 ** attempt))
-                        continue
-                    raise last_err
-                raw = proc.stdout.decode("utf-8", errors="replace")
-                payload = json.loads(raw)
-                if "error" in payload:
-                    err_obj = payload.get("error") or {}
-                    msg = err_obj.get("message", "unknown")
-                    code = err_obj.get("code") or err_obj.get("type", "error")
-                    raise RuntimeError(f"deepseek error [{code}]: {msg}")
-                choices = payload.get("choices") or []
-                if not choices:
-                    raise RuntimeError("deepseek response has no choices")
-                content = (choices[0].get("message") or {}).get("content") or ""
-                actual_model = payload.get("model") or model
-                # 【成功就清掉账号故障标记】否则充值之后 /health 会一直报欠费
-                # 直到重启服务 —— 假警报比不报警更糟,人会学会忽略它。
-                LAST_CHAT_ERROR.clear()
-                return content, actual_model
-            except subprocess.TimeoutExpired:
-                last_err = RuntimeError(f"deepseek curl timeout after {timeout}s")
-                if attempt < max_retries:
-                    continue
-                raise last_err
-        if last_err:
-            raise last_err
-        raise RuntimeError("deepseek call failed after retries")
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+    payload = post_chat_completion(
+        provider="deepseek", url=f"{base_url}/chat/completions", body=body, api_key=api_key,
+        timeout=timeout, max_retries=max_retries, deadline=deadline, purpose=purpose,
+    )
+    content = (payload["choices"][0].get("message") or {}).get("content") or ""
+    # 【成功就清掉账号故障标记】否则充值之后 /health 会一直报欠费
+    # 直到重启服务 —— 假警报比不报警更糟,人会学会忽略它。
+    LAST_CHAT_ERROR.clear()
+    return content, payload.get("model") or model
 
 
 # 管理 AI 的系统 prompt — 阶段一边界约束:只回答台账问题,不修改任何数据
@@ -485,8 +535,10 @@ MANAGEMENT_CHAT_SYSTEM = """你是「智巡」管理后台的 AI 助手,服务�
 动作提议(仅在确有必要时附,其余情况绝不附):
 - **只要存在某台设备反复异常且尚未闭环、适合派一次现场复查**,就在正文之后另起一行,按下面格式附**一个**提议块(正文照常 50-90 字,不受影响)。**包括**回答"今天优先处理什么 / 重点关注哪些设备 / 该怎么处理"这类问题时,只要存在这样的设备就一并附上:
 <<ACTION>>
-{"type":"create_recheck_task","asset":"设备可读编号","assignee":"责任人(不确定就省略此项)","dueAt":"YYYY-MM-DD(不确定就省略)","reason":"一句话复查理由"}
+{"type":"create_recheck_task","assetId":"设备完整 id","asset":"设备可读编号","assignee":"责任人(不确定就省略此项)","dueAt":"YYYY-MM-DD(不确定就省略)","reason":"一句话复查理由"}
 <<END>>
+- assetId 照抄上下文 topRiskAssets 里那台设备的 assetId —— 动作块是给程序读的、不显示给人,
+  这里【必须】写完整 id(台账里同名设备不少,只写编号会派错设备);正文里仍然只说可读编号。
 - asset 必须是上下文里真实出现的可读编号;assignee/dueAt 不知道就不要写那一项,绝不编造;reason 用中文一句话。
 - 问"复核率/趋势/谁没看图"等其它问题时,**不要**附动作块。
 """
@@ -713,13 +765,28 @@ def unverified_readings(parsed: dict, fields: list, checked_codes: set) -> list:
     return out
 
 
-def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenario: str = "") -> dict:
+# 放大复核至少要留这么多时间。不够就不做 —— 做到一半被 Go 那边放弃,
+# 第一遍的结果也跟着丢了,比不复核更糟。
+SECOND_LOOK_MIN_SECONDS = 15
+
+
+def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenario: str = "",
+                deadline: float | None = None) -> dict:
     """对第一遍读出的 number 字段做裁剪复核。任何一步出问题都原样返回 parsed。"""
     if os.environ.get("SECOND_LOOK", "1") != "1":
         return parsed
     if not (parsed.get("recognizedFields") or []):
         return parsed
     todo = collect_crop_targets(payload, parsed, fields)
+    left = seconds_left(deadline)
+    if todo and left is not None and left < SECOND_LOOK_MIN_SECONDS:
+        # 【没时间复核也要说出来】和"没框、没复核"一样:界面上看着和复核过的一样
+        warns = parsed.setdefault("warnings", [])
+        if isinstance(warns, list):
+            labels = [code for code, _, _ in todo]
+            warns.append("识别耗时较长，未做放大复核，请对照照片核实：" + "、".join(labels[:3]))
+        print(f"[second-look] 剩余 {left:.0f}s,跳过复核 {len(todo)} 项", file=sys.stderr)
+        return parsed
     # 【没被复核到的读数要说出来,不能静默放行】
     #
     # 能不能复核取决于模型有没有给出合法的 bbox。给不出的话,那个读数
@@ -759,7 +826,10 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
             user_content=content,
             api_key=api_key,
             timeout=int(os.environ.get("QWEN_VISION_TIMEOUT", "90") or "90"),
+            max_retries=0,
             extra_body=extra,
+            deadline=deadline,
+            purpose="second-look",
         )
         checked = parse_json_response(raw)
     except Exception as exc:
@@ -842,8 +912,14 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
 # ===== /analyze =====
 
 
+# 识别的总时间预算。移动端最多等 80 秒,Go 等 budget+10 秒 —— 三者对齐,
+# 不再出现"手机早就说失败了,这边还在调模型"。
+ANALYZE_BUDGET_SECONDS = 75
+
+
 def analyze(payload: dict) -> dict:
     api_key = get_api_key()
+    deadline = budget_deadline(payload, ANALYZE_BUDGET_SECONDS)
     template = payload.get("template") or {}
     template_id = template.get("id", "")
     paper_ocr = bool(payload.get("paperOCR"))
@@ -895,7 +971,10 @@ def analyze(payload: dict) -> dict:
             user_content=content,
             api_key=api_key,
             timeout=int(os.environ.get("QWEN_VISION_TIMEOUT", "90") or "90"),
+            max_retries=1,
             extra_body=extra,
+            deadline=deadline,
+            purpose="analyze",
         )
     except Exception as exc:
         print(f"[analyze] qwen failed: {exc}", file=sys.stderr)
@@ -918,7 +997,7 @@ def analyze(payload: dict) -> dict:
     # 读数区裁出来放大再核一遍。整个过程包在 second_look 里 fail-safe:
     # 裁不出来、模型没回、解析失败,一律原样返回第一遍的结果。
     # scenario 必须传进去 —— 第二遍不带场景规则会只读 LCD 的其中一行。
-    parsed = second_look(payload, parsed, fields, api_key, scenario)
+    parsed = second_look(payload, parsed, fields, api_key, scenario, deadline=deadline)
 
     return build_analyze_response(payload, parsed, model_name, int((time.time() - started) * 1000))
 
@@ -1085,7 +1164,8 @@ def summarize(payload: dict) -> dict:
         return result
 
     text_model = os.environ.get("QWEN_TEXT_MODEL", "qwen-plus")
-    user_text = json.dumps(payload, ensure_ascii=False)
+    # 预算是给调用层的,不是给模型看的
+    user_text = json.dumps({k: v for k, v in payload.items() if k != "budgetSeconds"}, ensure_ascii=False)
     try:
         raw = call_qwen_chat(
             model=text_model,
@@ -1094,6 +1174,8 @@ def summarize(payload: dict) -> dict:
             api_key=api_key,
             timeout=10,
             max_retries=1,
+            deadline=budget_deadline(payload, 25),
+            purpose="summarize",
         )
     except Exception as exc:
         print(f"[summarize] qwen failed: {exc}", file=sys.stderr)
@@ -1361,74 +1443,6 @@ def normalize_recommendations(raw_list: list) -> list:
     return out
 
 
-CHAT_SYSTEM_PROMPT = """你是「智巡 AI 助手」，服务于设施巡检后台的主管/管理员。
-你的工作是：
-- 用简洁、专业、口语化的中文回答关于资产、巡检、AI 识别、异常处理、报表的问题
-- 主管会问"今天有几个异常"、"AI 准确率怎么样"、"派任务给谁"这类业务问题
-- 优先用数据 + 结论 + 建议三段回答；如果数据不足，直说"暂无数据"
-- 输出 60-180 字以内，避免长段落；多用「·」分隔
-- 不要承诺无法兑现的操作（你只是答疑，无法直接派发任务/审批），但可以告诉用户去哪个菜单操作
-
-context 字段可能包含本平台当前快照（资产数/异常数/记录数等），请尽量引用真实数字。
-"""
-
-
-def chat(payload: dict) -> dict:
-    api_key = get_api_key()
-    message = (payload.get("message") or "").strip()
-    if not message:
-        return {"reply": "请输入想问的问题，例如「今天有几条异常」。", "model": "noop"}
-    if not api_key:
-        return {
-            "reply": "未配置 AI 密钥，无法在线对话。请在系统配置中填入 DASHSCOPE_API_KEY。",
-            "model": "no-key",
-        }
-    history = payload.get("history") or []
-    context = payload.get("context") or {}
-    # 把上下文塞进 user_content（避免污染 system）
-    ctx_blob = json.dumps(context, ensure_ascii=False) if context else ""
-    user_lines = []
-    if ctx_blob:
-        user_lines.append(f"[平台数据快照] {ctx_blob}")
-    # 简单拼接最近几轮历史
-    for turn in history[-4:]:
-        role = turn.get("role", "user")
-        text = (turn.get("text") or "").strip()
-        if not text:
-            continue
-        prefix = "我" if role == "user" else "AI"
-        user_lines.append(f"{prefix}：{text}")
-    user_lines.append(f"我：{message}")
-    user_lines.append("AI：")
-    user_text = "\n".join(user_lines)
-
-    text_model = os.environ.get("QWEN_TEXT_MODEL", "qwen-plus")
-    try:
-        raw = call_qwen_chat(
-            model=text_model,
-            system=CHAT_SYSTEM_PROMPT,
-            user_content=user_text,
-            api_key=api_key,
-            timeout=12,
-            max_retries=1,
-        )
-    except Exception as exc:
-        print(f"[chat] qwen failed: {exc}", file=sys.stderr)
-        return {
-            "reply": f"AI 接口暂不可用：{str(exc)[:80]}。请稍后再试。",
-            "model": "fallback-call-failed",
-        }
-    reply = (raw or "").strip()
-    # qwen 偶尔会反引号包代码块或 "AI：" 前缀，清掉
-    if reply.startswith("AI："):
-        reply = reply[3:].strip()
-    if reply.startswith("```"):
-        reply = reply.strip("`").strip()
-    if not reply:
-        reply = "AI 没有给出回复，请换种问法再试。"
-    return {"reply": reply, "model": text_model}
-
-
 def fallback_summarize(payload: dict) -> dict:
     fields = payload.get("fields") or []
     parts = [f"{f.get('label')}={f.get('value')}" for f in fields[:6]]
@@ -1499,6 +1513,22 @@ def render_scene_prompt(candidates: list) -> str:
     return out
 
 
+# 场景分类是现场拍完照同步等的,Go 等 budget+5 秒
+CLASSIFY_BUDGET_SECONDS = 30
+# 低于这个置信度一律让人选 —— 不管模型自己说要不要
+CLASSIFY_AUTO_MIN_CONFIDENCE = 0.7
+
+
+def classify_needs_manual(template_id: str, confidence: float, model_says) -> bool:
+    """要不要让现场人手动选模板。
+
+    【模型说"不用"不算数】原来直接采信模型自报的 needsManualPick:它给 0.3 的
+    置信度、同时说不用人工选,就真的不让人选了。自动化只在"认得出、又有把握"
+    时才生效,其余一律交给人 —— 少一次自动化,好过一次错的自动化。
+    """
+    return bool(model_says) or template_id == "unknown" or confidence < CLASSIFY_AUTO_MIN_CONFIDENCE
+
+
 def classify(payload: dict) -> dict:
     api_key = get_api_key()
     paths = payload.get("imagePaths") or []
@@ -1556,6 +1586,8 @@ def classify(payload: dict) -> dict:
             timeout=cls_timeout,
             max_retries=1,
             extra_body=extra,
+            deadline=budget_deadline(payload, CLASSIFY_BUDGET_SECONDS),
+            purpose="classify",
         )
     except Exception as exc:
         print(f"[classify] qwen failed: {exc}", file=sys.stderr)
@@ -1586,9 +1618,12 @@ def classify(payload: dict) -> dict:
             "needsManualPick": True,
         }
 
-    template_id = str(parsed.get("templateId", "unknown")).strip()
-    confidence = float(parsed.get("confidence", 0))
-    needs_manual = bool(parsed.get("needsManualPick", confidence < 0.7 or template_id == "unknown"))
+    template_id = str(parsed.get("templateId", "unknown")).strip() or "unknown"
+    try:
+        confidence = float(parsed.get("confidence", 0))
+    except (TypeError, ValueError):
+        confidence = 0.0  # 模型偶尔回"高"这种字 —— 当作没把握
+    needs_manual = classify_needs_manual(template_id, confidence, parsed.get("needsManualPick"))
     return {
         "templateId": template_id,
         "templateName": str(parsed.get("templateName", "")).strip(),
@@ -1612,16 +1647,16 @@ def call_deepseek_tools(
     tools: list,
     api_key: str,
     timeout: int = 30,
+    deadline: float | None = None,
 ) -> dict:
     """带工具的一轮对话。返回 {finish, reply?, toolCalls?, model}。
 
     和 call_deepseek_chat 的区别:那个只发 system+user 两条、只要文本;
     这个发【完整消息数组】(含工具返回),并且要能拿回 tool_calls。
-    没有合并成一个函数,是因为那条路径正在稳定服役 —— 工具调用按官方文档
-    自己说的还不稳(可能空响应或循环),不该把它的风险带到现有功能上。
+    【不重试】循环在 Go 那边,一轮失败 Go 会退回不带工具的老路 ——
+    这里再重试一次,只会把老路剩下的时间吃掉。
     """
     base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    url = f"{base_url}/chat/completions"
     body = {
         "model": model,
         "messages": messages,
@@ -1630,61 +1665,35 @@ def call_deepseek_tools(
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
-    body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    tmp = tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False)
-    try:
-        tmp.write(body_bytes)
-        tmp.close()
-        proc = subprocess.run(
-            [
-                CURL_PATH, "-4", "-s", "-S", "--noproxy", "*",
-                "-m", str(timeout), "-X", "POST", url,
-                "-H", f"Authorization: Bearer {api_key}",
-                "-H", "Content-Type: application/json",
-                "--data-binary", f"@{tmp.name}",
-            ],
-            capture_output=True,
-            timeout=timeout + 5,
-        )
-        if proc.returncode != 0:
-            err = proc.stderr.decode("utf-8", errors="replace")[:200]
-            raise RuntimeError(f"curl exit {proc.returncode}: {err}")
-        raw = proc.stdout.decode("utf-8", errors="replace")
-        data = json.loads(raw)
-        if isinstance(data.get("error"), dict):
-            raise RuntimeError(str(data["error"].get("message"))[:200])
-        choices = data.get("choices") or []
-        if not choices:
-            raise RuntimeError("deepseek response has no choices")
-        msg = choices[0].get("message") or {}
-        actual_model = data.get("model") or model
-        calls = msg.get("tool_calls") or []
-        if calls:
-            # 【原样回传 id】后面那一轮的 tool 消息要靠它对应回来,
-            # 少了或改了,模型就不知道这条结果是哪次调用的。
-            return {
-                "finish": "tool_calls",
-                "model": actual_model,
-                "assistantMessage": msg,
-                "toolCalls": [
-                    {
-                        "id": c.get("id") or "",
-                        "name": ((c.get("function") or {}).get("name") or ""),
-                        "arguments": ((c.get("function") or {}).get("arguments") or "{}"),
-                    }
-                    for c in calls
-                ],
-            }
+    data = post_chat_completion(
+        provider="deepseek", url=f"{base_url}/chat/completions", body=body, api_key=api_key,
+        timeout=timeout, max_retries=0, deadline=deadline, purpose="management-tools",
+    )
+    LAST_CHAT_ERROR.clear()
+    msg = data["choices"][0].get("message") or {}
+    actual_model = data.get("model") or model
+    calls = msg.get("tool_calls") or []
+    if calls:
+        # 【原样回传 id】后面那一轮的 tool 消息要靠它对应回来,
+        # 少了或改了,模型就不知道这条结果是哪次调用的。
         return {
-            "finish": "stop",
+            "finish": "tool_calls",
             "model": actual_model,
-            "reply": (msg.get("content") or "").strip(),
+            "assistantMessage": msg,
+            "toolCalls": [
+                {
+                    "id": c.get("id") or "",
+                    "name": ((c.get("function") or {}).get("name") or ""),
+                    "arguments": ((c.get("function") or {}).get("arguments") or "{}"),
+                }
+                for c in calls
+            ],
         }
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
+    return {
+        "finish": "stop",
+        "model": actual_model,
+        "reply": (msg.get("content") or "").strip(),
+    }
 
 
 def management_chat_tools(payload: dict) -> dict:
@@ -1703,7 +1712,7 @@ def management_chat_tools(payload: dict) -> dict:
     try:
         return call_deepseek_tools(
             model=model, messages=messages, tools=tools,
-            api_key=key, timeout=timeout,
+            api_key=key, timeout=timeout, deadline=budget_deadline(payload, 25),
         )
     except Exception as exc:
         chat_account_error_of(exc)
@@ -1743,6 +1752,7 @@ def management_chat(payload: dict) -> dict:
         reply, actual_model = call_deepseek_chat(
             model=model, system=MANAGEMENT_CHAT_SYSTEM,
             user_content=user_text, api_key=key, timeout=timeout,
+            deadline=budget_deadline(payload, 25), purpose="management-chat",
         )
     except Exception as exc:
         # 记下账号级故障,/health 才看得见 —— 不记的话,欠费时界面
@@ -1798,7 +1808,8 @@ def management_chat_mock(payload: dict) -> dict:
         reply_lines.append("当前数据较少,等下次提交后再问我会更准。")
     return {
         "reply": "\n".join(reply_lines),
-        "model": "deepseek-v4-flash",
+        # 【不冒充真模型】原来写的是 deepseek-v4-flash,日志和排查时看着像真回答
+        "model": "rule-fallback",
         "generatedAt": now_iso(),
         "evidence": [],
         "isMock": True,
@@ -1813,12 +1824,13 @@ def management_analyze(payload: dict) -> dict:
     system = MANAGEMENT_WEEKLY_SYSTEM if kind == "weekly" else MANAGEMENT_DAILY_SYSTEM if kind == "daily" else MANAGEMENT_REPORT_SYSTEM
     if not key:
         return management_analyze_mock(payload)
-    user_text = json.dumps(payload, ensure_ascii=False)
+    user_text = json.dumps({k: v for k, v in payload.items() if k != "budgetSeconds"}, ensure_ascii=False)
     timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "30") or "30")
     try:
         reply, actual_model = call_deepseek_chat(
             model=model, system=system,
             user_content=user_text, api_key=key, timeout=timeout,
+            deadline=budget_deadline(payload, 30), purpose="management-analyze",
         )
     except Exception as exc:
         chat_account_error_of(exc)
@@ -1858,7 +1870,7 @@ def management_analyze_mock(payload: dict) -> dict:
         "summary": summary,
         "attention": attention,
         "recommendations": [],
-        "model": "deepseek-v4-pro",
+        "model": "rule-fallback",
         "generatedAt": now_iso(),
         "isMock": True,
     }
@@ -1941,8 +1953,6 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(self, 200, summarize(payload))
             elif self.path == "/classify":
                 write_json(self, 200, classify(payload))
-            elif self.path == "/chat":
-                write_json(self, 200, chat(payload))
             elif self.path == "/management/chat":
                 write_json(self, 200, management_chat(payload))
             elif self.path == "/management/chat-tools":
@@ -2039,6 +2049,7 @@ def draft_fields(payload: dict) -> dict:
         reply, actual_model = call_deepseek_chat(
             model=model, system=DRAFT_FIELDS_SYSTEM,
             user_content="\n\n".join(parts), api_key=key, timeout=timeout,
+            deadline=budget_deadline(payload, 80), purpose="draft-fields",
         )
     except Exception as exc:
         chat_account_error_of(exc)

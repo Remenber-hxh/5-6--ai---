@@ -145,6 +145,9 @@ func (s *Server) handleDraftTemplateFields(w http.ResponseWriter, r *http.Reques
 	if !s.requirePermission(w, r, "template_manage") {
 		return
 	}
+	if !s.allowAICall(w, r, "draft", aiLimitDraftFields) {
+		return
+	}
 	var req struct {
 		Requirement  string `json:"requirement"`
 		TemplateName string `json:"templateName"`

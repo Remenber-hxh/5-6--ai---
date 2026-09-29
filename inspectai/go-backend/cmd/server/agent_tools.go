@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ===== 管理 AI 的工具层 =====
@@ -31,7 +32,28 @@ const (
 	// 单个工具结果喂回模型时的字符上限。一条巡检记录展开有几十个字段,
 	// 三轮下来能把上下文撑爆,成本和延迟都不可控。
 	agentToolResultMaxRune = 3000
+
+	// 【时间预算】整条聊天请求要在 nginx 的 60 秒之内回来,否则浏览器拿到的是 504,
+	// 设计好的兜底回答一次都用不上。工具路径每一轮最多等 agentRoundBudget,
+	// 并且始终给不带工具的老路留出 agentFallbackReserve —— 工具路径失败时还来得及退回去。
+	managementChatBudget = 50 * time.Second
+	agentRoundBudget     = 25 * time.Second
+	agentFallbackReserve = 15 * time.Second
+	agentRoundMin        = 6 * time.Second // 剩这么点就别再开一轮了
+
+	// 模型一轮里最多并行调几个工具。不设上限的话,一轮能要 20 次查询。
+	agentMaxCallsPerRound = 4
 )
+
+// agentEvidence 模型这一轮实际查过的东西 —— 回答下面的"依据"只从这里来。
+//
+// 【为什么不再按关键词猜】原来的依据是另外拼的:问句带"异常/风险"、回答又没点名
+// 设备时,就挂上风险最高的那台。工具路径下模型答的是它自己查回来的 A 设备,
+// 依据却指向 B 设备 —— "数字有出处"这件事在最后一步被打破了。
+type agentEvidence struct {
+	AssetID  string
+	RecordID string
+}
 
 // agentToolSpecs 返回给模型的工具清单(OpenAI 兼容的 JSON Schema)。
 //
@@ -126,21 +148,24 @@ func agentToolSpecs() []map[string]any {
 // 【白名单 switch,不做反射派发】多一个工具就在这里多一行 —— 看得见、审得动。
 // 反射或 map 派发写起来短,但"模型能调到什么"就散在各处了,这是安全边界,
 // 不该为了少写几行把它藏起来。
-func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (any, error) {
+func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (any, *agentEvidence, error) {
 	var args map[string]any
 	if strings.TrimSpace(rawArgs) != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
 			// 模型偶尔会吐出不合法的 JSON。把错误【原样告诉它】而不是中断整轮 ——
 			// 它下一轮通常能自己改对,比直接失败给用户看强。
-			return nil, fmt.Errorf("参数不是合法 JSON: %v", err)
+			return nil, nil, fmt.Errorf("参数不是合法 JSON: %v", err)
 		}
 	}
 	str := func(k string) string {
 		v, _ := args[k].(string)
 		return strings.TrimSpace(v)
 	}
-	num := func(k string, def int) int {
+	num := func(k string, def, max int) int {
 		if f, ok := args[k].(float64); ok && f > 0 {
+			if int(f) > max {
+				return max // 模型要 10000 条也只给这么多 —— 结果本来就会被截断
+			}
 			return int(f)
 		}
 		return def
@@ -151,7 +176,7 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 	// 【项目范围对 AI 同样生效】页面上过滤掉了但一问 AI 就说出来,
 	// 等于开了一扇后门,而且是最容易被发现、最难解释的那种。
 	if vis.Blocked {
-		return nil, fmt.Errorf("当前账号未分配项目,查不到数据")
+		return nil, nil, fmt.Errorf("当前账号未分配项目,查不到数据")
 	}
 	// 单台设备的三个工具:先确认这台设备在他能看的项目里。
 	assetInScope := func(id string) error {
@@ -171,57 +196,64 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 	case "find_asset":
 		kw := str("keyword")
 		if kw == "" {
-			return nil, fmt.Errorf("缺少 keyword")
+			return nil, nil, fmt.Errorf("缺少 keyword")
 		}
 		if len(vis.Projects) == 1 && project == "" {
 			// 只属于一个项目:直接锁定,他问"K7"就只在这个项目里找
 			project = vis.Projects[0]
 		}
 		if project != "" && !vis.allowsProject(project) {
-			return nil, fmt.Errorf("查不到项目: %s", project)
+			return nil, nil, fmt.Errorf("查不到项目: %s", project)
 		}
-		found, err := s.findAssetsForAgent(tenant, project, kw)
+		// 【先按范围筛、再计数】原来是全租户找完、截成 10 台、再按项目裁 ——
+		// 裁剪时把 count 改成了截断后的条数,旁边的说明却还写着"匹配到 15 台",
+		// 模型照着 count 答"一共 10 台"。
+		found, err := s.findAssetsForAgent(tenant, project, kw, vis.allowsProject)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return limitAgentAssetsToProjects(found, vis), nil
+		return limitAgentAssetsToProjects(found, vis), nil, nil
 
 	case "get_asset_history":
 		id := str("assetId")
 		if id == "" {
-			return nil, fmt.Errorf("缺少 assetId")
+			return nil, nil, fmt.Errorf("缺少 assetId")
 		}
 		// 先确认这台设备属于当前租户【且在他的项目范围内】—— 工具是模型驱动的,
 		// 它可能拿到任何字符串。不校验的话,一个猜对的 id 就能读到别家的数据。
 		if err := assetInScope(id); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		snaps, hErr := s.toolGetAssetHistory(id, num("limit", 20))
+		snaps, hErr := s.toolGetAssetHistory(id, num("limit", 20, 50))
 		if hErr != nil {
-			return nil, hErr
+			return nil, nil, hErr
 		}
-		return normalizeHistoryForModel(snaps), nil
+		return normalizeHistoryForModel(snaps), &agentEvidence{AssetID: id}, nil
 
 	case "get_record_detail":
 		id := str("recordId")
 		if id == "" {
-			return nil, fmt.Errorf("缺少 recordId")
+			return nil, nil, fmt.Errorf("缺少 recordId")
 		}
 		if len(vis.Projects) > 0 {
 			rec, err := s.store.GetRecord(tenant, id)
 			if err != nil || rec == nil || !vis.allowsProject(rec.Project) {
-				return nil, fmt.Errorf("记录不存在: %s", id)
+				return nil, nil, fmt.Errorf("记录不存在: %s", id)
 			}
 		}
-		return s.toolGetRecordDetail(tenant, id)
+		out, err := s.toolGetRecordDetail(tenant, id)
+		if err != nil {
+			return nil, nil, err
+		}
+		return out, &agentEvidence{RecordID: id}, nil
 
 	case "compare_asset_periods":
 		id := str("assetId")
 		if id == "" {
-			return nil, fmt.Errorf("缺少 assetId")
+			return nil, nil, fmt.Errorf("缺少 assetId")
 		}
 		if err := assetInScope(id); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		cur := str("current")
 		if cur == "" {
@@ -231,23 +263,31 @@ func (s *Server) execAgentTool(r *http.Request, project, name, rawArgs string) (
 		if prev == "" {
 			prev = "30d"
 		}
-		return s.toolCompareAssetPeriods(id, cur, prev)
+		out, err := s.toolCompareAssetPeriods(id, cur, prev)
+		if err != nil {
+			return nil, nil, err
+		}
+		return out, &agentEvidence{AssetID: id}, nil
 
 	case "get_status_events":
 		id := str("assetId")
 		if id == "" {
-			return nil, fmt.Errorf("缺少 assetId")
+			return nil, nil, fmt.Errorf("缺少 assetId")
 		}
 		if err := assetInScope(id); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		rk := str("rangeKey")
 		if rk == "" {
 			rk = "30d"
 		}
-		return s.toolGetStatusEvents(id, rk)
+		out, err := s.toolGetStatusEvents(id, rk)
+		if err != nil {
+			return nil, nil, err
+		}
+		return out, &agentEvidence{AssetID: id}, nil
 	}
-	return nil, fmt.Errorf("未知工具: %s", name)
+	return nil, nil, fmt.Errorf("未知工具: %s", name)
 }
 
 // agentToolResultJSON 把工具结果压成给模型看的字符串。
@@ -283,13 +323,16 @@ func agentToolResultJSON(v any, err error) string {
 //	三、工具执行的错误【不中断】,原样作为结果喂回去 —— 模型下一轮通常能自己改对
 //	    (比如 assetId 拼错了),比直接失败给用户看强。
 //
-// 返回 (回复文本, 用过的工具名, 是否成功)。不成功时调用方走老路。
+// 【时间】deadline 是整条聊天请求的截止时刻。每开一轮前先看剩多少:
+// 不够一轮、或者开了这一轮就没时间退回老路了,就直接放弃工具路径。
+//
+// 返回 (回复文本, 用过的工具名, 查过的东西, 是否成功)。不成功时调用方走老路。
 func (s *Server) agentChat(
 	r *http.Request, systemPrompt, contextJSON, question, project string,
-	history []map[string]any,
-) (string, []string, bool) {
+	history []map[string]any, deadline time.Time,
+) (string, []string, []agentEvidence, bool) {
 	if s.analyticsClient == nil {
-		return "", nil, false
+		return "", nil, nil, false
 	}
 	messages := []map[string]any{
 		{"role": "system", "content": systemPrompt},
@@ -309,17 +352,26 @@ func (s *Server) agentChat(
 	messages = append(messages, map[string]any{"role": "user", "content": question})
 
 	used := []string{}
+	evidence := []agentEvidence{}
 	tools := agentToolSpecs()
 
 	for round := 0; round <= agentMaxToolRounds; round++ {
+		budget := time.Until(deadline) - agentFallbackReserve
+		if budget < agentRoundMin {
+			log.Printf("WARN: agent 第 %d 轮前剩余时间不足(%s),回退无工具路径", round, budget.Round(time.Second))
+			return "", used, evidence, false
+		}
+		if budget > agentRoundBudget {
+			budget = agentRoundBudget
+		}
 		payload := map[string]any{"messages": messages}
 		if round < agentMaxToolRounds {
 			payload["tools"] = tools // 最后一轮不再给工具:逼它用手上的信息作答
 		}
-		resp, err := s.analyticsClient.ChatTools(payload)
+		resp, err := s.analyticsClient.ChatTools(payload, budget)
 		if err != nil {
 			log.Printf("WARN: agent 工具轮次 %d 调用失败,回退无工具路径: %v", round, err)
-			return "", used, false
+			return "", used, evidence, false
 		}
 		switch resp["finish"] {
 		case "stop":
@@ -327,30 +379,42 @@ func (s *Server) agentChat(
 			if strings.TrimSpace(reply) == "" {
 				// 空响应是官方点名的失败模式之一,别把空白交给用户
 				log.Printf("WARN: agent 第 %d 轮返回空回复,回退", round)
-				return "", used, false
+				return "", used, evidence, false
 			}
-			return reply, used, true
+			return reply, used, evidence, true
 
 		case "tool_calls":
 			calls, _ := resp["toolCalls"].([]any)
 			if len(calls) == 0 {
-				return "", used, false
+				return "", used, evidence, false
 			}
 			// 【assistant 那条要原样带回去】OpenAI 协议要求 tool 结果必须
 			// 跟在发起它的 assistant 消息之后,且 tool_call_id 对得上。
 			if am, ok := resp["assistantMessage"].(map[string]any); ok {
 				messages = append(messages, am)
 			}
-			for _, c := range calls {
+			for i, c := range calls {
 				call, _ := c.(map[string]any)
 				name, _ := call["name"].(string)
 				args, _ := call["arguments"].(string)
 				id, _ := call["id"].(string)
-				out, execErr := s.execAgentTool(r, project, name, args)
+				// 【超出上限的也要回一条】协议要求每个 tool_call_id 都有结果,
+				// 少一条模型那边就对不上;回一句"这一轮查太多了"让它下一轮收着点。
+				if i >= agentMaxCallsPerRound {
+					messages = append(messages, map[string]any{
+						"role": "tool", "tool_call_id": id,
+						"content": agentToolResultJSON(nil, fmt.Errorf("这一轮查询太多,已跳过;请先用已有结果作答或少查几项")),
+					})
+					continue
+				}
+				out, ev, execErr := s.execAgentTool(r, project, name, args)
 				if execErr != nil {
 					log.Printf("INFO: agent 工具 %s 执行失败(将把错误回给模型): %v", name, execErr)
 				} else {
 					used = append(used, name)
+					if ev != nil {
+						evidence = append(evidence, *ev)
+					}
 				}
 				messages = append(messages, map[string]any{
 					"role":         "tool",
@@ -364,12 +428,12 @@ func (s *Server) agentChat(
 			if msg, _ := resp["message"].(string); msg != "" {
 				log.Printf("WARN: agent 轮次 %d 返回错误,回退: %s", round, msg)
 			}
-			return "", used, false
+			return "", used, evidence, false
 		}
 	}
 	// 轮数用尽还没给出答案 —— 正是官方说的"循环调用"那种情况
 	log.Printf("WARN: agent 工具轮次用尽(%d 轮)仍未作答,回退", agentMaxToolRounds)
-	return "", used, false
+	return "", used, evidence, false
 }
 
 // MANAGEMENT_CHAT_SYSTEM_HINT — 工具路径的系统提示。
@@ -418,7 +482,20 @@ find_asset 有时会返回 nearMatches(编号相近的候选,有猜测成分):�
 1. 第一句直接回答问题,最关键处用 **…** 加粗(全文只加粗一处)。
 2. 另起一行写「依据:」,跟 1-2 条短句,每条一个关键数字或事实。
    数据来自工具的,点明是哪台设备/哪次巡检。
-3. 全文 50-120 字,除那一处加粗外不用其它 markdown。`
+3. 全文 50-120 字(不含下面的动作提议块),除那一处加粗外不用其它 markdown。
+
+动作提议(仅在确有必要时附,其余情况绝不附):
+- 你不能直接派单;但当某台设备反复异常、尚未闭环、适合派一次现场复查时
+  (包括回答"今天优先处理什么""重点关注哪些设备"),在正文之后另起一行附【一个】提议块,
+  主管点确认后系统才会执行:
+<<ACTION>>
+{"type":"create_recheck_task","assetId":"设备完整 id","asset":"设备可读编号","assignee":"责任人(不确定就省略此项)","dueAt":"YYYY-MM-DD(不确定就省略)","reason":"一句话复查理由"}
+<<END>>
+- assetId 用 find_asset 返回的 id,或看板数据 topRiskAssets 里那台的 assetId,原样照抄。
+  【动作块是给程序读的,不显示给人】这里必须写完整 id —— 台账里同名设备不少,只写编号会派错设备;
+  正文里仍然只说可读编号。
+- assignee / dueAt 不知道就省略那一项,绝不编造;reason 用中文一句话。
+- 问复核率、趋势、谁没看图这类问题时,不附动作块。`
 
 // normalizeHistoryForModel 把快照整理成"日期无歧义"的形状再交给模型。
 //
@@ -471,7 +548,9 @@ func normalizeHistoryForModel(snaps []*AssetSnapshot) map[string]any {
 // 整个租户 —— 于是在"会议中心"的对话里问 K01,可能答出另一栋楼的 K01。
 // 各楼的编号是各自排的,重名很常见(asset_identity.go 里记着这件事),
 // 而"挑名字最接近的那台"这条规则对两台同名设备完全无效。
-func (s *Server) findAssetsForAgent(tenantID, project, keyword string) (map[string]any, error) {
+//
+// allow 是这个账号的项目范围(nil = 不限)。【必须在计数之前筛】—— 见 execAgentTool。
+func (s *Server) findAssetsForAgent(tenantID, project, keyword string, allow func(string) bool) (map[string]any, error) {
 	norm := func(x string) string {
 		return strings.ToUpper(strings.NewReplacer("-", "", "_", "", " ", "", "－", "").Replace(x))
 	}
@@ -500,6 +579,9 @@ func (s *Server) findAssetsForAgent(tenantID, project, keyword string) (map[stri
 			continue
 		}
 		if project != "" && a.Project != project {
+			continue
+		}
+		if allow != nil && !allow(a.Project) {
 			continue
 		}
 		nName, nKey := norm(a.AssetName), norm(a.AssetKey)
@@ -664,10 +746,10 @@ func limitAgentAssetsToProjects(found map[string]any, vis dataVisibility) map[st
 	if found == nil || vis.AllData || len(vis.Projects) == 0 {
 		return found
 	}
-	keep := func(key string) {
+	keep := func(key string) int {
 		list, ok := found[key].([]map[string]any)
 		if !ok {
-			return
+			return 0
 		}
 		out := make([]map[string]any, 0, len(list))
 		for _, item := range list {
@@ -678,17 +760,24 @@ func limitAgentAssetsToProjects(found map[string]any, vis dataVisibility) map[st
 		}
 		if len(out) == 0 {
 			delete(found, key)
-			return
+		} else {
+			found[key] = out
 		}
-		found[key] = out
+		return len(list) - len(out)
 	}
-	keep("assets")
+	removed := keep("assets")
 	keep("nearMatches")
-	// count 是"确定命中多少台"。裁剪之后必须跟着改,否则模型会照着
-	// 旧数字说"一共 12 台",而列表里只有 3 台 —— 用户一眼就看出对不上。
-	if list, ok := found["assets"].([]map[string]any); ok {
-		found["count"] = len(list)
-	} else {
+	// count 是"确定命中多少台"(截断之前的总数)。裁掉几台就减几台 ——
+	// 【不能直接改成列表长度】列表可能已经截成 10 台,count 是 15;
+	// 改成 10 的话旁边的说明还写着"匹配到 15 台",模型会照 count 答"一共 10 台"。
+	// (findAssetsForAgent 已经先按范围筛过,正常情况下这里一台都不会裁,
+	// 这一道是防将来有人漏传范围。)
+	if removed > 0 {
+		if n, ok := found["count"].(int); ok {
+			found["count"] = max(n-removed, 0)
+		}
+	}
+	if _, ok := found["assets"]; !ok {
 		found["count"] = 0
 	}
 	return found

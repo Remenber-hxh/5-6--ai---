@@ -39,6 +39,7 @@ type Server struct {
 	aiSem              chan struct{} // AI 识别并发闸:防止多巡检员同时提交打爆 ai-service
 	loginGuard         *loginGuard   // 登录防爆破:连续失败锁定
 	permCache          permCache     // 角色×能力矩阵缓存(见 permissions.go)
+	aiLimiter          aiRateLimiter // AI 接口按人限流(见 ai_rate_limit.go)
 }
 
 func main() {
@@ -179,6 +180,8 @@ func main() {
 	if err := server.backfillAssetSnapshots(); err != nil {
 		log.Printf("WARN: asset snapshot backfill failed: %v", err)
 	}
+	// 上一个进程没跑完的识别:此刻那些 goroutine 已经不在了,标成需重拍,别让记录一直卡在"识别中"
+	server.recoverInterruptedRecognitions()
 	if removed, err := server.cleanupTmpClassifyDirs(); err != nil {
 		log.Printf("WARN: cleanup tmp_classify failed: %v", err)
 	} else if removed > 0 {

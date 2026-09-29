@@ -20,6 +20,8 @@ export interface ChatResponse {
 
 export interface ActionProposal {
   type: string; // create_recheck_task
+  /** 设备完整 id。有它就按它派 —— 台账里同名设备不少,只靠编号会派错 */
+  assetId?: string;
   asset: string; // 可读编号
   assignee?: string;
   dueAt?: string;

@@ -130,7 +130,6 @@ var apiRoutes = []apiRoute{
 	// 不走那边的数据范围分支,混在一起两套口径迟早会串。
 	{http.MethodGet, "/api/inspection/drafts", guardNone, "", (*Server).handleListDrafts},
 	{http.MethodPost, "/api/scene/classify", guardNone, "", (*Server).handleClassifyScene},
-	{http.MethodPost, "/api/ai/chat", guardNone, "", (*Server).handleAIChat},
 
 	// —— 资产台账 ——
 	{http.MethodGet, "/api/assets/summary", guardNone, "", (*Server).handleAssetSummary},

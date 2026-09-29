@@ -96,6 +96,8 @@ type AITaskStore interface {
 	CreateTask(task *AITask) error
 	GetTask(id string) (*AITask, error)
 	UpdateTask(id string, mutate func(*AITask)) error
+	// ResetInterruptedRecognitions 启动时调用:上一个进程没跑完的识别标成需重拍。返回改了几条记录。
+	ResetInterruptedRecognitions(reason string) (int, error)
 	LatestTaskByRecord(recordID string) (*AITask, error)
 }
 

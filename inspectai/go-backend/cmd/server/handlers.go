@@ -2462,6 +2462,9 @@ func (s *Server) handleUploadImages(w http.ResponseWriter, r *http.Request, reco
 }
 
 func (s *Server) handleStartAnalysis(w http.ResponseWriter, r *http.Request, recordID string) {
+	if !s.allowAICall(w, r, "analyze", aiLimitAnalyze) {
+		return
+	}
 	rec, err := s.store.GetRecord(s.tenantForRequest(r), recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "record_not_found", "巡检记录不存在")
@@ -3058,75 +3061,6 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 
 // ===== 场景分类 =====
 
-func (s *Server) handleAIChat(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Message string           `json:"message"`
-		History []map[string]any `json:"history,omitempty"`
-		Context map[string]any   `json:"context,omitempty"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
-		return
-	}
-	if strings.TrimSpace(req.Message) == "" {
-		writeError(w, http.StatusBadRequest, "empty_message", "请输入要询问的问题")
-		return
-	}
-	// 自动补充平台实时快照供 AI 引用
-	ctx := req.Context
-	if ctx == nil {
-		ctx = map[string]any{}
-	}
-	if assets, err := s.store.ListAssets(s.tenantForRequest(r)); err == nil {
-		total, normal, warning, danger := 0, 0, 0, 0
-		for _, a := range assets {
-			total++
-			switch a.LastStatus {
-			case "正常":
-				normal++
-			case "异常":
-				danger++
-			case "待复核":
-				warning++
-			}
-		}
-		ctx["assetTotal"] = total
-		ctx["assetNormal"] = normal
-		ctx["assetWarning"] = warning
-		ctx["assetDanger"] = danger
-	}
-	if recs, err := s.store.ListRecords(s.tenantForRequest(r), 1000); err == nil {
-		ctx["recordTotal"] = len(recs)
-	}
-	if reqs, err := s.store.ListChangeRequests(ChangeRequestFilter{}); err == nil {
-		pending := 0
-		for _, c := range reqs {
-			if c.Status == "pending" {
-				pending++
-			}
-		}
-		ctx["changeRequestPending"] = pending
-	}
-	payload := map[string]any{
-		"message": req.Message,
-		"history": req.History,
-		"context": ctx,
-	}
-	resp, err := s.aiClient.Chat(payload)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "ai_chat_failed", err.Error())
-		return
-	}
-	_ = s.store.CreateOperationLog(&OperationLog{
-		UserID:     s.currentUserID(r),
-		ActorName:  s.currentUserName(r),
-		Action:     "ai_chat",
-		TargetType: "ai",
-		Detail:     map[string]any{"message": req.Message, "model": resp["model"]},
-	})
-	writeJSON(w, http.StatusOK, resp)
-}
-
 func (s *Server) currentUserID(r *http.Request) string {
 	if user, ok := s.userFromSessionToken(s.tokenFromRequest(r)); ok {
 		return user.ID
@@ -3135,6 +3069,9 @@ func (s *Server) currentUserID(r *http.Request) string {
 }
 
 func (s *Server) handleClassifyScene(w http.ResponseWriter, r *http.Request) {
+	if !s.allowAICall(w, r, "classify", aiLimitClassify) {
+		return
+	}
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_multipart", err.Error())
 		return

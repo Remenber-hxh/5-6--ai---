@@ -617,6 +617,9 @@ func (s *Server) handleOfflineShotImage(w http.ResponseWriter, r *http.Request) 
 // handleClassifyOfflineShots 用已上传的离线照片做场景识别。
 // 照片已在服务器上,不重传 —— 弱网现场刚传完就再传一遍是浪费。
 func (s *Server) handleClassifyOfflineShots(w http.ResponseWriter, r *http.Request) {
+	if !s.allowAICall(w, r, "classify", aiLimitClassify) {
+		return
+	}
 	var req struct {
 		ShotIDs []string `json:"shotIds"`
 	}

@@ -10,7 +10,6 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_VISION_MODEL: ${QWEN_VISION_MODEL:-qwen-vl-plus}
-      QWEN_VISION_FALLBACK: ${QWEN_VISION_FALLBACK:-qwen-vl-max}
       QWEN_TEXT_MODEL: ${QWEN_TEXT_MODEL:-qwen-plus}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}

@@ -57,7 +57,7 @@ func TestFindAssetsPrefersExactOverPartial(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "", "KT-7")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "KT-7", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestFindAssetsReturnsNearMatchesSeparately(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "", "K7")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "K7", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestFindAssetsScopedByProject(t *testing.T) {
 		}
 	}
 	// 不限项目:两台都返回(由模型反问是哪一台)
-	all, err := srv.findAssetsForAgent(defaultTenantID, "", "K01")
+	all, err := srv.findAssetsForAgent(defaultTenantID, "", "K01", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestFindAssetsScopedByProject(t *testing.T) {
 		t.Fatalf("不限项目应返回 2 台,得到 %v", all["count"])
 	}
 	// 限定项目:只返回那一台,且必须是对的那个项目
-	one, err := srv.findAssetsForAgent(defaultTenantID, "会议中心", "K01")
+	one, err := srv.findAssetsForAgent(defaultTenantID, "会议中心", "K01", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestFindAssetsCountIsBeforeTruncation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "", "DT")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "DT", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestFindAssetsDemotesAmbiguousSubstring(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "", "KT-7")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "KT-7", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestFindAssetsEmptyWhenNothingClose(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.findAssetsForAgent(defaultTenantID, "", "FT-99")
+	got, err := srv.findAssetsForAgent(defaultTenantID, "", "FT-99", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
