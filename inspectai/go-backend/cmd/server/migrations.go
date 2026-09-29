@@ -66,6 +66,7 @@ var migrationList = []migration{
 	{37, "asset_photo_per_field", (*SQLiteStore).migAssetPhotoPerField},
 	{38, "plan_owners_json", (*SQLiteStore).migPlanOwnersJSON},
 	{39, "project_bot_index", (*SQLiteStore).migProjectBotIndex},
+	{40, "work_calendar", (*SQLiteStore).migWorkCalendar},
 }
 
 // 039 — 每个项目的提醒发到哪个群,搬到后台配置。

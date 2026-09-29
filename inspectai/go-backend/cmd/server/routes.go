@@ -90,6 +90,11 @@ var apiRoutes = []apiRoute{
 	// 推送设置。【改的是"会不会自动往群里发",所以是管理员级】
 	{http.MethodGet, "/api/engineering/plans/daily-push/config", guardAdmin, "", (*Server).handleDailyPushConfig},
 	{http.MethodPut, "/api/engineering/plans/daily-push/config", guardAdmin, "", (*Server).handleDailyPushConfig},
+	// 工作日历:执行日选「法定工作日」的计划和推送群按它跳过节假日。
+	// 读给管理角色(编计划时要看),改是管理员级 —— 改错一天,那天所有这类提醒都不发。
+	{http.MethodGet, "/api/work-calendar", guardSupervisor, "", (*Server).handleGetWorkCalendar},
+	{http.MethodPut, "/api/work-calendar", guardAdmin, "", (*Server).handleSaveWorkCalendar},
+	{http.MethodPost, "/api/work-calendar/parse", guardAdmin, "", (*Server).handleParseHolidayNotice},
 	// 负责人绑定:报告只读、应用只吃显式清单。两条都是管理员级 ——
 	// 它改的是"提醒发给谁",错了会直接骚扰到人。
 	{http.MethodGet, "/api/engineering/plans/owner-binding", guardAdmin, "", (*Server).handleOwnerBindingReport},

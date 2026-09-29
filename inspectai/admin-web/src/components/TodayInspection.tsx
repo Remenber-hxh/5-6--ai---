@@ -100,13 +100,26 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
 
   if (loading) return <div style={{ padding: 24, color: C.textFaint }}>加载中…</div>;
 
+  // 今天在工作日历里是什么日子。放假时要说有几条计划因此不巡 ——
+  // 不说的话,那几条计划从这一屏消失,人会以为被删了。
+  const skipped = board?.holidaySkipped ?? 0;
+  const dayNote =
+    board?.dayKind === "off"
+      ? `${board.dayName || ""}放假${skipped > 0 ? `,${skipped} 条按法定工作日执行的计划今天不巡` : ""}`
+      : board?.dayKind === "on"
+        ? `${board.dayName ? board.dayName + " " : ""}调休上班`
+        : "";
+
   if (!board || board.plans.length === 0) {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="今天没有排定的每日计划"
+        description={dayNote && board?.dayKind === "off" ? `今天${dayNote}` : "今天没有排定的每日计划"}
         style={{ padding: "32px 0" }}
-      />
+      >
+        {/* 【没有计划时操作也要在】放假那天看板是空的,而那天正是要去看日历、看提醒的时候 */}
+        {action && <Space size={8}>{action}</Space>}
+      </Empty>
     );
   }
 
@@ -143,7 +156,8 @@ export default function TodayInspection({ action }: { action?: React.ReactNode }
           </Space>
         )}
         <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-          {board.date} · {WEEKDAY_CN[board.weekday]} · 共 {board.total} 台
+          {board.date} · {WEEKDAY_CN[board.weekday]}
+          {dayNote && ` · ${dayNote}`} · 共 {board.total} 台
         </Typography.Text>
         {/* 【两个按钮绑成一组再推到右边】分别推的话,窄屏换行时它们会
             各自跑到一行,中间隔着一大片空白。 */}

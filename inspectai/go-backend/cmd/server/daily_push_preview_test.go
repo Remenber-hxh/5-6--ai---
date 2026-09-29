@@ -16,12 +16,12 @@ func TestPreviewSaysPausedGroupWillNotSend(t *testing.T) {
 	global := dailyPushConfig{Enabled: true, HourMin: "17:00"}
 	paused := dailyPushConfig{Enabled: false, HourMin: "17:00"}
 	d := dailyPushDigest{WouldSend: true}
-	mon := time.Date(2026, 9, 28, 9, 0, 0, 0, time.Local) // 周一
+	mon := time.Date(2026, 9, 28, 9, 0, 0, 0, cnLoc) // 周一(东八区)
 
-	if kind, _ := describeBotPushToday(global, paused, d, true, "", mon); kind != "paused" {
+	if kind, _ := describeBotPushToday(global, paused, d, true, "", mon, WorkCalendarDay{}); kind != "paused" {
 		t.Errorf("暂停的群被说成了 %q —— 预览会谎报这个群今天要发", kind)
 	}
-	if kind, _ := describeBotPushToday(global, global, d, true, "", mon); kind != "send" {
+	if kind, _ := describeBotPushToday(global, global, d, true, "", mon, WorkCalendarDay{}); kind != "send" {
 		t.Errorf("正常的群应该是 send,得到 %q", kind)
 	}
 }
@@ -29,7 +29,7 @@ func TestPreviewSaysPausedGroupWillNotSend(t *testing.T) {
 // 【理由要和真正不发的原因一致】总开关关着时,不管这个群暂停没有,
 // 都得先说"没开";发过了就说发过了,不能说成"没内容"。
 func TestPreviewReasonOrderMatchesSender(t *testing.T) {
-	mon := time.Date(2026, 9, 28, 18, 0, 0, 0, time.Local)
+	mon := time.Date(2026, 9, 28, 18, 0, 0, 0, cnLoc)
 	on := dailyPushConfig{Enabled: true, HourMin: "17:00"}
 	off := dailyPushConfig{Enabled: false, HourMin: "17:00"}
 	cases := []struct {
@@ -46,7 +46,7 @@ func TestPreviewReasonOrderMatchesSender(t *testing.T) {
 		{on, on, dailyPushDigest{WouldSend: true}, false, "", "no_address"},
 	}
 	for i, c := range cases {
-		if got, _ := describeBotPushToday(c.global, c.eff, c.d, c.ready, c.lastDay, mon); got != c.want {
+		if got, _ := describeBotPushToday(c.global, c.eff, c.d, c.ready, c.lastDay, mon, WorkCalendarDay{}); got != c.want {
 			t.Errorf("#%d 得到 %q,应该是 %q", i, got, c.want)
 		}
 	}

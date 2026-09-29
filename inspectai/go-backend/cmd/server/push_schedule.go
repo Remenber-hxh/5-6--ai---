@@ -118,12 +118,13 @@ func parseHourMin(v string) (int, int) {
 
 // shouldFireDailyPush 现在该不该发。
 //
-// now 传的是【东八区】的时间;lastDay 是 push_log 里最近一次占位的日期。
+// now 传的是【东八区】的时间;cal 是今天在工作日历里的记录(执行日选「法定工作日」时才看);
+// lastDay 是 push_log 里最近一次占位的日期。
 //
 // 【补发窗口 catchUpMinutes】容器 17:30 才起来,17:00 那一次没发。
 // 当天内补发一次 —— "今天谁没巡"到 18 点仍然有用;跨天不补,
 // 第二天早上收到昨天的提醒是纯噪音。
-func shouldFireDailyPush(c dailyPushConfig, now time.Time, lastDay string, catchUpMinutes int) (bool, string) {
+func shouldFireDailyPush(c dailyPushConfig, now time.Time, cal WorkCalendarDay, lastDay string, catchUpMinutes int) (bool, string) {
 	if !c.Enabled {
 		return false, "未启用"
 	}
@@ -134,7 +135,7 @@ func shouldFireDailyPush(c dailyPushConfig, now time.Time, lastDay string, catch
 		return false, "今天已经发过"
 	}
 	wd := isoWeekday(int(now.Weekday()))
-	if !runsOnWeekday(c.Weekdays, wd) {
+	if !runsOnDay(c.Weekdays, wd, cal) {
 		return false, "今天不在推送日内"
 	}
 	h, m := parseHourMin(c.HourMin)

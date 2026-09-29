@@ -157,7 +157,7 @@ func TestOnlyTheDueBotFiresAtThatMinute(t *testing.T) {
 	// `catchUpMinutes > 0` 这个判断直接跳过窗口检查 —— 于是 17:00 的群
 	// 在 18:30 也算"该发"(当成补发),这条测试就永远证明不了各按各的时间。
 	fires := func(idx int, hhmm string) bool {
-		ok, _ := shouldFireDailyPush(dailyPushConfigForBot(kv, idx), at(hhmm), "", 1)
+		ok, _ := shouldFireDailyPush(dailyPushConfigForBot(kv, idx), at(hhmm), WorkCalendarDay{}, "", 1)
 		return ok
 	}
 	if !fires(1, "17:00") || fires(2, "17:00") {

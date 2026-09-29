@@ -389,3 +389,12 @@ body {
   white-space: nowrap;
   margin-right: auto;
 }
+
+/* 工作日历的日子格:底色是状态(休/班),悬停只加一圈描边,不改底色 */
+.wc-day:hover {
+  box-shadow: inset 0 0 0 1px #c9d2dc;
+}
+.wc-day:focus-visible {
+  outline: 2px solid #246bfe;
+  outline-offset: 1px;
+}

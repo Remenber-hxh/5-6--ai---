@@ -192,9 +192,23 @@ func (s *Server) handleDailyPushPreview(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		silent := r.URL.Query().Get("silentWhenDone") == "1"
+		d := buildDailyPushDigest(board, silent)
+		// 【今天不在推送日也要说】这里原来只看有没有内容 —— 执行日选了法定工作日、
+		// 今天又放假,页面上还写着"今天 17:00 会发出下面这条"。
+		if kv, kvErr := s.store.ListAppSettings(); kvErr == nil {
+			global := dailyPushConfigFrom(kv)
+			cn := now.In(cnLoc)
+			if cal := s.workCalendarOn(dayStamp(cn)); !runsOnDay(global.Weekdays, isoWeekday(int(cn.Weekday())), cal) {
+				d.WouldSend = false
+				d.SkipReason = "今天不在推送日内"
+				if cal.Kind == workDayOff {
+					d.SkipReason = "今天" + cal.Name + "放假,按法定工作日推送"
+				}
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"bots":   []dailyPushBotPreview{},
-			"digest": buildDailyPushDigest(board, silent),
+			"digest": d,
 		})
 		return
 	}
@@ -205,6 +219,7 @@ func (s *Server) handleDailyPushPreview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	global := dailyPushConfigFrom(kv)
+	cal := s.workCalendarOn(dayStamp(now))
 	out := make([]dailyPushBotPreview, 0, len(s.weworkBots))
 	for _, b := range s.weworkBots {
 		// 【只给看自己看得到的群】一个只管会议中心的主管,不该在这里读到
@@ -225,7 +240,7 @@ func (s *Server) handleDailyPushPreview(w http.ResponseWriter, r *http.Request) 
 		d := buildDailyPushDigest(board, eff.SilentWhenDone)
 		lastDay, _ := s.store.LastPushDay(tenantID, b.SlotKind)
 		ready := b.Client != nil && b.Client.Enabled()
-		kind, status := describeBotPushToday(global, eff, d, ready, lastDay, now)
+		kind, status := describeBotPushToday(global, eff, d, ready, lastDay, now, cal)
 		out = append(out, dailyPushBotPreview{
 			Index: b.Index, Projects: append([]string{}, names...), AllProjects: all,
 			Time: eff.HourMin, Kind: kind, Status: status, Digest: d,
@@ -253,13 +268,18 @@ type dailyPushBotPreview struct {
 // 【判断顺序和 pushOneBot 一致】先看开关和暂停,再看日子、发过没有,
 // 最后才看有没有内容、地址好不好 —— 顺序不同,给出的理由就会和
 // 实际不发的原因对不上("说是没内容,其实是暂停了")。
-func describeBotPushToday(global, eff dailyPushConfig, d dailyPushDigest, ready bool, lastDay string, now time.Time) (string, string) {
+func describeBotPushToday(global, eff dailyPushConfig, d dailyPushDigest, ready bool, lastDay string, now time.Time, cal WorkCalendarDay) (string, string) {
+	now = now.In(cnLoc) // 和真发一样按东八区的日子算
 	switch {
 	case !global.Enabled:
 		return "off", "自动推送还没开 —— 开启后,今天 " + eff.HourMin + " 会发出下面这条"
 	case !eff.Enabled:
 		return "paused", "这个群已暂停推送,今天不发"
-	case !runsOnWeekday(eff.Weekdays, isoWeekday(int(now.Weekday()))):
+	case !runsOnDay(eff.Weekdays, isoWeekday(int(now.Weekday())), cal):
+		// 【放假不发要说是放假】只说"不在推送日内",人会去查是不是勾错了周几
+		if cal.Kind == workDayOff {
+			return "weekday", "今天" + cal.Name + "放假,这个群按法定工作日推送,不发"
+		}
 		return "weekday", "今天不在这个群的推送日内,不发"
 	case lastDay == now.Format("2006-01-02"):
 		return "sent", "今天已经发过了"
@@ -473,7 +493,12 @@ func (b botConfigReq) toOverride() (dailyPushOverride, string) {
 //
 // 【抽出来是因为全局和单独设置得是同一套规则】各写一份的话,
 // 单独设置那边迟早会放过一个全局不收的值,而坏值的表现是"那个群不发了"。
+//
+// 「法定工作日」存的是 dayRuleWorkday,见 work_calendar.go。
 func validWeekdays(raw string) string {
+	if strings.TrimSpace(raw) == dayRuleWorkday {
+		return ""
+	}
 	for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
 		if part = strings.TrimSpace(part); part == "" {
 			continue

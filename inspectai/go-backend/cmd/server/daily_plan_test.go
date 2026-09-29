@@ -105,7 +105,9 @@ func TestTodayBoardDeduplicatesAssets(t *testing.T) {
 // 今天不该执行的计划不进看板。
 func TestTodayBoardRespectsWeekdays(t *testing.T) {
 	srv, r, store := newBoardServer(t)
-	now := time.Now()
+	// 【按东八区取今天是周几】看板的日期和周几都按东八区算;用本机时区的话,
+	// 太平洋时间的晚上已经是东八区的第二天,测试会随跑的时刻忽对忽错。
+	now := time.Now().In(cnLoc)
 	today := isoWeekday(int(now.Weekday()))
 	other := today%7 + 1 // 随便挑一个不是今天的
 

@@ -337,7 +337,10 @@ export interface EngineeringPlan {
   riskLevel?: string;
   /** yearly / monthly / weekly / daily / adhoc(临时,对外部项目组) */
   planType?: string;
-  /** 每日计划专用:一周哪几天执行,"1,2,3,4,5"(1=周一 … 7=周日)。空=每天 */
+  /**
+   * 每日计划专用,执行日三选一:空 = 每天;"1,2,3,4,5" = 按星期(1=周一 … 7=周日);
+   * "workday" = 法定工作日(按工作日历跳过节假日,调休上班照常)
+   */
   weekdays?: string;
   /** 每日计划要巡的设备。完成情况按它自动判定,所以每日计划必填 */
   assetIds?: string[];
@@ -1433,6 +1436,11 @@ export interface TodayBoard {
   total: number;
   done: number;
   plans: DailyPlanStatus[];
+  /** 今天在工作日历里:off 放假 / on 调休上班;没录就没有 */
+  dayKind?: "off" | "on";
+  dayName?: string;
+  /** 执行日选了「法定工作日」、今天因为放假不巡的计划条数 */
+  holidaySkipped?: number;
 }
 
 export function getTodayBoard() {
@@ -1457,3 +1465,37 @@ export const WEEKDAY_OPTIONS = [
   { value: "6", label: "六" },
   { value: "7", label: "日" },
 ] as const;
+
+// ===== 工作日历 =====
+//
+// 只存特殊的日子:放假(off)和调休上班(on)。没录的日子按周一到周五算。
+// 只有执行日选了「法定工作日」的计划和推送群才看它。
+
+export interface WorkCalendarDay {
+  date: string; // 2026-10-01
+  kind: "off" | "on";
+  name?: string;
+}
+
+export function getWorkCalendar(year: number) {
+  return api<{ year: number; days: WorkCalendarDay[] }>(`/api/work-calendar?year=${year}`);
+}
+
+/**
+ * 改日历。kind 传空串 = 那一天恢复成平常日子。
+ * replaceYear:先清空这一年再写(粘贴整份通知时用)。
+ */
+export function saveWorkCalendar(body: {
+  replaceYear?: number;
+  days: { date: string; kind: "off" | "on" | ""; name?: string }[];
+}) {
+  return api("/api/work-calendar", { method: "PUT", body: JSON.stringify(body) });
+}
+
+/** 把粘贴进来的放假通知认成日子。只认不存 */
+export function parseHolidayNotice(year: number, text: string) {
+  return api<{ year: number; days: WorkCalendarDay[]; warnings: string[] | null }>(
+    "/api/work-calendar/parse",
+    { method: "POST", body: JSON.stringify({ year, text }) },
+  );
+}

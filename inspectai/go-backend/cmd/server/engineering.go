@@ -904,17 +904,13 @@ func (s *Server) handleCreateEngineeringPlan(w http.ResponseWriter, r *http.Requ
 				"这些设备不属于「"+req.Project+"」:"+strings.Join(bad, "、"))
 			return
 		}
-		// 执行日只认 1..7(1=周一 … 7=周日)。脏值会让这条计划要么天天触发、
-		// 要么永远不触发,而两种都不报错。
-		if wd := strings.TrimSpace(req.Weekdays); wd != "" {
-			for _, part := range strings.Split(wd, ",") {
-				n, convErr := strconv.Atoi(strings.TrimSpace(part))
-				if convErr != nil || n < 1 || n > 7 {
-					writeError(w, http.StatusBadRequest, "bad_weekdays",
-						"执行日只能是 1-7(1=周一,7=周日)")
-					return
-				}
-			}
+		// 执行日只认 1..7(1=周一 … 7=周日)或「法定工作日」。脏值会让这条计划
+		// 要么天天触发、要么永远不触发,而两种都不报错。
+		// 【和推送群同一套校验】各写一份的话,迟早一边收了另一边不认的值。
+		req.Weekdays = strings.TrimSpace(req.Weekdays)
+		if msg := validWeekdays(req.Weekdays); msg != "" {
+			writeError(w, http.StatusBadRequest, "bad_weekdays", msg)
+			return
 		}
 	} else {
 		// 其他类型不带这两项 —— 留着会让人以为它们生效了

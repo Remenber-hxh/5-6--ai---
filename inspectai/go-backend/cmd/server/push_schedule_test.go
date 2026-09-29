@@ -26,14 +26,14 @@ func baseCfg() dailyPushConfig {
 }
 
 func TestPushNotBeforeTargetTime(t *testing.T) {
-	ok, why := shouldFireDailyPush(baseCfg(), at("16:59"), "", 0)
+	ok, why := shouldFireDailyPush(baseCfg(), at("16:59"), WorkCalendarDay{}, "", 0)
 	if ok {
 		t.Errorf("没到点就发了")
 	}
 	if why != "还没到点" {
 		t.Errorf("原因应说清楚,实际 %q", why)
 	}
-	if ok, _ := shouldFireDailyPush(baseCfg(), at("17:00"), "", 0); !ok {
+	if ok, _ := shouldFireDailyPush(baseCfg(), at("17:00"), WorkCalendarDay{}, "", 0); !ok {
 		t.Error("到点了应该发")
 	}
 }
@@ -42,11 +42,11 @@ func TestPushNotBeforeTargetTime(t *testing.T) {
 // 没有这一句,群里就会收到第二遍;崩溃循环时是十遍,
 // 而这功能的可信度一次就毁了。
 func TestPushOncePerDay(t *testing.T) {
-	if ok, why := shouldFireDailyPush(baseCfg(), at("17:05"), "2026-08-27", 0); ok {
+	if ok, why := shouldFireDailyPush(baseCfg(), at("17:05"), WorkCalendarDay{}, "2026-08-27", 0); ok {
 		t.Errorf("今天发过了还要发:%s", why)
 	}
 	// 昨天发过不影响今天
-	if ok, _ := shouldFireDailyPush(baseCfg(), at("17:05"), "2026-08-26", 0); !ok {
+	if ok, _ := shouldFireDailyPush(baseCfg(), at("17:05"), WorkCalendarDay{}, "2026-08-26", 0); !ok {
 		t.Error("昨天发过不该挡住今天")
 	}
 }
@@ -54,11 +54,11 @@ func TestPushOncePerDay(t *testing.T) {
 func TestPushRespectsWeekdays(t *testing.T) {
 	c := baseCfg()
 	c.Weekdays = "1,2,3" // 周一到周三;测试日是周四
-	if ok, why := shouldFireDailyPush(c, at("17:30"), "", 0); ok {
+	if ok, why := shouldFireDailyPush(c, at("17:30"), WorkCalendarDay{}, "", 0); ok {
 		t.Errorf("不在推送日内还发:%s", why)
 	}
 	c.Weekdays = "" // 空 = 每天
-	if ok, _ := shouldFireDailyPush(c, at("17:30"), "", 0); !ok {
+	if ok, _ := shouldFireDailyPush(c, at("17:30"), WorkCalendarDay{}, "", 0); !ok {
 		t.Error("空的执行日应当每天都发")
 	}
 }
@@ -66,7 +66,7 @@ func TestPushRespectsWeekdays(t *testing.T) {
 func TestPushDisabledNeverFires(t *testing.T) {
 	c := baseCfg()
 	c.Enabled = false
-	if ok, _ := shouldFireDailyPush(c, at("17:00"), "", 0); ok {
+	if ok, _ := shouldFireDailyPush(c, at("17:00"), WorkCalendarDay{}, "", 0); ok {
 		t.Error("关掉了还发")
 	}
 }
@@ -74,14 +74,14 @@ func TestPushDisabledNeverFires(t *testing.T) {
 // 补发窗口:容器 17:30 才起来,17:00 那次没发,当天内补一次;
 // 但 23:59 起来就别补了 —— 补一条谁也来不及处理的提醒只是噪音。
 func TestPushCatchUpWindow(t *testing.T) {
-	if ok, _ := shouldFireDailyPush(baseCfg(), at("17:30"), "", 120); !ok {
+	if ok, _ := shouldFireDailyPush(baseCfg(), at("17:30"), WorkCalendarDay{}, "", 120); !ok {
 		t.Error("窗口内应当补发")
 	}
-	if ok, why := shouldFireDailyPush(baseCfg(), at("23:30"), "", 120); ok {
+	if ok, why := shouldFireDailyPush(baseCfg(), at("23:30"), WorkCalendarDay{}, "", 120); ok {
 		t.Errorf("已过补发窗口不该发:%s", why)
 	}
 	// 窗口为 0 = 不限,当天任何时候起来都补
-	if ok, _ := shouldFireDailyPush(baseCfg(), at("23:30"), "", 0); !ok {
+	if ok, _ := shouldFireDailyPush(baseCfg(), at("23:30"), WorkCalendarDay{}, "", 0); !ok {
 		t.Error("窗口为 0 时应当不限")
 	}
 }
@@ -104,7 +104,7 @@ func TestPushRejectsBadTimeValue(t *testing.T) {
 	if c.HourMin != "17:00" {
 		t.Errorf("脏值应回落默认,实际 %q", c.HourMin)
 	}
-	if ok, _ := shouldFireDailyPush(c, at("09:00"), "", 0); ok {
+	if ok, _ := shouldFireDailyPush(c, at("09:00"), WorkCalendarDay{}, "", 0); ok {
 		t.Error("脏值回落后不该在早上就发")
 	}
 }

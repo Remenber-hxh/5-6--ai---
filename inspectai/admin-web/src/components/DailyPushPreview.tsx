@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Modal, Space, Switch, TimePicker, message } from "antd";
+import { Alert, Button, Modal, Space, Switch, TimePicker, message } from "antd";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 
@@ -14,6 +14,7 @@ import {
   saveDailyPushConfig,
 } from "../api/mgmt";
 import { C } from "../styles/tokens";
+import DayRulePicker, { dayRuleText } from "./DayRulePicker";
 
 /**
  * 每日未巡提醒 · 预览 + 设置。
@@ -24,16 +25,6 @@ import { C } from "../styles/tokens";
  *
  * 【逐字原文,不渲染 markdown】要确认的正是哪些字会出现在领导的群里。
  */
-
-const WEEKDAYS = [
-  { v: "1", label: "一" },
-  { v: "2", label: "二" },
-  { v: "3", label: "三" },
-  { v: "4", label: "四" },
-  { v: "5", label: "五" },
-  { v: "6", label: "六" },
-  { v: "7", label: "日" },
-];
 
 export default function DailyPushPreview({
   open,
@@ -120,8 +111,6 @@ export default function DailyPushPreview({
     }
   }
 
-  const picked = new Set((cfg?.weekdays || "").split(",").filter(Boolean));
-
   return (
     <Modal
       title="每日未巡提醒"
@@ -168,22 +157,12 @@ export default function DailyPushPreview({
 
             <Space size={10} wrap>
               <span style={{ color: C.textSub, fontSize: 13 }}>执行日</span>
-              {WEEKDAYS.map((d) => (
-                <Checkbox
-                  key={d.v}
-                  checked={picked.size === 0 || picked.has(d.v)}
-                  onChange={(e) => {
-                    // 空 = 每天。所以从"空"开始取消某一天,要先当成全选再去掉。
-                    const base = picked.size === 0 ? WEEKDAYS.map((x) => x.v) : [...picked];
-                    const next = e.target.checked
-                      ? [...new Set([...base, d.v])]
-                      : base.filter((x) => x !== d.v);
-                    void patch({ weekdays: next.sort().join(",") });
-                  }}
-                >
-                  {d.label}
-                </Checkbox>
-              ))}
+              {/* 和计划用同一个选择器:每天 / 按星期 / 法定工作日 */}
+              <DayRulePicker
+                value={cfg.weekdays}
+                disabled={saving}
+                onChange={(v) => void patch({ weekdays: v })}
+              />
             </Space>
 
             <Space size={12}>
@@ -259,7 +238,6 @@ function BotConfigRow({
   onChange: (next: Partial<DailyPushBotOverride>) => void;
 }) {
   const eff = bot.effective;
-  const picked = new Set((eff.weekdays || "").split(",").filter(Boolean));
   const bad = bot.unknownProjects ?? [];
   // 【显示的是库里查到的项目名】配置里那串字符串只在对不上的时候才出现,
   // 而且是作为错误出现 —— 把它当标题显示的话,配错了看起来和配对了一样。
@@ -318,7 +296,7 @@ function BotConfigRow({
 
       {bot.follows ? (
         <div style={{ color: C.textSub, fontSize: 13 }}>
-          跟随全局:{eff.time} · {picked.size === 0 ? "每天" : `周${[...picked].sort().map((v) => WEEKDAYS.find((d) => d.v === v)?.label).join("")}`}
+          跟随全局:{eff.time} · {dayRuleText(eff.weekdays)}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
@@ -331,22 +309,12 @@ function BotConfigRow({
               value={dayjs(eff.time, "HH:mm")}
               onChange={(v) => v && onChange({ time: v.format("HH:mm") })}
             />
-            {WEEKDAYS.map((d) => (
-              <Checkbox
-                key={d.v}
-                disabled={saving}
-                checked={picked.size === 0 || picked.has(d.v)}
-                onChange={(e) => {
-                  const base = picked.size === 0 ? WEEKDAYS.map((x) => x.v) : [...picked];
-                  const next = e.target.checked
-                    ? [...new Set([...base, d.v])]
-                    : base.filter((x) => x !== d.v);
-                  onChange({ weekdays: next.sort().join(",") });
-                }}
-              >
-                {d.label}
-              </Checkbox>
-            ))}
+            <DayRulePicker
+              size="small"
+              value={eff.weekdays}
+              disabled={saving}
+              onChange={(v) => onChange({ weekdays: v })}
+            />
           </Space>
           <Space size={10}>
             <Switch

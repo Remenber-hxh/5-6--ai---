@@ -88,26 +88,27 @@ func (s *Server) runDailyPushOnce(now time.Time) {
 // 没设覆盖的群拿到的就是 cfg 本身,和以前一模一样。
 func (s *Server) pushOneTenant(tenantID string, kv map[string]string, cfg dailyPushConfig, now time.Time) {
 	bots := s.weworkBots
+	cal := s.workCalendarOn(now.Format("2006-01-02"))
 	if len(bots) == 0 {
 		// 【说清楚是没配,不是没数据】否则运维看到"没推送"会去查计划和设备。
 		// 放在这里只在到点时打一次,不会每分钟刷屏。
-		if ok, _ := shouldFireDailyPush(cfg, now, "", pushCatchUpMinutes); ok {
+		if ok, _ := shouldFireDailyPush(cfg, now, cal, "", pushCatchUpMinutes); ok {
 			log.Printf("WARN: [%s] 到推送时间但一个群机器人都没配(WEWORK_BOT_WEBHOOK)", tenantID)
 		}
 		return
 	}
 	for _, bot := range bots {
-		s.pushOneBot(tenantID, dailyPushConfigForBot(kv, bot.Index), now, bot)
+		s.pushOneBot(tenantID, dailyPushConfigForBot(kv, bot.Index), now, cal, bot)
 	}
 }
 
-func (s *Server) pushOneBot(tenantID string, cfg dailyPushConfig, now time.Time, bot weworkBotTarget) {
+func (s *Server) pushOneBot(tenantID string, cfg dailyPushConfig, now time.Time, cal WorkCalendarDay, bot weworkBotTarget) {
 	lastDay, err := s.store.LastPushDay(tenantID, bot.SlotKind)
 	if err != nil {
 		log.Printf("WARN: [%s] %s 读推送流水失败: %v", tenantID, bot.Name, err)
 		return
 	}
-	if ok, _ := shouldFireDailyPush(cfg, now, lastDay, pushCatchUpMinutes); !ok {
+	if ok, _ := shouldFireDailyPush(cfg, now, cal, lastDay, pushCatchUpMinutes); !ok {
 		return
 	}
 

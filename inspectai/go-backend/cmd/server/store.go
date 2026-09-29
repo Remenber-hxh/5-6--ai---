@@ -208,6 +208,10 @@ type EngineeringStore interface {
 	ClaimPushSlot(tenantID, kind, day string) (string, error)
 	FinishPushSlot(id, status, detail string) error
 	LastPushDay(tenantID, kind string) (string, error)
+	// ===== 工作日历(法定节假日 + 调休上班日,全局不分租户)=====
+	ListWorkCalendar(from, to string) ([]WorkCalendarDay, error)
+	// SaveWorkCalendar clearFrom 非空 = 先清空这段日子;kind 为空的那天 = 删掉。
+	SaveWorkCalendar(clearFrom, clearTo string, days []WorkCalendarDay, actor string) error
 }
 
 // SubmissionStore — 提交幂等锁
@@ -315,6 +319,7 @@ type MemStore struct {
 	templateMinImages map[string]int                           // templateID -> 每单最少几张照片
 	appSettings       map[string]string                        // 运营参数(推送时间/开关)
 	pushLog           map[string]string                        // "tenant|kind|day" -> id,用于去重
+	workCalendar      map[string]WorkCalendarDay               // "2026-10-01" -> 那一天
 }
 
 type memUser struct {
@@ -349,6 +354,7 @@ func NewMemStore() *MemStore {
 		templateMinImages: map[string]int{},
 		appSettings:       map[string]string{},
 		pushLog:           map[string]string{},
+		workCalendar:      map[string]WorkCalendarDay{},
 		rolePerms:         defaultPermMatrix(),
 	}
 }

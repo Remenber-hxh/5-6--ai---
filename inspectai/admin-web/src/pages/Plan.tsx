@@ -1,4 +1,4 @@
-import { AutoComplete, Button, Card, Checkbox, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
+import { AutoComplete, Button, Card, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Steps, Table, Tag, message } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
@@ -13,7 +13,6 @@ import {
   ProjectEntry,
   ProjectScopeDTO,
   UserEntry,
-  WEEKDAY_OPTIONS,
   deletePlan,
   deleteTask,
   dispatchPlan,
@@ -27,7 +26,9 @@ import {
 } from "../api/mgmt";
 import CoverageCard from "../components/CoverageCard";
 import DailyPushPreview from "../components/DailyPushPreview";
+import DayRulePicker, { DAY_RULE_WORKDAY, dayRuleText } from "../components/DayRulePicker";
 import TodayInspection from "../components/TodayInspection";
+import WorkCalendarModal from "../components/WorkCalendarModal";
 import { C } from "../styles/tokens";
 import { useUi } from "../store/ui";
 
@@ -193,6 +194,7 @@ export default function Plan() {
   const [selTaskId, setSelTaskId] = useState("");
   const [editing, setEditing] = useState<EngineeringPlan | null | "new">(null);
   const [pushOpen, setPushOpen] = useState(false);
+  const [calOpen, setCalOpen] = useState(false);
   const { project } = useUi();
   const [params, setParams] = useSearchParams();
   // 顶层视图。默认「今日执行」—— 打开这一页最想知道的就是今天还差什么,
@@ -694,9 +696,14 @@ export default function Plan() {
                   空白横条,按钮在这套极简配色里几乎隐形,实测找不到。 */}
               <TodayInspection
                 action={
-                  <Button size="small" onClick={() => setPushOpen(true)}>
-                    每日提醒预览
-                  </Button>
+                  <>
+                    <Button size="small" onClick={() => setCalOpen(true)}>
+                      工作日历
+                    </Button>
+                    <Button size="small" onClick={() => setPushOpen(true)}>
+                      每日提醒预览
+                    </Button>
+                  </>
                 }
               />
             </Card>
@@ -836,17 +843,9 @@ export default function Plan() {
                         title: "执行日",
                         width: 150,
                         render: (_: unknown, p: EngineeringPlan) => {
-                          const wd = (p.weekdays || "").split(",").filter(Boolean);
                           // 空 = 每天。说"每天"而不是留空 —— 留空会被当成"没配好"
-                          if (!wd.length) return <Tag color="blue">每天</Tag>;
-                          if (wd.length === 7) return <Tag color="blue">每天</Tag>;
-                          return (
-                            <span>
-                              {wd
-                                .map((d) => WEEKDAY_OPTIONS.find((w) => w.value === d)?.label || d)
-                                .join(" ")}
-                            </span>
-                          );
+                          const text = dayRuleText(p.weekdays);
+                          return text === "每天" || text === "法定工作日" ? <Tag color="blue">{text}</Tag> : <span>{text}</span>;
                         },
                       },
                       {
@@ -1099,10 +1098,7 @@ export default function Plan() {
                       // 执行日和设备清单全被清空 —— 而且没有任何提示,
                       // 表现是"我只改了个负责人,第二天提醒就不来了"。
                       planType: selPlan.planType || "adhoc",
-                      weekdayList: (selPlan.weekdays || "")
-                        .split(",")
-                        .map((x) => x.trim())
-                        .filter(Boolean),
+                      weekdays: selPlan.weekdays || "",
                       assetIds: selPlan.assetIds || [],
                     });
                   }}
@@ -1133,6 +1129,7 @@ export default function Plan() {
       </div>
 
       <DailyPushPreview open={pushOpen} onClose={() => setPushOpen(false)} />
+      <WorkCalendarModal open={calOpen} onClose={() => setCalOpen(false)} />
 
       {/* 新建 / 编辑计划 */}
       <Modal
@@ -1143,10 +1140,7 @@ export default function Plan() {
         onOk={async () => {
           const v = await form.validateFields();
           try {
-            // Checkbox.Group 给的是数组,后端要 "1,2,3" 的串。
-            // 【必须排序】不排的话勾选顺序会被原样存下来("3,1,2"),
-            // 虽然判定不受影响,但下次打开看到的顺序是乱的,像坏了。
-            const { weekdayList, planRange, owners: ownerFormValues, ...rest } = v;
+            const { planRange, owners: ownerFormValues, ...rest } = v;
             const [start, end] = (planRange as PlanRange) || [];
             // 【编辑时以原记录打底】后端保存是整行覆盖(upsert 把每一列都写成
             // 传来的值),表单没管到的列会被写成空。原来只传了表单里那几项,
@@ -1171,9 +1165,6 @@ export default function Plan() {
               owners: formValuesToOwners(ownerFormValues as string[] | undefined, users),
               ownerName: "",
               ownerId: "",
-              weekdays: Array.isArray(weekdayList)
-                ? [...weekdayList].sort().join(",")
-                : undefined,
               planStart: dateOut(start, base?.planStart),
               planEnd: dateOut(end, base?.planEnd),
             };
@@ -1254,14 +1245,22 @@ export default function Plan() {
             {({ getFieldValue }) =>
               getFieldValue("planType") === "daily" ? (
                 <>
-                  <Form.Item
-                    name="weekdayList"
-                    label="执行日"
-                    extra="不选 = 每天执行"
-                  >
-                    <Checkbox.Group
-                      options={WEEKDAY_OPTIONS.map((w) => ({ value: w.value, label: w.label }))}
-                    />
+                  {/* 【和推送群用同一个选择器】见 DayRulePicker */}
+                  <Form.Item noStyle shouldUpdate={(a, b) => a.weekdays !== b.weekdays}>
+                    {({ getFieldValue: get }) => (
+                      <Form.Item
+                        name="weekdays"
+                        label="执行日"
+                        initialValue=""
+                        extra={
+                          get("weekdays") === DAY_RULE_WORKDAY
+                            ? "按工作日历跳过节假日,调休上班照常"
+                            : undefined
+                        }
+                      >
+                        <DayRulePicker />
+                      </Form.Item>
+                    )}
                   </Form.Item>
                   {/* 【每日计划必须指定设备】完成情况是按设备自动判定的
                       (这些设备今天有没有巡检记录)。没有清单就永远算不出完成率,
