@@ -31,7 +31,7 @@ func TestTrendSortsByRealTimeNotInsertOrder(t *testing.T) {
 		obs("temperature", "温度℃", 20, 30),
 		obs("temperature", "温度℃", 5, 10),
 		obs("temperature", "温度℃", 12, 20),
-	}, numericFields)
+	}, numericFields, nil, "")
 	if len(series) != 1 {
 		t.Fatalf("应只有一条曲线,实际 %d", len(series))
 	}
@@ -52,7 +52,7 @@ func TestTrendDoesNotFlagTinyWobbleOnStableReading(t *testing.T) {
 	for i, v := range vals {
 		in = append(in, obs("tank_level", "水箱水位（米）", i+1, v))
 	}
-	s := buildAssetTrend(in, numericFields)[0]
+	s := buildAssetTrend(in, numericFields, nil, "")[0]
 	if s.Drifting {
 		t.Errorf("常年 0.6 上下的表不该被判漂移,最新 %v 基线 %.3f", s.Latest, s.Baseline)
 	}
@@ -69,7 +69,7 @@ func TestTrendFlagsRealDrift(t *testing.T) {
 	for i, v := range []float64{0.60, 0.61, 0.60, 0.59, 0.60, 0.61, 0.30} {
 		in = append(in, obs("tank_level", "水箱水位（米）", i+1, v))
 	}
-	s := buildAssetTrend(in, numericFields)[0]
+	s := buildAssetTrend(in, numericFields, nil, "")[0]
 	if !s.Drifting {
 		t.Errorf("水位掉到一半应判漂移:最新 %v 基线 %.3f", s.Latest, s.Baseline)
 	}
@@ -88,7 +88,7 @@ func TestTrendIgnoresFieldsNotDeclaredNumericAnymore(t *testing.T) {
 		obs("legacy_field", "早年的字段", 1, 99),
 		obs("legacy_field", "早年的字段", 2, 98),
 		obs("legacy_field", "早年的字段", 3, 97),
-	}, numericFields)
+	}, numericFields, nil, "")
 	if len(s) != 1 || s[0].FieldKey != "temperature" {
 		t.Errorf("不该画模板里已经不存在的数值字段:%+v", s)
 	}
@@ -103,7 +103,7 @@ func TestTrendPutsDriftingSeriesFirst(t *testing.T) {
 	for i, v := range []float64{0.6, 0.61, 0.6, 0.59, 0.2} {
 		in = append(in, obs("tank_level", "水箱水位（米）", i+1, v)) // 漂
 	}
-	s := buildAssetTrend(in, numericFields)
+	s := buildAssetTrend(in, numericFields, nil, "")
 	if len(s) != 2 {
 		t.Fatalf("应有两条曲线,实际 %d", len(s))
 	}

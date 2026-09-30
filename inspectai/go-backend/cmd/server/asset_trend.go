@@ -83,9 +83,12 @@ const trendMinPoints = 3
 
 // buildAssetTrend 把观测明细整理成按字段分组的时间序列。
 //
+// readingFields 里的字段(抄表那种"一格就是一台表的读数")不按栏位分,
+// 合成一条叫"<设备名>读数"的曲线 —— 见 reading_series.go。
+//
 // 【纯函数,不碰数据库】喂进去观测列表就能测 —— 而"什么算漂移"这种判断
 // 一旦只能靠真实数据验证,就等于没法验证。
-func buildAssetTrend(obs []*FieldObservation, numericFields map[string]string) []trendSeries {
+func buildAssetTrend(obs []*FieldObservation, numericFields map[string]string, readingFields map[string]bool, assetName string) []trendSeries {
 	byField := map[string][]trendPoint{}
 	labels := map[string]string{}
 	for _, o := range obs {
@@ -98,8 +101,9 @@ func buildAssetTrend(obs []*FieldObservation, numericFields map[string]string) [
 		if _, ok := numericFields[o.FieldKey]; !ok {
 			continue
 		}
-		labels[o.FieldKey] = firstNonEmpty(o.FieldLabel, numericFields[o.FieldKey], o.FieldKey)
-		byField[o.FieldKey] = append(byField[o.FieldKey], trendPoint{
+		key := seriesKeyOf(o.FieldKey, readingFields)
+		labels[key] = seriesLabelOf(key, firstNonEmpty(o.FieldLabel, numericFields[o.FieldKey], o.FieldKey), assetName)
+		byField[key] = append(byField[key], trendPoint{
 			At:       fmtStamp(o.CreatedAt),
 			Value:    *o.ValueNumber,
 			RecordID: o.RecordID,
@@ -210,7 +214,7 @@ func (s *Server) assetTrendFor(asset *AssetEntry, limit int) (assetTrendResp, er
 		return assetTrendResp{}, err
 	}
 
-	series := buildAssetTrend(obs, numeric)
+	series := buildAssetTrend(obs, numeric, readingFieldsOf(asset.TemplateID), firstNonEmpty(asset.AssetName, asset.AssetKey))
 	resp := assetTrendResp{
 		AssetID:         asset.ID,
 		AssetName:       firstNonEmpty(asset.AssetName, asset.AssetKey, asset.ID),

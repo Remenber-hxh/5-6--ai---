@@ -1839,10 +1839,14 @@ func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id st
 		writeError(w, http.StatusForbidden, "forbidden", "仅管理角色可查看资产健康报告")
 		return
 	}
-	if _, err := s.store.GetAsset(s.tenantForRequest(r), id); err != nil {
+	asset, err := s.store.GetAsset(s.tenantForRequest(r), id)
+	if err != nil || asset == nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
 	}
+	// 抄表那种读数字段按设备合成一条,和读数趋势同一套分组(reading_series.go)
+	readingFields := readingFieldsOf(asset.TemplateID)
+	assetName := firstNonEmpty(asset.AssetName, asset.AssetKey)
 	days := 30
 	switch r.URL.Query().Get("range") {
 	case "7d":
@@ -1862,11 +1866,12 @@ func (s *Server) handleAssetReport(w http.ResponseWriter, r *http.Request, id st
 		if o.ValueNumber == nil || o.CreatedAt.Before(since) {
 			continue
 		}
-		ft, ok := grouped[o.FieldKey]
+		key := seriesKeyOf(o.FieldKey, readingFields)
+		ft, ok := grouped[key]
 		if !ok {
-			ft = &fieldTrend{FieldKey: o.FieldKey, FieldLabel: o.FieldLabel}
-			grouped[o.FieldKey] = ft
-			order = append(order, o.FieldKey)
+			ft = &fieldTrend{FieldKey: key, FieldLabel: seriesLabelOf(key, o.FieldLabel, assetName)}
+			grouped[key] = ft
+			order = append(order, key)
 		}
 		ft.Points = append(ft.Points, fieldTrendPoint{Time: o.CreatedAt.Format("2006-01-02 15:04"), Value: *o.ValueNumber})
 	}

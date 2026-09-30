@@ -287,7 +287,8 @@ func (s *Server) countDriftFields(ctx *insightsContext) int {
 		if err != nil || len(obs) == 0 {
 			continue
 		}
-		// 按 fieldKey 分组,只看数值
+		// 按 fieldKey 分组,只看数值;抄表读数按设备合成一条(reading_series.go)
+		readingFields := readingFieldsOf(a.TemplateID)
 		byKey := map[string][]*FieldObservation{}
 		for _, o := range obs {
 			if o.ValueNumber == nil {
@@ -296,7 +297,8 @@ func (s *Server) countDriftFields(ctx *insightsContext) int {
 			if o.CreatedAt.Before(ctx.rangeStart) {
 				continue
 			}
-			byKey[o.FieldKey] = append(byKey[o.FieldKey], o)
+			key := seriesKeyOf(o.FieldKey, readingFields)
+			byKey[key] = append(byKey[key], o)
 		}
 		for _, list := range byKey {
 			if len(list) < 2 {
@@ -344,12 +346,14 @@ func (s *Server) toolListNumericDrift(project projectScope) ([]*NumericDriftEntr
 		if err != nil || len(obs) == 0 {
 			continue
 		}
+		readingFields := readingFieldsOf(a.TemplateID)
 		byKey := map[string][]*FieldObservation{}
 		for _, o := range obs {
 			if o.ValueNumber == nil || o.CreatedAt.Before(ctx.rangeStart) {
 				continue
 			}
-			byKey[o.FieldKey] = append(byKey[o.FieldKey], o)
+			key := seriesKeyOf(o.FieldKey, readingFields)
+			byKey[key] = append(byKey[key], o)
 		}
 		for key, list := range byKey {
 			if len(list) < 2 {
@@ -368,7 +372,7 @@ func (s *Server) toolListNumericDrift(project projectScope) ([]*NumericDriftEntr
 			}
 			out = append(out, &NumericDriftEntry{
 				AssetID: a.ID, AssetName: a.AssetName,
-				FieldKey: key, FieldLabel: list[0].FieldLabel,
+				FieldKey: key, FieldLabel: seriesLabelOf(key, list[0].FieldLabel, a.AssetName),
 				Current: cur, Previous: prev, ChangeRate: rate,
 				OverThreshold: abs > 0.10,
 			})
@@ -494,7 +498,7 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 	addFactor("同一问题反复出现", repeatScore, riskCapRepeat, strings.Join(repeatParts, "；"))
 
 	// ④ 数值漂移(每项5分,满分10)
-	driftCount := s.countAssetDrift(a.ID, ctx.rangeStart)
+	driftCount := s.countAssetDrift(a, ctx.rangeStart)
 	driftBasis := ""
 	if driftCount > 0 {
 		driftBasis = "数值字段超阈漂移 " + strconv.Itoa(driftCount) + " 项"
@@ -548,17 +552,19 @@ func (s *Server) computeAttentionForAsset(a *AssetEntry, ctx *insightsContext) *
 	}
 }
 
-func (s *Server) countAssetDrift(assetID string, since time.Time) int {
-	obs, err := s.store.ListFieldObservations(assetID, "", 200)
+func (s *Server) countAssetDrift(a *AssetEntry, since time.Time) int {
+	obs, err := s.store.ListFieldObservations(a.ID, "", 200)
 	if err != nil || len(obs) == 0 {
 		return 0
 	}
+	readingFields := readingFieldsOf(a.TemplateID)
 	byKey := map[string][]*FieldObservation{}
 	for _, o := range obs {
 		if o.ValueNumber == nil || o.CreatedAt.Before(since) {
 			continue
 		}
-		byKey[o.FieldKey] = append(byKey[o.FieldKey], o)
+		key := seriesKeyOf(o.FieldKey, readingFields)
+		byKey[key] = append(byKey[key], o)
 	}
 	cnt := 0
 	for _, list := range byKey {
