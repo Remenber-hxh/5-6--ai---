@@ -144,6 +144,9 @@ func TestHumanEditedReadingNotFlagged(t *testing.T) {
 	rec := zihanEnergyRecord(t, "rec_now", false, map[string]string{"z1_reading": "99999999"})
 	f := recField(t, rec, "z1_reading")
 	f.Source = "human-edited"
+	// 人改过 = 值和 AI 原值不一样(改成和 AI 一样的值,接口记的是"确认",不是"修改")。
+	// 只挪了格子的读数 source 也是 human-edited,但值还是 AI 那个 —— 那种要查,这种不查。
+	f.AIValue = "9999.9999"
 	if issues := flagImplausibleReadings(store, rec); len(issues) != 0 {
 		t.Fatalf("人改的值被系统打回了:%v", issues)
 	}

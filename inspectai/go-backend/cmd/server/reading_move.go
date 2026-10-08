@@ -96,6 +96,9 @@ func (s *Server) handleMoveReading(w http.ResponseWriter, r *http.Request, recor
 	rec.Fields[fromIdx].Source = "human-edited"
 	rec.Fields[fromIdx].Version++
 
+	// 读数换了一块表 —— 按新的那块表重新查一遍量级(见 reading_sanity.go)
+	recheckReadingSanity(s.store, rec, req.ToCode)
+
 	rec.Report = buildDailyPreview(rec)
 	if err := s.store.UpdateRecord(rec); err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", err.Error())

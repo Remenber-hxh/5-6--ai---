@@ -2800,6 +2800,10 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		// 【只改了设备归属,没动读数】不能当成确认,更不能把值清空。
 		// 归属本身也是人做的判断,照样要留痕,但读数的 source 不变。
 		action = "reassign"
+		// 这一格的读数换成了另一块表的 —— 按那块表重新查一遍量级
+		if req.AssetName != nil && strings.TrimSpace(field.AssetName) != strings.TrimSpace(originalAsset) {
+			recheckReadingSanity(s.store, rec, code)
+		}
 	case strings.TrimSpace(*req.Value) == strings.TrimSpace(originalValue):
 		field.Source = "human-confirmed"
 		field.NeedsReview = false

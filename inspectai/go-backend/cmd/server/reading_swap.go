@@ -67,6 +67,8 @@ func (s *Server) handleSwapReading(w http.ResponseWriter, r *http.Request, recor
 	}
 
 	swapFieldPayload(&rec.Fields[ai], &rec.Fields[bi])
+	// 两格的读数都换了表 —— 各按新的那块表重新查一遍量级
+	recheckReadingSanity(s.store, rec, req.ACode, req.BCode)
 
 	rec.Report = buildDailyPreview(rec)
 	if err := s.store.UpdateRecord(rec); err != nil {
