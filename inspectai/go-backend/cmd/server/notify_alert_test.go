@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +83,80 @@ func TestAttentionAssetLineWording(t *testing.T) {
 	}
 	if got := attentionAssetLine(as); got != "Z1、Z2、Z3 等 6 台" {
 		t.Errorf("得到 %q", got)
+	}
+}
+
+// 10/08 那条记录在确认页上真实发生的十步(field_confirm_logs 原样):
+// AI 把两块水表的读数放反了 —— 生活水表格是 1017102、消防水表格是 2115。
+// 消防水表格当场被量级检查拦下:"是上一次 107 的 20 倍"。巡检员改值、清设备、
+// 对调、重新挂设备、再改值,最后两格都对了 —— 线上那版对调时把这句理由一起搬到了
+// 生活水表格,又没重查,于是生活水表顶着别的表的"上一次 107"一直待复核。
+func TestOct8WaterMeterFixLeavesNothingStale(t *testing.T) {
+	s, tok, _ := newSwapAPIServer(t)
+	seedDefaultNamedMeters(t, s, "生活水表", "消防水表")
+	for name, h := range map[string]struct {
+		code string
+		v    float64
+	}{"生活水表": {"living_water_reading", 2047}, "消防水表": {"fire_water_reading", 107}} {
+		v := h.v
+		if err := s.store.WriteAssetSnapshots(nil, []*FieldObservation{{
+			AssetID: "紫菡雅集::zihan_energy::" + name, RecordID: "rec_0930", FieldKey: h.code,
+			ValueNumber: &v, CreatedAt: time.Date(2026, 9, 30, 8, 38, 0, 0, time.UTC),
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := zihanMeterRecord(t, "rec_1008w", map[string]string{
+		"living_water_reading": "1017102", "fire_water_reading": "2115",
+	})
+	recField(t, rec, "living_water_reading").AssetName = "生活水表"
+	recField(t, rec, "fire_water_reading").AssetName = "消防水表"
+	flagImplausibleReadings(s.store, rec)
+	if !strings.Contains(recField(t, rec, "fire_water_reading").Reason, "107") {
+		t.Fatalf("前提不成立:消防水表格的 2115 应先被拦下,reason=%q", recField(t, rec, "fire_water_reading").Reason)
+	}
+	if err := s.store.CreateRecord(rec); err != nil {
+		t.Fatal(err)
+	}
+
+	steps := []struct{ code, body string }{
+		{"living_water_reading", `{"value":"1017102"}`},                           // 13:51:51 confirm
+		{"fire_water_reading", `{"value":"2115"}`},                                // 13:51:51 confirm
+		{"living_water_reading", `{"value":"104"}`},                               // 13:52:03 correct
+		{"living_water_reading", `{"assetName":""}`},                              // 13:52:04 清设备
+		{"fire_water_reading", `{"assetName":""}`},                                // 13:52:08 清设备
+		{"swap", `{"aCode":"living_water_reading","bCode":"fire_water_reading"}`}, // 13:52:10
+		{"fire_water_reading", `{"assetName":"消防水表"}`},                            // 13:52:10
+		{"living_water_reading", `{"assetName":"生活水表"}`},                          // 13:52:12
+		{"living_water_reading", `{"value":"2119"}`},                              // 13:52:21 correct
+	}
+	for i, st := range steps {
+		var w *httptest.ResponseRecorder
+		if st.code == "swap" {
+			w = postSwap(t, s, tok, rec.ID, st.body)
+		} else {
+			w = patchField(t, s, tok, rec.ID, st.code, st.body)
+		}
+		if w.Code != http.StatusOK {
+			t.Fatalf("第 %d 步 %s %s 失败:%d %s", i+1, st.code, st.body, w.Code, w.Body.String())
+		}
+	}
+
+	got, err := s.store.GetRecord(defaultTenantID, rec.ID)
+	if err != nil || got == nil {
+		t.Fatalf("读回记录失败:%v", err)
+	}
+	living := recField(t, got, "living_water_reading")
+	fire := recField(t, got, "fire_water_reading")
+	if living.Value != "2119" || living.AssetName != "生活水表" || fire.Value != "104" || fire.AssetName != "消防水表" {
+		t.Fatalf("回放结果不对:生活=%s(%s) 消防=%s(%s)", living.Value, living.AssetName, fire.Value, fire.AssetName)
+	}
+	if strings.Contains(living.Reason, "107") || strings.Contains(living.Reason, sanityNoteMark) {
+		t.Errorf("生活水表格还挂着别的表的理由:%q", living.Reason)
+	}
+	if items := sanitizeRecordForCurrentTemplate(got).AttentionItems; len(items) != 0 {
+		t.Errorf("两格都已改对,不该再有需要注意的项:%+v", items)
 	}
 }
 
