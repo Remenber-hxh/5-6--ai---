@@ -63,7 +63,8 @@ func assetStatusReason(a *AssetEntry, rec *Record, field *FieldValue) string {
 		}
 		for _, r := range rec.AIRecommendations {
 			text := strings.TrimSpace(r.Text)
-			if text == "" || !strings.EqualFold(r.Priority, "high") {
+			// 一张表巡好几台设备时建议不算设备信号(见 hasAbnormalSignal),理由也不拿它说
+			if text == "" || !strings.EqualFold(r.Priority, "high") || isMultiAssetTemplate(rec.TemplateID) {
 				continue
 			}
 			// assetName 为空时 hasAbnormalSignal 会认所有高优先级建议,这里照同一口径

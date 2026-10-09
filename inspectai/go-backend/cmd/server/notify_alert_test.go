@@ -212,6 +212,43 @@ func TestCorrectingFlaggedReadingClearsTheAlert(t *testing.T) {
 	})
 }
 
+// 一张表巡六块表:AI 建议里点了 Z1、Z2 的名字,不能把它们拖成待复核 ——
+// 它们那一格自己没有任何问题。
+func TestRecommendationDoesNotFlagMetersInSharedForm(t *testing.T) {
+	rec := oct8EnergyRecord()
+	w, _ := fieldByCode(rec.Fields, "living_water_reading")
+	w.NeedsReview, w.Reason = false, ""
+	rec.AIRecommendations = []Recommendation{{Priority: "high", Text: "Z1、Z2 读数需核对小数点"}}
+	for _, a := range buildZihanEnergyAssets(rec, time.Now()) {
+		if a.LastStatus != "正常" {
+			t.Errorf("%s 被整条记录的建议拖成了 %s", a.AssetName, a.LastStatus)
+		}
+	}
+	// 一条记录一台设备的,高优先级建议照旧算
+	single := &Record{TemplateID: "fire_pump", AIRecommendations: rec.AIRecommendations}
+	if !hasAbnormalSignal(&FieldValue{Value: "正常"}, single, "") {
+		t.Error("单台设备的记录,高优先级建议应该照旧算异常信号")
+	}
+}
+
+// 提醒卡片的"建议"只挑点到出问题那台表的;一条都没点到就用通用的那句。
+func TestAlertAdviceOnlyAboutTheFlaggedMeter(t *testing.T) {
+	rec := oct8EnergyRecord()
+	assets := buildZihanEnergyAssets(rec, time.Now()) // 只有生活水表存疑
+	rec.AIRecommendations = []Recommendation{
+		{Priority: "high", Text: "Z3 配电柜柜门未关好"},
+		{Priority: "low", Text: "生活水表读数偏大,请对照照片核对"},
+	}
+	card := inspectionAlertCard(rec, assets, "https://x")
+	if !strings.Contains(card, "生活水表读数偏大") || strings.Contains(card, "Z3 配电柜") {
+		t.Errorf("建议应只说生活水表:\n%s", card)
+	}
+	rec.AIRecommendations = rec.AIRecommendations[:1]
+	if card := inspectionAlertCard(rec, assets, "https://x"); !strings.Contains(card, "请主管查看后台记录") {
+		t.Errorf("没有点到生活水表的建议时应用通用的那句:\n%s", card)
+	}
+}
+
 // 后台详情和推送读同一份:记录出站时带上"需要注意"的那几项。
 func TestOutboundRecordCarriesAttentionItems(t *testing.T) {
 	out := sanitizeRecordForCurrentTemplate(oct8EnergyRecord())

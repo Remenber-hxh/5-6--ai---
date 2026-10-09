@@ -31,10 +31,7 @@ func inspectionAlertCard(rec *Record, assets []*AssetEntry, recordURL string) st
 	if len(attention) == 0 {
 		return ""
 	}
-	advice := firstRecommendationText(rec.AIRecommendations)
-	if advice == "" {
-		advice = "请主管查看后台记录并完成复核。"
-	}
+	advice := alertAdvice(rec, attention)
 	return buildNotifyCard("智巡异常提醒",
 		cardRow("项目", rec.Project),
 		cardRow("设备", cardStrong(attentionAssetLine(attention))),
@@ -207,6 +204,31 @@ func attentionAssetLine(assets []*AssetEntry) string {
 		line += fmt.Sprintf(" 等 %d 台", len(assets))
 	}
 	return firstNonEmpty(line, "未识别资产")
+}
+
+// alertAdvice 提醒卡片"建议"那一行。
+//
+// 【一张表巡好几台设备时,只挑点到出问题那几台的建议】整条记录的第一条建议
+// 可能说的是另一台表 —— 卡片上设备写着生活水表,建议却在讲 Z3 柜门,
+// 人会以为两件事有关。一条都没点到就用通用的那句。
+func alertAdvice(rec *Record, attention []*AssetEntry) string {
+	items := rec.AIRecommendations
+	if isMultiAssetTemplate(rec.TemplateID) {
+		var hit []Recommendation
+		for _, r := range items {
+			for _, a := range attention {
+				if name := strings.TrimSpace(a.AssetName); name != "" && strings.Contains(r.Text, name) {
+					hit = append(hit, r)
+					break
+				}
+			}
+		}
+		items = hit
+	}
+	if t := firstRecommendationText(items); t != "" {
+		return t
+	}
+	return "请主管查看后台记录并完成复核。"
 }
 
 func firstRecommendationText(items []Recommendation) string {

@@ -3703,6 +3703,16 @@ type assetBuildSpec struct {
 	FieldCode string
 }
 
+// isMultiAssetTemplate 一条记录派生好几台设备的模板 —— 和下面 buildAssets 的分支一一对应,
+// 加一个分支就要在这里加一个。
+func isMultiAssetTemplate(templateID string) bool {
+	switch templateID {
+	case "zihan_energy", "zihan_daily":
+		return true
+	}
+	return false
+}
+
 func buildAssets(rec *Record, now time.Time) []*AssetEntry {
 	switch rec.TemplateID {
 	case "zihan_energy":
@@ -4098,6 +4108,7 @@ func environmentAssetStatus(temp, humidity string, tField, hField *FieldValue, r
 //  1. field.Reason 含异常关键词 (识别失败/模糊/倒退/报警/超限/未识别…)
 //  2. field.NeedsReview = true 但 value 已填 (AI 不确信)
 //  3. record.AIRecommendations 中有 priority=high 且文本提到该资产名 (针对性告警)
+//     —— 只对一条记录一台设备的模板;一张表巡好几台的不看,见下
 //
 // 【AI 总结失败不算设备异常】原来这里还有一条"记录的 AI 总结生成失败 → 待复核",
 // 而它对记录里的每台设备都成立:2026-10-08 那条抄表,总结服务没回来,
@@ -4113,7 +4124,10 @@ func hasAbnormalSignal(field *FieldValue, rec *Record, assetName string) bool {
 			return true
 		}
 	}
-	if rec == nil {
+	// 【一张表巡好几台设备时,整条记录的 AI 建议不算设备信号】建议是对整张表写的,
+	// 一句"Z1、Z2 读数需核对"会把点到名的几台一起拖成待复核 —— 而它们那一格
+	// 自己的读数、置信度、量级检查都没问题。这种表每台设备只看自己那一格。
+	if rec == nil || isMultiAssetTemplate(rec.TemplateID) {
 		return false
 	}
 	for _, r := range rec.AIRecommendations {
