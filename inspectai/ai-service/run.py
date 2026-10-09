@@ -646,6 +646,11 @@ def _valid_bbox(box) -> bool:
     return 0.005 < w <= 1.0 and 0.005 < h <= 1.0 and w * h < 0.85
 
 
+# 复核裁剪最少往外放多少(占整张图的比例),见 crop_reading_area
+SECOND_LOOK_MIN_PAD_X = 0.06
+SECOND_LOOK_MIN_PAD_Y = 0.08
+
+
 def crop_reading_area(path: str, box, pad: float = 0.25, target_edge: int = 1400):
     """按归一化 bbox 裁出读数区并放大。失败一律返回 None —— 复核是加分项,不能变成新的故障点。"""
     try:
@@ -659,13 +664,22 @@ def crop_reading_area(path: str, box, pad: float = 0.25, target_edge: int = 1400
         x0, y0, x1, y1 = (float(v) for v in box)
         x0, x1 = min(x0, x1), max(x0, x1)
         y0, y1 = min(y0, y1), max(y0, y1)
+        if x0 >= 1 or y0 >= 1 or x1 <= 0 or y1 <= 0:
+            return None  # 框整个在图外:往外扩也只是扩出一块不相干的边角
         # 【往外放一圈】模型给的框常常贴着数字边缘,裁太紧会把首尾字符切掉半个,
         # 那样放大出来反而更难读。宁可多带一点背景。
+        #
+        # 【至少放出整张图的一截,不只按框的大小放】模型的框不光贴边,位置也常偏:
+        # 2026-10-09 实测紫菡消防水表,框往上偏了半个窗口高,按框高放 25% 只多出几个像素,
+        # 裁出来只有字轮的上半截 —— 复核读成 10,把第一遍的 102 改坏了(3 次 3 次)。
+        # 偏差是按整张图算的,放宽也得按整张图:改成至少放出图宽 6%、图高 8% 后,3 次都没再截歪。
         bw, bh = x1 - x0, y1 - y0
-        x0 -= bw * pad
-        x1 += bw * pad
-        y0 -= bh * pad
-        y1 += bh * pad
+        mx = max(bw * pad, SECOND_LOOK_MIN_PAD_X)
+        my = max(bh * pad, SECOND_LOOK_MIN_PAD_Y)
+        x0 -= mx
+        x1 += mx
+        y0 -= my
+        y1 += my
         px0 = max(0, int(x0 * W))
         py0 = max(0, int(y0 * H))
         px1 = min(W, int(x1 * W))
@@ -847,7 +861,7 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
         str(f.get("code", "")).strip(): str(f.get("label", "")).strip()
         for f in fields if str(f.get("code", "")).strip()
     }
-    changed = 0
+    conflicted: list = []
     dropped: list = []
     for item in parsed.get("recognizedFields") or []:
         if not isinstance(item, dict):
@@ -891,20 +905,23 @@ def second_look(payload: dict, parsed: dict, fields: list, api_key: str, scenari
         if _same_number(new_val, old_val):
             item["reason"] = (str(item.get("reason", "")) + ";放大复核一致")[:80]
             continue
-        # 【不一致时采信放大那次】实测:整图稳定读错、裁剪稳定读对。
-        # 但一定压低置信度 —— 采信不等于确信,这一格必须人过一眼。
-        item["value"] = new_val
-        item["confidence"] = 0.55
-        item["reason"] = f"整图读作{old_val},放大后读作{new_val},已采用放大结果,请人工确认"[:80]
-        changed += 1
+        # 【两遍对不上就清空,哪一边都不采信】(2026-10-09 改)
+        # 原来采信放大那次、置信度压到 0.55。10/08 紫菡那组照片实测(每种做法跑 2~3 次):
+        # 两遍对不上的十几次里,两个数全是错的 —— 整图读作 722(把提示词里的示例抄了)、
+        # 放大读作 102;整图 211、放大 21(框歪了,只截到半个窗口)。而 0.55 的数照样会被
+        # 人点确认。宁可空着让人对着照片填,也不交一个两遍都没对上的数。
+        # 两次各读成什么写进 warnings —— 空值的字段会被整条丢掉,写在字段上传不到记录。
+        item["value"] = ""
+        item["confidence"] = 0
+        conflicted.append(f"{label_of.get(code) or item.get('label') or code}(整图读作{old_val},放大读作{new_val})")
 
     warnings = parsed.setdefault("warnings", [])
     if isinstance(warnings, list):
-        if changed:
-            warnings.append(f"{changed} 项读数经放大复核后已修正")
+        if conflicted:
+            warnings.append("放大复核和整图读数对不上，已清空，请人工填写：" + "、".join(conflicted[:3]))
         if dropped:
             warnings.append("放大后读不出已撤销，请人工填写：" + "、".join(dropped[:3]))
-    print(f"[second-look] 复核 {len(todo)} 项,修正 {changed} 项,撤销 {len(dropped)} 项",
+    print(f"[second-look] 复核 {len(todo)} 项,对不上清空 {len(conflicted)} 项,读不出撤销 {len(dropped)} 项",
           file=sys.stderr)
     return parsed
 

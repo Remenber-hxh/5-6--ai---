@@ -201,15 +201,58 @@ func TestCorrectingFlaggedReadingClearsTheAlert(t *testing.T) {
 			t.Errorf("人已经改对了,不该再报:%+v", it)
 		}
 	})
-	t.Run("原样确认 AI 的数", func(t *testing.T) {
+	t.Run("空着直接确认", func(t *testing.T) {
 		s, tok, rec := setup(t)
-		if w := patchField(t, s, tok, rec.ID, "fire_water_reading", `{"value":"01017102"}`); w.Code != http.StatusOK {
+		if f := recField(t, rec, "fire_water_reading"); f.Value != "" {
+			t.Fatalf("前提不成立:01017102 应已被清空,得到 %q", f.Value)
+		}
+		if w := patchField(t, s, tok, rec.ID, "fire_water_reading", `{"value":""}`); w.Code != http.StatusOK {
 			t.Fatalf("确认失败:%d %s", w.Code, w.Body.String())
 		}
 		if it := items(t, s, rec.ID); len(it) != 1 {
-			t.Errorf("确认了一个量级不对的数,应该照样报:%+v", it)
+			t.Errorf("读数还空着,应该照样报:%+v", it)
 		}
 	})
+}
+
+// AI 把两块水表放反:两格都因量级不对被清空。人一对调,各自按新的那块表再比 ——
+// 对得上的放回来(生活水表 2115),对不上的继续空着(消防水表格里的 1017102)。
+func TestSwapRestoresClearedReadingThatFitsTheNewMeter(t *testing.T) {
+	s, tok, _ := newSwapAPIServer(t)
+	seedDefaultNamedMeters(t, s, "生活水表", "消防水表")
+	for name, h := range map[string]struct {
+		code string
+		v    float64
+	}{"生活水表": {"living_water_reading", 2047}, "消防水表": {"fire_water_reading", 104}} {
+		v := h.v
+		_ = s.store.WriteAssetSnapshots(nil, []*FieldObservation{{
+			AssetID: "紫菡雅集::zihan_energy::" + name, RecordID: "rec_prev", FieldKey: h.code,
+			ValueNumber: &v, CreatedAt: time.Date(2026, 9, 30, 8, 38, 0, 0, time.UTC),
+		}})
+	}
+	rec := zihanMeterRecord(t, "rec_swap_back", map[string]string{
+		"living_water_reading": "1017102", "fire_water_reading": "2115",
+	})
+	recField(t, rec, "living_water_reading").AssetName = "生活水表"
+	recField(t, rec, "fire_water_reading").AssetName = "消防水表"
+	flagImplausibleReadings(s.store, rec)
+	if recField(t, rec, "living_water_reading").Value != "" || recField(t, rec, "fire_water_reading").Value != "" {
+		t.Fatal("前提不成立:两格都应先被清空")
+	}
+	if err := s.store.CreateRecord(rec); err != nil {
+		t.Fatal(err)
+	}
+	if w := postSwap(t, s, tok, rec.ID, `{"aCode":"living_water_reading","bCode":"fire_water_reading"}`); w.Code != http.StatusOK {
+		t.Fatalf("对调失败:%d %s", w.Code, w.Body.String())
+	}
+	got, _ := s.store.GetRecord(defaultTenantID, rec.ID)
+	living, fire := recField(t, got, "living_water_reading"), recField(t, got, "fire_water_reading")
+	if living.Value != "2115" || strings.Contains(living.Reason, sanityNoteMark) {
+		t.Errorf("2115 和生活水表对得上,应放回来:value=%q reason=%q", living.Value, living.Reason)
+	}
+	if fire.Value != "" || !strings.Contains(fire.Reason, "AI 读作 1017102") {
+		t.Errorf("1017102 和消防水表对不上,应继续空着:value=%q reason=%q", fire.Value, fire.Reason)
+	}
 }
 
 // 一张表巡六块表:AI 建议里点了 Z1、Z2 的名字,不能把它们拖成待复核 ——

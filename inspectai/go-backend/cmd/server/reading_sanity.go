@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ===== 抄表读数的合理性兜底 =====
@@ -22,10 +23,12 @@ import (
 // 那个数就是天然基准。和它一比,量级错误立刻现形,不需要任何额外配置,
 // 也不用为每块表维护一个"合理区间"。
 //
-// 【这里只降级,不改值、不拦提交】判断依据是历史数据和经验阈值,不是真理。
-// 改值等于用一个猜测覆盖另一个猜测;拦提交会让现场在换表当天交不了工。
-// 能做且够用的是:把置信度压下来、强制人工复核、把理由写清楚 ——
-// 让那一格在确认页上跳出来,而不是顶着 92% 混过去。
+// 【对不上就清空这一格,但不拦提交】(2026-10-09 改)原来是只降级不改值、留着那个数
+// 让人对照 —— 实际是人照样点了确认:Z2 三次小数点错位(1167636.5 等)都是顶着
+// "存疑"被确认进台账的。宁可空着让人对着照片填,也不留一个大概率是错的数。
+// AI 读成了什么写进理由("AI 读作 …"),原值还在 aiValue,想要回来随时能填。
+// 不改成别的值:用一个猜测覆盖另一个猜测没有意义。不拦提交:换表当天读数
+// 确实会变小,空格子人填上就能交。
 
 // 读数比上一次涨这么多倍就当异常。
 //
@@ -73,6 +76,12 @@ func flagImplausibleReadings(store Store, rec *Record) []readingSanityIssue {
 // 【先摘掉旧的那段理由】旧理由写的是"比 Z1 上一次的 … 还小" —— 读数挪到 Z2 那一格之后
 // 还挂着这句话,人会去核一块根本不相干的表。
 //
+// 【被这道检查清空的 AI 读数,换了表要再给一次机会】AI 常把读数放错格子:10/08 生活水表的
+// 2115 进了消防水表那一格,和消防水表的 104 一比被清空。人把它对调回生活水表那一格,
+// 这个数和生活水表自己的上一次是对得上的 —— 这时要把它放回来,否则对调完两格都是空的,
+// 人还得再抄一遍。放回来照样过一遍检查,对不上就再清空。
+// 只认"这道检查清空的、之后没人动过的"(值空着、理由里还挂着存疑标记):人自己清空的格子不碰。
+//
 // 【查出没问题时不撤"需复核"】这一格可能还因为别的原因待复核(小数点没看清等),
 // 这里分不清;多看一眼的代价远小于漏看一眼。
 func recheckReadingSanity(store Store, rec *Record, codes ...string) []readingSanityIssue {
@@ -84,8 +93,15 @@ func recheckReadingSanity(store Store, rec *Record, codes ...string) []readingSa
 		only[c] = true
 	}
 	for i := range rec.Fields {
-		if only[rec.Fields[i].Code] {
-			rec.Fields[i].Reason = stripSanityNote(rec.Fields[i].Reason)
+		f := &rec.Fields[i]
+		if !only[f.Code] {
+			continue
+		}
+		clearedByCheck := strings.TrimSpace(f.Value) == "" && strings.TrimSpace(f.AIValue) != "" &&
+			strings.Contains(f.Reason, sanityNoteMark)
+		f.Reason = stripSanityNote(f.Reason)
+		if clearedByCheck {
+			f.Value = f.AIValue
 		}
 	}
 	return checkReadings(store, rec, only)
@@ -148,10 +164,16 @@ func checkReadings(store Store, rec *Record, only map[string]bool) []readingSani
 		// 基准:能对上台账里那块表的,用那块表自己的上一次;对不上的退回按格子
 		prev, hasPrev := baseline[f.Code]
 		whose := "上一次"
-		if mb, isMeter := meters[f.Code]; isMeter {
+		mb, isMeter := meters[f.Code]
+		if isMeter {
 			prev, hasPrev = mb.Value, mb.Has
 			whose = mb.AssetName + " 上一次"
 		}
+		recAt := rec.CreatedAt
+		if recAt.IsZero() {
+			recAt = time.Now()
+		}
+		days := recAt.Sub(mb.At).Hours() / 24
 		reason := ""
 		switch {
 		case v < 0:
@@ -164,32 +186,40 @@ func checkReadings(store Store, rec *Record, only map[string]bool) []readingSani
 			reason = fmt.Sprintf("比%s的 %s 还小(累计读数只会往上走);要么读错了(小数点、或者拍的是另一块表),要么这块表换过、需要人工确认", whose, trimNum(prev))
 		case prev > 0 && v >= prev*readingJumpRatio:
 			reason = fmt.Sprintf("是%s %s 的 %.0f 倍,量级对不上 —— 最常见的原因是小数点丢了(比如把 LCD 上下两行拼成一个整数)", whose, trimNum(prev), v/prev)
+		case isMeter && mb.HasRate && v-prev > readingRiseLimit(prev, mb.MaxDaily, days):
+			pace := "以往几乎不走"
+			if mb.MaxDaily >= 0.05 {
+				pace = "以往一天最多走 " + trimNum(math.Round(mb.MaxDaily*10)/10)
+			}
+			reason = fmt.Sprintf("比%s的 %s 多了 %s,这块表%s —— 多半是读错了,或者读成了另一块表", whose, trimNum(prev), trimNum(v-prev), pace)
 		default:
 			continue
 		}
 		issues = append(issues, readingSanityIssue{
 			Code: f.Code, Label: label, Value: v, Baseline: prev, Reason: reason,
 		})
-		// 【压置信度 + 强制复核,但保留值】留着人才知道 AI 读成了什么,
-		// 也才对得上照片去判断该改成多少;清空只会让人从头猜。
+		// 【清空,不留一个大概率是错的数】见文件头。AI 读成了什么写进理由,人对着照片填。
+		raw := strings.TrimSpace(f.Value)
+		f.Value = ""
 		f.NeedsReview = true
-		if f.Confidence > 0.5 {
-			f.Confidence = 0.5
-		}
+		f.Confidence = 0
 		f.Reason = strings.TrimSpace(f.Reason)
 		if f.Reason != "" {
 			f.Reason += ";"
 		}
-		f.Reason += sanityNoteMark + reason
+		f.Reason += sanityNoteMark + "AI 读作 " + raw + "," + reason + ";已清空,请对照照片填写"
 	}
 	return issues
 }
 
-// meterBaseline 一格读数当前挂的是哪块表,那块表上一次读了多少。
+// meterBaseline 一格读数当前挂的是哪块表,那块表上一次读了多少、以往一天最多走多少。
 type meterBaseline struct {
 	AssetName string
 	Value     float64
 	Has       bool
+	At        time.Time // 上一次读数的时间
+	MaxDaily  float64   // 以往相邻两次之间,平均每天最多走多少
+	HasRate   bool      // 至少有两次读数,MaxDaily 才有意义
 }
 
 // meterBaselines 给"自带设备类型"的读数格找基准:这一格当前挂的那块表,它自己最近一次的读数。
@@ -259,31 +289,54 @@ func meterBaselines(store Store, rec *Record, tpl ReportTemplate, watched map[st
 		if name == "" || len(hits) != 1 {
 			continue // 对不上、或者同名两台:不知道是哪块表,退回按格子比
 		}
-		mb := meterBaseline{AssetName: name}
-		mb.Value, mb.Has = lastMeterReading(store, hits[0].ID, rec.ID, readingFields)
+		mb := lastMeterReading(store, hits[0].ID, rec.ID, readingFields)
+		mb.AssetName = name
 		out[f.Code] = mb
 	}
 	return out
 }
 
-// lastMeterReading 这块表最近一次的读数(不管当时记在哪一格)。
+// lastMeterReading 这块表最近一次的读数(不管当时记在哪一格),以及它以往一天最多走多少。
 // 观测本来就按设备记(asset_id),抄表那几格按设备合成一条,和读数趋势同一口径。
-func lastMeterReading(store Store, assetID, excludeRecord string, readingFields map[string]bool) (float64, bool) {
+func lastMeterReading(store Store, assetID, excludeRecord string, readingFields map[string]bool) meterBaseline {
+	var out meterBaseline
 	obs, err := store.ListFieldObservations(assetID, "", 50)
 	if err != nil {
-		return 0, false
+		return out
 	}
-	for i := len(obs) - 1; i >= 0; i-- { // 按时间正序返回,从后往前找最近的
-		o := obs[i]
+	// 按时间正序返回;相邻两次之间算"平均每天走多少",留最大的那个
+	var prevV float64
+	var prevAt time.Time
+	for _, o := range obs {
 		if o == nil || o.ValueNumber == nil || o.RecordID == excludeRecord || !readingFields[o.FieldKey] {
 			continue
 		}
 		if *o.ValueNumber < 0 {
 			continue
 		}
-		return *o.ValueNumber, true
+		v := *o.ValueNumber
+		if out.Has {
+			// 同一天里重抄的不按"几小时走了多少"算速度,至少按一天算 —— 否则速度虚高、门槛形同虚设
+			days := math.Max(o.CreatedAt.Sub(prevAt).Hours()/24, 1)
+			if rise := v - prevV; rise > 0 {
+				out.MaxDaily = math.Max(out.MaxDaily, rise/days)
+			}
+			out.HasRate = true
+		}
+		prevV, prevAt = v, o.CreatedAt
+		out.Value, out.At, out.Has = v, o.CreatedAt, true
 	}
-	return 0, false
+	return out
+}
+
+// readingRiseLimit 这块表这次最多可能涨多少:以往一天最多走的 10 倍 × 隔了几天,
+// 再保底留一截(上一次读数的 5%、至少 10)—— 几乎不走的表(消防水表)偶尔正常用一点,
+// 不该被当成读错。
+//
+// 【为什么要这一条】10 倍的量级检查管不住走得慢的表:2026-10-09 实测,AI 把生活水表照片里的
+// 211 放进了消防水表那一格 —— 211 只是 104 的 2 倍,量级检查放过了;可消防水表以往一周都不走。
+func readingRiseLimit(prev, maxDaily, days float64) float64 {
+	return math.Max(readingJumpRatio*maxDaily*math.Max(days, 1), math.Max(prev*0.05, 10))
 }
 
 // latestReadings 找每个字段最近一次【已提交】记录里的值。

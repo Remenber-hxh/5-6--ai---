@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -141,5 +142,82 @@ func TestMovedReadingIsRecheckedAgainstNewMeter(t *testing.T) {
 	}
 	if !strings.Contains(f.Reason, "Z2 上一次的 116776.64") || !f.NeedsReview {
 		t.Errorf("应按 Z2 重新检查并要求复核,得到 reason=%q needsReview=%v", f.Reason, f.NeedsReview)
+	}
+}
+
+// ===== 走得慢的表:按"以往一天最多走多少"再拦一道 =====
+//
+// 10 倍的量级检查管不住消防水表:2026-10-09 实测,AI 把生活水表照片里的 211 放进了
+// 消防水表那一格,211 只是 104 的 2 倍 —— 可消防水表以往一周都不走。
+
+// 按设备建好历史读数(线上 9/21 ~ 10/08 的真实值,10/08 那格是改正后的)
+func meterHistoryStore(t *testing.T) *MemStore {
+	t.Helper()
+	store := NewMemStore()
+	days := []time.Time{
+		time.Date(2026, 9, 21, 16, 54, 0, 0, time.UTC), time.Date(2026, 9, 22, 11, 45, 0, 0, time.UTC),
+		time.Date(2026, 9, 23, 17, 24, 0, 0, time.UTC), time.Date(2026, 9, 30, 8, 38, 0, 0, time.UTC),
+		time.Date(2026, 10, 8, 13, 51, 0, 0, time.UTC),
+	}
+	history := map[string]struct {
+		typ, code string
+		vals      []float64
+	}{
+		"消防水表": {"水表", "fire_water_reading", []float64{104, 104, 104, 104, 104}},
+		"生活水表": {"水表", "living_water_reading", []float64{2002, 2002, 2008, 2047, 2119}},
+		"Z1":   {"电表", "z1_reading", []float64{203551.94, 203712.26, 203904.50, 205087.54, 206171.68}},
+	}
+	for name, h := range history {
+		id := "紫菡雅集::zihan_energy::" + name
+		if err := store.CreateAsset(&AssetEntry{ID: id, TenantID: defaultTenantID, Project: "紫菡雅集",
+			TemplateID: "zihan_energy", AssetKey: name, AssetName: name, AssetType: h.typ}); err != nil {
+			t.Fatal(err)
+		}
+		for i, v := range h.vals {
+			v := v
+			if err := store.WriteAssetSnapshots(nil, []*FieldObservation{{AssetID: id, RecordID: "hist_" + strconv.Itoa(i),
+				FieldKey: h.code, ValueNumber: &v, CreatedAt: days[i]}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return store
+}
+
+func readingAt(t *testing.T, store Store, at time.Time, code, asset, value string) *FieldValue {
+	t.Helper()
+	rec := zihanMeterRecord(t, "rec_new", map[string]string{code: value})
+	rec.CreatedAt = at
+	recField(t, rec, code).AssetName = asset
+	flagImplausibleReadings(store, rec)
+	return recField(t, rec, code)
+}
+
+func TestSlowMeterBigRiseIsCleared(t *testing.T) {
+	store := meterHistoryStore(t)
+	next := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
+	f := readingAt(t, store, next, "fire_water_reading", "消防水表", "211")
+	if f.Value != "" || !strings.Contains(f.Reason, "以往几乎不走") {
+		t.Errorf("消防水表一周涨 107 应清空:value=%q reason=%q", f.Value, f.Reason)
+	}
+}
+
+func TestNormalRisesAreKept(t *testing.T) {
+	store := meterHistoryStore(t)
+	week := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
+	twoMonths := time.Date(2026, 12, 8, 10, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		at                 time.Time
+		code, asset, value string
+	}{
+		{week, "fire_water_reading", "消防水表", "105"},         // 偶尔正常用一点
+		{week, "living_water_reading", "生活水表", "2190"},      // 一周 71 吨,和以往差不多
+		{week, "z1_reading", "Z1", "207250.12"},             // 一周 1078 度
+		{twoMonths, "z1_reading", "Z1", "216300.5"},         // 隔两个月没抄
+		{twoMonths, "living_water_reading", "生活水表", "2700"}, // 隔两个月没抄
+	} {
+		if f := readingAt(t, store, c.at, c.code, c.asset, c.value); f.Value != c.value {
+			t.Errorf("%s %s 是正常读数,不该清空:value=%q reason=%q", c.asset, c.value, f.Value, f.Reason)
+		}
 	}
 }

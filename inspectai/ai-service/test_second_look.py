@@ -96,6 +96,21 @@ class TestCropReadingArea(unittest.TestCase):
         # 都放大到同一个长边,所以比宽高比:带 padding 的那张更"矮胖"
         self.assertGreater(padded.size[1] / padded.size[0], tight.size[1] / tight.size[0] * 0.9)
 
+    def test_misplaced_box_still_gets_the_whole_window(self):
+        # 2026-10-09 紫菡消防水表:框往上偏了半个窗口高,按框高放 25% 只多出几个像素,
+        # 裁出来只有字轮上半截。现在至少放出图高的 8%,窗口下沿必须在裁剪图里。
+        from io import BytesIO
+
+        from PIL import Image
+
+        # 读数区实际在 y 0.50~0.56,框偏上半个窗口高
+        out = Image.open(BytesIO(crop_reading_area(self.path, [0.40, 0.47, 0.70, 0.53]))).convert("L")
+        w, h = out.size
+        band = [out.crop((int(w * 0.45), y, int(w * 0.55), y + 1)) for y in range(h)]
+        bright = [y for y, row in enumerate(band) if sum(row.tobytes()) / max(1, row.size[0]) > 200]
+        self.assertTrue(bright, "裁剪图里根本没有读数区")
+        self.assertLess(max(bright), h - 5, "读数区一直延伸到裁剪图底边 —— 下半截被切掉了")
+
     def test_missing_file_returns_none(self):
         self.assertIsNone(crop_reading_area(os.path.join(self.dir, "nope.jpg"), [0.1, 0.1, 0.2, 0.2]))
 
@@ -196,3 +211,42 @@ class TestUnverifiedReadings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSecondLookDisagreement(unittest.TestCase):
+    """两遍读数对不上:清空,哪一边都不采信。"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "meter.jpg")
+        _make_image(self.path)
+        self.payload = {"images": [{"path": self.path}]}
+        self.fields = [{"code": "fire_water_reading", "label": "消防水表读数", "kind": "number"}]
+
+    def _parsed(self, value):
+        return {"recognizedFields": [{"code": "fire_water_reading", "value": value, "confidence": 0.9,
+                                      "imageIndex": 1, "bbox": [0.40, 0.50, 0.70, 0.56]}]}
+
+    def _run(self, first, second):
+        from unittest import mock
+
+        import run
+
+        reply = '{"readings": [{"code": "fire_water_reading", "value": "%s", "confidence": 0.9}]}' % second
+        with mock.patch.object(run, "call_qwen_chat", return_value=reply):
+            return run.second_look(self.payload, self._parsed(first), self.fields, "k")
+
+    def test_disagreement_clears_the_value(self):
+        # 10/08 那组照片实测:整图 211、放大 21 —— 两个都是错的
+        out = self._run("211", "21")
+        item = out["recognizedFields"][0]
+        self.assertEqual(item["value"], "")
+        self.assertEqual(item["confidence"], 0)
+        joined = "".join(out.get("warnings") or [])
+        self.assertIn("消防水表读数", joined)
+        self.assertIn("整图读作211", joined)
+        self.assertIn("放大读作21", joined)
+
+    def test_agreement_keeps_the_value(self):
+        out = self._run("104", "104")
+        self.assertEqual(out["recognizedFields"][0]["value"], "104")

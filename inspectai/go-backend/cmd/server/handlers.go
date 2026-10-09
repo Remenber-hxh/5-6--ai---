@@ -2625,8 +2625,8 @@ func (s *Server) runAnalysis(tenantID, taskID, recordID string) {
 	applyRecognizedFields(rec, resp.RecognizedFields)
 	// 【抄表读数再过一道量级检查】提示词里写着"看不到小数点 confidence ≤0.65",
 	// 模型照样给过 0.92 —— 规则给了不等于会执行。拿上一次的读数一比就现形,
-	// 只降级不改值,理由写进字段让确认页看得见。必须在 buildDailyPreview 之前:
-	// 预览是按字段值拼的,顺序反了预览里还是那个没标注的值。
+	// 对不上就清空那一格,AI 读成了什么写进理由让确认页看得见。必须在 buildDailyPreview 之前:
+	// 预览是按字段值拼的,顺序反了预览里还是那个错的值。
 	if issues := flagImplausibleReadings(s.store, rec); len(issues) > 0 {
 		for _, is := range issues {
 			log.Printf("读数存疑 record=%s %s(%s)=%s: %s",
@@ -2818,8 +2818,10 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		// 【人改了读数,针对 AI 那个数的"存疑"就不成立了】不摘的话,提醒和设备状态
 		// 看到理由里的"存疑"照样判待复核 —— 2026-10-08 生活水表就是这样:人已经把
 		// 2115 改成 2119,群里还在报"是上一次 107 的 20 倍"。
-		// 只在改了值时摘;原样确认 AI 的数(含批量确认)不摘,那个数照样该被看一眼。
-		recheckReadingSanity(s.store, rec, code)
+		// 只在改了值时摘;原样确认(含批量确认)不摘,那一格照样该被看一眼。
+		// 【只摘,不重查】人填的数不查 —— 哪怕和 AI 原来读的一样,那也是人对着照片
+		// 认过的;重查会把人刚填的数又清掉,成了"改了又被系统改回去"。
+		field.Reason = stripSanityNote(field.Reason)
 	}
 	if action == "reassign" && field.AssetName == originalAsset && req.SourceImageID == nil &&
 		field.AssetCleared == originalCleared && !releasedOther {

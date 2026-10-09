@@ -66,8 +66,12 @@ func TestConcatenatedMeterReadingGetsFlagged(t *testing.T) {
 	if f.Confidence > 0.5 {
 		t.Errorf("置信度没压下来,还是 %v", f.Confidence)
 	}
-	if f.Value != "60197924" {
-		t.Errorf("值被改了(%q)—— 只该降级不该改值,人得看见 AI 读成了什么", f.Value)
+	// 【清空,不留错数】留着的话人照样会点确认(Z2 三次小数点错位就是这样进的台账)
+	if f.Value != "" {
+		t.Errorf("量级对不上的数没清空(%q)—— 留着就会被确认掉", f.Value)
+	}
+	if f.AIValue != "60197924" || !strings.Contains(f.Reason, "AI 读作 60197924") {
+		t.Errorf("AI 读成了什么要留着给人看:aiValue=%q reason=%q", f.AIValue, f.Reason)
 	}
 	if !strings.Contains(f.Reason, "读数存疑") {
 		t.Errorf("理由没写进字段,确认页上看不出为什么要复核:%q", f.Reason)
@@ -118,8 +122,9 @@ func TestReadingWentBackwardsFlagged(t *testing.T) {
 	if len(issues) != 1 {
 		t.Fatalf("倒退的读数没被抓住:%v", issues)
 	}
-	if f := recField(t, rec, "z1_reading"); f.Value != "1002.5" {
-		t.Errorf("值被改动了:%q —— 换表清零是真实情况,只该提醒不该改", f.Value)
+	// 换表清零是真实情况,但 AI 读错的可能更大:清空让人对着照片填,AI 读的数写在理由里
+	if f := recField(t, rec, "z1_reading"); f.Value != "" || !strings.Contains(f.Reason, "AI 读作 1002.5") {
+		t.Errorf("倒退的读数应清空并写明 AI 读作多少:value=%q reason=%q", f.Value, f.Reason)
 	}
 }
 
