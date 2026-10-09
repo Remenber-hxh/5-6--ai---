@@ -3981,14 +3981,23 @@ func firstImagePath(rec *Record) string {
 // 认过的那个映射)。有这个就用它,没有才退回第一张 —— 老记录没有这个字段,
 // 退回去至少和现在一样,不会更差。
 func assetPhotoPath(rec *Record, field *FieldValue) string {
-	if field != nil && strings.TrimSpace(field.SourceImageID) != "" {
-		for _, img := range rec.Images {
-			if img.ID == field.SourceImageID {
-				return img.Path
-			}
-		}
+	if p := fieldPhotoPath(rec, field); p != "" {
+		return p
 	}
 	return firstImagePath(rec)
+}
+
+// fieldPhotoPath 这一格认领的那张照片;没认领就是空,不拿第一张顶。
+func fieldPhotoPath(rec *Record, field *FieldValue) string {
+	if field == nil || strings.TrimSpace(field.SourceImageID) == "" {
+		return ""
+	}
+	for _, img := range rec.Images {
+		if img.ID == field.SourceImageID {
+			return img.Path
+		}
+	}
+	return ""
 }
 
 func assetLedgerTime(rec *Record) time.Time {

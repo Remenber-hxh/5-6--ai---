@@ -33,7 +33,8 @@ type assetPhoto struct {
 // 那正是第一张(现场到位后先拍的全景)。想看全部仍然可以点进那条记录。
 func (s *Server) handleAssetPhotos(w http.ResponseWriter, r *http.Request, id string) {
 	tenant := s.tenantForRequest(r)
-	if _, err := s.store.GetAsset(tenant, id); err != nil {
+	asset, err := s.store.GetAsset(tenant, id)
+	if err != nil || asset == nil {
 		writeError(w, http.StatusNotFound, "asset_not_found", "资产台账不存在")
 		return
 	}
@@ -62,7 +63,7 @@ func (s *Server) handleAssetPhotos(w http.ResponseWriter, r *http.Request, id st
 			// 只会让人以为图挂了,而事实是那次巡检本来就没传照片。
 			continue
 		}
-		path := rec.Images[0].Path
+		path := assetPhotoInRecord(rec, asset)
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
@@ -83,4 +84,30 @@ func (s *Server) handleAssetPhotos(w http.ResponseWriter, r *http.Request, id st
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"photos": out})
+}
+
+// assetPhotoInRecord 这台设备在这条记录里的那张照片。
+//
+// 【一条记录拍了好几台设备时,不能取第一张】紫菡抄表一条记录拍六块表,
+// 第一张是谁先拍就是谁 —— 2026-10-09 线上 Z3 的"历次巡检照片"里排的是水表。
+// 这时按这台设备那一格认领的照片取,和设备卡片封面(assetPhotoPath)同一个来源;
+// 那一格没认领照片就跳过这一次:宁可少一张,也不摆别的设备的照片。
+// 一条记录只对应一台设备的,照旧取第一张(现场到位后先拍的全景)。
+func assetPhotoInRecord(rec *Record, asset *AssetEntry) string {
+	built := buildAssets(rec, assetLedgerTime(rec))
+	if len(built) <= 1 {
+		return firstImagePath(rec)
+	}
+	name := strings.TrimSpace(asset.AssetName)
+	for _, a := range built {
+		if a.ID != asset.ID && (name == "" || strings.TrimSpace(a.AssetName) != name) {
+			continue
+		}
+		if len(a.sourceFields) == 0 {
+			return a.LastPhotoPath
+		}
+		f, _ := fieldByCode(rec.Fields, a.sourceFields[0])
+		return fieldPhotoPath(rec, f)
+	}
+	return ""
 }
