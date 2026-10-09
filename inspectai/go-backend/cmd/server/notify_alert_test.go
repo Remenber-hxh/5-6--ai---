@@ -160,6 +160,58 @@ func TestOct8WaterMeterFixLeavesNothingStale(t *testing.T) {
 	}
 }
 
+// 消防水表 AI 每次都读成 01017102,被拦下;巡检员改成 104 之后不该再报。
+// 原样确认 AI 那个数(不改值)则要照样报 —— 那个数确实不对。
+func TestCorrectingFlaggedReadingClearsTheAlert(t *testing.T) {
+	setup := func(t *testing.T) (*Server, string, *Record) {
+		s, tok, _ := newSwapAPIServer(t)
+		seedDefaultNamedMeters(t, s, "消防水表")
+		v := 104.0
+		if err := s.store.WriteAssetSnapshots(nil, []*FieldObservation{{
+			AssetID: "紫菡雅集::zihan_energy::消防水表", RecordID: "rec_1008", FieldKey: "fire_water_reading",
+			ValueNumber: &v, CreatedAt: time.Date(2026, 10, 8, 13, 51, 0, 0, time.UTC),
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		rec := zihanMeterRecord(t, "rec_1009", map[string]string{"fire_water_reading": "01017102"})
+		recField(t, rec, "fire_water_reading").AssetName = "消防水表"
+		flagImplausibleReadings(s.store, rec)
+		if !strings.Contains(recField(t, rec, "fire_water_reading").Reason, sanityNoteMark) {
+			t.Fatal("前提不成立:01017102 应先被拦下")
+		}
+		if err := s.store.CreateRecord(rec); err != nil {
+			t.Fatal(err)
+		}
+		return s, tok, rec
+	}
+	items := func(t *testing.T, s *Server, id string) []RecordAttention {
+		got, err := s.store.GetRecord(defaultTenantID, id)
+		if err != nil || got == nil {
+			t.Fatal(err)
+		}
+		return sanitizeRecordForCurrentTemplate(got).AttentionItems
+	}
+
+	t.Run("改成正确读数", func(t *testing.T) {
+		s, tok, rec := setup(t)
+		if w := patchField(t, s, tok, rec.ID, "fire_water_reading", `{"value":"104"}`); w.Code != http.StatusOK {
+			t.Fatalf("改值失败:%d %s", w.Code, w.Body.String())
+		}
+		if it := items(t, s, rec.ID); len(it) != 0 {
+			t.Errorf("人已经改对了,不该再报:%+v", it)
+		}
+	})
+	t.Run("原样确认 AI 的数", func(t *testing.T) {
+		s, tok, rec := setup(t)
+		if w := patchField(t, s, tok, rec.ID, "fire_water_reading", `{"value":"01017102"}`); w.Code != http.StatusOK {
+			t.Fatalf("确认失败:%d %s", w.Code, w.Body.String())
+		}
+		if it := items(t, s, rec.ID); len(it) != 1 {
+			t.Errorf("确认了一个量级不对的数,应该照样报:%+v", it)
+		}
+	})
+}
+
 // 后台详情和推送读同一份:记录出站时带上"需要注意"的那几项。
 func TestOutboundRecordCarriesAttentionItems(t *testing.T) {
 	out := sanitizeRecordForCurrentTemplate(oct8EnergyRecord())

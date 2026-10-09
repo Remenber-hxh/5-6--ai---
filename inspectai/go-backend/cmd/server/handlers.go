@@ -2815,6 +2815,11 @@ func (s *Server) handlePatchField(w http.ResponseWriter, r *http.Request, record
 		field.Source = "human-edited"
 		field.NeedsReview = false
 		action = "correct"
+		// 【人改了读数,针对 AI 那个数的"存疑"就不成立了】不摘的话,提醒和设备状态
+		// 看到理由里的"存疑"照样判待复核 —— 2026-10-08 生活水表就是这样:人已经把
+		// 2115 改成 2119,群里还在报"是上一次 107 的 20 倍"。
+		// 只在改了值时摘;原样确认 AI 的数(含批量确认)不摘,那个数照样该被看一眼。
+		recheckReadingSanity(s.store, rec, code)
 	}
 	if action == "reassign" && field.AssetName == originalAsset && req.SourceImageID == nil &&
 		field.AssetCleared == originalCleared && !releasedOther {
