@@ -13,26 +13,38 @@ func (s *Server) notifyInspectionSubmitted(rec *Record, assets []*AssetEntry) {
 	if rec == nil || !s.weworkBotAvailable() {
 		return
 	}
-	attention := assetsNeedingAttention(assets)
-	if len(attention) == 0 {
+	content := inspectionAlertCard(rec, assets, s.adminRecordURL(rec.ID))
+	if content == "" {
 		return
 	}
-	status := worstAssetStatus(attention)
-	assetLine := attentionAssetLine(attention)
+	s.sendWeWorkBotMarkdownAsync("inspection.submitted", rec.Project, content)
+}
+
+// inspectionAlertCard 异常提醒卡片的正文。没有需要关注的设备时返回空串(不发)。
+//
+// 【必须说出是哪一项、为什么】原来只列设备名和一个"待复核":一条抄表六块表,
+// 群里看到的是"Z1、Z2、Z3 等 6 项 · 待复核",点进记录也找不到是哪一格 ——
+// 真正存疑的那一项(生活水表 2119,比上一次大 20 倍)哪儿都没写。
+// "问题"一行列出具体的格子、读数和理由,和后台记录详情里标出来的是同一批。
+func inspectionAlertCard(rec *Record, assets []*AssetEntry, recordURL string) string {
+	attention := assetsNeedingAttention(assets)
+	if len(attention) == 0 {
+		return ""
+	}
 	advice := firstRecommendationText(rec.AIRecommendations)
 	if advice == "" {
 		advice = "请主管查看后台记录并完成复核。"
 	}
-	content := buildNotifyCard("智巡异常提醒",
+	return buildNotifyCard("智巡异常提醒",
 		cardRow("项目", rec.Project),
-		cardRow("设备", cardStrong(assetLine)),
-		cardRow("状态", cardWarn(status)),
+		cardRow("设备", cardStrong(attentionAssetLine(attention))),
+		cardRow("状态", cardWarn(worstAssetStatus(attention))),
+		cardRow("问题", strings.Join(attentionFieldLines(rec, 3), "；")),
 		cardRow("点位", firstNonEmpty(rec.PointName, rec.TemplateName)),
 		cardRow("巡检人", rec.Inspector),
 		cardRow("建议", truncate(advice, 90)),
-		"> "+markdownLink("查看巡检记录", s.adminRecordURL(rec.ID)),
+		"> "+markdownLink("查看巡检记录", recordURL),
 	)
-	s.sendWeWorkBotMarkdownAsync("inspection.submitted", rec.Project, content)
 }
 
 func (s *Server) notifyChangeRequestCreated(cr *ChangeRequest) {
@@ -189,10 +201,12 @@ func attentionAssetLine(assets []*AssetEntry) string {
 			break
 		}
 	}
+	line := strings.Join(names, "、")
 	if len(assets) > 3 {
-		names = append(names, fmt.Sprintf("等 %d 项", len(assets)))
+		// "Z1、Z2、Z3 等 6 台",不是"Z1、Z2、Z3、等 6 项"
+		line += fmt.Sprintf(" 等 %d 台", len(assets))
 	}
-	return firstNonEmpty(strings.Join(names, "、"), "未识别资产")
+	return firstNonEmpty(line, "未识别资产")
 }
 
 func firstRecommendationText(items []Recommendation) string {

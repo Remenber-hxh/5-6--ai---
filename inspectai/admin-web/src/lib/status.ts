@@ -6,6 +6,23 @@ export interface RecordField {
   aiValue?: string;
   confidence?: number;
   needsReview?: boolean;
+  reason?: string;
+  assetName?: string;
+}
+
+/**
+ * 需要人看一眼的一项。后端在记录出站时算好(go-backend record_attention.go),
+ * 推送卡片的"问题"一行读的是同一份 —— 前端不自己判断哪一项有问题。
+ */
+export interface RecordAttention {
+  code: string;
+  label: string;
+  /** 异常 / 待复核 —— 和业务状态同一套词,颜色走 statusTagColor */
+  kind: string;
+  /** 读数格实际挂的设备(只在和格子名对不上时有) */
+  asset?: string;
+  value?: string;
+  reason?: string;
 }
 
 export interface InspectionRecord {
@@ -28,6 +45,8 @@ export interface InspectionRecord {
   images?: { url?: string; path?: string }[];
   /** 后端算好的业务状态。见 go-backend/cmd/server/record_status.go */
   businessStatus?: string;
+  /** 需要注意的那几项。见 RecordAttention */
+  attentionItems?: RecordAttention[];
 }
 
 // 业务状态不再由前端计算 —— 见下。

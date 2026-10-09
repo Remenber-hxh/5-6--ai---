@@ -192,35 +192,38 @@ type ImageInfo struct {
 
 // Record — 巡检记录
 type Record struct {
-	ID                string           `json:"id"`
-	TenantID          string           `json:"tenantId,omitempty"`
-	RecordNo          string           `json:"recordNo,omitempty"`
-	Project           string           `json:"project"`
-	PointID           string           `json:"pointId"`
-	PointName         string           `json:"pointName"`
-	TemplateID        string           `json:"templateId"`
-	TemplateName      string           `json:"templateName"`
-	Type              string           `json:"type"`
-	Inspector         string           `json:"inspector"`
-	InspectorUserID   string           `json:"inspectorUserId,omitempty"`
-	CaptureAttempts   int              `json:"captureAttempts"`
-	ManualRequired    bool             `json:"manualRequired"`
-	RecognitionStatus string           `json:"recognitionStatus"`        // not_started / processing / recognized / retake_required / manual_required
-	BusinessStatus    string           `json:"businessStatus,omitempty"` // 出站时算,不入库。见 record_status.go
-	RetakeReason      string           `json:"retakeReason,omitempty"`
-	TaskID            string           `json:"taskId,omitempty"`
-	EngineeringTaskID string           `json:"engineeringTaskId,omitempty"`
-	Images            []ImageInfo      `json:"images"`
-	Fields            []FieldValue     `json:"fields"`
-	Report            string           `json:"report"`
-	AISummary         string           `json:"aiSummary"`
-	AISummaryTags     []string         `json:"aiSummaryTags"`
-	AIRecommendations []Recommendation `json:"aiRecommendations"`
-	AISummaryError    string           `json:"aiSummaryError,omitempty"`
-	Submitted         bool             `json:"submitted"`
-	SubmittedAt       *time.Time       `json:"submittedAt,omitempty"`
-	CreatedAt         time.Time        `json:"createdAt"`
-	UpdatedAt         time.Time        `json:"updatedAt"`
+	ID                string `json:"id"`
+	TenantID          string `json:"tenantId,omitempty"`
+	RecordNo          string `json:"recordNo,omitempty"`
+	Project           string `json:"project"`
+	PointID           string `json:"pointId"`
+	PointName         string `json:"pointName"`
+	TemplateID        string `json:"templateId"`
+	TemplateName      string `json:"templateName"`
+	Type              string `json:"type"`
+	Inspector         string `json:"inspector"`
+	InspectorUserID   string `json:"inspectorUserId,omitempty"`
+	CaptureAttempts   int    `json:"captureAttempts"`
+	ManualRequired    bool   `json:"manualRequired"`
+	RecognitionStatus string `json:"recognitionStatus"`        // not_started / processing / recognized / retake_required / manual_required
+	BusinessStatus    string `json:"businessStatus,omitempty"` // 出站时算,不入库。见 record_status.go
+	// AttentionItems 这条记录里需要人看一眼的那几项(哪一格、什么值、为什么)。
+	// 出站时算,不入库 —— 和 BusinessStatus 同理。见 record_attention.go
+	AttentionItems    []RecordAttention `json:"attentionItems,omitempty"`
+	RetakeReason      string            `json:"retakeReason,omitempty"`
+	TaskID            string            `json:"taskId,omitempty"`
+	EngineeringTaskID string            `json:"engineeringTaskId,omitempty"`
+	Images            []ImageInfo       `json:"images"`
+	Fields            []FieldValue      `json:"fields"`
+	Report            string            `json:"report"`
+	AISummary         string            `json:"aiSummary"`
+	AISummaryTags     []string          `json:"aiSummaryTags"`
+	AIRecommendations []Recommendation  `json:"aiRecommendations"`
+	AISummaryError    string            `json:"aiSummaryError,omitempty"`
+	Submitted         bool              `json:"submitted"`
+	SubmittedAt       *time.Time        `json:"submittedAt,omitempty"`
+	CreatedAt         time.Time         `json:"createdAt"`
+	UpdatedAt         time.Time         `json:"updatedAt"`
 }
 
 // Recommendation — AI 行动建议
@@ -441,9 +444,9 @@ type AssetEntry struct {
 	// z1_reading」。现场把 Z1 选到了第 3 格时,Z1 的照片取的是第 3 格(对的),
 	// 读数历史取的却是第 1 格 —— 那是另一块表的数。台账上就成了
 	// "照片是这台表、读数不是这台表的",而且每次提交错得不一样。
-	sourceFields       []string
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	sourceFields []string
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 
 	// CoverImage 仅 API 展示时动态填充，不入库。优先取 CoverImagePath，回退到最近一次巡检的第一张图。
 	CoverImage *ImageInfo `json:"coverImage,omitempty"`

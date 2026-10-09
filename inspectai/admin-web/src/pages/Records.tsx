@@ -334,6 +334,35 @@ export default function Records() {
               <FieldRow label="模板">{current.templateName || "—"}</FieldRow>
               <FieldRow label="巡检员">{current.inspector || "—"}</FieldRow>
             </div>
+            {/* 【需要注意的放在最前面】群里收到"待复核"点进来,第一眼要看到是哪一项、
+                为什么 —— 原来只有总结、照片和一张每行长得一样的字段表,找不到。
+                哪些算"需要注意"由后端判(record_attention.go),推送里列的是同一批。 */}
+            {!!current.attentionItems?.length && (
+              <div style={{ margin: "8px 0 4px", borderTop: "1px solid #f0f2f5", paddingTop: 10 }}>
+                <div style={{ color: "#8aa0b0", fontSize: 13, marginBottom: 6 }}>
+                  需要注意 · {current.attentionItems.length} 项
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {current.attentionItems.map((it) => (
+                    <div key={it.code}>
+                      <Space size={6} wrap>
+                        <Tag color={statusTagColor(it.kind)} style={{ marginInlineEnd: 0 }}>
+                          {it.kind}
+                        </Tag>
+                        <span style={{ fontWeight: 600 }}>{it.label}</span>
+                        {it.asset && <span style={{ color: "#8aa0b0" }}>记到 {it.asset}</span>}
+                        {it.value && (
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{it.value}</span>
+                        )}
+                      </Space>
+                      {it.reason && (
+                        <div style={{ color: "#5b6b78", fontSize: 12.5, marginTop: 2 }}>{it.reason}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ margin: "8px 0 4px", borderTop: "1px solid #f0f2f5", paddingTop: 10 }}>
               <div style={{ color: "#8aa0b0", fontSize: 13, marginBottom: 4 }}>AI 总结</div>
               <div style={{ fontSize: 13.5, lineHeight: 1.7 }}>
@@ -373,7 +402,24 @@ export default function Records() {
               style={{ marginTop: 10 }}
               columns={[
                 { title: "字段", render: (_, f) => f.label || f.code },
-                { title: "值", render: (_, f) => f.value || f.aiValue || "—" },
+                {
+                  title: "值",
+                  render: (_, f) => {
+                    // 需要注意的那一行在表里也标出来,和上面那块对得上
+                    const hit = current.attentionItems?.find((it) => it.code === f.code);
+                    const v = f.value || f.aiValue || "—";
+                    return hit ? (
+                      <Space size={4}>
+                        <span>{v}</span>
+                        <Tag color={statusTagColor(hit.kind)} style={{ marginInlineEnd: 0 }}>
+                          {hit.kind}
+                        </Tag>
+                      </Space>
+                    ) : (
+                      v
+                    );
+                  },
+                },
                 {
                   title: "置信度",
                   width: 78,

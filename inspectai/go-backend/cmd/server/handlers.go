@@ -2039,6 +2039,7 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 		// 看不出来,而它已经不是"只读的序列化"了。
 		clean := *rec
 		clean.BusinessStatus = recordBusinessStatus(rec)
+		clean.AttentionItems = recordAttentionItems(&clean)
 		return &clean
 	}
 	allowed := map[string]bool{}
@@ -2085,6 +2086,7 @@ func sanitizeRecordForCurrentTemplate(rec *Record) *Record {
 	// 会看到的那些字段"来算 —— 否则一个已经从模板里删掉的字段,
 	// 还能让这条记录显示成异常。
 	clean.BusinessStatus = recordBusinessStatus(&clean)
+	clean.AttentionItems = recordAttentionItems(&clean)
 	return &clean
 }
 
@@ -4081,8 +4083,13 @@ func environmentAssetStatus(temp, humidity string, tField, hField *FieldValue, r
 // hasAbnormalSignal: 字段或 record 级 AI 信号是否提示异常
 //  1. field.Reason 含异常关键词 (识别失败/模糊/倒退/报警/超限/未识别…)
 //  2. field.NeedsReview = true 但 value 已填 (AI 不确信)
-//  3. record.AISummaryError 非空 (AI 总结失败)
-//  4. record.AIRecommendations 中有 priority=high 且文本提到该资产名 (针对性告警)
+//  3. record.AIRecommendations 中有 priority=high 且文本提到该资产名 (针对性告警)
+//
+// 【AI 总结失败不算设备异常】原来这里还有一条"记录的 AI 总结生成失败 → 待复核",
+// 而它对记录里的每台设备都成立:2026-10-08 那条抄表,总结服务没回来,
+// 六块表全成了"待复核",群里收到"Z1、Z2、Z3 等 6 项 · 待复核" ——
+// 真正存疑的生活水表淹在里面,看不出是哪一项。总结失败是 AI 服务的问题,
+// 不是设备的问题;它在系统页的 AI 状态卡上报,不该把设备标成待复核。
 func hasAbnormalSignal(field *FieldValue, rec *Record, assetName string) bool {
 	if field != nil {
 		if containsAnomalyKeyword(field.Reason) {
@@ -4094,9 +4101,6 @@ func hasAbnormalSignal(field *FieldValue, rec *Record, assetName string) bool {
 	}
 	if rec == nil {
 		return false
-	}
-	if strings.TrimSpace(rec.AISummaryError) != "" {
-		return true
 	}
 	for _, r := range rec.AIRecommendations {
 		if strings.EqualFold(r.Priority, "high") && (assetName == "" || strings.Contains(r.Text, assetName)) {
