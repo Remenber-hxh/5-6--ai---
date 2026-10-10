@@ -333,11 +333,15 @@ export default function RecordPage() {
   }));
 
   // 只统计置信度 <95% 的 AI 字段;≥95% 视为可信,不需人工逐项确认(旧版口径)
+  // 【和提交时那道检查同一个标准】后端提交前会拦两种格子(go-backend handleSubmit):
+  // 标了"需人工确认"的,以及 AI 填的、把握低于 95% 的。原来这里只认后一种 ——
+  // 一格被对调或挪过之后,来源不再是 AI,"需确认"的标记却还在:这个条不出现,
+  // 提交又被拦,巡检员卡在中间(2026-10-10 紫菡 Z1)。
+  // 空着的格子不放进来:那是读不准被清空的,要人对着照片填,不能一键确认成空的。
   const lowConf = (rec?.fields || []).filter(
     (f) =>
-      f.source === "ai" &&
       String(f.value || "").trim() !== "" &&
-      (f.confidence || 0) < 0.95,
+      (f.needsReview || (f.source === "ai" && (f.confidence || 0) < 0.95)),
   );
 
   // ===== 顶部语境:这份表是谁、在哪填的 =====
@@ -777,7 +781,7 @@ export default function RecordPage() {
         {lowConf.length > 0 && (
           <div className="confirm-all">
             <div className="ca-msg">
-              <b>{lowConf.length}</b> 项识别置信偏低,请核对
+              <b>{lowConf.length}</b> 项需要核对
             </div>
             <button onClick={() => void confirmAll()} disabled={confirming}>
               {confirming ? "确认中…" : `一键确认 (${lowConf.length})`}
