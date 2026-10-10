@@ -120,6 +120,8 @@ type AssetStore interface {
 	UpdateAssetCover(tenantID, id, coverImagePath string) (*AssetEntry, error)
 	// DeleteAsset 删除资产及其快照/字段观测(巡检记录保留作历史证据)。
 	DeleteAsset(tenantID, id string) error
+	// MergeAsset 把重复登记的 from 并到 into 上,然后删掉 from。见 store_asset_merge.go。
+	MergeAsset(tenantID, fromID, intoID string) error
 	// 幂等写入,按 asset_id 完整翻历史
 	WriteAssetSnapshots(snapshots []*AssetSnapshot, observations []*FieldObservation) error
 	ListAssetSnapshots(assetID string, limit, offset int) ([]*AssetSnapshot, error)

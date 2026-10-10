@@ -80,9 +80,12 @@ export function setUnauthorizedHandler(fn: () => void) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** 后端的错误码(writeError 的 code),如 asset_similar —— 前端要按它分支时用,别去匹配中文提示 */
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -112,7 +115,7 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
     throw new ApiError(401, data.message || "登录已过期,请重新登录");
   }
   if (!res.ok) {
-    throw new ApiError(res.status, data.message || data.error || `请求失败 (${res.status})`);
+    throw new ApiError(res.status, data.message || data.error || `请求失败 (${res.status})`, data.error);
   }
   return data as T;
 }

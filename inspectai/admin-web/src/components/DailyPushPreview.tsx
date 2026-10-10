@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   DailyPushBot,
-  DailyPushBotOverride,
+  DailyPushBotPatch,
   DailyPushBotPreview,
   DailyPushConfig,
   DailyPushDigest,
@@ -86,7 +86,7 @@ export default function DailyPushPreview({
    * 只发一个 time 的话,这个群原来设的"暂停"会被一起清掉,
    * 而页面上不会有任何提示,下次到点它就又开始发了。
    */
-  async function patchBot(bot: DailyPushBot, next: Partial<DailyPushBotOverride>) {
+  async function patchBot(bot: DailyPushBot, next: DailyPushBotPatch) {
     if (!cfg) return;
     setSaving(true);
     try {
@@ -237,7 +237,7 @@ function BotConfigRow({
 }: {
   bot: DailyPushBot;
   saving: boolean;
-  onChange: (next: Partial<DailyPushBotOverride>) => void;
+  onChange: (next: DailyPushBotPatch) => void;
 }) {
   const eff = bot.effective;
   const bad = bot.unknownProjects ?? [];
@@ -331,6 +331,17 @@ function BotConfigRow({
           </Space>
         </div>
       )}
+      {/* 【和单独设置分开】单独设置管每日提醒几点发,收起来会清掉;
+          AI 账号故障(额度用完、密钥失效)要不要推到这个群,是另一件事。默认关 */}
+      <Space size={10}>
+        <Switch
+          size="small"
+          disabled={saving}
+          checked={!!bot.aiAlerts}
+          onChange={(v) => onChange({ aiAlerts: v })}
+        />
+        <span style={{ color: C.textSub, fontSize: 13 }}>AI 故障提醒</span>
+      </Space>
     </div>
   );
 }

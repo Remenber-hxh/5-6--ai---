@@ -1,10 +1,11 @@
-import { DeleteOutlined, DownloadOutlined, EditOutlined, MoreOutlined, PlusOutlined, QrcodeOutlined, UploadOutlined } from "@ant-design/icons";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, MergeCellsOutlined, MoreOutlined, PlusOutlined, QrcodeOutlined, UploadOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Descriptions, Dropdown, Empty, Form, Input, Modal, Popconfirm, Row, Select, Skeleton, Space, Tag, message } from "antd";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { AssetEntry, AssetSnapshotEntry, EngineeringTask, ReportTemplateDTO, createAsset, deleteAsset, listAssetSnapshots, listAssets, listProjects, listReportTemplates, listTasks, markAssetNormal, updateAsset, uploadAssetCover } from "../api/mgmt";
+import { AssetEntry, AssetSnapshotEntry, EngineeringTask, ReportTemplateDTO, createAsset, deleteAsset, listAssetSnapshots, listAssets, listProjects, listReportTemplates, listSimilarAssets, listTasks, markAssetNormal, mergeAsset, updateAsset, uploadAssetCover } from "../api/mgmt";
+import { ApiError } from "../api/client";
 import AssetQRSheet from "../components/AssetQRSheet";
 import AssetTrend from "../components/AssetTrend";
 import { exportCsv } from "../lib/csv";
@@ -37,6 +38,11 @@ export default function Ledger() {
   const [project, setProject] = useState("");
   const [loading, setLoading] = useState(true);
   const [qrOpen, setQrOpen] = useState(false);
+  // 合并重复登记的设备(K07 / K7):当前这台并到 mergeInto 上,然后删掉当前这台
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeInto, setMergeInto] = useState<string>();
+  const [similarIds, setSimilarIds] = useState<Set<string>>(new Set());
+  const [merging, setMerging] = useState(false);
   const [params] = useSearchParams();
 
   async function reload() {
@@ -368,6 +374,11 @@ export default function Ledger() {
                       icon: <EditOutlined />,
                       label: "编辑资产",
                     },
+                    {
+                      key: "merge",
+                      icon: <MergeCellsOutlined />,
+                      label: "合并到…",
+                    },
                     { type: "divider" },
                     {
                       key: "delete",
@@ -386,6 +397,17 @@ export default function Ledger() {
                         lastSummary: current.lastSummary || "",
                       });
                       setEditing(true);
+                    } else if (key === "merge") {
+                      setMergeInto(undefined);
+                      setSimilarIds(new Set());
+                      setMergeOpen(true);
+                      // 看着是同一台的排前面;只有一台像的话直接选上
+                      listSimilarAssets(current.id)
+                        .then((list) => {
+                          setSimilarIds(new Set(list.map((a) => a.id)));
+                          if (list.length === 1) setMergeInto(list[0].id);
+                        })
+                        .catch(() => undefined);
                     } else if (key === "delete") {
                       Modal.confirm({
                         title: "删除该资产?",
@@ -637,6 +659,53 @@ export default function Ledger() {
       </div>
       <AssetQRSheet assets={rows} open={qrOpen} onClose={() => setQrOpen(false)} />
       <Modal
+        title={`合并「${current?.assetName || ""}」`}
+        open={mergeOpen}
+        onCancel={() => setMergeOpen(false)}
+        okText="合并"
+        cancelText="取消"
+        okButtonProps={{ danger: true, disabled: !mergeInto, loading: merging }}
+        destroyOnClose
+        onOk={async () => {
+          if (!current || !mergeInto) return;
+          const into = assets.find((a) => a.id === mergeInto);
+          setMerging(true);
+          try {
+            await mergeAsset(current.id, mergeInto);
+            message.success(`已并到「${into?.assetName || "所选设备"}」`);
+            setMergeOpen(false);
+            const as = await listAssets();
+            setAssets(as);
+            setCurrent(as.find((x) => x.id === mergeInto) || null);
+          } catch (e) {
+            message.error(e instanceof Error ? e.message : "合并失败");
+          } finally {
+            setMerging(false);
+          }
+        }}
+      >
+        <Select
+          style={{ width: "100%" }}
+          showSearch
+          value={mergeInto}
+          onChange={setMergeInto}
+          placeholder="选择要保留的那台"
+          optionFilterProp="label"
+          options={assets
+            .filter((a) => current && a.project === current.project && a.id !== current.id)
+            .sort((a, b) => Number(similarIds.has(b.id)) - Number(similarIds.has(a.id)))
+            .map((a) => ({
+              value: a.id,
+              label:
+                `${a.assetName || a.assetKey || a.id} · ${a.inspectionCount ?? 0} 次巡检` +
+                (similarIds.has(a.id) ? " · 看着是同一台" : ""),
+            }))}
+        />
+        <div style={{ marginTop: 10, color: "#5b6b78", fontSize: 13 }}>
+          「{current?.assetName}」的巡检历史、任务和计划会并到所选设备上,然后删除「{current?.assetName}」。
+        </div>
+      </Modal>
+      <Modal
         title="新增资产"
         open={creating}
         onCancel={() => setCreating(false)}
@@ -648,13 +717,31 @@ export default function Ledger() {
           layout="vertical"
           requiredMark={false}
           onFinish={async (v) => {
-            try {
-              const created = await createAsset(v);
+            const save = async (confirmSimilar: boolean) => {
+              const created = await createAsset({ ...v, confirmSimilar });
               message.success("资产已建档(未巡检)");
               setCreating(false);
               await reload();
               setCurrent(created);
+            };
+            try {
+              await save(false);
             } catch (e) {
+              // 【项目里已有一台看着一样的(K07 / K7)】先问一句,确认是另一台再建 ——
+              // 建成两台的话巡检记录和趋势会拆成两半。见 go-backend asset_similar.go
+              if (e instanceof ApiError && e.code === "asset_similar") {
+                Modal.confirm({
+                  title: "可能是重复设备",
+                  content: e.message,
+                  okText: "仍然新建",
+                  cancelText: "取消",
+                  onOk: () =>
+                    save(true).catch((err) => {
+                      message.error(err instanceof Error ? err.message : "创建失败");
+                    }),
+                });
+                return;
+              }
               message.error(e instanceof Error ? e.message : "创建失败");
             }
           }}

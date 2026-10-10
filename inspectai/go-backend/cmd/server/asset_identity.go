@@ -175,7 +175,7 @@ func (s *Server) reuseExistingAssetIdentity(tenantID string, assets []*AssetEntr
 		}
 		// 用 AssetKey 而不是 AssetName 去找:AssetKey 才是从记录字段里取出来的
 		// 那个"巡检员填/选的编号"。
-		if id := resolveAssetIdentity(all, a.Project, a.TemplateID, a.AssetKey); id != "" && id != a.ID {
+		if id := resolveAssetIdentityLoose(all, a.Project, a.TemplateID, a.AssetKey, a.AssetName); id != "" && id != a.ID {
 			a.ID = id
 			// 模板段可能不同(挂到 manual:: 的遗留资产上),同步过去,
 			// 免得 upsert 把已有那台的 template_id 覆盖成新算的值。

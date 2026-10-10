@@ -1156,7 +1156,7 @@ func (s *Server) ensureAssetLedgerFromRecords() error {
 			// 先看能不能挂到已有设备上(改名分家、手工建档的 manual:: 等),
 			// 挂得上就不算新设备。existing 是循环外查的一份,回填过程中
 			// 新插入的不在里面 —— 所以下面还要用 latestByAssetID 兜一层。
-			if id := resolveAssetIdentity(existing, asset.Project, asset.TemplateID, asset.AssetKey); id != "" {
+			if id := resolveAssetIdentityLoose(existing, asset.Project, asset.TemplateID, asset.AssetKey, asset.AssetName); id != "" {
 				asset.ID = id
 				if tplPart := assetIDTemplatePart(id); tplPart != "" {
 					asset.TemplateID = tplPart
@@ -1451,6 +1451,22 @@ func (s *Server) handleAssetRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetProfile(w, r, id)
 		return
 	}
+	if id := strings.TrimSuffix(rest, "/similar"); id != rest {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleSimilarAssets(w, r, id)
+		return
+	}
+	if id := strings.TrimSuffix(rest, "/merge"); id != rest {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
+			return
+		}
+		s.handleMergeAsset(w, r, id)
+		return
+	}
 	if id := strings.TrimSuffix(rest, "/photos"); id != rest {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
@@ -1545,6 +1561,8 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		TemplateID string `json:"templateId"`
 		PointID    string `json:"pointId"`
 		Summary    string `json:"summary"`
+		// ConfirmSimilar 人看过"项目里已有一台看着一样的"提醒后,确认这是另一台
+		ConfirmSimilar bool `json:"confirmSimilar"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -1608,6 +1626,26 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		// 类型也认不出来(自定义类型)。仍然落 manual,但这台设备将来被巡检时
 		// 会靠 resolveAssetIdentity 按名字回查挂上去,不会再裂。
 		tplPart = "manual"
+	}
+	// 【看着是同一台就先问一句】K07 和 K7、「Z1」和「Z1能耗表」—— 建成两台的话,
+	// 巡检记录和趋势会拆成两半,派单还会因为同名被拒。见 asset_similar.go。
+	// 只是提醒,不拦死:真有两台编号很像的设备时,人确认一次就照常建。
+	if !req.ConfirmSimilar {
+		if all, err := s.store.ListAssets(tenantID); err == nil {
+			if sim := similarAssets(all, req.Project, req.AssetKey, req.AssetName); len(sim) > 0 {
+				names := make([]string, 0, len(sim))
+				for _, a := range sim {
+					names = append(names, "「"+firstNonEmpty(a.AssetName, a.AssetKey)+"」")
+				}
+				if len(names) > 3 {
+					names = append(names[:3], "等")
+				}
+				writeError(w, http.StatusConflict, "asset_similar",
+					"项目「"+req.Project+"」里已有"+strings.Join(names, "、")+",和这次要建的「"+req.AssetName+
+						"」看着是同一台。确定是另一台设备的话,确认后照常建档。")
+				return
+			}
+		}
 	}
 	asset := &AssetEntry{
 		// 编号必须过 sanitizeAssetIdent —— 巡检路径(assetIDFor)是过的,
@@ -3964,6 +4002,16 @@ func (s *Server) backfillAssetSnapshots() error {
 	if err != nil {
 		return err
 	}
+	// 【按台账认设备,和提交时同一套】按记录算出来的设备 ID 台账里没有时(手工建档的模板段不同、
+	// 或者那台已经并到别的设备上了),按 resolveAssetIdentityLoose 认到台账里那一台 ——
+	// 否则合并掉的设备每次重启都会在旧 ID 上补出一份历史。查不到台账就按原样走。
+	all, _ := s.store.ListAssets(defaultTenantID)
+	known := make(map[string]bool, len(all))
+	for _, a := range all {
+		if a != nil {
+			known[a.ID] = true
+		}
+	}
 	var allSnaps []*AssetSnapshot
 	var allObs []*FieldObservation
 	for _, rec := range records {
@@ -3972,6 +4020,14 @@ func (s *Server) backfillAssetSnapshots() error {
 		}
 		t := assetLedgerTime(rec)
 		assets := buildAssets(rec, t)
+		for _, a := range assets {
+			if a == nil || known[a.ID] {
+				continue
+			}
+			if id := resolveAssetIdentityLoose(all, a.Project, a.TemplateID, a.AssetKey, a.AssetName); id != "" {
+				a.ID = id
+			}
+		}
 		snaps, obs := buildRecordObservations(rec, assets, t)
 		allSnaps = append(allSnaps, snaps...)
 		allObs = append(allObs, obs...)

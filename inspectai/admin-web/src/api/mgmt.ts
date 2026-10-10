@@ -51,6 +51,8 @@ export interface AssetEntry {
   lastPhotoPath?: string;
   coverImagePath?: string;
   coverImage?: AssetImageInfo;
+  /** 巡检次数(后端按历史条数现算) */
+  inspectionCount?: number;
   // ===== 静态档案(向甲方索要的那批资料)=====
   // 全部可空:拿到多少填多少,没填的界面上直接不显示,不摆一行"—"占位。
   manufacturer?: string;
@@ -543,6 +545,9 @@ export interface DailyPushBotOverride {
   followCalendar: boolean | null;
 }
 
+/** 改一个群时发上去的东西:单独设置的那几项,加上 AI 故障提醒开关(不传 = 不改) */
+export type DailyPushBotPatch = Partial<DailyPushBotOverride> & { aiAlerts?: boolean };
+
 export interface DailyPushBot {
   /** 第几个群,和服务器上 WEWORK_BOT_[N]_WEBHOOK 的编号一致 */
   index: number;
@@ -563,6 +568,8 @@ export interface DailyPushBot {
   ready: boolean;
   /** 完全跟随全局 —— 一项都没单独设过 */
   follows: boolean;
+  /** 这个群收不收 AI 账号故障提醒(和单独设置无关,默认关) */
+  aiAlerts?: boolean;
   override: DailyPushBotOverride;
   /**
    * 全局 + 覆盖合并之后,这个群实际用的那套。
@@ -603,7 +610,7 @@ export function saveDailyPushConfig(c: {
   silentWhenDone: boolean;
   followCalendar: boolean;
   /** 不传 = 一个群的单独设置都不动 */
-  bots?: ({ index: number } & Partial<DailyPushBotOverride>)[];
+  bots?: ({ index: number } & DailyPushBotPatch)[];
 }) {
   return api("/api/engineering/plans/daily-push/config", {
     method: "PUT",
@@ -727,6 +734,19 @@ export function deleteAsset(id: string) {
   return api<{ deleted: boolean }>(`/api/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+// 同一项目里和这台"看着是同一台"的设备(K07 / K7、Z3 / Z3能耗表),给"合并到…"列候选
+export function listSimilarAssets(id: string) {
+  return api<{ assets: AssetEntry[] }>(`/api/assets/${encodeURIComponent(id)}/similar`).then((d) => d.assets || []);
+}
+
+// 把重复登记的这台并到 intoId 上:历史、任务、计划、修改申请全部改挂过去,再删掉这台
+export function mergeAsset(id: string, intoId: string) {
+  return api<{ merged: boolean; asset?: AssetEntry }>(`/api/assets/${encodeURIComponent(id)}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ intoId }),
+  });
+}
+
 // 手工新增资产建档(主管;设备先入台账、未巡检,巡检数从 0 起)
 export function createAsset(payload: {
   project: string;
@@ -735,6 +755,8 @@ export function createAsset(payload: {
   assetType?: string;
   templateId?: string;
   summary?: string;
+  /** 看过"项目里已有一台看着一样的"提醒,确认是另一台 */
+  confirmSimilar?: boolean;
 }) {
   return api<{ asset: AssetEntry }>("/api/assets", {
     method: "POST",
