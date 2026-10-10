@@ -236,7 +236,9 @@ func TestParseHolidayNoticeReportsWhatItCannotRead(t *testing.T) {
 // 放假那天,选了「法定工作日」的计划不进今日待巡,而且要说出有几条是因为放假没进。
 func TestTodayBoardSkipsWorkdayPlansOnHoliday(t *testing.T) {
 	srv, r, store := newBoardServer(t)
-	now := time.Now()
+	// 【固定用一个周三,不用 time.Now()】"因放假跳过"只算本来要执行的那天:
+	// 碰上周末跑这条测试,工作日计划本来就不排,计数是 0 —— 2026-10-10(周六)就这样挂过
+	now := time.Date(2026, 9, 30, 10, 0, 0, 0, cnLoc)
 	today := dayStamp(now)
 	addDailyPlan(t, store, "office", dayRuleWorkday, []string{"会议中心::escalator::KT-1"})
 	addDailyPlan(t, store, "pump", "", []string{"会议中心::escalator::KT-2"}) // 每天:放假照样巡
