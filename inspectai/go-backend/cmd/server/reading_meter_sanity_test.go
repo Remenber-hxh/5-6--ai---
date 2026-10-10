@@ -245,24 +245,34 @@ func TestAutoMatchPutsReadingsOnTheRightMeter(t *testing.T) {
 		}
 	}
 	rec := zihanMeterRecord(t, "rec_1011", map[string]string{
-		"z1_reading": "61922.564", // 其实是 Z4 的照片,读对了
-		"z2_reading": "86217.840", // 其实是 Z3 的照片,读对了
-		"z3_reading": "20647.632", // 其实是 Z1 的照片,小数点错一位
-		"z4_reading": "11698.725", // 其实是 Z2 的照片,小数点错一位
+		"z1_reading": "61922.564", // 第 1 张:其实是 Z4,读对了
+		"z2_reading": "86217.840", // 第 2 张:其实是 Z3,读对了
+		"z3_reading": "20647.632", // 第 3 张:其实是 Z1,小数点错一位
+		"z4_reading": "11698.725", // 第 4 张:其实是 Z2,小数点错一位
 	})
+	for i, code := range []string{"z1_reading", "z2_reading", "z3_reading", "z4_reading"} {
+		recField(t, rec, code).SourceImageID = "img" + strconv.Itoa(i+1)
+	}
 	rec.CreatedAt = d(11)
 	flagImplausibleReadings(store, rec)
 
-	for code, want := range map[string][2]string{"z1_reading": {"Z4", "61922.564"}, "z2_reading": {"Z3", "86217.840"}} {
-		if f := recField(t, rec, code); f.AssetName != want[0] || f.Value != want[1] || f.NeedsReview {
-			t.Errorf("%s 应自动挂到 %s、读数保留:asset=%q value=%q review=%v reason=%q",
-				code, want[0], f.AssetName, f.Value, f.NeedsReview, f.Reason)
+	// 读对的两张,连照片一起对调进那块表自己的格子(日报按格子名列,不能"Z1 那格装 Z4 的数")
+	for code, want := range map[string][2]string{"z4_reading": {"61922.564", "img1"}, "z3_reading": {"86217.840", "img2"}} {
+		if f := recField(t, rec, code); f.Value != want[0] || f.SourceImageID != want[1] || f.NeedsReview {
+			t.Errorf("%s 应换进第 %s 张的读数 %s:value=%q img=%q review=%v reason=%q",
+				code, want[1], want[0], f.Value, f.SourceImageID, f.NeedsReview, f.Reason)
 		}
 	}
-	for code, ai := range map[string]string{"z3_reading": "20647.632", "z4_reading": "11698.725"} {
-		f := recField(t, rec, code)
-		if f.Value != "" || f.AssetName != "" || !f.AssetCleared || f.Reason != sanityNoteMark+"AI 读作 "+ai+",请选择设备" {
-			t.Errorf("%s 和哪块表都对不上,应清空并请人选设备:asset=%q value=%q reason=%q", code, f.AssetName, f.Value, f.Reason)
+	// 小数点错位的两张:和哪块表都对不上,换到空出来的格子里,清空读数和设备,请人选设备
+	for img, ai := range map[string]string{"img3": "20647.632", "img4": "11698.725"} {
+		var f *FieldValue
+		for i := range rec.Fields {
+			if rec.Fields[i].SourceImageID == img {
+				f = &rec.Fields[i]
+			}
+		}
+		if f == nil || f.Value != "" || f.AssetName != "" || !f.AssetCleared || f.Reason != sanityNoteMark+"AI 读作 "+ai+",请选择设备" {
+			t.Errorf("%s 应清空并请人选设备,得到 %+v", img, f)
 		}
 	}
 }

@@ -105,8 +105,10 @@ func flagReadingsOnSubmit(store Store, rec *Record) []readingSanityIssue {
 // 人还得再抄一遍。放回来照样过一遍检查,对不上就再清空。
 // 只认"这道检查清空的、之后没人动过的"(值空着、理由里还挂着存疑标记):人自己清空的格子不碰。
 //
-// 【查出没问题时不撤"需复核"】这一格可能还因为别的原因待复核(小数点没看清等),
-// 这里分不清;多看一眼的代价远小于漏看一眼。
+// 【人动过的格子就算看过了,变回白格子】(2026-10-11 用户要求)选设备、对调、挪格子,
+// 都是人对着照片做的判断。读数还在、检查也没挑出毛病,就不再标黄、也不用再点一次确认 ——
+// 原来"需复核"会一直留着,现场不知道还要再点确认,提交时又被拦下。
+// 人点「清除」的不算:那是还没定是哪块表。
 func recheckReadingSanity(store Store, rec *Record, codes ...string) []readingSanityIssue {
 	if rec == nil || len(codes) == 0 {
 		return nil
@@ -127,7 +129,18 @@ func recheckReadingSanity(store Store, rec *Record, codes ...string) []readingSa
 			f.Value = f.AIValue
 		}
 	}
-	return checkReadings(store, rec, only, checkClearAI)
+	issues := checkReadings(store, rec, only, checkClearAI)
+	for i := range rec.Fields {
+		f := &rec.Fields[i]
+		if !only[f.Code] || f.AssetCleared || strings.TrimSpace(f.Value) == "" || strings.Contains(f.Reason, sanityNoteMark) {
+			continue
+		}
+		f.NeedsReview = false
+		if f.Source == "ai" {
+			f.Source = "human-confirmed" // 提交前那道"AI 低置信要确认"也算过了
+		}
+	}
+	return issues
 }
 
 // stripSanityNote 把理由里这道检查写的那一段摘掉。它总是追加在最后。
