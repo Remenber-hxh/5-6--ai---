@@ -68,7 +68,9 @@ type readingSanityIssue struct {
 // 现在先按这一格当前挂的是哪块表,取那块表自己最近一次的读数;
 // 台账里对不上设备的格子(没配设备类型的模板、或者台账里没有那台)才退回按格子比。
 func flagImplausibleReadings(store Store, rec *Record) []readingSanityIssue {
-	return checkReadings(store, rec, nil, checkClearAI)
+	// 先认表,再查量级:读数读对了、只是落进了别的表的格子,挪过去就好,不该清空。见 reading_automatch.go
+	issues := autoMatchMeters(store, rec)
+	return append(issues, checkReadings(store, rec, nil, checkClearAI)...)
 }
 
 // readingCheckMode 这道检查用在哪儿。
@@ -197,56 +199,70 @@ func checkReadings(store Store, rec *Record, only map[string]bool, mode readingC
 			prev, hasPrev = mb.Value, mb.Has
 			whose = mb.AssetName + " 上一次"
 		}
-		recAt := rec.CreatedAt
-		if recAt.IsZero() {
-			recAt = time.Now()
-		}
-		days := recAt.Sub(mb.At).Hours() / 24
-		reason := ""
-		switch {
-		case v < 0:
-			// 累计读数没有负数。这条不需要基准,任何时候都成立。
-			reason = "累计读数不可能是负数"
-		case !hasPrev:
-			// 没有基准就不下结论 —— 首次抄表、新装的表都会走到这里。
-			continue
-		case v < prev:
-			reason = fmt.Sprintf("比%s的 %s 还小(累计读数只会往上走);要么读错了(小数点、或者拍的是另一块表),要么这块表换过、需要人工确认", whose, trimNum(prev))
-		case prev > 0 && v >= prev*readingJumpRatio:
-			reason = fmt.Sprintf("是%s %s 的 %.0f 倍,量级对不上 —— 最常见的原因是小数点丢了(比如把 LCD 上下两行拼成一个整数)", whose, trimNum(prev), v/prev)
-		case isMeter && mb.HasRate && v-prev > readingRiseLimit(prev, mb.MaxDaily, days):
-			pace := "以往几乎不走"
-			if mb.MaxDaily >= 0.05 {
-				pace = "以往一天最多走 " + trimNum(math.Round(mb.MaxDaily*10)/10)
-			}
-			reason = fmt.Sprintf("比%s的 %s 多了 %s,这块表%s —— 多半是读错了,或者读成了另一块表", whose, trimNum(prev), trimNum(v-prev), pace)
-		default:
+		reason, judged := readingProblem(v, prev, hasPrev, mb, isMeter, whose, readingDays(rec, mb))
+		if !judged || reason == "" {
 			continue
 		}
 		issues = append(issues, readingSanityIssue{
 			Code: f.Code, Label: label, Value: v, Baseline: prev, Reason: reason,
 		})
 		raw := strings.TrimSpace(f.Value)
-		f.Reason = strings.TrimSpace(f.Reason)
-		if f.Reason != "" {
-			f.Reason += ";"
-		}
 		if mode == checkFlagOnSubmit {
 			// 提交时:不改值,只写明 —— 见 flagReadingsOnSubmit
 			who := "手填 "
 			if aiRead {
 				who = "AI 读作 "
 			}
+			f.Reason = strings.TrimSpace(f.Reason)
+			if f.Reason != "" {
+				f.Reason += ";"
+			}
 			f.Reason += sanityNoteMark + who + raw + "," + reason
 			continue
 		}
-		// 【清空,不留一个大概率是错的数】见文件头。AI 读成了什么写进理由,人对着照片填。
+		// 【清空,不留一个大概率是错的数】见文件头。
+		// 【提示只留一句】(2026-10-11)原来写一大段"比上一次小、要么读错了要么换过表……",
+		// 手机上四格占满一屏,看着像全坏了。现场只需要知道 AI 读成了什么、接下来做什么。
+		// AI 原来那句识别说明说的是被清掉的那个数,一并换掉。
 		f.Value = ""
 		f.NeedsReview = true
 		f.Confidence = 0
-		f.Reason += sanityNoteMark + "AI 读作 " + raw + "," + reason + ";已清空,请对照照片填写"
+		f.Reason = sanityNoteMark + "AI 读作 " + raw + ",请照照片填写"
 	}
 	return issues
+}
+
+// readingDays 这次离那块表上一次读数隔了几天。
+func readingDays(rec *Record, mb meterBaseline) float64 {
+	recAt := rec.CreatedAt
+	if recAt.IsZero() {
+		recAt = time.Now()
+	}
+	return recAt.Sub(mb.At).Hours() / 24
+}
+
+// readingProblem 这个读数和基准对不对得上。judged=false 表示没有基准、不下结论;
+// 对得上返回空串。量级检查、提交时的检查、自动认表(reading_automatch.go)都用这一个口径。
+func readingProblem(v, prev float64, hasPrev bool, mb meterBaseline, isMeter bool, whose string, days float64) (string, bool) {
+	switch {
+	case v < 0:
+		// 累计读数没有负数。这条不需要基准,任何时候都成立。
+		return "累计读数不可能是负数", true
+	case !hasPrev:
+		// 没有基准就不下结论 —— 首次抄表、新装的表都会走到这里。
+		return "", false
+	case v < prev:
+		return fmt.Sprintf("比%s的 %s 还小(累计读数只会往上走)", whose, trimNum(prev)), true
+	case prev > 0 && v >= prev*readingJumpRatio:
+		return fmt.Sprintf("是%s %s 的 %.0f 倍,量级对不上 —— 最常见的原因是小数点丢了", whose, trimNum(prev), v/prev), true
+	case isMeter && mb.HasRate && v-prev > readingRiseLimit(prev, mb.MaxDaily, days):
+		pace := "以往几乎不走"
+		if mb.MaxDaily >= 0.05 {
+			pace = "以往一天最多走 " + trimNum(math.Round(mb.MaxDaily*10)/10)
+		}
+		return fmt.Sprintf("比%s的 %s 多了 %s,这块表%s", whose, trimNum(prev), trimNum(v-prev), pace), true
+	}
+	return "", true
 }
 
 // meterBaseline 一格读数当前挂的是哪块表,那块表上一次读了多少、以往一天最多走多少。

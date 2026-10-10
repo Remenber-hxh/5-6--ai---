@@ -110,12 +110,11 @@ func TestOct8WaterMeterFixLeavesNothingStale(t *testing.T) {
 	rec := zihanMeterRecord(t, "rec_1008w", map[string]string{
 		"living_water_reading": "1017102", "fire_water_reading": "2115",
 	})
-	recField(t, rec, "living_water_reading").AssetName = "生活水表"
-	recField(t, rec, "fire_water_reading").AssetName = "消防水表"
-	flagImplausibleReadings(s.store, rec)
-	if !strings.Contains(recField(t, rec, "fire_water_reading").Reason, "107") {
-		t.Fatalf("前提不成立:消防水表格的 2115 应先被拦下,reason=%q", recField(t, rec, "fire_water_reading").Reason)
-	}
+	// 10/08 线上识别完的样子(那时还没有自动认表):两格都留着值、挂着当时那版的存疑说明
+	living, fire := recField(t, rec, "living_water_reading"), recField(t, rec, "fire_water_reading")
+	living.AssetName, fire.AssetName = "生活水表", "消防水表"
+	living.NeedsReview, living.Reason = true, "图1黑色字轮01017102;"+sanityNoteMark+"是上一次 2047 的 497 倍,量级对不上"
+	fire.NeedsReview, fire.Reason = true, "图2黑色字轮H002115;"+sanityNoteMark+"是上一次 107 的 20 倍,量级对不上"
 	if err := s.store.CreateRecord(rec); err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +146,8 @@ func TestOct8WaterMeterFixLeavesNothingStale(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("读回记录失败:%v", err)
 	}
-	living := recField(t, got, "living_water_reading")
-	fire := recField(t, got, "fire_water_reading")
+	living = recField(t, got, "living_water_reading")
+	fire = recField(t, got, "fire_water_reading")
 	if living.Value != "2119" || living.AssetName != "生活水表" || fire.Value != "104" || fire.AssetName != "消防水表" {
 		t.Fatalf("回放结果不对:生活=%s(%s) 消防=%s(%s)", living.Value, living.AssetName, fire.Value, fire.AssetName)
 	}
@@ -235,9 +234,11 @@ func TestSwapRestoresClearedReadingThatFitsTheNewMeter(t *testing.T) {
 	})
 	recField(t, rec, "living_water_reading").AssetName = "生活水表"
 	recField(t, rec, "fire_water_reading").AssetName = "消防水表"
-	flagImplausibleReadings(s.store, rec)
-	if recField(t, rec, "living_water_reading").Value != "" || recField(t, rec, "fire_water_reading").Value != "" {
-		t.Fatal("前提不成立:两格都应先被清空")
+	// 两格都已被清空(人选了设备、重查对不上的结果):值空着,AI 原值和存疑说明还在
+	for _, code := range []string{"living_water_reading", "fire_water_reading"} {
+		f := recField(t, rec, code)
+		f.Reason = sanityNoteMark + "AI 读作 " + f.AIValue + ",请照照片填写"
+		f.Value, f.NeedsReview = "", true
 	}
 	if err := s.store.CreateRecord(rec); err != nil {
 		t.Fatal(err)

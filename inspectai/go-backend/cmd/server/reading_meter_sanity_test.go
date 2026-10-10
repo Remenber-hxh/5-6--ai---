@@ -54,7 +54,7 @@ func zihanMeterRecord(t *testing.T, id string, vals map[string]string) *Record {
 	return rec
 }
 
-// 9/30 那次:照片对调 + 小数点偏一位。两格都要拦下来,而且说清楚是和哪块表比的。
+// 9/30 那次:照片对调 + 小数点偏一位。和哪块表都对不上 —— 两格都清空、清掉设备,请人选设备。
 func TestSwappedAndShiftedMeterReadingsAreFlagged(t *testing.T) {
 	store := zihanMeterStore(t, zihanHistory)
 	rec := zihanMeterRecord(t, "rec_0930", map[string]string{
@@ -65,11 +65,11 @@ func TestSwappedAndShiftedMeterReadingsAreFlagged(t *testing.T) {
 	if len(issues) != 2 {
 		t.Fatalf("两格都该拦下,得到 %d 条:%v", len(issues), issues)
 	}
-	if r := recField(t, rec, "z1_reading").Reason; !strings.Contains(r, "Z1 上一次的 203904.5") {
-		t.Errorf("Z1 格应和 Z1 自己的上一次比,理由是:%s", r)
-	}
-	if r := recField(t, rec, "z2_reading").Reason; !strings.Contains(r, "Z2 上一次的 116776.64") {
-		t.Errorf("Z2 格应和 Z2 自己的上一次比,理由是:%s", r)
+	for code, ai := range map[string]string{"z1_reading": "11689.519", "z2_reading": "20508.754"} {
+		f := recField(t, rec, code)
+		if f.Value != "" || !f.AssetCleared || f.Reason != sanityNoteMark+"AI 读作 "+ai+",请选择设备" {
+			t.Errorf("%s 应清空读数和设备、只留一句提示:value=%q cleared=%v reason=%q", code, f.Value, f.AssetCleared, f.Reason)
+		}
 	}
 }
 
@@ -100,7 +100,7 @@ func TestExactlyTenTimesIsFlagged(t *testing.T) {
 	store := zihanMeterStore(t, zihanHistory)
 	rec := zihanMeterRecord(t, "rec_x10", map[string]string{"z2_reading": "1167766.4"})
 	issues := flagImplausibleReadings(store, rec)
-	if len(issues) != 1 || !strings.Contains(issues[0].Reason, "10 倍") {
+	if len(issues) != 1 || recField(t, rec, "z2_reading").Value != "" {
 		t.Fatalf("整整 10 倍没拦下:%v", issues)
 	}
 }
@@ -120,7 +120,7 @@ func TestMovedReadingIsRecheckedAgainstNewMeter(t *testing.T) {
 	}
 	rec := zihanMeterRecord(t, "rec_move", map[string]string{"z1_reading": "11689.519"})
 	flagImplausibleReadings(store, rec)
-	if !strings.Contains(recField(t, rec, "z1_reading").Reason, "Z1 上一次") {
+	if !strings.Contains(recField(t, rec, "z1_reading").Reason, sanityNoteMark) {
 		t.Fatal("前提不成立:Z1 格应先被拦下")
 	}
 	if err := store.CreateRecord(rec); err != nil {
@@ -137,11 +137,9 @@ func TestMovedReadingIsRecheckedAgainstNewMeter(t *testing.T) {
 	}
 	got, _ := store.GetRecord(defaultTenantID, "rec_move")
 	f, _ := fieldByCode(got.Fields, "z2_reading")
-	if strings.Contains(f.Reason, "Z1 上一次") {
-		t.Errorf("挪到 Z2 格后理由还在说 Z1:%s", f.Reason)
-	}
-	if !strings.Contains(f.Reason, "Z2 上一次的 116776.64") || !f.NeedsReview {
-		t.Errorf("应按 Z2 重新检查并要求复核,得到 reason=%q needsReview=%v", f.Reason, f.NeedsReview)
+	// 挪到 Z2 格:按 Z2 再比一次,还是对不上 → 清空,提示照照片填(这回设备是人定的,不再让选设备)
+	if f.Value != "" || f.Reason != sanityNoteMark+"AI 读作 11689.519,请照照片填写" || !f.NeedsReview {
+		t.Errorf("应按 Z2 重新检查并要求复核,得到 value=%q reason=%q needsReview=%v", f.Value, f.Reason, f.NeedsReview)
 	}
 }
 
@@ -188,7 +186,9 @@ func readingAt(t *testing.T, store Store, at time.Time, code, asset, value strin
 	t.Helper()
 	rec := zihanMeterRecord(t, "rec_new", map[string]string{code: value})
 	rec.CreatedAt = at
-	recField(t, rec, code).AssetName = asset
+	// 按格子名推出来的默认表(刚识别完就是这样),不是人选的 —— 人选的不会被自动认表挪动
+	f := recField(t, rec, code)
+	f.AssetName, f.AssetDefaulted = asset, true
 	flagImplausibleReadings(store, rec)
 	return recField(t, rec, code)
 }
@@ -197,8 +197,8 @@ func TestSlowMeterBigRiseIsCleared(t *testing.T) {
 	store := meterHistoryStore(t)
 	next := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
 	f := readingAt(t, store, next, "fire_water_reading", "消防水表", "211")
-	if f.Value != "" || !strings.Contains(f.Reason, "以往几乎不走") {
-		t.Errorf("消防水表一周涨 107 应清空:value=%q reason=%q", f.Value, f.Reason)
+	if f.Value != "" || f.Reason != sanityNoteMark+"AI 读作 211,请选择设备" {
+		t.Errorf("消防水表一周涨 107、和生活水表也对不上 → 应清空:value=%q reason=%q", f.Value, f.Reason)
 	}
 }
 
@@ -219,5 +219,62 @@ func TestNormalRisesAreKept(t *testing.T) {
 		if f := readingAt(t, store, c.at, c.code, c.asset, c.value); f.Value != c.value {
 			t.Errorf("%s %s 是正常读数,不该清空:value=%q reason=%q", c.asset, c.value, f.Value, f.Reason)
 		}
+	}
+}
+
+// ===== 识别后先认表 =====
+//
+// 2026-10-11 紫菡:拍照顺序和格子顺序不一样。Z4、Z3 读对了却落在 Z1、Z2 两格;
+// 落在 Z3、Z4 两格的是 Z1、Z2 的照片,小数点又各错一位。原来四格全被清空。
+func TestAutoMatchPutsReadingsOnTheRightMeter(t *testing.T) {
+	store := NewMemStore()
+	d := func(day int) time.Time { return time.Date(2026, 10, day, 10, 0, 0, 0, time.UTC) }
+	for name, vals := range map[string][2]float64{
+		"Z1": {206171.68, 206317.78}, "Z2": {116969.15, 116978.84},
+		"Z3": {86025.608, 86122.408}, "Z4": {61873.044, 61904.564},
+	} {
+		id := "紫菡雅集::zihan_energy::" + name
+		if err := store.CreateAsset(&AssetEntry{ID: id, TenantID: defaultTenantID, Project: "紫菡雅集",
+			TemplateID: "zihan_energy", AssetKey: name, AssetName: name, AssetType: "电表"}); err != nil {
+			t.Fatal(err)
+		}
+		for i, v := range vals {
+			v := v
+			_ = store.WriteAssetSnapshots(nil, []*FieldObservation{{AssetID: id, RecordID: "h" + name + strconv.Itoa(i),
+				FieldKey: "z1_reading", ValueNumber: &v, CreatedAt: d(8 + i)}})
+		}
+	}
+	rec := zihanMeterRecord(t, "rec_1011", map[string]string{
+		"z1_reading": "61922.564", // 其实是 Z4 的照片,读对了
+		"z2_reading": "86217.840", // 其实是 Z3 的照片,读对了
+		"z3_reading": "20647.632", // 其实是 Z1 的照片,小数点错一位
+		"z4_reading": "11698.725", // 其实是 Z2 的照片,小数点错一位
+	})
+	rec.CreatedAt = d(11)
+	flagImplausibleReadings(store, rec)
+
+	for code, want := range map[string][2]string{"z1_reading": {"Z4", "61922.564"}, "z2_reading": {"Z3", "86217.840"}} {
+		if f := recField(t, rec, code); f.AssetName != want[0] || f.Value != want[1] || f.NeedsReview {
+			t.Errorf("%s 应自动挂到 %s、读数保留:asset=%q value=%q review=%v reason=%q",
+				code, want[0], f.AssetName, f.Value, f.NeedsReview, f.Reason)
+		}
+	}
+	for code, ai := range map[string]string{"z3_reading": "20647.632", "z4_reading": "11698.725"} {
+		f := recField(t, rec, code)
+		if f.Value != "" || f.AssetName != "" || !f.AssetCleared || f.Reason != sanityNoteMark+"AI 读作 "+ai+",请选择设备" {
+			t.Errorf("%s 和哪块表都对不上,应清空并请人选设备:asset=%q value=%q reason=%q", code, f.AssetName, f.Value, f.Reason)
+		}
+	}
+}
+
+// 人选过的表不替他改:读数和 Z2 对得上,但人选的是 Z1 —— 不挪,按 Z1 对不上清空,请人照照片填
+func TestAutoMatchLeavesHumanChosenMeterAlone(t *testing.T) {
+	store := zihanMeterStore(t, zihanHistory)
+	rec := zihanMeterRecord(t, "rec_h", map[string]string{"z1_reading": "116800.5"})
+	f := recField(t, rec, "z1_reading")
+	f.AssetName = "Z1" // 人选的(识别不会写设备名)
+	flagImplausibleReadings(store, rec)
+	if f.AssetName != "Z1" || f.Value != "" || f.Reason != sanityNoteMark+"AI 读作 116800.5,请照照片填写" {
+		t.Errorf("人选的表不该被挪走,读数按 Z1 清空:asset=%q value=%q reason=%q", f.AssetName, f.Value, f.Reason)
 	}
 }

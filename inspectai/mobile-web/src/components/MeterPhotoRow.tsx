@@ -146,7 +146,9 @@ export default function MeterPhotoRow({
           理由写在这儿,人才知道该自己看照片填,而不是以为系统没跑。 */}
       {(unread || doubt) && (
         <div className={doubt ? "mpr-note is-doubt" : "mpr-note"}>
-          {field?.reason}
+          {/* 【读数存疑】是后端用来认出"这句是检查写的"的记号(摘除、恢复都靠它),
+              现场不用看见 —— 只留"AI 读作 X,请选择设备"这一句 */}
+          {(field?.reason || "").replace("【读数存疑】", "")}
         </div>
       )}
 
