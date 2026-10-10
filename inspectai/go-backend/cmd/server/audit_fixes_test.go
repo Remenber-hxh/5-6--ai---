@@ -295,3 +295,47 @@ func TestOrphanAIChatRouteRemoved(t *testing.T) {
 		}
 	}
 }
+
+// 管理聊天两条路的共用规矩只有一份:主路的系统提示里有它,主路失败走备用路时也随请求发过去。
+// 原来两边各写一份,一键派单的规则只加进了其中一份,走另一条路时派单按钮就没了。
+func TestManagementChatRulesLiveInOnePlace(t *testing.T) {
+	for _, want := range []string{"数字不能编", "<<ACTION>>", "create_recheck_task", "50-120 字", "风险等级翻成中文"} {
+		if !strings.Contains(managementChatSharedRules, want) {
+			t.Errorf("共用规矩里少了「%s」", want)
+		}
+	}
+	if !strings.HasSuffix(MANAGEMENT_CHAT_SYSTEM_HINT, managementChatSharedRules) {
+		t.Error("主路的系统提示没有带上共用规矩")
+	}
+
+	// 主路一轮就失败 → 走备用路
+	fake := &fakeAnalytics{replies: []map[string]any{
+		{"finish": "error", "message": "boom"},
+		{"reply": "好的", "model": "deepseek-chat"},
+	}}
+	srv, r, _ := newAgentServer(t, fake)
+	req := httptest.NewRequest(http.MethodPost, "/api/management-ai/chat", strings.NewReader(`{"message":"今天重点关注什么"}`))
+	req.Header = r.Header.Clone()
+	w := httptest.NewRecorder()
+	srv.handleManagementChat(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("聊天失败:%d %s", w.Code, w.Body.String())
+	}
+	var toolSys, fallbackRules string
+	for _, body := range fake.requests {
+		if msgs, ok := body["messages"].([]any); ok && len(msgs) > 0 {
+			if m, _ := msgs[0].(map[string]any); m["role"] == "system" {
+				toolSys, _ = m["content"].(string)
+			}
+		}
+		if rules, ok := body["sharedRules"].(string); ok {
+			fallbackRules = rules
+		}
+	}
+	if !strings.Contains(toolSys, managementChatSharedRules) {
+		t.Error("主路请求的系统提示里没有共用规矩")
+	}
+	if fallbackRules != managementChatSharedRules {
+		t.Errorf("备用路请求没带上同一份共用规矩(收到 %d 字)", len([]rune(fallbackRules)))
+	}
+}

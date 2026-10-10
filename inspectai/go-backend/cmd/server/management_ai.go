@@ -1231,6 +1231,8 @@ func (s *Server) handleManagementChat(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"message": req.Message,
 		"history": sanitizeChatHistory(req.History),
+		// 两条路共用的规矩只在后端写一份,备用路由 ai-service 拼进提示词。见 managementChatSharedRules
+		"sharedRules": managementChatSharedRules,
 		"context": map[string]any{
 			"overview":         overview,
 			"topRiskAssets":    attention,
