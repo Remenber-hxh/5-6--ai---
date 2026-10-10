@@ -2998,6 +2998,12 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request, recordID s
 		return
 	}
 
+	// 0. 读数按这块表上一次再比一遍,手填的也比 —— 对不上的写进理由,设备进待复核、群里提醒。
+	// 放在总结之前,总结看到的字段里也带着这句。见 flagReadingsOnSubmit。
+	for _, is := range flagReadingsOnSubmit(s.store, rec) {
+		log.Printf("提交时读数存疑 record=%s %s(%s)=%s: %s", rec.ID, is.Label, is.Code, trimNum(is.Value), is.Reason)
+	}
+
 	// 1. 调 ai-service /summarize 同步生成总结+建议
 	// M41 · 只传当前模板还在的字段（防止 AI 引用已删除字段）
 	cleanedRec := sanitizeRecordForCurrentTemplate(rec)

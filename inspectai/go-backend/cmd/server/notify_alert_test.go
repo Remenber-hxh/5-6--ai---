@@ -304,3 +304,49 @@ func TestOutboundRecordCarriesAttentionItems(t *testing.T) {
 		t.Fatalf("内容不对:%+v", it)
 	}
 }
+
+// 2026-10-09:Z2 被手输成 1169788.40(多输了一位,上一次的 10 倍)。趋势图标了"偏离平时",
+// 群里却没提醒 —— 识别后的检查不管人填的数。提交时要再比一遍:值不动,设备进待复核。
+func TestHandTypedReadingIsFlaggedOnSubmit(t *testing.T) {
+	srv, tokens := newClosedLoopServer(t)
+	const z2 = "紫菡雅集::zihan_energy::Z2"
+	if err := srv.store.CreateAsset(&AssetEntry{ID: z2, TenantID: defaultTenantID, Project: "紫菡雅集",
+		TemplateID: "zihan_energy", AssetType: "电表", AssetKey: "Z2", AssetName: "Z2", LastStatus: "正常"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, v := range []float64{116895.19, 116969.15} {
+		v := v
+		_ = srv.store.WriteAssetSnapshots(nil, []*FieldObservation{{AssetID: z2, RecordID: "hist_" + itoaSafe(i),
+			FieldKey: "z2_reading", ValueNumber: &v, CreatedAt: time.Date(2026, 9, 30+8*i, 9, 0, 0, 0, time.UTC)}})
+	}
+	if err := srv.store.CreateRecord(&Record{
+		ID: "rec_1009", TenantID: defaultTenantID, Project: "紫菡雅集", TemplateID: "zihan_energy",
+		Inspector: "巡检员", InspectorUserID: "user_i", RecognitionStatus: "recognized",
+		CreatedAt: time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC), Images: fixtureImages(5),
+		Fields: []FieldValue{{Code: "z2_reading", Label: "Z2 能耗表读数", AssetName: "Z2",
+			Value: "1169788.40", AIValue: "116978.84", Source: "human-edited", Confidence: 0.97}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/inspection/records/rec_1009/submit", strings.NewReader(""))
+	req.Header.Set("X-InspectAI-Token", tokens["inspector"])
+	req.Header.Set("Idempotency-Key", "k_1009")
+	w := httptest.NewRecorder()
+	srv.router(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("提交失败(手填的数不该挡住提交):%d %s", w.Code, w.Body.String())
+	}
+
+	got, _ := srv.store.GetRecord(defaultTenantID, "rec_1009")
+	f := recField(t, got, "z2_reading")
+	if f.Value != "1169788.40" {
+		t.Errorf("人填的数不该被改:%q", f.Value)
+	}
+	if !strings.Contains(f.Reason, "手填 1169788.40") || !strings.Contains(f.Reason, "10 倍") {
+		t.Errorf("理由里要写明是手填的、差了多少:%q", f.Reason)
+	}
+	if a, _ := srv.store.GetAsset(defaultTenantID, z2); a == nil || a.LastStatus != "待复核" {
+		t.Errorf("Z2 应进待复核(群里才会提醒),得到 %+v", a)
+	}
+}

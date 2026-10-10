@@ -68,7 +68,28 @@ type readingSanityIssue struct {
 // 现在先按这一格当前挂的是哪块表,取那块表自己最近一次的读数;
 // 台账里对不上设备的格子(没配设备类型的模板、或者台账里没有那台)才退回按格子比。
 func flagImplausibleReadings(store Store, rec *Record) []readingSanityIssue {
-	return checkReadings(store, rec, nil)
+	return checkReadings(store, rec, nil, checkClearAI)
+}
+
+// readingCheckMode 这道检查用在哪儿。
+type readingCheckMode int
+
+const (
+	// checkClearAI 识别后、换表后:只查 AI 读出来的数,对不上就清空
+	checkClearAI readingCheckMode = iota
+	// checkFlagOnSubmit 提交时:每一格都查,手填的也查;对不上只在理由里写明,不改值
+	checkFlagOnSubmit
+)
+
+// flagReadingsOnSubmit 提交时把每一格读数都按这块表上一次再比一遍 —— 手填的也比。
+//
+// 【为什么提交时还要查一遍】识别后的检查只管 AI 读的数(人填的不碰,免得"改了又被系统改回去")。
+// 2026-10-09 Z2 被手输成 1169788.40(多输了一位),正好是上一次的 10 倍:趋势图标了"偏离平时",
+// 群里却没有提醒 —— 设备状态只看字段上的信号,而手填的数身上什么信号都没有。
+// 【只写理由,不改值,也不标"需复核"】人填的就是人填的;"需复核"会挡住提交(handleSubmit
+// 见到它就退回)。理由里的"存疑"足够让设备进待复核、群里收到提醒,和其它异常同一条路。
+func flagReadingsOnSubmit(store Store, rec *Record) []readingSanityIssue {
+	return checkReadings(store, rec, nil, checkFlagOnSubmit)
 }
 
 // recheckReadingSanity 读数换了表之后(挪格子、对调、改选设备),按新的那块表重新查这几格。
@@ -104,7 +125,7 @@ func recheckReadingSanity(store Store, rec *Record, codes ...string) []readingSa
 			f.Value = f.AIValue
 		}
 	}
-	return checkReadings(store, rec, only)
+	return checkReadings(store, rec, only, checkClearAI)
 }
 
 // stripSanityNote 把理由里这道检查写的那一段摘掉。它总是追加在最后。
@@ -128,7 +149,7 @@ func isAIReading(f *FieldValue) bool {
 	return ai != "" && strings.TrimSpace(f.Value) == ai
 }
 
-func checkReadings(store Store, rec *Record, only map[string]bool) []readingSanityIssue {
+func checkReadings(store Store, rec *Record, only map[string]bool, mode readingCheckMode) []readingSanityIssue {
 	if rec == nil {
 		return nil
 	}
@@ -154,8 +175,15 @@ func checkReadings(store Store, rec *Record, only map[string]bool) []readingSani
 	for i := range rec.Fields {
 		f := &rec.Fields[i]
 		label, watchedField := watched[f.Code]
-		if !watchedField || (only != nil && !only[f.Code]) || !isAIReading(f) {
+		if !watchedField || (only != nil && !only[f.Code]) {
 			continue
+		}
+		aiRead := isAIReading(f)
+		if mode == checkClearAI && !aiRead {
+			continue // 识别后只管 AI 读的数,人填的不碰
+		}
+		if mode == checkFlagOnSubmit && strings.Contains(f.Reason, sanityNoteMark) {
+			continue // 识别时已经标过、之后没人动过,不重复写
 		}
 		v, ok := parseReading(f.Value)
 		if !ok {
@@ -198,15 +226,24 @@ func checkReadings(store Store, rec *Record, only map[string]bool) []readingSani
 		issues = append(issues, readingSanityIssue{
 			Code: f.Code, Label: label, Value: v, Baseline: prev, Reason: reason,
 		})
-		// 【清空,不留一个大概率是错的数】见文件头。AI 读成了什么写进理由,人对着照片填。
 		raw := strings.TrimSpace(f.Value)
-		f.Value = ""
-		f.NeedsReview = true
-		f.Confidence = 0
 		f.Reason = strings.TrimSpace(f.Reason)
 		if f.Reason != "" {
 			f.Reason += ";"
 		}
+		if mode == checkFlagOnSubmit {
+			// 提交时:不改值,只写明 —— 见 flagReadingsOnSubmit
+			who := "手填 "
+			if aiRead {
+				who = "AI 读作 "
+			}
+			f.Reason += sanityNoteMark + who + raw + "," + reason
+			continue
+		}
+		// 【清空,不留一个大概率是错的数】见文件头。AI 读成了什么写进理由,人对着照片填。
+		f.Value = ""
+		f.NeedsReview = true
+		f.Confidence = 0
 		f.Reason += sanityNoteMark + "AI 读作 " + raw + "," + reason + ";已清空,请对照照片填写"
 	}
 	return issues
