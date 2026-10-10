@@ -229,6 +229,8 @@ func main() {
 	pushCtx, stopPush := context.WithCancel(context.Background())
 	defer stopPush()
 	server.startDailyPushLoop(pushCtx)
+	// AI 账号出故障时推企业微信。推到哪个群在推送设置里选,一个都没选就只记日志。见 ai_alert.go
+	server.startAIAlertLoop(pushCtx)
 
 	srv := &http.Server{
 		Addr:         addr,

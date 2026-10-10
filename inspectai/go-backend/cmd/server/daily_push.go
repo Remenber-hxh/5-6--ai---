@@ -436,6 +436,17 @@ func (s *Server) handleDailyPushConfig(w http.ResponseWriter, r *http.Request) {
 
 	// 【单独设置和全局设置一起存】分两次写的话,中间失败会留下
 	// "全局改了、单独的没改"这种一半的状态,而页面显示的是改完的样子。
+	if kv, err := s.store.ListAppSettings(); err == nil {
+		alertBots, touched := aiAlertBotSet(kv), false
+		for _, b := range req.Bots {
+			if b.AIAlerts != nil && s.knownBotIndex(b.Index) {
+				alertBots[b.Index], touched = *b.AIAlerts, true
+			}
+		}
+		if touched {
+			settings[keyAIAlertBots] = encodeAIAlertBots(alertBots)
+		}
+	}
 	for _, b := range req.Bots {
 		if !s.knownBotIndex(b.Index) {
 			writeError(w, http.StatusBadRequest, "unknown_bot",
@@ -472,6 +483,8 @@ type botConfigReq struct {
 	Weekdays       *string `json:"weekdays"`
 	SilentWhenDone *bool   `json:"silentWhenDone"`
 	FollowCalendar *bool   `json:"followCalendar"`
+	// AIAlerts 这个群收不收 AI 故障提醒。null = 不改(老版本后台不发这个字段)
+	AIAlerts *bool `json:"aiAlerts"`
 }
 
 // toOverride 校验并转成存库的形状。第二个返回值非空 = 这份设置有问题。
@@ -547,6 +560,7 @@ func (s *Server) botConfigViews(kv map[string]string, tenantID string) []map[str
 		}
 	}
 
+	aiAlertBots := aiAlertBotSet(kv)
 	out := make([]map[string]any, 0, len(s.weworkBots))
 	for _, b := range s.weworkBots {
 		o := parseDailyPushOverride(kv[botOverrideKey(b.Index)])
@@ -575,6 +589,9 @@ func (s *Server) botConfigViews(kv map[string]string, tenantID string) []map[str
 			// 这个群收不到任何东西,而且不会报错。页面必须把它喊出来。
 			"unknownProjects": unknown,
 			"ready":           b.Client != nil && b.Client.Enabled(),
+			// aiAlerts:这个群收不收 AI 账号故障提醒(见 ai_alert.go)。和"单独设置"无关 ——
+			// 那块管的是每日提醒几点发,收起来会清掉覆盖值,不能把这个开关一起带走。
+			"aiAlerts": aiAlertBots[b.Index],
 			// follows:这个群现在是不是完全跟着全局走。前端据此决定
 			// "单独设置"那一块是展开还是收着。
 			"follows": o.IsEmpty(),
